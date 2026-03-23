@@ -1,0 +1,22 @@
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: rss-monitor-dashboard
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4000
+      CLIENT_ORIGIN: http://127.0.0.1:4000
+      SQLITE_PATH: /app/data/rss-monitor.db
+      PUBLIC_APP_URL: http://127.0.0.1:4000
+    ports:
+      - "4000:4000"
+    volumes:
+      - sqlite_data:/app/data
+
+volumes:
+  sqlite_data:

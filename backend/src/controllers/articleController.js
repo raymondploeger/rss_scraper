@@ -1,0 +1,54 @@
+import {
+  countArticles,
+  listArticles as listArticleRecords,
+  listDistinctArticleTopics
+} from "../database/articleRepository.js";
+import { listFeeds } from "../database/feedRepository.js";
+import { endOfDay, startOfDay } from "../utils/date.js";
+import { toArticleDto, toFeedDto } from "../services/presenterService.js";
+
+export async function listArticles(request, response) {
+  const { topic, feedId, from, to, page = 1, limit = 400, search, showDuplicates } = request.query;
+  const pageNumber = Math.max(1, Number(page) || 1);
+  const pageSize = Math.min(400, Math.max(1, Number(limit) || 400));
+  const filters = {
+    topic,
+    feedId,
+    from: from ? startOfDay(from) : null,
+    to: to ? endOfDay(to) : null,
+    search,
+    excludeDuplicates: String(showDuplicates || "") !== "true"
+  };
+
+  const [items, total] = await Promise.all([
+    listArticleRecords(filters, {
+      limit: pageSize,
+      offset: (pageNumber - 1) * pageSize
+    }),
+    countArticles(filters)
+  ]);
+
+  if (request.query.includePagination === "true") {
+    response.json({
+      items: items.map(toArticleDto),
+      pagination: {
+        page: pageNumber,
+        limit: pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / pageSize))
+      }
+    });
+    return;
+  }
+
+  response.json(items.map(toArticleDto));
+}
+
+export async function getArticleFilters(request, response) {
+  const [topics, feeds] = await Promise.all([
+    listDistinctArticleTopics(),
+    listFeeds()
+  ]);
+
+  response.json({ topics: topics.sort(), feeds: feeds.map(toFeedDto) });
+}

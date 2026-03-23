@@ -1,0 +1,13 @@
+.git
+.firebase
+node_modules
+backend/node_modules
+functions
+src
+public
+firebase-debug.log
+firestore-debug.log
+*.log
+backend/data/*.db
+backend/data/*.db-shm
+backend/data/*.db-wal

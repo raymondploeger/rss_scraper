@@ -1,0 +1,14 @@
+export const MAX_FEEDS = 50;
+export const MAX_ARTICLES_PER_QUERY = 400;
+export const PLACEHOLDER_THUMBNAIL =
+  "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image";
+export const DEFAULT_OPENAI_MODEL = "gpt-5-mini";
+export const USER_AGENT = "RSS Monitoring Dashboard/2.0";
+export const FEED_TIMEOUT_MS = 10000;
+export const SCRAPE_TIMEOUT_MS = 12000;
+export const SCRAPE_RETRY_ATTEMPTS = 2;
+export const SCRAPE_MAX_CONTENT_LENGTH = 1024 * 1024 * 2;
+export const DEDUPE_LOOKBACK_DAYS = 3;
+export const DEDUPE_MAX_CANDIDATES = 250;
+export const CLUSTER_LOOKBACK_DAYS = 7;
+export const TREND_LIMIT_PER_RANGE = 12;
