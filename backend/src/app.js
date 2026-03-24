@@ -29,6 +29,10 @@ export function createApp() {
   app.use(express.json());
   app.use(express.static(frontendPath));
 
+  app.get("/", (_request, response) => {
+    response.send("OK");
+  });
+
   app.get("/api/health", (request, response) => {
     response.json({ ok: true, timestamp: new Date().toISOString() });
   });

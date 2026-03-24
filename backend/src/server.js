@@ -2,6 +2,51 @@ import { createApp } from "./app.js";
 import { connectDatabase, disconnectDatabase } from "./config/db.js";
 import { env, envFilePath } from "./config/env.js";
 import { startScheduler } from "./services/schedulerService.js";
+import { spawn } from "child_process";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const backendRoot = path.resolve(__dirname, "..");
+const prismaBinary = path.join(backendRoot, "node_modules", ".bin", process.platform === "win32" ? "prisma.cmd" : "prisma");
+const PORT = process.env.PORT || 3000;
+const HOST = "0.0.0.0";
+
+let schedulerStarted = false;
+
+function runMigrationsInBackground() {
+  return new Promise((resolve, reject) => {
+    const child = spawn(prismaBinary, ["migrate", "deploy"], {
+      cwd: backendRoot,
+      stdio: "inherit",
+      env: process.env
+    });
+
+    child.on("exit", (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      reject(new Error(`Prisma migrate deploy exited with code ${code || 1}`));
+    });
+
+    child.on("error", reject);
+  });
+}
+
+async function bootstrapRuntime() {
+  await runMigrationsInBackground();
+  await connectDatabase();
+
+  if (!schedulerStarted) {
+    startScheduler();
+    schedulerStarted = true;
+  }
+
+  console.log("Background bootstrap complete.");
+}
 
 async function start() {
   if (!env.databaseUrl) {
@@ -11,17 +56,18 @@ async function start() {
     process.exit(1);
   }
 
-  await connectDatabase();
-  startScheduler();
-
   const app = createApp();
-  const server = app.listen(env.port, env.host, () => {
-    console.log(`RSS monitor backend running on http://${env.host}:${env.port}`);
+  const server = app.listen(PORT, HOST, () => {
+    console.log(`Server running on ${PORT}`);
   });
 
   server.on("error", (error) => {
-    console.error(`Failed to listen on http://${env.host}:${env.port}`, error);
+    console.error(`Failed to listen on ${HOST}:${PORT}`, error);
     process.exit(1);
+  });
+
+  void bootstrapRuntime().catch((error) => {
+    console.error("Background bootstrap failed.", error);
   });
 
   const shutdown = (signal) => {
