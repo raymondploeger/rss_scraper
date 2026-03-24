@@ -6,36 +6,8 @@
   "scripts": {
     "dev": "npm --prefix backend run dev",
     "start": "npm --prefix backend start",
-    "backend:install": "npm --prefix backend install",
-    "docker:up": "docker compose up --build",
-    "docker:down": "docker compose down",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview",
-    "firebase:emulators:start": "firebase emulators:start --only firestore,functions,hosting --project demo-rss-monitor --import=.firebase/demo-rss-monitor --export-on-exit=.firebase/demo-rss-monitor",
-    "firebase:emulators:seed": "node functions/scripts/seed-emulator.js",
-    "lint": "eslint .",
-    "format": "prettier --write ."
-  },
-  "dependencies": {
-    "firebase": "^11.6.0",
-    "lucide-react": "^0.511.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
-  },
-  "devDependencies": {
-    "@eslint/js": "^9.25.0",
-    "@types/react": "^19.0.11",
-    "@types/react-dom": "^19.0.4",
-    "@vitejs/plugin-react": "^4.3.4",
-    "autoprefixer": "^10.4.21",
-    "eslint": "^9.25.0",
-    "eslint-plugin-react-hooks": "^5.2.0",
-    "eslint-plugin-react-refresh": "^0.4.19",
-    "postcss": "^8.5.3",
-    "prettier": "^3.5.3",
-    "tailwindcss": "^3.4.17",
-    "typescript": "~5.8.3",
-    "typescript-eslint": "^8.30.1",
-    "vite": "^6.3.5"
+    "prisma:generate": "npm --prefix backend run prisma:generate",
+    "prisma:migrate": "npm --prefix backend run prisma:migrate",
+    "prisma:deploy": "npm --prefix backend run prisma:deploy"
   }
 }

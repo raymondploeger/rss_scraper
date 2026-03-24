@@ -1,90 +1,115 @@
 # Database Schema
 
-## Database
+PostgreSQL schema is defined in [backend/prisma/schema.prisma](/Users/r.ploeger/rss_scraper/backend/prisma/schema.prisma).
 
-MongoDB
+## `feeds`
 
-## Collections
+Required fields:
 
-### `feeds`
-
-Stores the configured RSS feeds.
-
-```json
-{
-  "_id": "ObjectId",
-  "name": "Brand Mentions",
-  "topic": "Marketing",
-  "rssUrl": "https://www.google.com/alerts/feeds/...",
-  "isActive": true,
-  "lastFetchedAt": "2026-03-16T11:20:00.000Z",
-  "lastStatus": "success",
-  "lastError": null,
-  "createdAt": "2026-03-16T09:00:00.000Z",
-  "updatedAt": "2026-03-16T11:20:00.000Z"
-}
-```
-
-Indexes:
-- unique `rssUrl`
+- `id`
+- `name`
+- `rssUrl`
 - `topic`
 - `isActive`
-- compound `topic + isActive`
+- `createdAt`
+- `updatedAt`
 
-### `articles`
+Operational fields retained for sync status:
 
-Stores normalized article entries from all feeds.
+- `sourceType`
+- `lastFetchedAt`
+- `lastStatus`
+- `lastError`
+- `lastInsertedCount`
 
-```json
-{
-  "_id": "ObjectId",
-  "feedId": "ObjectId",
-  "feedName": "Brand Mentions",
-  "topic": "Marketing",
-  "title": "Example article title",
-  "link": "https://example.com/article",
-  "source": "example.com",
-  "publishedAt": "2026-03-16T11:18:00.000Z",
-  "thumbnailUrl": "https://cdn.example.com/article-image.jpg",
-  "thumbnailStatus": "complete",
-  "summary": "Article summary text",
-  "articleHash": "sha256(feedId:link)",
-  "createdAt": "2026-03-16T11:20:03.000Z",
-  "updatedAt": "2026-03-16T11:20:05.000Z"
-}
-```
-
-Indexes:
-- unique `articleHash`
-- `publishedAt` descending
-- compound `topic + publishedAt`
-- compound `feedId + publishedAt`
-
-### `poll_logs`
-
-Stores refresh history for observability and troubleshooting.
+Example row:
 
 ```json
 {
-  "_id": "ObjectId",
-  "feedId": "ObjectId",
-  "startedAt": "2026-03-16T11:20:00.000Z",
-  "finishedAt": "2026-03-16T11:20:06.000Z",
-  "status": "success",
-  "newArticles": 4,
-  "errorMessage": null
+  "id": "8b8c20f1-bb00-4fe2-928f-d89d18d8f5b0",
+  "name": "Google Alerts - Acme",
+  "rssUrl": "https://www.google.com/alerts/feeds/123/456",
+  "topic": "Acme Corp",
+  "isActive": true,
+  "createdAt": "2026-03-24T08:00:00.000Z",
+  "updatedAt": "2026-03-24T08:00:00.000Z"
 }
 ```
 
-Indexes:
-- compound `feedId + startedAt`
+## `articles`
 
-## Deduplication Strategy
+Required fields:
 
-Duplicates are prevented by generating a deterministic SHA-256 hash:
+- `id`
+- `title`
+- `link`
+- `canonicalLink`
+- `pubDate`
+- `source`
+- `topic`
+- `feedId`
+- `thumbnail`
+- `contentSnippet`
+- `createdAt`
+- `updatedAt`
+- `hash`
+- `isDuplicate`
+- `duplicateOf`
 
-```text
-articleHash = sha256(feedId + ":" + articleLink)
+Additional fields retained for the current dashboard and ingestion pipeline:
+
+- `feedName`
+- `normalizedTitle`
+- `summary`
+- `summaryShort`
+- `keywords`
+- `author`
+- `duplicateGroupId`
+- `clusterId`
+- `language`
+- `fetchStatus`
+
+Example row:
+
+```json
+{
+  "id": "6abf09f36dbf2f70cfcfe0ab5914f6c5f4a6af46c9ab8b4770d4579c7729f6f9",
+  "title": "Acme launches new monitoring platform",
+  "link": "https://example.com/acme-launches-monitoring-platform",
+  "canonicalLink": "https://example.com/acme-launches-monitoring-platform",
+  "pubDate": "2026-03-24T08:05:00.000Z",
+  "source": "Example News",
+  "topic": "Acme Corp",
+  "feedId": "8b8c20f1-bb00-4fe2-928f-d89d18d8f5b0",
+  "thumbnail": "https://example.com/images/acme.jpg",
+  "contentSnippet": "Acme introduced a new monitoring platform...",
+  "createdAt": "2026-03-24T08:05:02.000Z",
+  "updatedAt": "2026-03-24T08:05:05.000Z",
+  "hash": "6abf09f36dbf2f70cfcfe0ab5914f6c5f4a6af46c9ab8b4770d4579c7729f6f9",
+  "isDuplicate": false,
+  "duplicateOf": null
+}
 ```
 
-Each new article is checked against this unique key before insert.
+## `poll_logs`
+
+Used for observability and dashboard health.
+
+Fields:
+
+- `id`
+- `feedId`
+- `startedAt`
+- `finishedAt`
+- `status`
+- `newArticles`
+- `errorMessage`
+
+## Deduplication
+
+The ingestion service prevents duplicates using:
+
+- deterministic article IDs derived from canonical URLs
+- a unique `hash` column
+
+This lets the app ignore repeated RSS entries across repeated sync runs.

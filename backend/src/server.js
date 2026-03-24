@@ -1,9 +1,16 @@
 import { createApp } from "./app.js";
-import { connectDatabase } from "./config/db.js";
-import { env } from "./config/env.js";
+import { connectDatabase, disconnectDatabase } from "./config/db.js";
+import { env, envFilePath } from "./config/env.js";
 import { startScheduler } from "./services/schedulerService.js";
 
 async function start() {
+  if (!env.databaseUrl) {
+    console.error("Missing DATABASE_URL. Create backend/.env file.");
+    console.error("For Railway, add a PostgreSQL service and copy its DATABASE_URL into your app variables.");
+    console.error(`Optional local env file path: ${envFilePath}`);
+    process.exit(1);
+  }
+
   await connectDatabase();
   startScheduler();
 
@@ -25,7 +32,13 @@ async function start() {
         process.exit(1);
       }
 
-      process.exit(0);
+      disconnectDatabase()
+        .catch((disconnectError) => {
+          console.error("Failed to disconnect database cleanly", disconnectError);
+        })
+        .finally(() => {
+          process.exit(0);
+        });
     });
   };
 
@@ -34,6 +47,16 @@ async function start() {
 }
 
 start().catch((error) => {
+  if (!env.databaseUrl) {
+    console.error("Missing DATABASE_URL. Create backend/.env file.");
+    console.error("For Railway, add a PostgreSQL service and copy its DATABASE_URL into your app variables.");
+  }
+
+  if (env.databaseUrl) {
+    console.error("Could not connect to PostgreSQL using DATABASE_URL.");
+    console.error("Check that Railway PostgreSQL is attached and DATABASE_URL is set on the app service.");
+  }
+
   console.error("Failed to start server", error);
   process.exit(1);
 });

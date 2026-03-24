@@ -1,22 +1,35 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: rss-monitor-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: rss_dashboard
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
   dashboard:
     build:
       context: .
       dockerfile: backend/Dockerfile
     container_name: rss-monitor-dashboard
     restart: unless-stopped
+    depends_on:
+      - postgres
     env_file:
       - ./backend/.env
     environment:
       HOST: 0.0.0.0
-      PORT: 4000
-      CLIENT_ORIGIN: http://127.0.0.1:4000
-      SQLITE_PATH: /app/data/rss-monitor.db
-      PUBLIC_APP_URL: http://127.0.0.1:4000
+      PORT: 3000
+      CLIENT_ORIGIN: http://127.0.0.1:3000
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/rss_dashboard?schema=public
+      PUBLIC_APP_URL: http://127.0.0.1:3000
     ports:
-      - "4000:4000"
-    volumes:
-      - sqlite_data:/app/data
+      - "3000:3000"
 
 volumes:
-  sqlite_data:
+  postgres_data:

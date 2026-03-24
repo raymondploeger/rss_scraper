@@ -4,6 +4,7 @@ dockerfilePath = "backend/Dockerfile"
 watchPatterns = [
   "/backend/**",
   "/frontend/public/**",
+  "/backend/prisma/**",
   "/railway.toml",
   "/package.json"
 ]
@@ -13,3 +14,4 @@ healthcheckPath = "/api/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
+startCommand = "npm --prefix backend start"

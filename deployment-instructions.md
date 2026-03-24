@@ -1,99 +1,67 @@
-# Deployment Instructions
+# Railway Deployment Instructions
 
-## Local Development
+## Simple deployment flow
 
-### 1. Start MongoDB
+1. Push the project to GitHub.
+2. Create a new Railway project.
+3. Deploy from the GitHub repository.
+4. Add a PostgreSQL service in the same Railway project.
+5. Copy the PostgreSQL `DATABASE_URL` into the web app service variables.
+6. Add the rest of the app variables from [backend/.env.example](/Users/r.ploeger/rss_scraper/backend/.env.example).
+7. Redeploy the app.
 
-Use a local MongoDB instance or MongoDB Atlas.
-
-Example local connection string:
-
-```env
-MONGODB_URI=mongodb://127.0.0.1:27017/rss-monitor
-```
-
-### 2. Configure backend environment
-
-Copy [backend/.env.example](/Users/keesingtechnologies/Documents/New%20project/backend/.env.example) to `backend/.env` and update values as needed.
-
-### 3. Install backend dependencies
-
-```bash
-cd backend
-npm install
-```
-
-### 4. Run the app
-
-```bash
-cd backend
-npm run dev
-```
-
-The backend serves the frontend automatically.
-
-Open:
-
-```text
-http://localhost:4000
-```
-
-## Production Deployment
-
-## Option 1: Render + MongoDB Atlas
-
-### Backend service
-- Create a new Render Web Service
-- Root directory: `backend`
-- Build command: `npm install`
-- Start command: `npm start`
-
-Environment variables:
+## Required Railway app variables
 
 ```env
-PORT=4000
-MONGODB_URI=<your-mongodb-atlas-uri>
-CLIENT_ORIGIN=https://your-app-domain.com
+DATABASE_URL=<paste Railway PostgreSQL DATABASE_URL here>
+HOST=0.0.0.0
+CLIENT_ORIGIN=*
 POLL_CRON=*/5 * * * *
 POLL_CONCURRENCY=5
 REQUEST_TIMEOUT_MS=10000
+SCRAPE_RETRY_ATTEMPTS=2
 MAX_FEEDS=50
+PUBLIC_APP_URL=https://your-app.up.railway.app
+PLACEHOLDER_IMAGE=https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image
 ```
 
-Because the Express server serves the frontend folder directly, deploy the repository so the `frontend/` folder is present alongside `backend/`.
+`PORT` is usually provided by Railway automatically.
 
-## Option 2: Railway + MongoDB Atlas
+## Prisma on Railway
 
-- Create a new project from the repo
-- Set the service root to `backend`
-- Add the same environment variables
-- Deploy
-
-## Option 3: VPS or Docker Host
-
-### Example process
-1. Install Node.js 20+
-2. Install MongoDB or connect to Atlas
-3. Copy the project to the server
-4. Create `backend/.env`
-5. Run `npm install` in `backend/`
-6. Start with PM2:
+The backend start command already runs migrations:
 
 ```bash
-cd backend
-pm2 start src/server.js --name rss-monitor
+node src/start.js
 ```
 
-## Reverse Proxy Example
+That means Railway will:
 
-Use Nginx to proxy traffic to Express on port `4000`.
+1. generate the Prisma client during install
+2. check that `DATABASE_URL` exists
+3. apply committed migrations on startup
+4. start the Express server
 
-## Health Check
+Useful scripts:
 
-The app exposes:
+- `npm --prefix backend run setup`
+- `npm --prefix backend run prisma:generate`
+- `npm --prefix backend run prisma:deploy`
+
+## Files used by Railway
+
+- [railway.toml](/Users/r.ploeger/rss_scraper/railway.toml)
+- [backend/Dockerfile](/Users/r.ploeger/rss_scraper/backend/Dockerfile)
+- [backend/package.json](/Users/r.ploeger/rss_scraper/backend/package.json)
+- [backend/prisma/schema.prisma](/Users/r.ploeger/rss_scraper/backend/prisma/schema.prisma)
+
+## If startup fails
+
+If `DATABASE_URL` is missing, the app prints:
 
 ```text
-GET /health
+Missing DATABASE_URL. Create backend/.env file.
+For Railway, add a PostgreSQL service and copy its DATABASE_URL into your app variables.
 ```
 
-Use that endpoint in your host platform health monitor.
+If PostgreSQL is attached but unreachable, the app prints a direct database connection error instead of failing silently.

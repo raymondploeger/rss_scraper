@@ -1,0 +1,79 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Feed {
+  id                String    @id @default(uuid())
+  name              String
+  rssUrl            String    @unique
+  topic             String
+  sourceType        String    @default("rss")
+  isActive          Boolean   @default(true)
+  lastFetchedAt     DateTime?
+  lastStatus        String    @default("idle")
+  lastError         String?
+  lastInsertedCount Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  articles          Article[]
+  pollLogs          PollLog[]
+
+  @@index([createdAt(sort: Desc)])
+  @@index([isActive, createdAt(sort: Desc)])
+  @@map("feeds")
+}
+
+model Article {
+  id               String    @id
+  title            String
+  normalizedTitle  String    @default("")
+  link             String
+  canonicalLink    String?
+  pubDate          DateTime
+  source           String
+  topic            String
+  feedId           String
+  feedName         String
+  thumbnail        String?
+  summary          String    @default("")
+  summaryShort     String    @default("")
+  contentSnippet   String    @default("")
+  author           String    @default("")
+  keywords         String[]  @default([])
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  hash             String    @unique
+  isDuplicate      Boolean   @default(false)
+  duplicateOf      String?
+  duplicateGroupId String?
+  clusterId        String?
+  language         String    @default("unknown")
+  fetchStatus      String    @default("pending")
+  feed             Feed      @relation(fields: [feedId], references: [id], onDelete: Cascade)
+
+  @@index([pubDate(sort: Desc)])
+  @@index([feedId, pubDate(sort: Desc)])
+  @@index([topic, pubDate(sort: Desc)])
+  @@index([isDuplicate, pubDate(sort: Desc)])
+  @@index([fetchStatus, createdAt(sort: Desc)])
+  @@map("articles")
+}
+
+model PollLog {
+  id           Int      @id @default(autoincrement())
+  feedId       String
+  startedAt    DateTime
+  finishedAt   DateTime
+  status       String
+  newArticles  Int      @default(0)
+  errorMessage String?
+  feed         Feed     @relation(fields: [feedId], references: [id], onDelete: Cascade)
+
+  @@index([feedId, startedAt(sort: Desc)])
+  @@map("poll_logs")
+}

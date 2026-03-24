@@ -1,140 +1,124 @@
-import { randomUUID } from "crypto";
 import { getDatabase } from "../config/db.js";
-import { mapFeedRow, toIsoString } from "./helpers.js";
+import { mapFeedRecord, toIsoString } from "./helpers.js";
 
 export async function listFeeds({ activeOnly = false, order = "DESC" } = {}) {
-  const db = getDatabase();
-  const statement = db.prepare(`
-    SELECT *
-    FROM feeds
-    ${activeOnly ? "WHERE isActive = 1" : ""}
-    ORDER BY createdAt ${order === "ASC" ? "ASC" : "DESC"}
-  `);
-  return statement.all().map(mapFeedRow);
+  const prisma = getDatabase();
+  const feeds = await prisma.feed.findMany({
+    where: activeOnly ? { isActive: true } : undefined,
+    orderBy: {
+      createdAt: order === "ASC" ? "asc" : "desc",
+    },
+  });
+
+  return feeds.map(mapFeedRecord);
 }
 
 export async function listDistinctFeedTopics() {
-  const db = getDatabase();
-  return db
-    .prepare(`SELECT DISTINCT topic FROM feeds WHERE topic <> '' ORDER BY topic ASC`)
-    .all()
-    .map((row) => row.topic);
+  const prisma = getDatabase();
+  const rows = await prisma.feed.findMany({
+    where: {
+      topic: {
+        not: "",
+      },
+    },
+    distinct: ["topic"],
+    select: {
+      topic: true,
+    },
+    orderBy: {
+      topic: "asc",
+    },
+  });
+
+  return rows.map((row) => row.topic);
 }
 
 export async function countFeeds(filters = {}) {
-  const db = getDatabase();
-  const clauses = [];
-  const params = [];
+  const prisma = getDatabase();
+  const where = {};
 
   if (typeof filters.isActive === "boolean") {
-    clauses.push("isActive = ?");
-    params.push(filters.isActive ? 1 : 0);
+    where.isActive = filters.isActive;
   }
 
   if (filters.lastStatus) {
-    clauses.push("lastStatus = ?");
-    params.push(filters.lastStatus);
+    where.lastStatus = filters.lastStatus;
   }
 
-  const whereClause = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-  const row = db.prepare(`SELECT COUNT(*) AS count FROM feeds ${whereClause}`).get(...params);
-  return Number(row?.count || 0);
+  return prisma.feed.count({ where });
 }
 
 export async function findFeedById(id) {
-  const db = getDatabase();
-  return mapFeedRow(db.prepare(`SELECT * FROM feeds WHERE id = ? LIMIT 1`).get(id));
+  const prisma = getDatabase();
+  const feed = await prisma.feed.findUnique({ where: { id } });
+  return mapFeedRecord(feed);
 }
 
 export async function findFeedByRssUrl(rssUrl) {
-  const db = getDatabase();
-  return mapFeedRow(db.prepare(`SELECT * FROM feeds WHERE rssUrl = ? LIMIT 1`).get(rssUrl));
+  const prisma = getDatabase();
+  const feed = await prisma.feed.findUnique({ where: { rssUrl } });
+  return mapFeedRecord(feed);
 }
 
 export async function createFeed(feed) {
-  const db = getDatabase();
-  const now = new Date().toISOString();
-  const record = {
-    id: feed.id || randomUUID(),
-    name: feed.name,
-    topic: feed.topic,
-    rssUrl: feed.rssUrl,
-    sourceType: feed.sourceType || "rss",
-    isActive: feed.isActive === false ? 0 : 1,
-    lastFetchedAt: toIsoString(feed.lastFetchedAt),
-    lastStatus: feed.lastStatus || "idle",
-    lastError: feed.lastError || null,
-    lastInsertedCount: Number(feed.lastInsertedCount || 0),
-    createdAt: now,
-    updatedAt: now
-  };
+  const prisma = getDatabase();
+  const created = await prisma.feed.create({
+    data: {
+      name: feed.name,
+      topic: feed.topic,
+      rssUrl: feed.rssUrl,
+      sourceType: feed.sourceType || "rss",
+      isActive: feed.isActive !== false,
+      lastFetchedAt: feed.lastFetchedAt ? new Date(toIsoString(feed.lastFetchedAt, new Date().toISOString())) : null,
+      lastStatus: feed.lastStatus || "idle",
+      lastError: feed.lastError || null,
+      lastInsertedCount: Number(feed.lastInsertedCount || 0),
+    },
+  });
 
-  db.prepare(`
-    INSERT INTO feeds (
-      id, name, topic, rssUrl, sourceType, isActive, lastFetchedAt, lastStatus, lastError,
-      lastInsertedCount, createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    record.id,
-    record.name,
-    record.topic,
-    record.rssUrl,
-    record.sourceType,
-    record.isActive,
-    record.lastFetchedAt,
-    record.lastStatus,
-    record.lastError,
-    record.lastInsertedCount,
-    record.createdAt,
-    record.updatedAt
-  );
-
-  return findFeedById(record.id);
+  return mapFeedRecord(created);
 }
 
 export async function updateFeed(id, updates) {
-  const db = getDatabase();
-  const current = await findFeedById(id);
+  const prisma = getDatabase();
+  const current = await prisma.feed.findUnique({ where: { id } });
   if (!current) {
     return null;
   }
 
-  const record = {
-    ...current,
-    ...updates,
-    isActive: typeof updates.isActive === "boolean" ? updates.isActive : current.isActive,
-    updatedAt: new Date().toISOString()
-  };
+  const updated = await prisma.feed.update({
+    where: { id },
+    data: {
+      ...(typeof updates.name === "string" ? { name: updates.name } : {}),
+      ...(typeof updates.topic === "string" ? { topic: updates.topic } : {}),
+      ...(typeof updates.rssUrl === "string" ? { rssUrl: updates.rssUrl } : {}),
+      ...(typeof updates.sourceType === "string" ? { sourceType: updates.sourceType } : {}),
+      ...(typeof updates.isActive === "boolean" ? { isActive: updates.isActive } : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "lastFetchedAt")
+        ? {
+            lastFetchedAt: updates.lastFetchedAt
+              ? new Date(toIsoString(updates.lastFetchedAt, new Date().toISOString()))
+              : null,
+          }
+        : {}),
+      ...(typeof updates.lastStatus === "string" ? { lastStatus: updates.lastStatus } : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "lastError") ? { lastError: updates.lastError } : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "lastInsertedCount")
+        ? { lastInsertedCount: Number(updates.lastInsertedCount || 0) }
+        : {}),
+    },
+  });
 
-  db.prepare(`
-    UPDATE feeds
-    SET name = ?, topic = ?, rssUrl = ?, sourceType = ?, isActive = ?, lastFetchedAt = ?, lastStatus = ?,
-        lastError = ?, lastInsertedCount = ?, updatedAt = ?
-    WHERE id = ?
-  `).run(
-    record.name,
-    record.topic,
-    record.rssUrl,
-    record.sourceType,
-    record.isActive ? 1 : 0,
-    toIsoString(record.lastFetchedAt),
-    record.lastStatus || "idle",
-    record.lastError || null,
-    Number(record.lastInsertedCount || 0),
-    record.updatedAt,
-    id
-  );
-
-  return findFeedById(id);
+  return mapFeedRecord(updated);
 }
 
 export async function deleteFeed(id) {
-  const db = getDatabase();
-  const existing = await findFeedById(id);
+  const prisma = getDatabase();
+  const existing = await prisma.feed.findUnique({ where: { id } });
   if (!existing) {
     return null;
   }
 
-  db.prepare(`DELETE FROM feeds WHERE id = ?`).run(id);
-  return existing;
+  const deleted = await prisma.feed.delete({ where: { id } });
+  return mapFeedRecord(deleted);
 }

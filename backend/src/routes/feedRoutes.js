@@ -15,8 +15,8 @@ router.get("/", listFeeds);
 router.post("/", createFeed);
 router.post("/refresh", refreshAll);
 router.post("/process", processBacklog);
-router.put("/:id", updateFeed);
-router.delete("/:id", deleteFeed);
-router.post("/:id/refresh", refreshFeed);
+router.put("/:feedId", updateFeed);
+router.delete("/:feedId", deleteFeed);
+router.post("/:feedId/refresh", refreshFeed);
 
 export default router;

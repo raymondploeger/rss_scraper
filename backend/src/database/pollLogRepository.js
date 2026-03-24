@@ -1,35 +1,42 @@
 import { getDatabase } from "../config/db.js";
-import { mapPollLogRow, toIsoString } from "./helpers.js";
+import { mapPollLogRecord, toIsoString } from "./helpers.js";
 
 export async function createPollLog(log) {
-  const db = getDatabase();
-  const result = db.prepare(`
-    INSERT INTO poll_logs (feedId, startedAt, finishedAt, status, newArticles, errorMessage)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(
-    log.feedId,
-    toIsoString(log.startedAt, new Date().toISOString()),
-    toIsoString(log.finishedAt, new Date().toISOString()),
-    log.status,
-    Number(log.newArticles || 0),
-    log.errorMessage || null
-  );
+  const prisma = getDatabase();
+  const created = await prisma.pollLog.create({
+    data: {
+      feedId: log.feedId,
+      startedAt: new Date(toIsoString(log.startedAt, new Date().toISOString())),
+      finishedAt: new Date(toIsoString(log.finishedAt, new Date().toISOString())),
+      status: log.status,
+      newArticles: Number(log.newArticles || 0),
+      errorMessage: log.errorMessage || null,
+    },
+  });
 
-  return findPollLogById(result.lastInsertRowid);
+  return mapPollLogRecord(created);
 }
 
 export async function findPollLogById(id) {
-  const db = getDatabase();
-  return mapPollLogRow(db.prepare(`SELECT * FROM poll_logs WHERE id = ? LIMIT 1`).get(id));
+  const prisma = getDatabase();
+  const log = await prisma.pollLog.findUnique({ where: { id: Number(id) } });
+  return mapPollLogRecord(log);
 }
 
 export async function getLatestPollLog() {
-  const db = getDatabase();
-  return mapPollLogRow(db.prepare(`SELECT * FROM poll_logs ORDER BY startedAt DESC LIMIT 1`).get());
+  const prisma = getDatabase();
+  const log = await prisma.pollLog.findFirst({
+    orderBy: {
+      startedAt: "desc",
+    },
+  });
+  return mapPollLogRecord(log);
 }
 
 export async function deletePollLogsByFeedId(feedId) {
-  const db = getDatabase();
-  const result = db.prepare(`DELETE FROM poll_logs WHERE feedId = ?`).run(feedId);
-  return Number(result.changes || 0);
+  const prisma = getDatabase();
+  const result = await prisma.pollLog.deleteMany({
+    where: { feedId },
+  });
+  return Number(result.count || 0);
 }

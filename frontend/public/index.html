@@ -4,27 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Monitoring Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260323b" />
-    <script>
-      (function () {
-        const storageKey = "rss-monitor-theme";
-        const savedTheme = window.localStorage.getItem(storageKey);
-        const isDark = savedTheme === "dark";
-        const value = isDark ? "dark" : "";
-        document.documentElement.dataset.theme = value;
-        document.documentElement.classList.toggle("dark-theme", isDark);
-        document.addEventListener("DOMContentLoaded", function () {
-          document.body.dataset.theme = value;
-          document.body.classList.toggle("dark-theme", isDark);
-          const button = document.getElementById("theme-toggle");
-          if (!button) {
-            return;
-          }
-
-          button.textContent = isDark ? "Light mode" : "Dark mode";
-        });
-      })();
-    </script>
+    <link rel="stylesheet" href="/styles.css?v=20260324" />
   </head>
   <body>
     <div class="page-shell">
@@ -32,129 +12,104 @@
         <div>
           <p class="eyebrow">Public Intelligence</p>
           <h1>Monitoring Dashboard</h1>
-          <p class="header-copy">Company and topic monitoring</p>
+          <p class="header-copy">Realtime RSS monitoring for company news, market signals, and Google Alerts.</p>
         </div>
         <div class="header-actions">
           <button id="theme-toggle" class="ghost-button" type="button">Dark mode</button>
-          <button id="refresh-now" class="primary-button" type="button">Refresh feeds</button>
+          <button id="refresh-button" class="primary-button" type="button">Refresh feeds</button>
         </div>
       </header>
 
-      <section class="toolbar">
-        <div class="toolbar-grid">
-          <label class="field field-search">
-            <span>Search</span>
-            <input id="search-filter" type="search" placeholder="Search title, keyword, source" />
-          </label>
-          <label class="field">
-            <span>Topic</span>
-            <select id="topic-filter">
-              <option value="">All topics</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>Feed</span>
-            <select id="feed-filter">
-              <option value="">All feeds</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>From</span>
-            <input id="from-filter" type="date" />
-          </label>
-          <label class="field">
-            <span>To</span>
-            <input id="to-filter" type="date" />
-          </label>
-          <label class="toggle-field">
-            <input id="duplicates-toggle" type="checkbox" />
-            <span>Show duplicates</span>
-          </label>
-          <label class="toggle-field">
-            <input id="grouped-toggle" type="checkbox" checked />
-            <span>Grouped view</span>
-          </label>
-          <div class="toolbar-actions">
-            <button id="clear-filters" class="ghost-button" type="button">Reset</button>
-          </div>
-        </div>
-      </section>
-
-      <section class="summary-grid" id="summary" aria-live="polite"></section>
+      <section class="summary-grid" id="summary-grid" aria-live="polite"></section>
 
       <section class="dashboard-layout">
         <aside class="sidebar">
           <section class="panel">
             <div class="panel-head">
               <div>
-                <p class="eyebrow">Trending</p>
-                <h2>Topic Signals</h2>
+                <p class="eyebrow">Filters</p>
+                <h2>Refine coverage</h2>
               </div>
-              <select id="trend-timeframe" class="compact-select">
-                <option value="24h">24 hours</option>
-                <option value="7d">7 days</option>
-                <option value="30d">30 days</option>
-              </select>
+              <button id="clear-filters" class="ghost-button" type="button">Reset</button>
             </div>
-            <div id="trends" class="trend-list"></div>
+
+            <div class="filter-grid">
+              <label class="field field-full">
+                <span>Search</span>
+                <input id="search-filter" type="search" placeholder="Search title, source, topic" />
+              </label>
+
+              <label class="field">
+                <span>Topic</span>
+                <select id="topic-filter">
+                  <option value="">All topics</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Feed</span>
+                <select id="feed-filter">
+                  <option value="">All feeds</option>
+                </select>
+              </label>
+
+              <label class="field field-full">
+                <span>Date</span>
+                <input id="date-filter" type="date" />
+              </label>
+            </div>
           </section>
 
-          <section class="panel admin-panel">
+          <section class="panel">
             <div class="panel-head">
               <div>
-                <p class="eyebrow">Feeds</p>
-                <h2>Manage Feeds</h2>
+                <p class="eyebrow">Feed Intake</p>
+                <h2>Add RSS feed</h2>
               </div>
-              <button id="toggle-feed-manager" class="ghost-button" type="button">Hide</button>
             </div>
+
             <form id="feed-form" class="feed-form">
               <label class="field">
                 <span>Feed name</span>
-                <input id="feed-name" type="text" placeholder="Google Alerts" />
+                <input id="feed-name" type="text" placeholder="Google Alerts - Acme" required />
               </label>
               <label class="field">
                 <span>Topic</span>
-                <input id="feed-topic" type="text" placeholder="Company news" />
+                <input id="feed-topic" type="text" placeholder="Acme Corp" required />
               </label>
               <label class="field field-full">
                 <span>RSS URL</span>
                 <input id="feed-url" type="url" placeholder="https://www.google.com/alerts/feeds/..." required />
               </label>
-              <label class="field">
-                <span>Source type</span>
-                <select id="feed-source-type">
-                  <option value="google-alert">Google Alert</option>
-                  <option value="news-site">News site</option>
-                  <option value="blog">Blog</option>
-                  <option value="rss">Generic RSS</option>
-                </select>
-              </label>
-              <label class="toggle-field">
-                <input id="feed-active" type="checkbox" checked />
-                <span>Active feed</span>
-              </label>
-              <div class="form-actions">
-                <button id="submit-feed" class="primary-button" type="submit">Add feed</button>
-              </div>
+              <button id="feed-submit" class="primary-button" type="submit">Add feed</button>
             </form>
-            <p id="admin-status" class="status-line admin-status" role="status">Add, edit, or refresh feeds from this panel.</p>
-            <div id="feed-manager-section">
-              <div id="feed-manager" class="feed-manager"></div>
+
+            <p id="feed-form-status" class="status-line" role="status">Connect up to 50 RSS feeds.</p>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Sources</p>
+                <h2>Active feeds</h2>
+              </div>
+              <span id="feed-count" class="pill">0</span>
             </div>
+            <div id="feed-list" class="feed-list"></div>
           </section>
         </aside>
 
         <main class="main-content">
-          <section class="content-header">
+          <section class="content-head">
             <div>
               <p class="eyebrow">Live Stream</p>
-              <h2 id="content-title">Latest coverage</h2>
-              <p id="status-line" class="status-line">Connecting to live updates...</p>
+              <h2>Latest articles</h2>
+              <p id="connection-status" class="status-line">Connecting to live updates...</p>
             </div>
             <span id="results-count" class="results-pill">0 results</span>
           </section>
 
-          <section id="articles" class="card-grid" aria-live="polite"></section>
+          <section id="articles-grid" class="articles-grid" aria-live="polite"></section>
         </main>
       </section>
     </div>
@@ -166,10 +121,20 @@
       </article>
     </template>
 
+    <template id="feed-item-template">
+      <article class="feed-item">
+        <div>
+          <h3 class="feed-item-title"></h3>
+          <p class="feed-item-meta"></p>
+        </div>
+        <span class="feed-status"></span>
+      </article>
+    </template>
+
     <template id="article-card-template">
       <article class="article-card">
         <a class="article-link" target="_blank" rel="noopener noreferrer">
-          <div class="article-image-wrap">
+          <div class="article-media">
             <img class="article-image" alt="" loading="lazy" />
             <span class="article-topic"></span>
           </div>
@@ -179,57 +144,12 @@
               <span class="article-date"></span>
             </div>
             <h3 class="article-title"></h3>
-            <p class="article-summary"></p>
-            <div class="article-footer">
-              <span class="article-feed"></span>
-              <span class="article-badge"></span>
-            </div>
+            <p class="article-feed"></p>
           </div>
         </a>
-        <div class="related-panel" hidden>
-          <h4>Related articles</h4>
-          <div class="related-list"></div>
-        </div>
       </article>
     </template>
 
-    <template id="feed-manager-template">
-      <article class="feed-card">
-        <div class="feed-card-grid">
-          <label class="field">
-            <span>Name</span>
-            <input class="manage-name" type="text" />
-          </label>
-          <label class="field">
-            <span>Topic</span>
-            <input class="manage-topic" type="text" />
-          </label>
-          <label class="field field-full">
-            <span>RSS URL</span>
-            <input class="manage-url" type="url" />
-          </label>
-          <label class="field">
-            <span>Source type</span>
-            <select class="manage-source-type">
-              <option value="google-alert">Google Alert</option>
-              <option value="news-site">News site</option>
-              <option value="blog">Blog</option>
-              <option value="rss">Generic RSS</option>
-            </select>
-          </label>
-          <label class="toggle-field">
-            <input class="manage-active" type="checkbox" />
-            <span>Active</span>
-          </label>
-          <div class="feed-actions">
-            <button class="save-feed primary-button" type="button">Save</button>
-            <button class="delete-feed ghost-button" type="button">Delete</button>
-          </div>
-        </div>
-        <p class="feed-meta"></p>
-      </article>
-    </template>
-
-    <script defer src="/app.js?v=20260323b"></script>
+    <script type="module" src="/app.js?v=20260324"></script>
   </body>
 </html>

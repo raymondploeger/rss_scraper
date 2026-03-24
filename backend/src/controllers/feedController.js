@@ -108,10 +108,10 @@ export async function createFeed(request, response) {
 }
 
 export async function updateFeed(request, response) {
-  const { id } = request.params;
+  const { feedId } = request.params;
   const { name, topic, rssUrl, isActive, sourceType } = request.body;
 
-  const feed = await findFeedById(id);
+  const feed = await findFeedById(feedId);
   if (!feed) {
     return response.status(404).json({ error: "Feed not found" });
   }
@@ -122,7 +122,7 @@ export async function updateFeed(request, response) {
   if (typeof rssUrl === "string") {
     const resolvedFeedUrl = await discoverFeedUrl(rssUrl);
     const duplicate = await findFeedByRssUrl(resolvedFeedUrl);
-    if (duplicate && duplicate.id !== id) {
+    if (duplicate && duplicate.id !== feedId) {
       return response.status(409).json({ error: "This RSS feed is already in the dashboard." });
     }
     nextValues.rssUrl = resolvedFeedUrl;
@@ -130,39 +130,39 @@ export async function updateFeed(request, response) {
   if (typeof isActive === "boolean") nextValues.isActive = isActive;
   if (typeof sourceType === "string") nextValues.sourceType = sourceType;
 
-  const updatedFeed = await updateFeedRecord(id, nextValues);
+  const updatedFeed = await updateFeedRecord(feedId, nextValues);
   broadcast("feed:update", { type: "feed:update", action: "updated", feed: toFeedDto(updatedFeed) });
   response.json(toFeedDto(updatedFeed));
 }
 
 export async function deleteFeed(request, response) {
-  const { id } = request.params;
-  const existingFeed = await findFeedById(id);
+  const { feedId } = request.params;
+  const existingFeed = await findFeedById(feedId);
   if (!existingFeed) {
     response.status(404).json({ error: "Feed not found" });
     return;
   }
 
-  const deletedArticles = await deleteArticlesByFeedId(id);
-  const deletedPollLogs = await deletePollLogsByFeedId(id);
-  await deleteFeedRecord(id);
+  const deletedArticles = await deleteArticlesByFeedId(feedId);
+  const deletedPollLogs = await deletePollLogsByFeedId(feedId);
+  await deleteFeedRecord(feedId);
 
   broadcast("feed:update", {
     type: "feed:update",
     action: "deleted",
-    feed: { id }
+    feed: { id: feedId }
   });
   response.json({
     deleted: true,
-    feedId: id,
+    feedId,
     deletedArticles,
     deletedPollLogs
   });
 }
 
 export async function refreshFeed(request, response) {
-  const { id } = request.params;
-  const feed = await findFeedById(id);
+  const { feedId } = request.params;
+  const feed = await findFeedById(feedId);
 
   if (!feed) {
     return response.status(404).json({ error: "Feed not found" });

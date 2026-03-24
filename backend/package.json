@@ -5,11 +5,17 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
+    "postinstall": "prisma generate",
+    "setup": "prisma generate && prisma migrate deploy",
     "dev": "node --watch src/server.js",
-    "start:legacy": "node server.js",
-    "start": "node src/server.js"
+    "start": "node src/start.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:studio": "prisma studio"
   },
   "dependencies": {
+    "@prisma/client": "^6.8.2",
     "axios": "^1.9.0",
     "cheerio": "^1.0.0",
     "cors": "^2.8.5",
@@ -17,6 +23,8 @@
     "express": "^4.21.2",
     "helmet": "^8.1.0",
     "node-cron": "^3.0.3",
+    "pg": "^8.13.1",
+    "prisma": "^6.8.2",
     "rss-parser": "^3.13.0"
   }
 }

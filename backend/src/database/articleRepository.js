@@ -1,257 +1,229 @@
 import { getDatabase } from "../config/db.js";
-import { mapArticleRow, serializeKeywords, toIsoString } from "./helpers.js";
-
-function escapeLike(value) {
-  return String(value).replace(/[\\%_]/g, "\\$&");
-}
+import { mapArticleRecord, toIsoString } from "./helpers.js";
 
 function buildArticleWhere(filters = {}) {
-  const clauses = [];
-  const params = [];
+  const where = {};
 
   if (filters.topic) {
-    clauses.push("topic = ?");
-    params.push(filters.topic);
+    where.topic = filters.topic;
   }
 
   if (filters.feedId) {
-    clauses.push("feedId = ?");
-    params.push(filters.feedId);
+    where.feedId = filters.feedId;
   }
 
-  if (filters.from) {
-    clauses.push("pubDate >= ?");
-    params.push(toIsoString(filters.from, filters.from));
-  }
-
-  if (filters.to) {
-    clauses.push("pubDate <= ?");
-    params.push(toIsoString(filters.to, filters.to));
+  if (filters.from || filters.to || filters.since) {
+    where.pubDate = {};
+    if (filters.from) {
+      where.pubDate.gte = new Date(toIsoString(filters.from, filters.from));
+    }
+    if (filters.to) {
+      where.pubDate.lte = new Date(toIsoString(filters.to, filters.to));
+    }
+    if (filters.since) {
+      where.pubDate.gte = new Date(toIsoString(filters.since, filters.since));
+    }
   }
 
   if (filters.excludeDuplicates) {
-    clauses.push("isDuplicate != 1");
+    where.isDuplicate = false;
   }
 
   if (filters.onlyDuplicates) {
-    clauses.push("isDuplicate = 1");
+    where.isDuplicate = true;
   }
 
   if (filters.fetchStatuses?.length) {
-    clauses.push(`fetchStatus IN (${filters.fetchStatuses.map(() => "?").join(", ")})`);
-    params.push(...filters.fetchStatuses);
+    where.fetchStatus = {
+      in: filters.fetchStatuses,
+    };
   }
 
   if (filters.search) {
-    const search = `%${escapeLike(filters.search)}%`;
-    clauses.push(
-      `(title LIKE ? ESCAPE '\\' OR source LIKE ? ESCAPE '\\' OR topic LIKE ? ESCAPE '\\' OR keywords LIKE ? ESCAPE '\\')`
-    );
-    params.push(search, search, search, search);
+    where.OR = [
+      { title: { contains: filters.search, mode: "insensitive" } },
+      { source: { contains: filters.search, mode: "insensitive" } },
+      { topic: { contains: filters.search, mode: "insensitive" } },
+      { feedName: { contains: filters.search, mode: "insensitive" } },
+      { contentSnippet: { contains: filters.search, mode: "insensitive" } },
+    ];
   }
 
-  if (filters.since) {
-    clauses.push("pubDate >= ?");
-    params.push(toIsoString(filters.since, filters.since));
-  }
-
-  return {
-    whereClause: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "",
-    params
-  };
+  return where;
 }
 
 export async function findArticleById(id) {
-  const db = getDatabase();
-  return mapArticleRow(db.prepare(`SELECT * FROM articles WHERE id = ? LIMIT 1`).get(id));
+  const prisma = getDatabase();
+  const article = await prisma.article.findUnique({ where: { id } });
+  return mapArticleRecord(article);
 }
 
 export async function createArticle(article) {
-  const db = getDatabase();
-  const now = new Date().toISOString();
-  const record = {
-    id: article.id || article._id,
-    canonicalLink: article.canonicalLink || "",
-    feedId: article.feedId,
-    feedName: article.feedName,
-    topic: article.topic,
-    title: article.title,
-    normalizedTitle: article.normalizedTitle || "",
-    link: article.link,
-    source: article.source,
-    pubDate: toIsoString(article.pubDate, new Date().toISOString()),
-    thumbnail: article.thumbnail || null,
-    summary: article.summary || "",
-    summaryShort: article.summaryShort || "",
-    keywords: serializeKeywords(article.keywords),
-    contentSnippet: article.contentSnippet || "",
-    author: article.author || "",
-    clusterId: article.clusterId || null,
-    duplicateGroupId: article.duplicateGroupId || null,
-    isDuplicate: article.isDuplicate ? 1 : 0,
-    duplicateOf: article.duplicateOf || null,
-    language: article.language || "unknown",
-    fetchStatus: article.fetchStatus || "pending",
-    articleHash: article.articleHash,
-    createdAt: now,
-    updatedAt: now
-  };
+  const prisma = getDatabase();
+  const created = await prisma.article.create({
+    data: {
+      id: article.id || article._id,
+      canonicalLink: article.canonicalLink || "",
+      feedId: article.feedId,
+      feedName: article.feedName,
+      topic: article.topic,
+      title: article.title,
+      normalizedTitle: article.normalizedTitle || "",
+      link: article.link,
+      source: article.source,
+      pubDate: new Date(toIsoString(article.pubDate, new Date().toISOString())),
+      thumbnail: article.thumbnail || null,
+      summary: article.summary || "",
+      summaryShort: article.summaryShort || "",
+      keywords: Array.isArray(article.keywords) ? article.keywords : [],
+      contentSnippet: article.contentSnippet || "",
+      author: article.author || "",
+      clusterId: article.clusterId || null,
+      duplicateGroupId: article.duplicateGroupId || null,
+      isDuplicate: article.isDuplicate === true,
+      duplicateOf: article.duplicateOf || null,
+      language: article.language || "unknown",
+      fetchStatus: article.fetchStatus || "pending",
+      hash: article.articleHash,
+    },
+  });
 
-  db.prepare(`
-    INSERT INTO articles (
-      id, canonicalLink, feedId, feedName, topic, title, normalizedTitle, link, source, pubDate, thumbnail,
-      summary, summaryShort, keywords, contentSnippet, author, clusterId, duplicateGroupId, isDuplicate,
-      duplicateOf, language, fetchStatus, articleHash, createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    record.id,
-    record.canonicalLink,
-    record.feedId,
-    record.feedName,
-    record.topic,
-    record.title,
-    record.normalizedTitle,
-    record.link,
-    record.source,
-    record.pubDate,
-    record.thumbnail,
-    record.summary,
-    record.summaryShort,
-    record.keywords,
-    record.contentSnippet,
-    record.author,
-    record.clusterId,
-    record.duplicateGroupId,
-    record.isDuplicate,
-    record.duplicateOf,
-    record.language,
-    record.fetchStatus,
-    record.articleHash,
-    record.createdAt,
-    record.updatedAt
-  );
-
-  return findArticleById(record.id);
+  return mapArticleRecord(created);
 }
 
 export async function updateArticle(id, updates) {
-  const db = getDatabase();
-  const current = await findArticleById(id);
+  const prisma = getDatabase();
+  const current = await prisma.article.findUnique({ where: { id } });
   if (!current) {
     return null;
   }
 
-  const record = {
-    ...current,
-    ...updates,
-    id,
-    keywords: Array.isArray(updates.keywords) ? updates.keywords : current.keywords,
-    updatedAt: new Date().toISOString()
-  };
+  const updated = await prisma.article.update({
+    where: { id },
+    data: {
+      ...(Object.prototype.hasOwnProperty.call(updates, "canonicalLink") ? { canonicalLink: updates.canonicalLink || "" } : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "feedId") ? { feedId: updates.feedId } : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "feedName") ? { feedName: updates.feedName } : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "topic") ? { topic: updates.topic } : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "title") ? { title: updates.title } : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "normalizedTitle")
+        ? { normalizedTitle: updates.normalizedTitle || "" }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "link") ? { link: updates.link } : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "source") ? { source: updates.source } : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "pubDate")
+        ? { pubDate: new Date(toIsoString(updates.pubDate, current.pubDate)) }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "thumbnail") ? { thumbnail: updates.thumbnail || null } : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "summary") ? { summary: updates.summary || "" } : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "summaryShort")
+        ? { summaryShort: updates.summaryShort || "" }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "keywords")
+        ? { keywords: Array.isArray(updates.keywords) ? updates.keywords : [] }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "contentSnippet")
+        ? { contentSnippet: updates.contentSnippet || "" }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "author") ? { author: updates.author || "" } : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "clusterId") ? { clusterId: updates.clusterId || null } : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "duplicateGroupId")
+        ? { duplicateGroupId: updates.duplicateGroupId || null }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "isDuplicate") ? { isDuplicate: updates.isDuplicate === true } : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "duplicateOf") ? { duplicateOf: updates.duplicateOf || null } : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "language") ? { language: updates.language || "unknown" } : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "fetchStatus")
+        ? { fetchStatus: updates.fetchStatus || "pending" }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "articleHash") ? { hash: updates.articleHash } : {}),
+    },
+  });
 
-  db.prepare(`
-    UPDATE articles
-    SET canonicalLink = ?, feedId = ?, feedName = ?, topic = ?, title = ?, normalizedTitle = ?, link = ?, source = ?,
-        pubDate = ?, thumbnail = ?, summary = ?, summaryShort = ?, keywords = ?, contentSnippet = ?, author = ?,
-        clusterId = ?, duplicateGroupId = ?, isDuplicate = ?, duplicateOf = ?, language = ?, fetchStatus = ?, articleHash = ?, updatedAt = ?
-    WHERE id = ?
-  `).run(
-    record.canonicalLink || "",
-    record.feedId,
-    record.feedName,
-    record.topic,
-    record.title,
-    record.normalizedTitle || "",
-    record.link,
-    record.source,
-    toIsoString(record.pubDate, current.pubDate),
-    record.thumbnail || null,
-    record.summary || "",
-    record.summaryShort || "",
-    serializeKeywords(record.keywords),
-    record.contentSnippet || "",
-    record.author || "",
-    record.clusterId || null,
-    record.duplicateGroupId || null,
-    record.isDuplicate ? 1 : 0,
-    record.duplicateOf || null,
-    record.language || "unknown",
-    record.fetchStatus || "pending",
-    record.articleHash,
-    record.updatedAt,
-    id
-  );
-
-  return findArticleById(id);
+  return mapArticleRecord(updated);
 }
 
 export async function listArticles(filters = {}, options = {}) {
-  const db = getDatabase();
-  const { whereClause, params } = buildArticleWhere(filters);
-  const limit = Math.min(400, Math.max(1, Number(options.limit || 400)));
-  const offset = Math.max(0, Number(options.offset || 0));
-  const rows = db
-    .prepare(`
-      SELECT *
-      FROM articles
-      ${whereClause}
-      ORDER BY pubDate DESC, createdAt DESC
-      LIMIT ? OFFSET ?
-    `)
-    .all(...params, limit, offset);
+  const prisma = getDatabase();
+  const items = await prisma.article.findMany({
+    where: buildArticleWhere(filters),
+    orderBy: [{ pubDate: "desc" }, { createdAt: "desc" }],
+    take: Math.min(400, Math.max(1, Number(options.limit || 400))),
+    skip: Math.max(0, Number(options.offset || 0)),
+  });
 
-  return rows.map(mapArticleRow);
+  return items.map(mapArticleRecord);
 }
 
 export async function countArticles(filters = {}) {
-  const db = getDatabase();
-  const { whereClause, params } = buildArticleWhere(filters);
-  const row = db.prepare(`SELECT COUNT(*) AS count FROM articles ${whereClause}`).get(...params);
-  return Number(row?.count || 0);
+  const prisma = getDatabase();
+  return prisma.article.count({
+    where: buildArticleWhere(filters),
+  });
 }
 
 export async function listDistinctArticleTopics() {
-  const db = getDatabase();
-  return db
-    .prepare(`SELECT DISTINCT topic FROM articles WHERE topic <> '' ORDER BY topic ASC`)
-    .all()
-    .map((row) => row.topic);
+  const prisma = getDatabase();
+  const rows = await prisma.article.findMany({
+    where: {
+      topic: {
+        not: "",
+      },
+    },
+    distinct: ["topic"],
+    select: {
+      topic: true,
+    },
+    orderBy: {
+      topic: "asc",
+    },
+  });
+
+  return rows.map((row) => row.topic);
 }
 
 export async function deleteArticlesByFeedId(feedId) {
-  const db = getDatabase();
-  const result = db.prepare(`DELETE FROM articles WHERE feedId = ?`).run(feedId);
-  return Number(result.changes || 0);
+  const prisma = getDatabase();
+  const result = await prisma.article.deleteMany({
+    where: { feedId },
+  });
+  return Number(result.count || 0);
 }
 
 export async function listArticlesForTrends({ since, limit = 400 }) {
-  const db = getDatabase();
-  const rows = db
-    .prepare(`
-      SELECT *
-      FROM articles
-      WHERE pubDate >= ?
-      ORDER BY pubDate DESC
-      LIMIT ?
-    `)
-    .all(toIsoString(since, since), Math.max(1, Number(limit || 400)));
-  return rows.map(mapArticleRow);
+  const prisma = getDatabase();
+  const rows = await prisma.article.findMany({
+    where: {
+      pubDate: {
+        gte: new Date(toIsoString(since, since)),
+      },
+    },
+    orderBy: {
+      pubDate: "desc",
+    },
+    take: Math.max(1, Number(limit || 400)),
+  });
+
+  return rows.map(mapArticleRecord);
 }
 
 export async function listPendingArticles(limit = 20) {
-  const db = getDatabase();
-  const rows = db
-    .prepare(`
-      SELECT *
-      FROM articles
-      WHERE thumbnail IS NULL
-         OR thumbnail = ''
-         OR summaryShort = ''
-         OR fetchStatus = 'pending'
-         OR fetchStatus = 'partial'
-      ORDER BY createdAt DESC
-      LIMIT ?
-    `)
-    .all(Math.max(1, Number(limit || 20)));
-  return rows.map(mapArticleRow);
+  const prisma = getDatabase();
+  const rows = await prisma.article.findMany({
+    where: {
+      OR: [
+        { thumbnail: null },
+        { thumbnail: "" },
+        { summaryShort: "" },
+        { fetchStatus: "pending" },
+        { fetchStatus: "partial" },
+      ],
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+    take: Math.max(1, Number(limit || 20)),
+  });
+
+  return rows.map(mapArticleRecord);
 }

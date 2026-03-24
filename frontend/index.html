@@ -3,142 +3,153 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RSS Monitoring Dashboard</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <title>Monitoring Dashboard</title>
+    <link rel="stylesheet" href="/styles.css?v=20260324" />
   </head>
   <body>
-    <div class="app-shell">
-      <aside class="sidebar">
-        <div class="brand">
-          <p class="brand-kicker">Monitoring</p>
-          <h1>RSS Dashboard</h1>
-          <p class="brand-copy">Google Alerts feed aggregation with live updates.</p>
+    <div class="page-shell">
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">Public Intelligence</p>
+          <h1>Monitoring Dashboard</h1>
+          <p class="header-copy">Realtime RSS monitoring for company news, market signals, and Google Alerts.</p>
         </div>
+        <div class="header-actions">
+          <button id="theme-toggle" class="ghost-button" type="button">Dark mode</button>
+          <button id="refresh-button" class="primary-button" type="button">Refresh feeds</button>
+        </div>
+      </header>
 
-        <section class="panel">
-          <div class="panel-heading">
-            <h2>Add Feed</h2>
-            <p>Up to 50 RSS feeds</p>
-          </div>
-          <form id="feed-form" class="feed-form">
-            <label>
-              <span>Feed Name</span>
-              <input id="feed-name" name="name" type="text" placeholder="Brand Mentions" required />
-            </label>
-            <label>
-              <span>Topic</span>
-              <input id="feed-topic" name="topic" type="text" placeholder="Marketing" required />
-            </label>
-            <label>
-              <span>RSS URL</span>
-              <input
-                id="feed-url"
-                name="rssUrl"
-                type="url"
-                placeholder="https://www.google.com/alerts/feeds/..."
-                required
-              />
-            </label>
-            <button type="submit">Add Feed</button>
-          </form>
-          <p id="feed-form-message" class="muted-message"></p>
-        </section>
+      <section class="summary-grid" id="summary-grid" aria-live="polite"></section>
 
-        <section class="panel">
-          <div class="panel-heading">
-            <h2>Feed Health</h2>
-            <button id="refresh-all-button" class="ghost-button" type="button">Refresh All</button>
-          </div>
-          <div id="feed-list" class="feed-list"></div>
-        </section>
-      </aside>
+      <section class="dashboard-layout">
+        <aside class="sidebar">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Filters</p>
+                <h2>Refine coverage</h2>
+              </div>
+              <button id="clear-filters" class="ghost-button" type="button">Reset</button>
+            </div>
 
-      <main class="dashboard">
-        <header class="topbar">
-          <div>
-            <p class="eyebrow">Live Monitoring</p>
-            <h2>Latest Articles</h2>
-          </div>
-          <div class="topbar-status">
-            <span id="connection-badge" class="status-badge offline">Offline</span>
-            <span id="last-poll-label" class="topbar-meta">Last poll: --</span>
-          </div>
-        </header>
+            <div class="filter-grid">
+              <label class="field field-full">
+                <span>Search</span>
+                <input id="search-filter" type="search" placeholder="Search title, source, topic" />
+              </label>
 
-        <section class="summary-grid" id="summary-grid">
-          <article class="summary-card">
-            <span>Active Feeds</span>
-            <strong id="metric-active-feeds">0</strong>
-          </article>
-          <article class="summary-card">
-            <span>Topics</span>
-            <strong id="metric-topics">0</strong>
-          </article>
-          <article class="summary-card">
-            <span>Articles Today</span>
-            <strong id="metric-articles-today">0</strong>
-          </article>
-          <article class="summary-card">
-            <span>Failed Feeds</span>
-            <strong id="metric-failed-feeds">0</strong>
-          </article>
-        </section>
+              <label class="field">
+                <span>Topic</span>
+                <select id="topic-filter">
+                  <option value="">All topics</option>
+                </select>
+              </label>
 
-        <section class="filters-bar">
-          <label>
-            <span>Topic</span>
-            <select id="topic-filter">
-              <option value="">All topics</option>
-            </select>
-          </label>
-          <label>
-            <span>Feed</span>
-            <select id="feed-filter">
-              <option value="">All feeds</option>
-            </select>
-          </label>
-          <label>
-            <span>Start Date</span>
-            <input id="start-date-filter" type="date" />
-          </label>
-          <label>
-            <span>End Date</span>
-            <input id="end-date-filter" type="date" />
-          </label>
-          <button id="apply-filters-button" type="button">Apply Filters</button>
-          <button id="clear-filters-button" class="ghost-button" type="button">Clear</button>
-        </section>
+              <label class="field">
+                <span>Feed</span>
+                <select id="feed-filter">
+                  <option value="">All feeds</option>
+                </select>
+              </label>
 
-        <section class="content-head">
-          <div>
-            <p class="content-title">Article Stream</p>
-            <p id="results-count" class="muted-message">0 results</p>
-          </div>
-        </section>
+              <label class="field field-full">
+                <span>Date</span>
+                <input id="date-filter" type="date" />
+              </label>
+            </div>
+          </section>
 
-        <section id="articles-grid" class="articles-grid"></section>
-      </main>
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Feed Intake</p>
+                <h2>Add RSS feed</h2>
+              </div>
+            </div>
+
+            <form id="feed-form" class="feed-form">
+              <label class="field">
+                <span>Feed name</span>
+                <input id="feed-name" type="text" placeholder="Google Alerts - Acme" required />
+              </label>
+              <label class="field">
+                <span>Topic</span>
+                <input id="feed-topic" type="text" placeholder="Acme Corp" required />
+              </label>
+              <label class="field field-full">
+                <span>RSS URL</span>
+                <input id="feed-url" type="url" placeholder="https://www.google.com/alerts/feeds/..." required />
+              </label>
+              <button id="feed-submit" class="primary-button" type="submit">Add feed</button>
+            </form>
+
+            <p id="feed-form-status" class="status-line" role="status">Connect up to 50 RSS feeds.</p>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Sources</p>
+                <h2>Active feeds</h2>
+              </div>
+              <span id="feed-count" class="pill">0</span>
+            </div>
+            <div id="feed-list" class="feed-list"></div>
+          </section>
+        </aside>
+
+        <main class="main-content">
+          <section class="content-head">
+            <div>
+              <p class="eyebrow">Live Stream</p>
+              <h2>Latest articles</h2>
+              <p id="connection-status" class="status-line">Connecting to live updates...</p>
+            </div>
+            <span id="results-count" class="results-pill">0 results</span>
+          </section>
+
+          <section id="articles-grid" class="articles-grid" aria-live="polite"></section>
+        </main>
+      </section>
     </div>
+
+    <template id="summary-card-template">
+      <article class="summary-card">
+        <span class="summary-label"></span>
+        <strong class="summary-value"></strong>
+      </article>
+    </template>
+
+    <template id="feed-item-template">
+      <article class="feed-item">
+        <div>
+          <h3 class="feed-item-title"></h3>
+          <p class="feed-item-meta"></p>
+        </div>
+        <span class="feed-status"></span>
+      </article>
+    </template>
 
     <template id="article-card-template">
       <article class="article-card">
         <a class="article-link" target="_blank" rel="noopener noreferrer">
-          <div class="card-media">
-            <img class="card-image" alt="" />
-            <div class="card-topic"></div>
+          <div class="article-media">
+            <img class="article-image" alt="" loading="lazy" />
+            <span class="article-topic"></span>
           </div>
-          <div class="card-body">
-            <div class="card-meta">
-              <span class="card-source"></span>
-              <span class="card-date"></span>
+          <div class="article-body">
+            <div class="article-meta">
+              <span class="article-source"></span>
+              <span class="article-date"></span>
             </div>
-            <h3 class="card-title"></h3>
-            <p class="card-feed"></p>
+            <h3 class="article-title"></h3>
+            <p class="article-feed"></p>
           </div>
         </a>
       </article>
     </template>
 
-    <script type="module" src="/app.js"></script>
+    <script type="module" src="/app.js?v=20260324"></script>
   </body>
 </html>
