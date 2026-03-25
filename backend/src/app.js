@@ -34,7 +34,7 @@ export function createApp() {
   });
 
   app.get("/api/health", (_request, response) => {
-    response.status(200).json({ ok: true, status: "healthy" });
+    response.status(200).json({ ok: true });
   });
 
   app.use("/api/feeds", feedRoutes);

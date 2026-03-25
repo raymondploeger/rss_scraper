@@ -37,8 +37,8 @@ function runMigrationsInBackground() {
 }
 
 async function bootstrapRuntime() {
-  await runMigrationsInBackground();
   await connectDatabase();
+  await runMigrationsInBackground();
 
   if (!schedulerStarted) {
     startScheduler();
@@ -59,15 +59,7 @@ async function start() {
   const app = createApp();
   const server = app.listen(PORT, HOST, () => {
     console.log(`Server running on ${PORT}`);
-  });
-
-  server.on("error", (error) => {
-    console.error(`Failed to listen on ${HOST}:${PORT}`, error);
-    process.exit(1);
-  });
-
-  void bootstrapRuntime().catch((error) => {
-    console.error("Background bootstrap failed.", error);
+    void startBackgroundTasks();
   });
 
   const shutdown = (signal) => {
@@ -90,6 +82,20 @@ async function start() {
 
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   process.on("SIGINT", () => shutdown("SIGINT"));
+
+  server.on("error", (error) => {
+    console.error(`Failed to listen on ${HOST}:${PORT}`, error);
+    process.exit(1);
+  });
+}
+
+async function startBackgroundTasks() {
+  try {
+    await bootstrapRuntime();
+    console.log("Database ready");
+  } catch (error) {
+    console.error("Background init failed", error);
+  }
 }
 
 start().catch((error) => {
