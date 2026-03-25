@@ -33,8 +33,8 @@ export function createApp() {
     response.send("OK");
   });
 
-  app.get("/api/health", (request, response) => {
-    response.json({ ok: true, timestamp: new Date().toISOString() });
+  app.get("/api/health", (_request, response) => {
+    response.status(200).json({ ok: true, status: "healthy" });
   });
 
   app.use("/api/feeds", feedRoutes);
