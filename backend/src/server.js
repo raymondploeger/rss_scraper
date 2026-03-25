@@ -5,6 +5,12 @@ import { startScheduler } from "./services/schedulerService.js";
 import { spawn } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
+import {
+  markDatabaseConnected,
+  markMigrationsApplied,
+  markSchedulerStarted,
+  setBootstrapError
+} from "./services/runtimeState.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,11 +44,14 @@ function runMigrationsInBackground() {
 
 async function bootstrapRuntime() {
   await connectDatabase();
+  markDatabaseConnected(true);
   await runMigrationsInBackground();
+  markMigrationsApplied(true);
 
   if (!schedulerStarted) {
     startScheduler();
     schedulerStarted = true;
+    markSchedulerStarted(true);
   }
 
   console.log("Background bootstrap complete.");
@@ -92,8 +101,10 @@ async function start() {
 async function startBackgroundTasks() {
   try {
     await bootstrapRuntime();
+    setBootstrapError(null);
     console.log("Database ready");
   } catch (error) {
+    setBootstrapError(error);
     console.error("Background init failed", error);
   }
 }

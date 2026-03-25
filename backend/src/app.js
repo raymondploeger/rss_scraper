@@ -12,6 +12,7 @@ import streamRoutes from "./routes/streamRoutes.js";
 import { canonicalizeUrl, normalizeText } from "./utils/text.js";
 import axios from "axios";
 import { processBacklog, refreshAll } from "./controllers/feedController.js";
+import { getRuntimeState } from "./services/runtimeState.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,15 +28,30 @@ export function createApp() {
   );
   app.use(cors({ origin: env.clientOrigin === "*" ? true : env.clientOrigin }));
   app.use(express.json());
-  app.use(express.static(frontendPath));
 
   app.get("/", (_request, response) => {
     response.send("OK");
   });
 
   app.get("/api/health", (_request, response) => {
-    response.status(200).json({ ok: true });
+    response.status(200).json({ ok: true, status: "healthy" });
   });
+
+  app.get("/api/ready", (_request, response) => {
+    const state = getRuntimeState();
+    const isReady = state.databaseConnected && state.migrationsApplied;
+
+    response.status(isReady ? 200 : 503).json({
+      ok: isReady,
+      status: isReady ? "ready" : "starting",
+      databaseConnected: state.databaseConnected,
+      migrationsApplied: state.migrationsApplied,
+      schedulerStarted: state.schedulerStarted,
+      lastBootstrapError: state.lastBootstrapError
+    });
+  });
+
+  app.use(express.static(frontendPath));
 
   app.use("/api/feeds", feedRoutes);
   app.use("/api/admin/feeds", feedRoutes);
