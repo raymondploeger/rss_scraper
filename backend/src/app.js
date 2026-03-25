@@ -13,6 +13,7 @@ import { canonicalizeUrl, normalizeText } from "./utils/text.js";
 import axios from "axios";
 import { processBacklog, refreshAll } from "./controllers/feedController.js";
 import { getRuntimeState } from "./services/runtimeState.js";
+import { asyncHandler } from "./utils/asyncHandler.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,6 +28,10 @@ export function createApp() {
     })
   );
   app.use(cors({ origin: env.clientOrigin === "*" ? true : env.clientOrigin }));
+  app.use((request, _response, next) => {
+    console.log(`${request.method} ${request.url}`);
+    next();
+  });
   app.use(express.json());
 
   app.get("/", (_request, response) => {
@@ -58,18 +63,18 @@ export function createApp() {
   app.use("/api/articles", articleRoutes);
   app.use("/api/dashboard", dashboardRoutes);
   app.use("/api/stream", streamRoutes);
-  app.post("/api/admin/refresh", refreshAll);
-  app.post("/api/admin/process", processBacklog);
+  app.post("/api/admin/refresh", asyncHandler(refreshAll));
+  app.post("/api/admin/process", asyncHandler(processBacklog));
 
   app.get("/api/clusters", (_request, response) => {
     response.json([]);
   });
 
-  app.get("/api/trends", async (request, response) => {
+  app.get("/api/trends", asyncHandler(async (request, response) => {
     response.json(await listTrends(normalizeText(request.query.timeframe, "24h")));
-  });
+  }));
 
-  app.get("/api/image", async (request, response) => {
+  app.get("/api/image", asyncHandler(async (request, response) => {
     const targetUrl = normalizeText(request.query.url, "");
     if (!targetUrl) {
       response.status(400).json({ error: "Image URL is required." });
@@ -116,10 +121,18 @@ export function createApp() {
     } catch {
       response.redirect(302, env.placeholderImage);
     }
-  });
+  }));
 
   app.get("*", (request, response) => {
     response.sendFile(path.join(frontendPath, "index.html"));
+  });
+
+  app.use((error, _request, response, _next) => {
+    console.error("ERROR:", error);
+    response.status(500).json({
+      error: "Internal Server Error",
+      message: error?.message || "Unknown error"
+    });
   });
 
   return app;
