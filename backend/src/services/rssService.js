@@ -147,38 +147,51 @@ export async function syncFeed(feed) {
   let newArticles = 0;
 
   try {
+    console.log(`Starting feed sync for ${feed.id} (${feed.name || feed.rssUrl})`);
+    await updateFeedRecord(feed.id, {
+      lastStatus: "refreshing",
+      lastError: null
+    });
+
     const parsedFeed = await parser.parseURL(feed.rssUrl);
     const items = Array.isArray(parsedFeed.items) ? parsedFeed.items : [];
+    console.log(`Fetched ${items.length} RSS items for feed ${feed.id}`);
 
     for (const item of items) {
-      const normalized = normalizeItem(feed, item);
-      if (!normalized) {
-        continue;
-      }
+      try {
+        const normalized = normalizeItem(feed, item);
+        if (!normalized) {
+          continue;
+        }
 
-      const result = await upsertArticle(normalized);
-      if (!result.created) {
-        continue;
-      }
+        const result = await upsertArticle(normalized);
+        if (!result.created) {
+          continue;
+        }
 
-      newArticles += 1;
-      const enriched = await scrapeArticleMetadata(result.article.link, result.article.contentSnippet || result.article.summary);
-      const updatedArticle = await updateArticle(result.article.id, {
-        thumbnail:
-          result.article.thumbnail && result.article.thumbnail !== env.placeholderImage
-            ? result.article.thumbnail
-            : enriched.thumbnail,
-        canonicalLink: enriched.canonicalLink || result.article.canonicalLink,
-        contentSnippet: enriched.contentSnippet || result.article.contentSnippet,
-        summary: result.article.summary || enriched.metaDescription || result.article.contentSnippet,
-        summaryShort: result.article.summaryShort || summaryShortFromArticle(result.article),
-        language: enriched.language || result.article.language,
-        fetchStatus: enriched.fetchStatus
-      });
-      broadcast("article:update", { type: "article:update", article: updatedArticle });
+        newArticles += 1;
+        console.log(`Stored new article ${result.article.id} for feed ${feed.id}`);
 
-      if (!updatedArticle.thumbnail || updatedArticle.thumbnail === env.placeholderImage) {
-        void enrichArticle(updatedArticle.id);
+        const enriched = await scrapeArticleMetadata(result.article.link, result.article.contentSnippet || result.article.summary);
+        const updatedArticle = await updateArticle(result.article.id, {
+          thumbnail:
+            result.article.thumbnail && result.article.thumbnail !== env.placeholderImage
+              ? result.article.thumbnail
+              : enriched.thumbnail,
+          canonicalLink: enriched.canonicalLink || result.article.canonicalLink,
+          contentSnippet: enriched.contentSnippet || result.article.contentSnippet,
+          summary: result.article.summary || enriched.metaDescription || result.article.contentSnippet,
+          summaryShort: result.article.summaryShort || summaryShortFromArticle(result.article),
+          language: enriched.language || result.article.language,
+          fetchStatus: enriched.fetchStatus
+        });
+        broadcast("article:update", { type: "article:update", article: updatedArticle });
+
+        if (!updatedArticle.thumbnail || updatedArticle.thumbnail === env.placeholderImage) {
+          void enrichArticle(updatedArticle.id);
+        }
+      } catch (itemError) {
+        console.error(`Article ingestion error for feed ${feed.id}:`, itemError?.stack || itemError);
       }
     }
 
@@ -198,8 +211,10 @@ export async function syncFeed(feed) {
       newArticles
     });
 
+    console.log(`Feed sync complete for ${feed.id}; inserted ${newArticles} new articles`);
     return { feedId: String(feed.id), newArticles };
   } catch (error) {
+    console.error(`Feed sync error for ${feed.id}:`, error?.stack || error);
     const updatedFeed = await updateFeedRecord(feed.id, {
       lastFetchedAt: new Date(),
       lastStatus: "error",
@@ -222,6 +237,7 @@ export async function syncFeed(feed) {
 }
 
 export async function syncAllFeeds() {
+  console.log("Starting refresh for all active feeds");
   const feeds = await listFeedRecords({ activeOnly: true, order: "ASC" });
   const batchSize = env.pollConcurrency;
   const results = [];
@@ -245,20 +261,27 @@ export async function syncAllFeeds() {
 }
 
 export async function processArticleBacklog(limit = 20) {
+  console.log(`Processing article backlog with limit ${limit}`);
   const pendingArticles = await listPendingArticles(limit);
 
   for (const article of pendingArticles) {
-    const enriched = await scrapeArticleMetadata(article.link, article.contentSnippet || article.summary);
-    const updatedArticle = await updateArticle(article.id, {
-      thumbnail: article.thumbnail !== env.placeholderImage ? article.thumbnail : enriched.thumbnail,
-      canonicalLink: enriched.canonicalLink || article.canonicalLink,
-      contentSnippet: enriched.contentSnippet || article.contentSnippet,
-      summary: article.summary || enriched.metaDescription || article.contentSnippet,
-      summaryShort: article.summaryShort || summaryShortFromArticle(article),
-      keywords: article.keywords?.length ? article.keywords : inferKeywords([article.title, article.contentSnippet, article.topic], 6),
-      language: enriched.language || article.language,
-      fetchStatus: enriched.fetchStatus
-    });
-    broadcast("article:update", { type: "article:update", article: updatedArticle });
+    try {
+      const enriched = await scrapeArticleMetadata(article.link, article.contentSnippet || article.summary);
+      const updatedArticle = await updateArticle(article.id, {
+        thumbnail: article.thumbnail !== env.placeholderImage ? article.thumbnail : enriched.thumbnail,
+        canonicalLink: enriched.canonicalLink || article.canonicalLink,
+        contentSnippet: enriched.contentSnippet || article.contentSnippet,
+        summary: article.summary || enriched.metaDescription || article.contentSnippet,
+        summaryShort: article.summaryShort || summaryShortFromArticle(article),
+        keywords: article.keywords?.length ? article.keywords : inferKeywords([article.title, article.contentSnippet, article.topic], 6),
+        language: enriched.language || article.language,
+        fetchStatus: enriched.fetchStatus
+      });
+      broadcast("article:update", { type: "article:update", article: updatedArticle });
+    } catch (error) {
+      console.error(`Backlog enrichment error for article ${article.id}:`, error?.stack || error);
+    }
   }
+
+  return pendingArticles.length;
 }

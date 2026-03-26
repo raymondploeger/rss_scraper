@@ -2,7 +2,8 @@ import express from "express";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { createFeed, deleteFeed, listFeeds, updateFeed } from "./controllers/feedController.js";
+import { listArticles } from "./controllers/articleController.js";
+import { createFeed, deleteFeed, listFeeds, refreshAll, refreshFeed, updateFeed } from "./controllers/feedController.js";
 import { asyncHandler } from "./utils/asyncHandler.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -26,8 +27,11 @@ export function createApp() {
 
   app.get("/api/feeds", asyncHandler(listFeeds));
   app.post("/api/feeds", asyncHandler(createFeed));
+  app.post("/api/feeds/refresh", asyncHandler(refreshAll));
   app.put("/api/feeds/:feedId", asyncHandler(updateFeed));
   app.delete("/api/feeds/:feedId", asyncHandler(deleteFeed));
+  app.post("/api/feeds/:feedId/refresh", asyncHandler(refreshFeed));
+  app.get("/api/articles", asyncHandler(listArticles));
 
   app.use(express.static(frontendPath));
 

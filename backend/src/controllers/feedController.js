@@ -185,6 +185,7 @@ export async function deleteFeed(request, response) {
 export async function refreshFeed(request, response) {
   try {
     const { feedId } = request.params;
+    console.log(`Manual refresh requested for feed ${feedId}`);
     const feed = await findFeedById(feedId);
 
     if (!feed) {
@@ -201,6 +202,7 @@ export async function refreshFeed(request, response) {
 
 export async function refreshAll(request, response) {
   try {
+    console.log("Manual refresh requested for all feeds");
     void syncAllFeeds();
     response.status(202).json({ started: true, message: "Feed refresh started in the background" });
   } catch (error) {
