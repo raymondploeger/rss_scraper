@@ -1,4 +1,5 @@
 import Parser from "rss-parser";
+import axios from "axios";
 import * as cheerio from "cheerio";
 import { URL } from "url";
 import { env } from "../config/env.js";
@@ -28,6 +29,14 @@ const parser = new Parser({
     "User-Agent": "RSS Monitor Dashboard/2.0"
   }
 });
+
+function getHostname(value) {
+  try {
+    return new URL(value).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
 
 function getSourceName(link) {
   try {
@@ -79,6 +88,142 @@ function summaryShortFromArticle(article) {
 
   const sentence = base.split(/(?<=[.!?])\s+/)[0] || base;
   return sentence.trim().slice(0, 220);
+}
+
+function parseWebsiteDate(value) {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(String(value));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function inferWebsiteItemDate($, anchor) {
+  const containers = [$(anchor), $(anchor).closest("article"), $(anchor).parent(), $(anchor).closest("li")];
+
+  for (const container of containers) {
+    const datetime =
+      container.find("time").first().attr("datetime") ||
+      container.find("[datetime]").first().attr("datetime") ||
+      container.find("time").first().text();
+    const parsed = parseWebsiteDate(datetime);
+    if (parsed) {
+      return parsed;
+    }
+  }
+
+  return new Date();
+}
+
+function scoreWebsiteAnchor($, anchor, pageUrl) {
+  const href = $(anchor).attr("href") || "";
+  const text = sanitizeFeedText($(anchor).text(), "");
+  const lower = `${href} ${text}`.toLowerCase();
+  if (!href || !text) {
+    return -1;
+  }
+
+  if (
+    href.startsWith("#") ||
+    href.startsWith("javascript:") ||
+    ["login", "privacy", "cookie", "kontakt", "contact", "about", "regulamin", "terms"].some((token) => lower.includes(token))
+  ) {
+    return -1;
+  }
+
+  let resolvedHref = "";
+  try {
+    resolvedHref = new URL(href, pageUrl).toString();
+  } catch {
+    return -1;
+  }
+
+  if (!["http:", "https:"].includes(new URL(resolvedHref).protocol)) {
+    return -1;
+  }
+
+  let score = 0;
+  if (text.length >= 24) score += 4;
+  if (text.length >= 48) score += 2;
+  if (resolvedHref !== pageUrl) score += 3;
+  if (getHostname(resolvedHref) === getHostname(pageUrl)) score += 2;
+  if ($(anchor).closest("article").length) score += 6;
+  if ($(anchor).closest("main").length || $(anchor).closest("[role='main']").length) score += 3;
+  if ($(anchor).closest("li").length) score += 1;
+  if (["news", "article", "post", "update", "press", "announcement", "aktual", "komunikat"].some((token) => lower.includes(token))) {
+    score += 2;
+  }
+
+  return score;
+}
+
+async function extractWebsiteItems(feed) {
+  console.log(`Parsing website source ${feed.id} (${feed.rssUrl})`);
+  const response = await fetchWebsiteHtml(feed.rssUrl);
+  const html = String(response.data || "");
+  const $ = cheerio.load(html);
+  const anchors = $("main a, article a, [role='main'] a, .content a, .entry-content a, .post a, a").toArray();
+  const items = [];
+  const seenLinks = new Set();
+
+  for (const anchor of anchors) {
+    const score = scoreWebsiteAnchor($, anchor, feed.rssUrl);
+    if (score < 4) {
+      continue;
+    }
+
+    const text = sanitizeFeedText($(anchor).text(), "");
+    let link = "";
+    try {
+      link = new URL($(anchor).attr("href") || "", feed.rssUrl).toString();
+    } catch {
+      continue;
+    }
+
+    const canonicalLink = canonicalizeUrl(link);
+    if (!canonicalLink || seenLinks.has(canonicalLink)) {
+      continue;
+    }
+
+    seenLinks.add(canonicalLink);
+    items.push({
+      title: text,
+      link,
+      isoDate: inferWebsiteItemDate($, anchor).toISOString(),
+      contentSnippet: sanitizeFeedText($(anchor).closest("article, li, div").text(), ""),
+      author: "",
+      source: getSourceName(link)
+    });
+
+    if (items.length >= 20) {
+      break;
+    }
+  }
+
+  console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+  return items;
+}
+
+async function fetchWebsiteHtml(url, attempt = 0) {
+  try {
+    return await axios.get(url, {
+      timeout: env.requestTimeoutMs,
+      responseType: "text",
+      maxRedirects: 5,
+      headers: {
+        "User-Agent": "RSS Monitor Dashboard/2.0",
+        Accept: "text/html,application/xhtml+xml"
+      },
+      validateStatus: (status) => status >= 200 && status < 400
+    });
+  } catch (error) {
+    if (attempt < env.scrapeRetryAttempts) {
+      return fetchWebsiteHtml(url, attempt + 1);
+    }
+
+    throw error;
+  }
 }
 
 function normalizeItem(feed, item) {
@@ -173,11 +318,17 @@ export async function syncFeed(feed) {
       lastError: null
     });
 
-    const parsedFeed = await parser.parseURL(feed.rssUrl);
-    const items = Array.isArray(parsedFeed.items) ? parsedFeed.items : [];
-    console.log(`Fetched ${items.length} RSS items for feed ${feed.id}`);
+    let resolvedItems = [];
+    if (feed.sourceType === "website") {
+      resolvedItems = await extractWebsiteItems(feed);
+    } else {
+      console.log(`Fetching RSS source ${feed.id} (${feed.rssUrl})`);
+      const parsedFeed = await parser.parseURL(feed.rssUrl);
+      resolvedItems = Array.isArray(parsedFeed.items) ? parsedFeed.items : [];
+    }
+    console.log(`Fetched ${resolvedItems.length} items for feed ${feed.id}`);
 
-    for (const item of items) {
+    for (const item of resolvedItems) {
       try {
         const normalized = normalizeItem(feed, item);
         if (!normalized) {

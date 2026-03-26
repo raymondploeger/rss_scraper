@@ -14,6 +14,7 @@ const state = {
   editingFeedId: null,
   feedPanelCollapsed: false,
   feedPanelFilter: "all",
+  feedPanelSearch: "",
   filters: {
     search: "",
     topic: "",
@@ -46,12 +47,14 @@ const elements = {
   feedCancel: document.getElementById("feed-cancel"),
   feedName: document.getElementById("feed-name"),
   feedTopic: document.getElementById("feed-topic"),
+  feedSourceType: document.getElementById("feed-source-type"),
   feedUrl: document.getElementById("feed-url"),
   feedFormStatus: document.getElementById("feed-form-status"),
   feedCount: document.getElementById("feed-count"),
   feedPanelToggle: document.getElementById("feed-panel-toggle"),
   feedPanelContent: document.getElementById("feed-panel-content"),
   feedVisibilityFilter: document.getElementById("feed-visibility-filter"),
+  feedPanelSearch: document.getElementById("feed-panel-search"),
   feedList: document.getElementById("feed-list"),
   summaryCardTemplate: document.getElementById("summary-card-template"),
   feedItemTemplate: document.getElementById("feed-item-template"),
@@ -155,12 +158,19 @@ function renderFeedOptions() {
 function getVisibleFeedsForPanel() {
   return state.feeds
     .filter((feed) => {
+      if (state.feedPanelSearch) {
+        const haystack = [feed.name, feed.topic, feed.rssUrl, feed.sourceType].join(" ").toLowerCase();
+        if (!haystack.includes(state.feedPanelSearch.toLowerCase())) {
+          return false;
+        }
+      }
+
       if (state.feedPanelFilter === "active") {
         return feed.isActive !== false;
       }
 
       if (state.feedPanelFilter === "inactive") {
-        return feed.isActive === false;
+        return feed.isActive === false || feed.lastStatus === "error";
       }
 
       return true;
@@ -171,9 +181,10 @@ function getVisibleFeedsForPanel() {
 
 function renderFeedPanelState() {
   elements.feedPanelContent.classList.toggle("is-collapsed", state.feedPanelCollapsed);
-  elements.feedPanelToggle.textContent = state.feedPanelCollapsed ? "Show feeds" : "Hide feeds";
+  elements.feedPanelToggle.textContent = state.feedPanelCollapsed ? "Show sources" : "Hide sources";
   elements.feedPanelToggle.setAttribute("aria-expanded", String(!state.feedPanelCollapsed));
   elements.feedVisibilityFilter.value = state.feedPanelFilter;
+  elements.feedPanelSearch.value = state.feedPanelSearch;
 }
 
 function renderFeedList() {
@@ -182,8 +193,13 @@ function renderFeedList() {
   elements.feedList.innerHTML = "";
   renderFeedPanelState();
 
+  if (!feeds.length && !state.feeds.length) {
+    elements.feedList.innerHTML = `<div class="empty-state">No sources configured yet.</div>`;
+    return;
+  }
+
   if (!feeds.length) {
-    elements.feedList.innerHTML = `<div class="empty-state">No feeds configured yet.</div>`;
+    elements.feedList.innerHTML = `<div class="empty-state">No sources match the current search or filter.</div>`;
     return;
   }
 
@@ -197,9 +213,10 @@ function renderFeedList() {
       const deleteButton = node.querySelector(".feed-delete-button");
       const lastFetched = feed.lastFetchedAt ? formatDate(feed.lastFetchedAt) : "Waiting for first sync";
       const tone = feed.lastStatus === "error" ? "is-error" : feed.lastStatus === "success" ? "is-success" : "is-idle";
+      const sourceLabel = feed.sourceType === "website" ? "Website" : "RSS";
 
-      title.textContent = feed.name || "Untitled feed";
-      meta.textContent = `${feed.topic || "General"} • ${lastFetched}`;
+      title.textContent = feed.name || "Untitled source";
+      meta.textContent = `${sourceLabel} • ${feed.topic || "General"} • ${lastFetched}`;
       status.textContent = feed.lastStatus || "idle";
       status.classList.add(tone);
       editButton.dataset.feedId = feed.id;
@@ -321,13 +338,14 @@ function initializeFeedPanelState() {
 
 function syncFeedFormMode() {
   elements.feedSubmit.disabled = false;
-  elements.feedSubmit.textContent = state.editingFeedId ? "Save changes" : "Add feed";
+  elements.feedSubmit.textContent = state.editingFeedId ? "Save changes" : "Add source";
   elements.feedCancel.hidden = !state.editingFeedId;
 }
 
-function resetFeedForm(statusMessage = "Connect up to 50 RSS feeds.") {
+function resetFeedForm(statusMessage = "Monitor up to 50 RSS feeds and websites.") {
   state.editingFeedId = null;
   elements.feedForm.reset();
+  elements.feedSourceType.value = "rss";
   syncFeedFormMode();
   elements.feedFormStatus.textContent = statusMessage;
 }
@@ -342,9 +360,10 @@ function startFeedEdit(feedId) {
   state.editingFeedId = feedId;
   elements.feedName.value = feed.name || "";
   elements.feedTopic.value = feed.topic || "";
+  elements.feedSourceType.value = feed.sourceType || "rss";
   elements.feedUrl.value = feed.rssUrl || "";
   syncFeedFormMode();
-  elements.feedFormStatus.textContent = `Editing ${feed.name || "feed"}.`;
+  elements.feedFormStatus.textContent = `Editing ${feed.name || "source"}.`;
   renderFeedList();
   elements.feedName.focus();
 }
@@ -355,12 +374,12 @@ async function deleteFeed(feedId) {
     return;
   }
 
-  const confirmed = window.confirm(`Delete "${feed.name || "this feed"}"? This will also remove its stored articles.`);
+  const confirmed = window.confirm(`Delete "${feed.name || "this source"}"? This will also remove its stored articles.`);
   if (!confirmed) {
     return;
   }
 
-  elements.feedFormStatus.textContent = `Deleting ${feed.name || "feed"}...`;
+  elements.feedFormStatus.textContent = `Deleting ${feed.name || "source"}...`;
 
   try {
     await apiRequest(`/api/feeds/${feedId}`, { method: "DELETE" });
@@ -503,12 +522,12 @@ function bindEvents() {
   });
 
   elements.refreshButton.addEventListener("click", async () => {
-    elements.connectionStatus.textContent = "Refreshing feeds...";
+    elements.connectionStatus.textContent = "Refreshing sources...";
     try {
       const result = await apiRequest("/api/feeds/refresh", { method: "POST" });
-      elements.connectionStatus.textContent = result.message || "Feed refresh started.";
+      elements.connectionStatus.textContent = result.message || "Source refresh started.";
     } catch (error) {
-      elements.connectionStatus.textContent = "Feed refresh is not enabled yet.";
+      elements.connectionStatus.textContent = "Source refresh is not enabled yet.";
     }
   });
 
@@ -528,7 +547,7 @@ function bindEvents() {
         name: elements.feedName.value.trim(),
         topic: elements.feedTopic.value.trim(),
         rssUrl: elements.feedUrl.value.trim(),
-        sourceType: "rss",
+        sourceType: elements.feedSourceType.value,
         isActive: true,
       };
 
@@ -568,6 +587,11 @@ function bindEvents() {
 
   elements.feedVisibilityFilter.addEventListener("change", (event) => {
     state.feedPanelFilter = event.target.value;
+    renderFeedList();
+  });
+
+  elements.feedPanelSearch.addEventListener("input", (event) => {
+    state.feedPanelSearch = event.target.value.trim();
     renderFeedList();
   });
 }

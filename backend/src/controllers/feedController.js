@@ -69,6 +69,44 @@ async function discoverFeedUrl(inputUrl) {
   }
 }
 
+async function validateWebsiteUrl(inputUrl) {
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(inputUrl);
+  } catch {
+    throw new Error("Invalid website URL");
+  }
+
+  if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+    throw new Error("Website URL must use http or https");
+  }
+
+  try {
+    await axios.get(parsedUrl.toString(), {
+      timeout: env.requestTimeoutMs,
+      responseType: "text",
+      maxRedirects: 5,
+      headers: {
+        "User-Agent": "RSS Monitor Dashboard/2.0",
+        Accept: "text/html,application/xhtml+xml"
+      },
+      validateStatus: (status) => status >= 200 && status < 400
+    });
+  } catch (error) {
+    throw new Error(error?.message || "Website URL is unreachable");
+  }
+
+  return parsedUrl.toString();
+}
+
+async function resolveSourceUrl(inputUrl, sourceType) {
+  if (sourceType === "website") {
+    return validateWebsiteUrl(inputUrl);
+  }
+
+  return discoverFeedUrl(inputUrl);
+}
+
 export async function listFeeds(request, response) {
   try {
     if (!isRuntimeReady()) {
@@ -89,7 +127,7 @@ export async function createFeed(request, response) {
     const { name, topic, rssUrl, sourceType = "rss", isActive = true } = request.body;
 
     if (!rssUrl) {
-      return response.status(400).json({ error: "RSS URL is required." });
+      return response.status(400).json({ error: "Source URL is required." });
     }
 
     const feedCount = await countFeeds();
@@ -97,16 +135,16 @@ export async function createFeed(request, response) {
       return response.status(400).json({ error: `Maximum of ${env.maxFeeds} feeds reached` });
     }
 
-    const resolvedFeedUrl = await discoverFeedUrl(rssUrl);
+    const resolvedFeedUrl = await resolveSourceUrl(rssUrl, sourceType);
     const duplicate = await findFeedByRssUrl(resolvedFeedUrl);
     if (duplicate) {
-      return response.status(409).json({ error: "This RSS feed is already in the dashboard." });
+      return response.status(409).json({ error: "This source is already in the dashboard." });
     }
 
-    const parsed = await parser.parseURL(resolvedFeedUrl);
+    const parsed = sourceType === "rss" ? await parser.parseURL(resolvedFeedUrl) : null;
     const feed = await createFeedRecord({
-      name: name || parsed.title || "Untitled Feed",
-      topic: topic || name || parsed.title || "General",
+      name: name || parsed?.title || "Untitled Source",
+      topic: topic || name || parsed?.title || "General",
       rssUrl: resolvedFeedUrl,
       sourceType,
       isActive
@@ -133,10 +171,10 @@ export async function updateFeed(request, response) {
     if (typeof name === "string") nextValues.name = name;
     if (typeof topic === "string") nextValues.topic = topic;
     if (typeof rssUrl === "string") {
-      const resolvedFeedUrl = await discoverFeedUrl(rssUrl);
+      const resolvedFeedUrl = await resolveSourceUrl(rssUrl, typeof sourceType === "string" ? sourceType : feed.sourceType || "rss");
       const duplicate = await findFeedByRssUrl(resolvedFeedUrl);
       if (duplicate && duplicate.id !== feedId) {
-        return response.status(409).json({ error: "This RSS feed is already in the dashboard." });
+        return response.status(409).json({ error: "This source is already in the dashboard." });
       }
       nextValues.rssUrl = resolvedFeedUrl;
     }
