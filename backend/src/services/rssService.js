@@ -501,7 +501,7 @@ export async function processArticleBacklog(limit = 20) {
 
   for (const article of pendingArticles) {
     try {
-      const enriched = await scrapeArticleMetadata(article.link, article.contentSnippet || article.summary);
+      const enriched = await scrapeArticleMetadata(article.link, article.contentSnippet || article.summary, article.title || "");
       const updatedArticle = await updateArticle(article.id, {
         thumbnail: article.thumbnail !== env.placeholderImage ? article.thumbnail : enriched.thumbnail,
         canonicalLink: enriched.canonicalLink || article.canonicalLink,

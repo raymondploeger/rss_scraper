@@ -2,7 +2,6 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 import { env } from "../config/env.js";
 import { findArticleById, updateArticle } from "../database/articleRepository.js";
-import { findFeedById, updateFeed } from "../database/feedRepository.js";
 import { broadcast } from "./realtimeService.js";
 import { canonicalizeUrl, normalizeText, resolveUrl, sanitizeFeedText } from "../utils/text.js";
 
@@ -15,6 +14,53 @@ function resolveImageCandidate(pageUrl, candidate) {
   }
 
   return resolveUrl(pageUrl, value);
+}
+
+function tokenizeForMatch(value) {
+  return String(value || "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/i)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 4);
+}
+
+function isLikelyGenericMetadataImage(imageUrl) {
+  const value = String(imageUrl || "").toLowerCase();
+  return [
+    "logo",
+    "icon",
+    "avatar",
+    "banner",
+    "default",
+    "placeholder",
+    "siteimage",
+    "social-share",
+    "share-image",
+    "og-image",
+    "media-image"
+  ].some((token) => value.includes(token));
+}
+
+function isClearlyArticleSpecificImage(imageUrl, pageUrl, title) {
+  const normalizedImageUrl = String(imageUrl || "").toLowerCase();
+  if (!normalizedImageUrl) {
+    return false;
+  }
+
+  if (isLikelyGenericMetadataImage(normalizedImageUrl)) {
+    return false;
+  }
+
+  if (/\/20\d{2}\/\d{2}\//.test(normalizedImageUrl) || normalizedImageUrl.includes("/uploads/")) {
+    return true;
+  }
+
+  const articleTokens = new Set([
+    ...tokenizeForMatch(pageUrl),
+    ...tokenizeForMatch(title)
+  ]);
+
+  return Array.from(articleTokens).some((token) => normalizedImageUrl.includes(token));
 }
 
 function findMeaningfulImage($) {
@@ -93,7 +139,7 @@ async function requestHtml(url, attempt = 0) {
   }
 }
 
-export async function scrapeArticleMetadata(link, existingSnippet = "") {
+export async function scrapeArticleMetadata(link, existingSnippet = "", articleTitle = "") {
   const cacheKey = canonicalizeUrl(link);
   if (scrapeCache.has(cacheKey)) {
     return scrapeCache.get(cacheKey);
@@ -118,29 +164,29 @@ export async function scrapeArticleMetadata(link, existingSnippet = "") {
         .get()
         .join(" ");
       const htmlLang = $("html").attr("lang") || "";
-      const sourceLevelFallback = normalizeText(resolveImageCandidate(link, ogImage || ogSecureImage || twitterImage || ""), "");
-      const resolvedThumbnail = normalizeText(resolveImageCandidate(link, articleImage || ""), env.placeholderImage);
-      const thumbnailSource = articleImage
-        ? "article-image"
-        : sourceLevelFallback
-          ? ogImage
-            ? "og:image"
-            : ogSecureImage
-              ? "og:image:secure_url"
-              : "twitter:image"
+      const metadataImage = resolveImageCandidate(link, ogImage || ogSecureImage || twitterImage || "");
+      const articleSpecificMetadataImage = isClearlyArticleSpecificImage(metadataImage, link, articleTitle) ? metadataImage : "";
+      const resolvedThumbnail = normalizeText(articleSpecificMetadataImage || resolveImageCandidate(link, articleImage || ""), "");
+      const thumbnailSource = articleSpecificMetadataImage
+        ? ogImage
+          ? "og:image"
+          : ogSecureImage
+            ? "og:image:secure_url"
+            : "twitter:image"
+        : articleImage
+          ? "article-image"
           : "placeholder";
 
       console.log(`Thumbnail source for ${link}: ${thumbnailSource}`);
 
       return {
         thumbnail: resolvedThumbnail,
-        sourceFallbackThumbnail: sourceLevelFallback || env.placeholderImage,
         canonicalLink: canonicalizeUrl(normalizeText(canonicalUrl, link)),
         metaDescription: sanitizeFeedText(metaDescription, ""),
         contentSnippet: sanitizeFeedText(articleText || existingSnippet, existingSnippet),
         language: normalizeText(htmlLang, "unknown"),
         fetchStatus:
-          articleImage || sourceLevelFallback || canonicalUrl || metaDescription || articleText
+          articleSpecificMetadataImage || articleImage || canonicalUrl || metaDescription || articleText
             ? "enriched"
             : "partial"
       };
@@ -148,8 +194,7 @@ export async function scrapeArticleMetadata(link, existingSnippet = "") {
       console.error(`Thumbnail scrape failed for ${link}:`, error?.stack || error);
       console.log(`Thumbnail source for ${link}: placeholder`);
       return {
-        thumbnail: env.placeholderImage,
-        sourceFallbackThumbnail: env.placeholderImage,
+        thumbnail: "",
         canonicalLink: canonicalizeUrl(link),
         metaDescription: "",
         contentSnippet: existingSnippet,
@@ -173,18 +218,9 @@ export async function enrichArticle(articleId) {
     return article;
   }
 
-  const enriched = await scrapeArticleMetadata(article.link, article.contentSnippet || article.summary || "");
+  const enriched = await scrapeArticleMetadata(article.link, article.contentSnippet || article.summary || "", article.title || "");
   const nextThumbnail =
-    article.thumbnail && article.thumbnail !== env.placeholderImage ? article.thumbnail : enriched.thumbnail;
-
-  if (enriched.sourceFallbackThumbnail && enriched.sourceFallbackThumbnail !== env.placeholderImage) {
-    const feed = await findFeedById(article.feedId);
-    if (feed && (!feed.sourceFallbackImage || feed.sourceFallbackImage === env.placeholderImage)) {
-      await updateFeed(article.feedId, {
-        sourceFallbackImage: enriched.sourceFallbackThumbnail
-      });
-    }
-  }
+    article.thumbnail && article.thumbnail !== env.placeholderImage ? article.thumbnail : enriched.thumbnail || article.thumbnail;
 
   const updatedArticle = await updateArticle(articleId, {
     thumbnail: nextThumbnail,
