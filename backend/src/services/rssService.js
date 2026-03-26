@@ -170,6 +170,12 @@ export async function syncFeed(feed) {
           continue;
         }
 
+        console.log(
+          `Thumbnail source for article ${normalized.id}: ${
+            normalized.thumbnail && normalized.thumbnail !== env.placeholderImage ? "rss" : "placeholder"
+          }`
+        );
+
         const result = await upsertArticle(normalized);
         if (!result.created) {
           continue;
