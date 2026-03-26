@@ -284,8 +284,20 @@ async function apiRequest(path, options = {}) {
   return response.json().catch(() => ({}));
 }
 
+async function optionalApiRequest(path, fallbackValue) {
+  try {
+    return await apiRequest(path);
+  } catch (error) {
+    console.warn(`Optional API request failed for ${path}:`, error);
+    return fallbackValue;
+  }
+}
+
 async function loadSnapshot() {
-  const [feeds, articles] = await Promise.all([apiRequest("/api/feeds"), apiRequest("/api/articles")]);
+  const [feeds, articles] = await Promise.all([
+    apiRequest("/api/feeds"),
+    optionalApiRequest("/api/articles", []),
+  ]);
   state.feeds = feeds;
   state.articles = articles;
   renderDashboard();
@@ -382,7 +394,7 @@ function bindEvents() {
       const result = await apiRequest("/api/feeds/refresh", { method: "POST" });
       elements.connectionStatus.textContent = result.message || "Feed refresh started.";
     } catch (error) {
-      elements.connectionStatus.textContent = error.message;
+      elements.connectionStatus.textContent = "Feed refresh is not enabled yet.";
     }
   });
 
