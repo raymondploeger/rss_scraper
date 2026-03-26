@@ -320,11 +320,12 @@ function renderArticles() {
     const date = node.querySelector(".article-date");
     const title = node.querySelector(".article-title");
     const feed = node.querySelector(".article-feed");
-    const finalImageSrc = article.thumbnail || "";
+    const hasThumbnail = Boolean(article.thumbnail && String(article.thumbnail).trim());
+    const finalImageSrc = hasThumbnail ? article.thumbnail.trim() : "";
 
     link.href = getArticleDestination(article);
-    if (finalImageSrc) {
-      image.src = finalImageSrc;
+    if (hasThumbnail) {
+      image.setAttribute("src", finalImageSrc);
       image.classList.remove("is-hidden");
       media.classList.remove("is-empty");
       media.dataset.thumbnailState = "has-thumbnail";
@@ -336,15 +337,13 @@ function renderArticles() {
       media.dataset.thumbnailState = "no-thumbnail";
       thumbnailState.textContent = "no-thumbnail";
     }
-    image.dataset.thumbnail = article.thumbnail || "";
     image.alt = article.title || "Article thumbnail";
     image.onerror = () => {
-      image.onerror = null;
-      image.removeAttribute("src");
-      image.classList.add("is-hidden");
-      media.classList.add("is-empty");
-      media.dataset.thumbnailState = "no-thumbnail";
-      thumbnailState.textContent = "no-thumbnail";
+      console.warn("Article image failed to load", {
+        title: article.title,
+        thumbnail: article.thumbnail || "",
+        domSrc: image.getAttribute("src") || "",
+      });
     };
     topic.textContent = article.topic || "General";
     source.textContent = article.source || "Unknown source";
