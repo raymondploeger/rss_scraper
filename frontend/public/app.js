@@ -257,6 +257,31 @@ function getVisibleArticles() {
     .sort((left, right) => toDate(right.pubDate).getTime() - toDate(left.pubDate).getTime());
 }
 
+function isAbsoluteUrl(value) {
+  try {
+    const parsed = new URL(String(value || ""));
+    return ["http:", "https:"].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
+
+function getArticleDestination(article) {
+  if (isAbsoluteUrl(article.canonicalLink)) {
+    return article.canonicalLink;
+  }
+
+  if (String(article.canonicalLink || "").startsWith("/") && isAbsoluteUrl(article.link)) {
+    try {
+      return new URL(article.canonicalLink, article.link).toString();
+    } catch {
+      return article.link;
+    }
+  }
+
+  return article.link;
+}
+
 function renderSkeletons() {
   elements.articlesGrid.innerHTML = Array.from({ length: 8 })
     .map(
@@ -296,7 +321,7 @@ function renderArticles() {
     const feed = node.querySelector(".article-feed");
     const finalImageSrc = article.thumbnail || PLACEHOLDER_IMAGE;
 
-    link.href = article.canonicalLink || article.link;
+    link.href = getArticleDestination(article);
     image.src = finalImageSrc;
     image.dataset.thumbnail = article.thumbnail || "";
     image.alt = article.title || "Article thumbnail";

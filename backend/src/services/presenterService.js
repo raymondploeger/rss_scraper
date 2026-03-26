@@ -1,5 +1,21 @@
 import { env } from "../config/env.js";
 
+function resolveCanonicalLink(canonicalLink, link) {
+  if (!canonicalLink) {
+    return link;
+  }
+
+  try {
+    return new URL(canonicalLink).toString();
+  } catch {
+    try {
+      return new URL(canonicalLink, link).toString();
+    } catch {
+      return link;
+    }
+  }
+}
+
 export function toFeedDto(feed) {
   return {
     id: String(feed.id || feed._id),
@@ -23,7 +39,7 @@ export function toArticleDto(article) {
     title: article.title,
     normalizedTitle: article.normalizedTitle || "",
     link: article.link,
-    canonicalLink: article.canonicalLink || article.link,
+    canonicalLink: resolveCanonicalLink(article.canonicalLink, article.link),
     pubDate: article.pubDate,
     source: article.source,
     topic: article.topic,
