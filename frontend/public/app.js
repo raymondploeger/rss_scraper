@@ -11,6 +11,7 @@ const SUMMARY_METRICS = [
 const state = {
   feeds: [],
   articles: [],
+  editingFeedId: null,
   filters: {
     search: "",
     topic: "",
@@ -40,6 +41,7 @@ const elements = {
   themeToggle: document.getElementById("theme-toggle"),
   feedForm: document.getElementById("feed-form"),
   feedSubmit: document.getElementById("feed-submit"),
+  feedCancel: document.getElementById("feed-cancel"),
   feedName: document.getElementById("feed-name"),
   feedTopic: document.getElementById("feed-topic"),
   feedUrl: document.getElementById("feed-url"),
@@ -163,6 +165,8 @@ function renderFeedList() {
       const title = node.querySelector(".feed-item-title");
       const meta = node.querySelector(".feed-item-meta");
       const status = node.querySelector(".feed-status");
+      const editButton = node.querySelector(".feed-edit-button");
+      const deleteButton = node.querySelector(".feed-delete-button");
       const lastFetched = feed.lastFetchedAt ? formatDate(feed.lastFetchedAt) : "Waiting for first sync";
       const tone = feed.lastStatus === "error" ? "is-error" : feed.lastStatus === "success" ? "is-success" : "is-idle";
 
@@ -170,6 +174,9 @@ function renderFeedList() {
       meta.textContent = `${feed.topic || "General"} • ${lastFetched}`;
       status.textContent = feed.lastStatus || "idle";
       status.classList.add(tone);
+      editButton.dataset.feedId = feed.id;
+      deleteButton.dataset.feedId = feed.id;
+      editButton.disabled = state.editingFeedId === feed.id;
       fragment.appendChild(node);
     });
 
@@ -278,6 +285,69 @@ function renderDashboard() {
   renderFeedOptions();
   renderFeedList();
   renderArticles();
+}
+
+function syncFeedFormMode() {
+  elements.feedSubmit.disabled = false;
+  elements.feedSubmit.textContent = state.editingFeedId ? "Save changes" : "Add feed";
+  elements.feedCancel.hidden = !state.editingFeedId;
+}
+
+function resetFeedForm(statusMessage = "Connect up to 50 RSS feeds.") {
+  state.editingFeedId = null;
+  elements.feedForm.reset();
+  syncFeedFormMode();
+  elements.feedFormStatus.textContent = statusMessage;
+}
+
+function startFeedEdit(feedId) {
+  const feed = state.feeds.find((item) => item.id === feedId);
+  if (!feed) {
+    elements.feedFormStatus.textContent = "Unable to find that feed.";
+    return;
+  }
+
+  state.editingFeedId = feedId;
+  elements.feedName.value = feed.name || "";
+  elements.feedTopic.value = feed.topic || "";
+  elements.feedUrl.value = feed.rssUrl || "";
+  syncFeedFormMode();
+  elements.feedFormStatus.textContent = `Editing ${feed.name || "feed"}.`;
+  renderFeedList();
+  elements.feedName.focus();
+}
+
+async function deleteFeed(feedId) {
+  const feed = state.feeds.find((item) => item.id === feedId);
+  if (!feed) {
+    return;
+  }
+
+  const confirmed = window.confirm(`Delete "${feed.name || "this feed"}"? This will also remove its stored articles.`);
+  if (!confirmed) {
+    return;
+  }
+
+  elements.feedFormStatus.textContent = `Deleting ${feed.name || "feed"}...`;
+
+  try {
+    await apiRequest(`/api/feeds/${feedId}`, { method: "DELETE" });
+
+    if (state.editingFeedId === feedId) {
+      resetFeedForm();
+    }
+
+    state.feeds = state.feeds.filter((item) => item.id !== feedId);
+    state.articles = state.articles.filter((article) => article.feedId !== feedId);
+    if (state.filters.feedId === feedId) {
+      state.filters.feedId = "";
+      elements.feedFilter.value = "";
+    }
+    renderDashboard();
+    elements.feedFormStatus.textContent = "Feed deleted successfully.";
+  } catch (error) {
+    elements.feedFormStatus.textContent = error.message;
+  }
 }
 
 async function apiRequest(path, options = {}) {
@@ -410,25 +480,34 @@ function bindEvents() {
     }
   });
 
+  elements.feedCancel.addEventListener("click", () => {
+    resetFeedForm();
+    renderFeedList();
+  });
+
   elements.feedForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     elements.feedSubmit.disabled = true;
-    elements.feedFormStatus.textContent = "Adding feed...";
+    const isEditing = Boolean(state.editingFeedId);
+    elements.feedFormStatus.textContent = isEditing ? "Saving changes..." : "Adding feed...";
 
     try {
-      await apiRequest("/api/feeds", {
-        method: "POST",
+      const payload = {
+        name: elements.feedName.value.trim(),
+        topic: elements.feedTopic.value.trim(),
+        rssUrl: elements.feedUrl.value.trim(),
+        sourceType: "rss",
+        isActive: true,
+      };
+
+      await apiRequest(isEditing ? `/api/feeds/${state.editingFeedId}` : "/api/feeds", {
+        method: isEditing ? "PUT" : "POST",
         body: JSON.stringify({
-          name: elements.feedName.value.trim(),
-          topic: elements.feedTopic.value.trim(),
-          rssUrl: elements.feedUrl.value.trim(),
-          sourceType: "rss",
-          isActive: true,
+          ...payload,
         }),
       });
 
-      elements.feedForm.reset();
-      elements.feedFormStatus.textContent = "Feed added successfully.";
+      resetFeedForm(isEditing ? "Feed updated successfully." : "Feed added successfully.");
       await loadSnapshot();
     } catch (error) {
       elements.feedFormStatus.textContent = error.message;
@@ -436,10 +515,24 @@ function bindEvents() {
       elements.feedSubmit.disabled = false;
     }
   });
+
+  elements.feedList.addEventListener("click", (event) => {
+    const editButton = event.target.closest(".feed-edit-button");
+    if (editButton) {
+      startFeedEdit(editButton.dataset.feedId);
+      return;
+    }
+
+    const deleteButton = event.target.closest(".feed-delete-button");
+    if (deleteButton) {
+      void deleteFeed(deleteButton.dataset.feedId);
+    }
+  });
 }
 
 async function init() {
   loadTheme();
+  syncFeedFormMode();
   bindEvents();
   renderSkeletons();
   await loadSnapshot();

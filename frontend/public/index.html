@@ -81,7 +81,10 @@
                 <span>RSS URL</span>
                 <input id="feed-url" type="url" placeholder="https://www.google.com/alerts/feeds/..." required />
               </label>
-              <button id="feed-submit" class="primary-button" type="submit">Add feed</button>
+              <div class="feed-form-actions">
+                <button id="feed-submit" class="primary-button" type="submit">Add feed</button>
+                <button id="feed-cancel" class="ghost-button" type="button" hidden>Cancel edit</button>
+              </div>
             </form>
 
             <p id="feed-form-status" class="status-line" role="status">Connect up to 50 RSS feeds.</p>
@@ -123,11 +126,17 @@
 
     <template id="feed-item-template">
       <article class="feed-item">
-        <div>
+        <div class="feed-item-main">
           <h3 class="feed-item-title"></h3>
           <p class="feed-item-meta"></p>
         </div>
-        <span class="feed-status"></span>
+        <div class="feed-item-side">
+          <span class="feed-status"></span>
+          <div class="feed-item-actions">
+            <button class="ghost-button feed-edit-button" type="button">Edit</button>
+            <button class="ghost-button feed-delete-button" type="button">Delete</button>
+          </div>
+        </div>
       </article>
     </template>
 

@@ -185,6 +185,13 @@ h3 {
   gap: 14px;
 }
 
+.feed-form-actions,
+.feed-item-actions,
+.feed-item-side {
+  display: flex;
+  gap: 10px;
+}
+
 .filter-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -280,8 +287,26 @@ h3 {
   border: 1px solid var(--line);
 }
 
+.feed-item-main {
+  min-width: 0;
+}
+
 .feed-item-title {
   margin-bottom: 4px;
+}
+
+.feed-item-side {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.feed-item-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.feed-item-actions .ghost-button {
+  padding: 8px 12px;
 }
 
 .feed-status {
@@ -466,5 +491,21 @@ h3 {
 
   .articles-grid {
     grid-template-columns: 1fr;
+  }
+
+  .feed-form-actions,
+  .feed-item-side,
+  .feed-item-actions {
+    width: 100%;
+  }
+
+  .feed-item {
+    flex-direction: column;
+  }
+
+  .feed-item-side,
+  .feed-item-actions {
+    align-items: stretch;
+    justify-content: stretch;
   }
 }
