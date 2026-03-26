@@ -1,17 +1,18 @@
-import { env, envFilePath } from "./config/env.js";
+import express from "express";
 
-async function run() {
-  if (!env.databaseUrl) {
-    console.error("Missing DATABASE_URL. Create backend/.env file.");
-    console.error("For Railway, add a PostgreSQL service and copy its DATABASE_URL into your app variables.");
-    console.error(`Optional local env file path: ${envFilePath}`);
-    process.exit(1);
-  }
+console.log("BOOTING MINIMAL START.JS SERVER");
 
-  await import("./server.js");
-}
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-run().catch((error) => {
-  console.error("Failed to bootstrap the application", error);
-  process.exit(1);
+app.get("/", (_request, response) => {
+  response.status(200).type("text/plain").send("START.JS OK");
+});
+
+app.get("/api/health", (_request, response) => {
+  response.status(200).json({ ok: true, status: "startjs-ok" });
+});
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`LISTENING ON PORT ${PORT}`);
 });
