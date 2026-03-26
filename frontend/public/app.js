@@ -1,4 +1,3 @@
-const PLACEHOLDER_IMAGE = "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image";
 const THEME_STORAGE_KEY = "rss-monitor-theme";
 const POLLING_INTERVAL_MS = 30000;
 const SUMMARY_METRICS = [
@@ -313,21 +312,32 @@ function renderArticles() {
   articles.forEach((article) => {
     const node = elements.articleCardTemplate.content.cloneNode(true);
     const link = node.querySelector(".article-link");
+    const media = node.querySelector(".article-media");
     const image = node.querySelector(".article-image");
     const topic = node.querySelector(".article-topic");
     const source = node.querySelector(".article-source");
     const date = node.querySelector(".article-date");
     const title = node.querySelector(".article-title");
     const feed = node.querySelector(".article-feed");
-    const finalImageSrc = article.thumbnail || PLACEHOLDER_IMAGE;
+    const finalImageSrc = article.thumbnail || "";
 
     link.href = getArticleDestination(article);
-    image.src = finalImageSrc;
+    if (finalImageSrc) {
+      image.src = finalImageSrc;
+      image.classList.remove("is-hidden");
+      media.classList.remove("is-empty");
+    } else {
+      image.removeAttribute("src");
+      image.classList.add("is-hidden");
+      media.classList.add("is-empty");
+    }
     image.dataset.thumbnail = article.thumbnail || "";
     image.alt = article.title || "Article thumbnail";
     image.onerror = () => {
       image.onerror = null;
-      image.src = PLACEHOLDER_IMAGE;
+      image.removeAttribute("src");
+      image.classList.add("is-hidden");
+      media.classList.add("is-empty");
     };
     topic.textContent = article.topic || "General";
     source.textContent = article.source || "Unknown source";

@@ -380,10 +380,20 @@ h3 {
   background: linear-gradient(135deg, #dbe8ff, #f5f9ff);
 }
 
+.article-media.is-empty {
+  background:
+    linear-gradient(135deg, rgba(22, 96, 255, 0.08), rgba(15, 159, 127, 0.08)),
+    linear-gradient(135deg, #eef4fb, #f8fbff);
+}
+
 .article-image {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.article-image.is-hidden {
+  display: none;
 }
 
 .article-topic {
