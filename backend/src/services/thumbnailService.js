@@ -124,7 +124,7 @@ export async function scrapeArticleMetadata(link, existingSnippet = "") {
         : twitterImage
           ? "twitter:image"
           : articleImage
-            ? "fallback-image"
+            ? "article-image"
             : "placeholder";
       const resolvedThumbnail = normalizeText(
         resolveImageCandidate(link, ogImage || ogSecureImage || twitterImage || articleImage || ""),

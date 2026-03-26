@@ -47,37 +47,111 @@ function getSourceName(link) {
   }
 }
 
+function isMeaningfulImageCandidate(candidate) {
+  const normalized = String(candidate || "").trim().toLowerCase();
+  if (!normalized || normalized.startsWith("data:")) {
+    return false;
+  }
+
+  return !["logo", "icon", "avatar", "pixel", "tracking"].some((token) => normalized.includes(token));
+}
+
+function resolveFeedImageCandidate(link, candidate) {
+  if (!isMeaningfulImageCandidate(candidate)) {
+    return "";
+  }
+
+  try {
+    return new URL(candidate, link).toString();
+  } catch {
+    return candidate;
+  }
+}
+
+function extractFirstMeaningfulHtmlImage(html, link) {
+  const markup = normalizeText(html, "");
+  if (!markup) {
+    return "";
+  }
+
+  const $ = cheerio.load(markup);
+  const selectors = [
+    "article img",
+    "figure img",
+    ".entry-content img",
+    ".post-content img",
+    ".content img",
+    "img"
+  ];
+
+  for (const selector of selectors) {
+    const found = $(selector)
+      .map((_, element) => {
+        const node = $(element);
+        return node.attr("src") || node.attr("data-src") || node.attr("data-lazy-src") || "";
+      })
+      .get()
+      .find((candidate) => isMeaningfulImageCandidate(candidate));
+
+    if (found) {
+      return resolveFeedImageCandidate(link, found);
+    }
+  }
+
+  return "";
+}
+
+function isImageEnclosure(enclosure) {
+  if (!enclosure || typeof enclosure !== "object") {
+    return false;
+  }
+
+  const type = String(enclosure.type || "").toLowerCase();
+  const url = String(enclosure.url || "");
+  return type.startsWith("image/") || [".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif"].some((ext) => url.toLowerCase().includes(ext));
+}
+
 function extractFeedThumbnail(link, item) {
   const mediaContent = Array.isArray(item["media:content"])
     ? item["media:content"]
     : item["media:content"]
       ? [item["media:content"]]
       : [];
-  const mediaThumbnail =
-    item["media:thumbnail"] && typeof item["media:thumbnail"] === "object" ? item["media:thumbnail"] : null;
-  const candidates = [
-    ...mediaContent.map((entry) => (typeof entry === "object" ? entry.url || entry?.$?.url || "" : "")),
-    mediaThumbnail?.$?.url || mediaThumbnail?.url || "",
-    item.enclosure && typeof item.enclosure === "object" ? item.enclosure.url : "",
-    item.thumbnail && typeof item.thumbnail === "object" ? item.thumbnail.url : "",
-  ];
+  const mediaThumbnail = Array.isArray(item["media:thumbnail"])
+    ? item["media:thumbnail"]
+    : item["media:thumbnail"]
+      ? [item["media:thumbnail"]]
+      : [];
 
-  const htmlContent = normalizeText(item["content:encoded"] || item.content || item.summary || item.description, "");
-  if (htmlContent) {
-    const $ = cheerio.load(htmlContent);
-    candidates.push($("img").first().attr("src") || $("img").first().attr("data-src") || "");
+  const mediaContentCandidate = mediaContent
+    .map((entry) => (typeof entry === "object" ? entry.url || entry?.$?.url || "" : ""))
+    .find((candidate) => isMeaningfulImageCandidate(candidate));
+  if (mediaContentCandidate) {
+    return { url: resolveFeedImageCandidate(link, mediaContentCandidate), source: "rss-media-content" };
   }
 
-  const firstCandidate = candidates.find((candidate) => typeof candidate === "string" && candidate.trim());
-  if (!firstCandidate) {
-    return "";
+  const mediaThumbnailCandidate = mediaThumbnail
+    .map((entry) => (typeof entry === "object" ? entry.url || entry?.$?.url || "" : ""))
+    .find((candidate) => isMeaningfulImageCandidate(candidate));
+  if (mediaThumbnailCandidate) {
+    return { url: resolveFeedImageCandidate(link, mediaThumbnailCandidate), source: "rss-media-thumbnail" };
   }
 
-  try {
-    return new URL(firstCandidate, link).toString();
-  } catch {
-    return firstCandidate;
+  if (isImageEnclosure(item.enclosure)) {
+    return { url: resolveFeedImageCandidate(link, item.enclosure.url), source: "rss-enclosure" };
   }
+
+  const contentEncodedImage = extractFirstMeaningfulHtmlImage(item["content:encoded"] || item.content, link);
+  if (contentEncodedImage) {
+    return { url: contentEncodedImage, source: "rss-content-encoded" };
+  }
+
+  const descriptionImage = extractFirstMeaningfulHtmlImage(item.description || item.summary, link);
+  if (descriptionImage) {
+    return { url: descriptionImage, source: "rss-description-image" };
+  }
+
+  return { url: "", source: "placeholder" };
 }
 
 function summaryShortFromArticle(article) {
@@ -235,7 +309,8 @@ function normalizeItem(feed, item) {
   const pubDate = new Date(String(item.isoDate || item.pubDate || new Date().toISOString()));
   const contentSnippet = sanitizeFeedText(item.contentSnippet || item.content || item.summary || item.description, "");
   const title = sanitizeFeedText(item.title, "Untitled Article");
-  const thumbnail = normalizeText(extractFeedThumbnail(link, item), env.placeholderImage);
+  const extractedThumbnail = extractFeedThumbnail(link, item);
+  const thumbnail = normalizeText(extractedThumbnail.url, env.placeholderImage);
   const canonicalLink = canonicalizeUrl(link);
   const source = sanitizeFeedText(item.creator || item.author || getSourceName(link), "Unknown");
 
@@ -262,7 +337,8 @@ function normalizeItem(feed, item) {
     duplicateOf: null,
     language: "unknown",
     fetchStatus: thumbnail && thumbnail !== env.placeholderImage ? "partial" : "pending",
-    articleHash: createDeterministicId(canonicalLink || link)
+    articleHash: createDeterministicId(canonicalLink || link),
+    thumbnailSource: extractedThumbnail.source
   };
 }
 
@@ -336,9 +412,7 @@ export async function syncFeed(feed) {
         }
 
         console.log(
-          `Thumbnail source for article ${normalized.id}: ${
-            normalized.thumbnail && normalized.thumbnail !== env.placeholderImage ? "rss" : "placeholder"
-          }`
+          `Thumbnail source for article ${normalized.id}: ${normalized.thumbnailSource || "placeholder"}`
         );
 
         const result = await upsertArticle(normalized);
