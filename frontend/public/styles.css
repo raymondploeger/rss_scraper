@@ -77,7 +77,8 @@ img {
 .header-actions,
 .panel-head,
 .content-head,
-.article-meta {
+.article-meta,
+.panel-head-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -168,6 +169,11 @@ h3 {
   padding: 20px;
 }
 
+.panel-head-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .summary-card {
   padding: 18px;
 }
@@ -183,6 +189,15 @@ h3 {
 .feed-list {
   display: grid;
   gap: 14px;
+}
+
+.feed-panel-content {
+  display: grid;
+  gap: 14px;
+}
+
+.feed-panel-content.is-collapsed {
+  display: none;
 }
 
 .feed-form-actions,
@@ -285,6 +300,12 @@ h3 {
   border-radius: var(--radius-md);
   background: var(--bg-soft);
   border: 1px solid var(--line);
+}
+
+.feed-list {
+  max-height: min(50vh, 560px);
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .feed-item-main {
@@ -479,7 +500,8 @@ h3 {
   .app-header,
   .header-actions,
   .content-head,
-  .panel-head {
+  .panel-head,
+  .panel-head-actions {
     align-items: flex-start;
     flex-direction: column;
   }

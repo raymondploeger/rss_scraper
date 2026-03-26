@@ -96,9 +96,22 @@
                 <p class="eyebrow">Sources</p>
                 <h2>Active feeds</h2>
               </div>
-              <span id="feed-count" class="pill">0</span>
+              <div class="panel-head-actions">
+                <span id="feed-count" class="pill">0</span>
+                <button id="feed-panel-toggle" class="ghost-button" type="button" aria-expanded="true">Hide feeds</button>
+              </div>
             </div>
-            <div id="feed-list" class="feed-list"></div>
+            <div id="feed-panel-content" class="feed-panel-content">
+              <label class="field">
+                <span>Feed status</span>
+                <select id="feed-visibility-filter">
+                  <option value="all">All feeds</option>
+                  <option value="active">Active feeds</option>
+                  <option value="inactive">Paused/Inactive feeds</option>
+                </select>
+              </label>
+              <div id="feed-list" class="feed-list"></div>
+            </div>
           </section>
         </aside>
 

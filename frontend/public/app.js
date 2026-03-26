@@ -12,6 +12,8 @@ const state = {
   feeds: [],
   articles: [],
   editingFeedId: null,
+  feedPanelCollapsed: false,
+  feedPanelFilter: "all",
   filters: {
     search: "",
     topic: "",
@@ -47,6 +49,9 @@ const elements = {
   feedUrl: document.getElementById("feed-url"),
   feedFormStatus: document.getElementById("feed-form-status"),
   feedCount: document.getElementById("feed-count"),
+  feedPanelToggle: document.getElementById("feed-panel-toggle"),
+  feedPanelContent: document.getElementById("feed-panel-content"),
+  feedVisibilityFilter: document.getElementById("feed-visibility-filter"),
   feedList: document.getElementById("feed-list"),
   summaryCardTemplate: document.getElementById("summary-card-template"),
   feedItemTemplate: document.getElementById("feed-item-template"),
@@ -147,20 +152,43 @@ function renderFeedOptions() {
   elements.feedFilter.value = state.filters.feedId;
 }
 
-function renderFeedList() {
-  elements.feedCount.textContent = String(state.feeds.length);
-  elements.feedList.innerHTML = "";
+function getVisibleFeedsForPanel() {
+  return state.feeds
+    .filter((feed) => {
+      if (state.feedPanelFilter === "active") {
+        return feed.isActive !== false;
+      }
 
-  if (!state.feeds.length) {
+      if (state.feedPanelFilter === "inactive") {
+        return feed.isActive === false;
+      }
+
+      return true;
+    })
+    .slice()
+    .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")));
+}
+
+function renderFeedPanelState() {
+  elements.feedPanelContent.classList.toggle("is-collapsed", state.feedPanelCollapsed);
+  elements.feedPanelToggle.textContent = state.feedPanelCollapsed ? "Show feeds" : "Hide feeds";
+  elements.feedPanelToggle.setAttribute("aria-expanded", String(!state.feedPanelCollapsed));
+  elements.feedVisibilityFilter.value = state.feedPanelFilter;
+}
+
+function renderFeedList() {
+  const feeds = getVisibleFeedsForPanel();
+  elements.feedCount.textContent = String(feeds.length);
+  elements.feedList.innerHTML = "";
+  renderFeedPanelState();
+
+  if (!feeds.length) {
     elements.feedList.innerHTML = `<div class="empty-state">No feeds configured yet.</div>`;
     return;
   }
 
   const fragment = document.createDocumentFragment();
-  state.feeds
-    .slice()
-    .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")))
-    .forEach((feed) => {
+  feeds.forEach((feed) => {
       const node = elements.feedItemTemplate.content.cloneNode(true);
       const title = node.querySelector(".feed-item-title");
       const meta = node.querySelector(".feed-item-meta");
@@ -285,6 +313,10 @@ function renderDashboard() {
   renderFeedOptions();
   renderFeedList();
   renderArticles();
+}
+
+function initializeFeedPanelState() {
+  state.feedPanelCollapsed = window.matchMedia("(max-width: 720px)").matches;
 }
 
 function syncFeedFormMode() {
@@ -528,10 +560,21 @@ function bindEvents() {
       void deleteFeed(deleteButton.dataset.feedId);
     }
   });
+
+  elements.feedPanelToggle.addEventListener("click", () => {
+    state.feedPanelCollapsed = !state.feedPanelCollapsed;
+    renderFeedPanelState();
+  });
+
+  elements.feedVisibilityFilter.addEventListener("change", (event) => {
+    state.feedPanelFilter = event.target.value;
+    renderFeedList();
+  });
 }
 
 async function init() {
   loadTheme();
+  initializeFeedPanelState();
   syncFeedFormMode();
   bindEvents();
   renderSkeletons();
