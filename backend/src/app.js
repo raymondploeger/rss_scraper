@@ -2,9 +2,12 @@ import express from "express";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import axios from "axios";
+import { env } from "./config/env.js";
 import { listArticles } from "./controllers/articleController.js";
 import { createFeed, deleteFeed, listFeeds, refreshAll, refreshFeed, updateFeed } from "./controllers/feedController.js";
 import { asyncHandler } from "./utils/asyncHandler.js";
+import { canonicalizeUrl, normalizeText } from "./utils/text.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -32,6 +35,55 @@ export function createApp() {
   app.delete("/api/feeds/:feedId", asyncHandler(deleteFeed));
   app.post("/api/feeds/:feedId/refresh", asyncHandler(refreshFeed));
   app.get("/api/articles", asyncHandler(listArticles));
+  app.get("/api/image", asyncHandler(async (request, response) => {
+    const targetUrl = normalizeText(request.query.url, "");
+    if (!targetUrl) {
+      response.status(400).json({ error: "Image URL is required." });
+      return;
+    }
+
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(canonicalizeUrl(targetUrl));
+    } catch {
+      response.status(400).json({ error: "Invalid image URL." });
+      return;
+    }
+
+    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+      response.status(400).json({ error: "Unsupported image protocol." });
+      return;
+    }
+
+    try {
+      const upstream = await axios.get(parsedUrl.toString(), {
+        responseType: "stream",
+        timeout: env.requestTimeoutMs,
+        maxRedirects: 5,
+        headers: {
+          "User-Agent": "RSS Monitor Dashboard/2.0",
+          Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"
+        },
+        validateStatus: (status) => status >= 200 && status < 400
+      });
+
+      const contentType = String(upstream.headers["content-type"] || "");
+      if (!contentType.startsWith("image/")) {
+        response.redirect(302, env.placeholderImage);
+        return;
+      }
+
+      response.setHeader("Content-Type", contentType);
+      response.setHeader("Cache-Control", "public, max-age=86400");
+      if (upstream.headers["content-length"]) {
+        response.setHeader("Content-Length", String(upstream.headers["content-length"]));
+      }
+      upstream.data.pipe(response);
+    } catch (error) {
+      console.error("Image proxy error:", error?.stack || error);
+      response.redirect(302, env.placeholderImage);
+    }
+  }));
 
   app.use(express.static(frontendPath));
 
