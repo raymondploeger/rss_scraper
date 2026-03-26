@@ -7,6 +7,56 @@ import { canonicalizeUrl, normalizeText, resolveUrl, sanitizeFeedText } from "..
 
 const scrapeCache = new Map();
 
+function resolveImageCandidate(pageUrl, candidate) {
+  const value = normalizeText(candidate, "");
+  if (!value || value.startsWith("data:")) {
+    return "";
+  }
+
+  return resolveUrl(pageUrl, value);
+}
+
+function findMeaningfulImage($) {
+  const selectors = [
+    'article img',
+    'main img',
+    '[role="main"] img',
+    '.article-content img',
+    '.entry-content img',
+    '.post-content img',
+    '.content img',
+    'figure img',
+    'img'
+  ];
+
+  for (const selector of selectors) {
+    const candidates = $(selector)
+      .map((_, element) => {
+        const node = $(element);
+        return (
+          node.attr("src") ||
+          node.attr("data-src") ||
+          node.attr("data-lazy-src") ||
+          node.attr("data-original") ||
+          ""
+        );
+      })
+      .get()
+      .filter(Boolean);
+
+    const meaningful = candidates.find((candidate) => {
+      const normalized = String(candidate).trim();
+      return normalized && !normalized.startsWith("data:");
+    });
+
+    if (meaningful) {
+      return meaningful;
+    }
+  }
+
+  return "";
+}
+
 async function requestHtml(url, attempt = 0) {
   try {
     const response = await axios.get(url, {
@@ -47,15 +97,9 @@ export async function scrapeArticleMetadata(link, existingSnippet = "") {
       const html = await requestHtml(link);
       const $ = cheerio.load(html);
       const ogImage = $('meta[property="og:image"]').attr("content");
-      const ogSecureImage = $('meta[property="og:image:secure_url"]').attr("content");
       const twitterImage = $('meta[name="twitter:image"]').attr("content");
       const canonicalUrl = $('link[rel="canonical"]').attr("href");
-      const articleImage =
-        $("article img").first().attr("src") ||
-        $("figure img").first().attr("src") ||
-        $(".wp-post-image").first().attr("src") ||
-        $('img[src*="/wp-content/uploads/"]').first().attr("src") ||
-        "";
+      const articleImage = findMeaningfulImage($);
       const metaDescription =
         $('meta[property="og:description"]').attr("content") ||
         $('meta[name="description"]').attr("content") ||
@@ -68,20 +112,15 @@ export async function scrapeArticleMetadata(link, existingSnippet = "") {
       const htmlLang = $("html").attr("lang") || "";
 
       return {
-        thumbnail: normalizeText(
-          resolveUrl(link, ogImage || ogSecureImage || twitterImage || articleImage || ""),
-          env.placeholderImage
-        ),
+        thumbnail: normalizeText(resolveImageCandidate(link, ogImage || twitterImage || articleImage), env.placeholderImage),
         canonicalLink: canonicalizeUrl(normalizeText(canonicalUrl, link)),
         metaDescription: sanitizeFeedText(metaDescription, ""),
         contentSnippet: sanitizeFeedText(articleText || existingSnippet, existingSnippet),
         language: normalizeText(htmlLang, "unknown"),
-        fetchStatus:
-          ogImage || ogSecureImage || twitterImage || articleImage || canonicalUrl || metaDescription || articleText
-            ? "enriched"
-            : "partial"
+        fetchStatus: ogImage || twitterImage || articleImage || canonicalUrl || metaDescription || articleText ? "enriched" : "partial"
       };
-    } catch {
+    } catch (error) {
+      console.error(`Thumbnail scrape failed for ${link}:`, error?.stack || error);
       return {
         thumbnail: env.placeholderImage,
         canonicalLink: canonicalizeUrl(link),

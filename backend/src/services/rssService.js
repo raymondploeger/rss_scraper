@@ -39,12 +39,18 @@ function getSourceName(link) {
 }
 
 function extractFeedThumbnail(link, item) {
+  const mediaContent = Array.isArray(item["media:content"])
+    ? item["media:content"]
+    : item["media:content"]
+      ? [item["media:content"]]
+      : [];
   const mediaThumbnail =
     item["media:thumbnail"] && typeof item["media:thumbnail"] === "object" ? item["media:thumbnail"] : null;
   const candidates = [
+    ...mediaContent.map((entry) => (typeof entry === "object" ? entry.url || entry?.$?.url || "" : "")),
+    mediaThumbnail?.$?.url || mediaThumbnail?.url || "",
     item.enclosure && typeof item.enclosure === "object" ? item.enclosure.url : "",
     item.thumbnail && typeof item.thumbnail === "object" ? item.thumbnail.url : "",
-    mediaThumbnail?.$?.url || mediaThumbnail?.url || ""
   ];
 
   const htmlContent = normalizeText(item["content:encoded"] || item.content || item.summary || item.description, "");
@@ -172,23 +178,10 @@ export async function syncFeed(feed) {
         newArticles += 1;
         console.log(`Stored new article ${result.article.id} for feed ${feed.id}`);
 
-        const enriched = await scrapeArticleMetadata(result.article.link, result.article.contentSnippet || result.article.summary);
-        const updatedArticle = await updateArticle(result.article.id, {
-          thumbnail:
-            result.article.thumbnail && result.article.thumbnail !== env.placeholderImage
-              ? result.article.thumbnail
-              : enriched.thumbnail,
-          canonicalLink: enriched.canonicalLink || result.article.canonicalLink,
-          contentSnippet: enriched.contentSnippet || result.article.contentSnippet,
-          summary: result.article.summary || enriched.metaDescription || result.article.contentSnippet,
-          summaryShort: result.article.summaryShort || summaryShortFromArticle(result.article),
-          language: enriched.language || result.article.language,
-          fetchStatus: enriched.fetchStatus
-        });
-        broadcast("article:update", { type: "article:update", article: updatedArticle });
-
-        if (!updatedArticle.thumbnail || updatedArticle.thumbnail === env.placeholderImage) {
-          void enrichArticle(updatedArticle.id);
+        if (!result.article.thumbnail || result.article.thumbnail === env.placeholderImage) {
+          void enrichArticle(result.article.id).catch((enrichmentError) => {
+            console.error(`Async thumbnail enrichment failed for article ${result.article.id}:`, enrichmentError?.stack || enrichmentError);
+          });
         }
       } catch (itemError) {
         console.error(`Article ingestion error for feed ${feed.id}:`, itemError?.stack || itemError);
