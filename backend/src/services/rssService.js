@@ -148,6 +148,20 @@ async function upsertArticle(article) {
   return { created: false, article: existing };
 }
 
+function queueThumbnailEnrichment(article) {
+  if (!article?.id) {
+    return;
+  }
+
+  if (article.thumbnail && article.thumbnail !== env.placeholderImage) {
+    return;
+  }
+
+  void enrichArticle(article.id).catch((enrichmentError) => {
+    console.error(`Async thumbnail enrichment failed for article ${article.id}:`, enrichmentError?.stack || enrichmentError);
+  });
+}
+
 export async function syncFeed(feed) {
   const startedAt = new Date();
   let newArticles = 0;
@@ -178,17 +192,14 @@ export async function syncFeed(feed) {
 
         const result = await upsertArticle(normalized);
         if (!result.created) {
+          queueThumbnailEnrichment(result.article);
           continue;
         }
 
         newArticles += 1;
         console.log(`Stored new article ${result.article.id} for feed ${feed.id}`);
 
-        if (!result.article.thumbnail || result.article.thumbnail === env.placeholderImage) {
-          void enrichArticle(result.article.id).catch((enrichmentError) => {
-            console.error(`Async thumbnail enrichment failed for article ${result.article.id}:`, enrichmentError?.stack || enrichmentError);
-          });
-        }
+        queueThumbnailEnrichment(result.article);
       } catch (itemError) {
         console.error(`Article ingestion error for feed ${feed.id}:`, itemError?.stack || itemError);
       }

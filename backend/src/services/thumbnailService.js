@@ -6,22 +6,6 @@ import { broadcast } from "./realtimeService.js";
 import { canonicalizeUrl, normalizeText, resolveUrl, sanitizeFeedText } from "../utils/text.js";
 
 const scrapeCache = new Map();
-const MEANINGFUL_IMAGE_MIN_SIZE = 120;
-const NOISY_IMAGE_PATTERNS = [
-  "logo",
-  "icon",
-  "avatar",
-  "gravatar",
-  "emoji",
-  "sprite",
-  "tracking",
-  "pixel",
-  "badge",
-  "banner-ad",
-  "ads",
-  "doubleclick",
-  "feedburner"
-];
 
 function resolveImageCandidate(pageUrl, candidate) {
   const value = normalizeText(candidate, "");
@@ -32,71 +16,47 @@ function resolveImageCandidate(pageUrl, candidate) {
   return resolveUrl(pageUrl, value);
 }
 
-function parseDimension(value) {
-  if (!value) {
-    return 0;
-  }
+function findMeaningfulImage($) {
+  const selectors = [
+    "article img",
+    "figure img",
+    ".wp-post-image",
+    'img[src*="/wp-content/uploads/"]',
+    "main img",
+    "[role='main'] img",
+    ".article-content img",
+    ".entry-content img",
+    ".post-content img",
+    ".content img",
+    "img"
+  ];
 
-  const parsed = Number.parseInt(String(value).replace(/[^\d]/g, ""), 10);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function isNoisyImage(candidate) {
-  const lower = String(candidate || "").toLowerCase();
-  return NOISY_IMAGE_PATTERNS.some((pattern) => lower.includes(pattern));
-}
-
-function collectImageCandidates($, selector) {
-  return $(selector)
-    .map((_, element) => {
-      const node = $(element);
-      const src =
-        node.attr("src") ||
-        node.attr("data-src") ||
-        node.attr("data-lazy-src") ||
-        node.attr("data-original") ||
-        node.attr("srcset")?.split(",")[0]?.trim().split(" ")[0] ||
-        "";
-      const alt = node.attr("alt") || "";
-      const width = parseDimension(node.attr("width"));
-      const height = parseDimension(node.attr("height"));
-      const classes = node.attr("class") || "";
-      const id = node.attr("id") || "";
-
-      return {
-        src,
-        alt,
-        width,
-        height,
-        score: Math.max(width, height),
-        descriptor: `${src} ${alt} ${classes} ${id}`
-      };
-    })
-    .get()
-    .filter((candidate) => {
-      if (!candidate.src || candidate.src.startsWith("data:")) {
-        return false;
-      }
-
-      if (isNoisyImage(candidate.descriptor)) {
-        return false;
-      }
-
-      const detectedMin = Math.min(candidate.width || 9999, candidate.height || 9999);
-      if (detectedMin > 0 && detectedMin < MEANINGFUL_IMAGE_MIN_SIZE) {
-        return false;
-      }
-
-      return true;
-    })
-    .sort((left, right) => right.score - left.score);
-}
-
-function findMeaningfulImage($, selectors) {
   for (const selector of selectors) {
-    const [best] = collectImageCandidates($, selector);
-    if (best?.src) {
-      return best.src;
+    const candidates = $(selector)
+      .map((_, element) => {
+        const node = $(element);
+        return (
+          node.attr("src") ||
+          node.attr("data-src") ||
+          node.attr("data-lazy-src") ||
+          node.attr("data-original") ||
+          ""
+        );
+      })
+      .get()
+      .filter(Boolean);
+
+    const meaningful = candidates.find((candidate) => {
+      const normalized = String(candidate).trim().toLowerCase();
+      if (!normalized || normalized.startsWith("data:")) {
+        return false;
+      }
+
+      return !["logo", "icon", "avatar", "pixel", "tracking"].some((token) => normalized.includes(token));
+    });
+
+    if (meaningful) {
+      return meaningful;
     }
   }
 
@@ -143,25 +103,10 @@ export async function scrapeArticleMetadata(link, existingSnippet = "") {
       const html = await requestHtml(link);
       const $ = cheerio.load(html);
       const ogImage = $('meta[property="og:image"]').attr("content");
+      const ogSecureImage = $('meta[property="og:image:secure_url"]').attr("content");
       const twitterImage = $('meta[name="twitter:image"]').attr("content");
       const canonicalUrl = $('link[rel="canonical"]').attr("href");
-      const articleImage = findMeaningfulImage($, [
-        "article img",
-        "main article img",
-        ".article-content img",
-        ".entry-content img",
-        ".post-content img",
-        ".content img",
-        "[itemprop='articleBody'] img",
-        "main img",
-        "[role='main'] img"
-      ]);
-      const pageImage = findMeaningfulImage($, [
-        "figure img",
-        "main img",
-        "[role='main'] img",
-        "img"
-      ]);
+      const articleImage = findMeaningfulImage($);
       const metaDescription =
         $('meta[property="og:description"]').attr("content") ||
         $('meta[name="description"]').attr("content") ||
@@ -174,15 +119,15 @@ export async function scrapeArticleMetadata(link, existingSnippet = "") {
       const htmlLang = $("html").attr("lang") || "";
       const thumbnailSource = ogImage
         ? "og:image"
+        : ogSecureImage
+          ? "og:image:secure_url"
         : twitterImage
           ? "twitter:image"
           : articleImage
-            ? "article-image"
-            : pageImage
-              ? "page-image"
-              : "placeholder";
+            ? "fallback-image"
+            : "placeholder";
       const resolvedThumbnail = normalizeText(
-        resolveImageCandidate(link, ogImage || twitterImage || articleImage || pageImage),
+        resolveImageCandidate(link, ogImage || ogSecureImage || twitterImage || articleImage || ""),
         env.placeholderImage
       );
 
@@ -195,7 +140,7 @@ export async function scrapeArticleMetadata(link, existingSnippet = "") {
         contentSnippet: sanitizeFeedText(articleText || existingSnippet, existingSnippet),
         language: normalizeText(htmlLang, "unknown"),
         fetchStatus:
-          ogImage || twitterImage || articleImage || pageImage || canonicalUrl || metaDescription || articleText
+          ogImage || ogSecureImage || twitterImage || articleImage || canonicalUrl || metaDescription || articleText
             ? "enriched"
             : "partial"
       };
