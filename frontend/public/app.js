@@ -321,7 +321,7 @@ function renderArticles() {
     const title = node.querySelector(".article-title");
     const feed = node.querySelector(".article-feed");
     const hasThumbnail = Boolean(article.thumbnail && String(article.thumbnail).trim());
-    const finalImageSrc = hasThumbnail ? article.thumbnail.trim() : "";
+    const finalImageSrc = hasThumbnail ? `/api/image?url=${encodeURIComponent(article.thumbnail.trim())}` : "";
 
     link.href = getArticleDestination(article);
     if (hasThumbnail) {

@@ -55,6 +55,8 @@ export function createApp() {
       return;
     }
 
+    console.log(`Image proxy request: ${parsedUrl.toString()}`);
+
     try {
       const upstream = await axios.get(parsedUrl.toString(), {
         responseType: "stream",
@@ -67,8 +69,11 @@ export function createApp() {
         validateStatus: (status) => status >= 200 && status < 400
       });
 
+      console.log(`Image proxy upstream status for ${parsedUrl.toString()}: ${upstream.status}`);
       const contentType = String(upstream.headers["content-type"] || "");
+      console.log(`Image proxy content-type for ${parsedUrl.toString()}: ${contentType || "unknown"}`);
       if (!contentType.startsWith("image/")) {
+        console.warn(`Image proxy fallback for ${parsedUrl.toString()}: upstream content was not an image`);
         response.redirect(302, env.placeholderImage);
         return;
       }
@@ -80,7 +85,7 @@ export function createApp() {
       }
       upstream.data.pipe(response);
     } catch (error) {
-      console.error("Image proxy error:", error?.stack || error);
+      console.error(`Image proxy fallback for ${parsedUrl.toString()}:`, error?.stack || error);
       response.redirect(302, env.placeholderImage);
     }
   }));
