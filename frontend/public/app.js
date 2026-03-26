@@ -314,6 +314,7 @@ function renderArticles() {
     const link = node.querySelector(".article-link");
     const media = node.querySelector(".article-media");
     const image = node.querySelector(".article-image");
+    const thumbnailState = node.querySelector(".article-thumbnail-state");
     const topic = node.querySelector(".article-topic");
     const source = node.querySelector(".article-source");
     const date = node.querySelector(".article-date");
@@ -326,10 +327,14 @@ function renderArticles() {
       image.src = finalImageSrc;
       image.classList.remove("is-hidden");
       media.classList.remove("is-empty");
+      media.dataset.thumbnailState = "has-thumbnail";
+      thumbnailState.textContent = "has-thumbnail";
     } else {
       image.removeAttribute("src");
       image.classList.add("is-hidden");
       media.classList.add("is-empty");
+      media.dataset.thumbnailState = "no-thumbnail";
+      thumbnailState.textContent = "no-thumbnail";
     }
     image.dataset.thumbnail = article.thumbnail || "";
     image.alt = article.title || "Article thumbnail";
@@ -338,6 +343,8 @@ function renderArticles() {
       image.removeAttribute("src");
       image.classList.add("is-hidden");
       media.classList.add("is-empty");
+      media.dataset.thumbnailState = "no-thumbnail";
+      thumbnailState.textContent = "no-thumbnail";
     };
     topic.textContent = article.topic || "General";
     source.textContent = article.source || "Unknown source";
@@ -349,6 +356,8 @@ function renderArticles() {
       title: article.title,
       thumbnail: article.thumbnail || "",
       finalImageSrc,
+      domSrc: image.getAttribute("src") || "",
+      thumbnailState: media.dataset.thumbnailState,
     });
 
     fragment.appendChild(node);
