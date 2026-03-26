@@ -2,6 +2,7 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 import { env } from "../config/env.js";
 import { findArticleById, updateArticle } from "../database/articleRepository.js";
+import { findFeedById, updateFeed } from "../database/feedRepository.js";
 import { broadcast } from "./realtimeService.js";
 import { canonicalizeUrl, normalizeText, resolveUrl, sanitizeFeedText } from "../utils/text.js";
 
@@ -117,30 +118,29 @@ export async function scrapeArticleMetadata(link, existingSnippet = "") {
         .get()
         .join(" ");
       const htmlLang = $("html").attr("lang") || "";
-      const thumbnailSource = ogImage
-        ? "og:image"
-        : ogSecureImage
-          ? "og:image:secure_url"
-        : twitterImage
-          ? "twitter:image"
-          : articleImage
-            ? "article-image"
-            : "placeholder";
-      const resolvedThumbnail = normalizeText(
-        resolveImageCandidate(link, ogImage || ogSecureImage || twitterImage || articleImage || ""),
-        env.placeholderImage
-      );
+      const sourceLevelFallback = normalizeText(resolveImageCandidate(link, ogImage || ogSecureImage || twitterImage || ""), "");
+      const resolvedThumbnail = normalizeText(resolveImageCandidate(link, articleImage || ""), env.placeholderImage);
+      const thumbnailSource = articleImage
+        ? "article-image"
+        : sourceLevelFallback
+          ? ogImage
+            ? "og:image"
+            : ogSecureImage
+              ? "og:image:secure_url"
+              : "twitter:image"
+          : "placeholder";
 
       console.log(`Thumbnail source for ${link}: ${thumbnailSource}`);
 
       return {
         thumbnail: resolvedThumbnail,
+        sourceFallbackThumbnail: sourceLevelFallback || env.placeholderImage,
         canonicalLink: canonicalizeUrl(normalizeText(canonicalUrl, link)),
         metaDescription: sanitizeFeedText(metaDescription, ""),
         contentSnippet: sanitizeFeedText(articleText || existingSnippet, existingSnippet),
         language: normalizeText(htmlLang, "unknown"),
         fetchStatus:
-          ogImage || ogSecureImage || twitterImage || articleImage || canonicalUrl || metaDescription || articleText
+          articleImage || sourceLevelFallback || canonicalUrl || metaDescription || articleText
             ? "enriched"
             : "partial"
       };
@@ -149,6 +149,7 @@ export async function scrapeArticleMetadata(link, existingSnippet = "") {
       console.log(`Thumbnail source for ${link}: placeholder`);
       return {
         thumbnail: env.placeholderImage,
+        sourceFallbackThumbnail: env.placeholderImage,
         canonicalLink: canonicalizeUrl(link),
         metaDescription: "",
         contentSnippet: existingSnippet,
@@ -175,6 +176,15 @@ export async function enrichArticle(articleId) {
   const enriched = await scrapeArticleMetadata(article.link, article.contentSnippet || article.summary || "");
   const nextThumbnail =
     article.thumbnail && article.thumbnail !== env.placeholderImage ? article.thumbnail : enriched.thumbnail;
+
+  if (enriched.sourceFallbackThumbnail && enriched.sourceFallbackThumbnail !== env.placeholderImage) {
+    const feed = await findFeedById(article.feedId);
+    if (feed && (!feed.sourceFallbackImage || feed.sourceFallbackImage === env.placeholderImage)) {
+      await updateFeed(article.feedId, {
+        sourceFallbackImage: enriched.sourceFallbackThumbnail
+      });
+    }
+  }
 
   const updatedArticle = await updateArticle(articleId, {
     thumbnail: nextThumbnail,

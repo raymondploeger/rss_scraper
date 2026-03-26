@@ -13,6 +13,7 @@ model Feed {
   rssUrl            String    @unique
   topic             String
   sourceType        String    @default("rss")
+  sourceFallbackImage String?
   isActive          Boolean   @default(true)
   lastFetchedAt     DateTime?
   lastStatus        String    @default("idle")

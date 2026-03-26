@@ -109,6 +109,10 @@ function getFeedName(feedId) {
   return state.feeds.find((feed) => feed.id === feedId)?.name || "Unknown feed";
 }
 
+function getFeedRecord(feedId) {
+  return state.feeds.find((feed) => feed.id === feedId) || null;
+}
+
 function getSummaryMetrics() {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
@@ -319,7 +323,8 @@ function renderArticles() {
     const date = node.querySelector(".article-date");
     const title = node.querySelector(".article-title");
     const feed = node.querySelector(".article-feed");
-    const finalImageSrc = article.thumbnail || PLACEHOLDER_IMAGE;
+    const sourceFeed = getFeedRecord(article.feedId);
+    const finalImageSrc = article.thumbnail || sourceFeed?.sourceFallbackImage || PLACEHOLDER_IMAGE;
 
     link.href = getArticleDestination(article);
     image.src = finalImageSrc;

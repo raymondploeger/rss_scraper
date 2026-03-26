@@ -18,6 +18,7 @@ export function mapFeedRecord(feed) {
     topic: feed.topic,
     rssUrl: feed.rssUrl,
     sourceType: feed.sourceType,
+    sourceFallbackImage: feed.sourceFallbackImage || null,
     isActive: feed.isActive !== false,
     lastFetchedAt: feed.lastFetchedAt,
     lastStatus: feed.lastStatus,

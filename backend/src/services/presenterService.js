@@ -23,6 +23,7 @@ export function toFeedDto(feed) {
     topic: feed.topic,
     rssUrl: feed.rssUrl,
     sourceType: feed.sourceType || "rss",
+    sourceFallbackImage: feed.sourceFallbackImage || null,
     isActive: feed.isActive !== false,
     lastFetchedAt: feed.lastFetchedAt || null,
     lastStatus: feed.lastStatus || "idle",
