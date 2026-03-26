@@ -27,7 +27,6 @@ const runtime = {
   pollTimer: null,
   eventSource: null,
   realtimeEnabled: false,
-  loggedArticleImage: false,
 };
 
 const elements = {
@@ -295,10 +294,11 @@ function renderArticles() {
     const date = node.querySelector(".article-date");
     const title = node.querySelector(".article-title");
     const feed = node.querySelector(".article-feed");
-    const finalImageSrc = article.thumbnail ? `/api/image?url=${encodeURIComponent(article.thumbnail)}` : PLACEHOLDER_IMAGE;
+    const finalImageSrc = article.thumbnail || PLACEHOLDER_IMAGE;
 
     link.href = article.canonicalLink || article.link;
     image.src = finalImageSrc;
+    image.dataset.thumbnail = article.thumbnail || "";
     image.alt = article.title || "Article thumbnail";
     image.onerror = () => {
       image.onerror = null;
@@ -310,14 +310,11 @@ function renderArticles() {
     title.textContent = article.title || "Untitled article";
     feed.textContent = getFeedName(article.feedId);
 
-    if (!runtime.loggedArticleImage && article.thumbnail) {
-      console.log("Article image render debug", {
-        title: article.title,
-        thumbnail: article.thumbnail,
-        finalImageSrc,
-      });
-      runtime.loggedArticleImage = true;
-    }
+    console.log("Article image render debug", {
+      title: article.title,
+      thumbnail: article.thumbnail || "",
+      finalImageSrc,
+    });
 
     fragment.appendChild(node);
   });
