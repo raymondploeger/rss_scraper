@@ -24,3 +24,7 @@ export function setBootstrapError(error) {
 export function getRuntimeState() {
   return { ...runtimeState };
 }
+
+export function isRuntimeReady() {
+  return runtimeState.databaseConnected && runtimeState.migrationsApplied;
+}

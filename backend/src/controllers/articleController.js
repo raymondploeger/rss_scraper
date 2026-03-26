@@ -6,49 +6,70 @@ import {
 import { listFeeds } from "../database/feedRepository.js";
 import { endOfDay, startOfDay } from "../utils/date.js";
 import { toArticleDto, toFeedDto } from "../services/presenterService.js";
+import { isRuntimeReady } from "../services/runtimeState.js";
 
 export async function listArticles(request, response) {
-  const { topic, feedId, from, to, page = 1, limit = 400, search, showDuplicates } = request.query;
-  const pageNumber = Math.max(1, Number(page) || 1);
-  const pageSize = Math.min(400, Math.max(1, Number(limit) || 400));
-  const filters = {
-    topic,
-    feedId,
-    from: from ? startOfDay(from) : null,
-    to: to ? endOfDay(to) : null,
-    search,
-    excludeDuplicates: String(showDuplicates || "") !== "true"
-  };
+  try {
+    if (!isRuntimeReady()) {
+      response.json([]);
+      return;
+    }
 
-  const [items, total] = await Promise.all([
-    listArticleRecords(filters, {
-      limit: pageSize,
-      offset: (pageNumber - 1) * pageSize
-    }),
-    countArticles(filters)
-  ]);
+    const { topic, feedId, from, to, page = 1, limit = 400, search, showDuplicates } = request.query;
+    const pageNumber = Math.max(1, Number(page) || 1);
+    const pageSize = Math.min(400, Math.max(1, Number(limit) || 400));
+    const filters = {
+      topic,
+      feedId,
+      from: from ? startOfDay(from) : null,
+      to: to ? endOfDay(to) : null,
+      search,
+      excludeDuplicates: String(showDuplicates || "") !== "true"
+    };
 
-  if (request.query.includePagination === "true") {
-    response.json({
-      items: items.map(toArticleDto),
-      pagination: {
-        page: pageNumber,
+    const [items, total] = await Promise.all([
+      listArticleRecords(filters, {
         limit: pageSize,
-        total,
-        totalPages: Math.max(1, Math.ceil(total / pageSize))
-      }
-    });
-    return;
-  }
+        offset: (pageNumber - 1) * pageSize
+      }),
+      countArticles(filters)
+    ]);
 
-  response.json(items.map(toArticleDto));
+    if (request.query.includePagination === "true") {
+      response.json({
+        items: items.map(toArticleDto),
+        pagination: {
+          page: pageNumber,
+          limit: pageSize,
+          total,
+          totalPages: Math.max(1, Math.ceil(total / pageSize))
+        }
+      });
+      return;
+    }
+
+    response.json(items.map(toArticleDto));
+  } catch (error) {
+    console.error("Articles error:", error?.stack || error);
+    response.status(500).json({ error: error?.message || "Failed to load articles" });
+  }
 }
 
 export async function getArticleFilters(request, response) {
-  const [topics, feeds] = await Promise.all([
-    listDistinctArticleTopics(),
-    listFeeds()
-  ]);
+  try {
+    if (!isRuntimeReady()) {
+      response.json({ topics: [], feeds: [] });
+      return;
+    }
 
-  response.json({ topics: topics.sort(), feeds: feeds.map(toFeedDto) });
+    const [topics, feeds] = await Promise.all([
+      listDistinctArticleTopics(),
+      listFeeds()
+    ]);
+
+    response.json({ topics: topics.sort(), feeds: feeds.map(toFeedDto) });
+  } catch (error) {
+    console.error("Article filters error:", error?.stack || error);
+    response.status(500).json({ error: error?.message || "Failed to load article filters" });
+  }
 }

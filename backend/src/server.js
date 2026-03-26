@@ -21,6 +21,14 @@ const HOST = "0.0.0.0";
 
 let schedulerStarted = false;
 
+process.on("uncaughtException", (error) => {
+  console.error("uncaughtException:", error?.stack || error);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("unhandledRejection:", reason && reason.stack ? reason.stack : reason);
+});
+
 function runMigrationsInBackground() {
   return new Promise((resolve, reject) => {
     const child = spawn(prismaBinary, ["migrate", "deploy"], {

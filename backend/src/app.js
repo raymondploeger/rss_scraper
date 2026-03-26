@@ -1,5 +1,6 @@
 import cors from "cors";
 import express from "express";
+import fs from "fs";
 import helmet from "helmet";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -18,6 +19,11 @@ import { asyncHandler } from "./utils/asyncHandler.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const frontendPath = path.resolve(__dirname, "../../frontend/public");
+const indexPath = path.join(frontendPath, "index.html");
+
+console.log("Frontend path resolved to:", frontendPath);
+console.log("Frontend index path resolved to:", indexPath);
+console.log("Frontend index exists:", fs.existsSync(indexPath));
 
 export function createApp() {
   const app = express();
@@ -34,12 +40,28 @@ export function createApp() {
   });
   app.use(express.json());
 
-  app.get("/", (_request, response) => {
-    response.send("OK");
+  app.get("/", (_request, response, next) => {
+    response.sendFile(indexPath, (error) => {
+      if (error) {
+        console.error("Root sendFile error:", error?.stack || error);
+        response.status(500).type("text/plain").send("Failed to serve index.html");
+        return;
+      }
+    });
   });
 
   app.get("/api/health", (_request, response) => {
     response.status(200).json({ ok: true, status: "healthy" });
+  });
+
+  app.get("/api/debug/files", (_request, response) => {
+    response.json({
+      frontendPath,
+      indexPath,
+      indexExists: fs.existsSync(indexPath),
+      cwd: process.cwd(),
+      __dirname
+    });
   });
 
   app.get("/api/ready", (_request, response) => {
@@ -124,11 +146,16 @@ export function createApp() {
   }));
 
   app.get("*", (request, response) => {
-    response.sendFile(path.join(frontendPath, "index.html"));
+    response.sendFile(indexPath, (error) => {
+      if (error) {
+        console.error("Catch-all sendFile error:", error?.stack || error);
+        response.status(500).type("text/plain").send("Failed to serve frontend");
+      }
+    });
   });
 
   app.use((error, _request, response, _next) => {
-    console.error("ERROR:", error);
+    console.error("ERROR:", error?.stack || error);
     response.status(500).json({
       error: "Internal Server Error",
       message: error?.message || "Unknown error"
