@@ -1,4 +1,5 @@
 import { getDatabase } from "../config/db.js";
+import { env } from "../config/env.js";
 import { mapArticleRecord, toIsoString } from "./helpers.js";
 
 function buildArticleWhere(filters = {}) {
@@ -148,7 +149,7 @@ export async function listArticles(filters = {}, options = {}) {
   const items = await prisma.article.findMany({
     where: buildArticleWhere(filters),
     orderBy: [{ pubDate: "desc" }, { createdAt: "desc" }],
-    take: Math.min(400, Math.max(1, Number(options.limit || 400))),
+    take: Math.min(env.maxArticlePageSize, Math.max(1, Number(options.limit || env.maxArticlePageSize))),
     skip: Math.max(0, Number(options.offset || 0)),
   });
 

@@ -1,6 +1,7 @@
 const PLACEHOLDER_IMAGE = "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image";
 const THEME_STORAGE_KEY = "rss-monitor-theme";
 const POLLING_INTERVAL_MS = 30000;
+const ARTICLE_PAGE_SIZE = 400;
 const SUMMARY_METRICS = [
   { label: "Active feeds", key: "activeFeeds" },
   { label: "Tracked topics", key: "topics" },
@@ -283,10 +284,26 @@ async function apiRequest(path, options = {}) {
   return response.json().catch(() => ({}));
 }
 
+async function loadAllArticles() {
+  const articles = [];
+  let page = 1;
+  let totalPages = 1;
+
+  while (page <= totalPages) {
+    const response = await apiRequest(`/api/articles?includePagination=true&showDuplicates=true&limit=${ARTICLE_PAGE_SIZE}&page=${page}`);
+    const items = Array.isArray(response?.items) ? response.items : [];
+    articles.push(...items);
+    totalPages = Math.max(1, Number(response?.pagination?.totalPages) || 1);
+    page += 1;
+  }
+
+  return articles;
+}
+
 async function loadSnapshot() {
   const [feeds, articles] = await Promise.all([
     apiRequest("/api/feeds"),
-    apiRequest("/api/articles?showDuplicates=true&limit=400")
+    loadAllArticles()
   ]);
   state.feeds = feeds;
   state.articles = articles;

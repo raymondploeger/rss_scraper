@@ -3,6 +3,7 @@ import {
   listArticles as listArticleRecords,
   listDistinctArticleTopics
 } from "../database/articleRepository.js";
+import { env } from "../config/env.js";
 import { listFeeds } from "../database/feedRepository.js";
 import { endOfDay, startOfDay } from "../utils/date.js";
 import { toArticleDto, toFeedDto } from "../services/presenterService.js";
@@ -15,9 +16,9 @@ export async function listArticles(request, response) {
       return;
     }
 
-    const { topic, feedId, from, to, page = 1, limit = 400, search, showDuplicates } = request.query;
+    const { topic, feedId, from, to, page = 1, limit = env.maxArticlePageSize, search, showDuplicates } = request.query;
     const pageNumber = Math.max(1, Number(page) || 1);
-    const pageSize = Math.min(400, Math.max(1, Number(limit) || 400));
+    const pageSize = Math.min(env.maxArticlePageSize, Math.max(1, Number(limit) || env.maxArticlePageSize));
 
     const filters = {
       topic,
