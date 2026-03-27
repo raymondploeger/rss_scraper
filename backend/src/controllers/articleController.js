@@ -18,13 +18,14 @@ export async function listArticles(request, response) {
     const { topic, feedId, from, to, page = 1, limit = 400, search, showDuplicates } = request.query;
     const pageNumber = Math.max(1, Number(page) || 1);
     const pageSize = Math.min(400, Math.max(1, Number(limit) || 400));
+
     const filters = {
       topic,
       feedId,
       from: from ? startOfDay(from) : null,
       to: to ? endOfDay(to) : null,
       search,
-      excludeDuplicates: String(showDuplicates || "") !== "true"
+      excludeDuplicates: false
     };
 
     const [items, total] = await Promise.all([
