@@ -30,6 +30,14 @@ const parser = new Parser({
   }
 });
 
+function isNotafiliaUrl(value) {
+  try {
+    return new URL(String(value || "")).hostname === "news.notafilia.pl";
+  } catch {
+    return false;
+  }
+}
+
 function getHostname(value) {
   try {
     return new URL(value).hostname.replace(/^www\./, "");
@@ -313,6 +321,13 @@ function normalizeItem(feed, item) {
   const thumbnail = normalizeText(extractedThumbnail.url, env.placeholderImage);
   const canonicalLink = canonicalizeUrl(link);
   const source = sanitizeFeedText(item.creator || item.author || getSourceName(link), "Unknown");
+  const isNotafiliaArticle = isNotafiliaUrl(link) || isNotafiliaUrl(canonicalLink);
+
+  if (isNotafiliaArticle) {
+    console.log(
+      `[notafilia][rss] articleUrl=${canonicalLink || link} rssImageFound=${Boolean(extractedThumbnail.url)} rssImageValue=${extractedThumbnail.url || ""} finalThumbnail=${thumbnail || ""}`
+    );
+  }
 
   return {
     id: createDeterministicId(canonicalLink || link),
@@ -375,6 +390,11 @@ function queueThumbnailEnrichment(article) {
   }
 
   if (article.thumbnail && article.thumbnail !== env.placeholderImage) {
+    if (isNotafiliaUrl(article.link) || isNotafiliaUrl(article.canonicalLink) || isNotafiliaUrl(article.thumbnail)) {
+      console.log(
+        `[notafilia][enrich] articleUrl=${article.canonicalLink || article.link} skipped=true reason=existing-thumbnail finalThumbnail=${article.thumbnail || ""}`
+      );
+    }
     return;
   }
 

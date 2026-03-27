@@ -77,6 +77,23 @@ function formatDate(value) {
   }).format(toDate(value));
 }
 
+function isNotafiliaUrl(value) {
+  try {
+    return new URL(String(value || "")).hostname === "news.notafilia.pl";
+  } catch {
+    return false;
+  }
+}
+
+function getArticleImageSrc(article) {
+  const thumbnail = String(article.thumbnail || "").trim();
+  if (!thumbnail) {
+    return "";
+  }
+
+  return isNotafiliaUrl(thumbnail) ? `/api/image?url=${encodeURIComponent(thumbnail)}` : thumbnail;
+}
+
 function toDateInputValue(value) {
   const date = toDate(value);
   const year = date.getFullYear();
@@ -242,9 +259,16 @@ function renderArticles() {
     const date = node.querySelector(".article-date");
     const title = node.querySelector(".article-title");
     const feed = node.querySelector(".article-feed");
+    const finalImageSrc = getArticleImageSrc(article);
+
+    if (isNotafiliaUrl(article.link) || isNotafiliaUrl(article.canonicalLink) || isNotafiliaUrl(article.thumbnail)) {
+      console.log(
+        `[notafilia][frontend] articleUrl=${article.canonicalLink || article.link} apiThumbnail=${article.thumbnail || ""} finalImageSrc=${finalImageSrc || ""}`
+      );
+    }
 
     link.href = article.canonicalLink || article.link;
-    image.src = article.thumbnail || PLACEHOLDER_IMAGE;
+    image.src = finalImageSrc || PLACEHOLDER_IMAGE;
     image.alt = article.title || "Article thumbnail";
     image.onerror = () => {
       image.onerror = null;

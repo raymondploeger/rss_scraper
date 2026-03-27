@@ -7,6 +7,14 @@ import { canonicalizeUrl, normalizeText, resolveUrl, sanitizeFeedText } from "..
 
 const scrapeCache = new Map();
 
+function isNotafiliaUrl(value) {
+  try {
+    return new URL(String(value || "")).hostname === "news.notafilia.pl";
+  } catch {
+    return false;
+  }
+}
+
 function resolveImageCandidate(pageUrl, candidate) {
   const value = normalizeText(candidate, "");
   if (!value || value.startsWith("data:")) {
@@ -166,7 +174,8 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
       const htmlLang = $("html").attr("lang") || "";
       const metadataImage = resolveImageCandidate(link, ogImage || ogSecureImage || twitterImage || "");
       const articleSpecificMetadataImage = isClearlyArticleSpecificImage(metadataImage, link, articleTitle) ? metadataImage : "";
-      const resolvedThumbnail = normalizeText(articleSpecificMetadataImage || resolveImageCandidate(link, articleImage || ""), "");
+      const articleImageCandidate = resolveImageCandidate(link, articleImage || "");
+      const resolvedThumbnail = normalizeText(articleSpecificMetadataImage || articleImageCandidate, "");
       const thumbnailSource = articleSpecificMetadataImage
         ? ogImage
           ? "og:image"
@@ -178,6 +187,11 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
           : "placeholder";
 
       console.log(`Thumbnail source for ${link}: ${thumbnailSource}`);
+      if (isNotafiliaUrl(link)) {
+        console.log(
+          `[notafilia][enrich] articleUrl=${link} ogImageFound=${Boolean(articleSpecificMetadataImage)} ogImageValue=${articleSpecificMetadataImage || ""} articleImageFound=${Boolean(articleImageCandidate)} articleImageValue=${articleImageCandidate || ""} finalThumbnail=${resolvedThumbnail || ""}`
+        );
+      }
 
       return {
         thumbnail: resolvedThumbnail,
@@ -193,6 +207,9 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
     } catch (error) {
       console.error(`Thumbnail scrape failed for ${link}:`, error?.stack || error);
       console.log(`Thumbnail source for ${link}: placeholder`);
+      if (isNotafiliaUrl(link)) {
+        console.log(`[notafilia][enrich] articleUrl=${link} ogImageFound=false articleImageFound=false finalThumbnail=`);
+      }
       return {
         thumbnail: "",
         canonicalLink: canonicalizeUrl(link),
@@ -229,6 +246,12 @@ export async function enrichArticle(articleId) {
     language: enriched.language || article.language,
     fetchStatus: enriched.fetchStatus
   });
+
+  if (isNotafiliaUrl(article.link) || isNotafiliaUrl(article.canonicalLink) || isNotafiliaUrl(nextThumbnail)) {
+    console.log(
+      `[notafilia][db] articleUrl=${article.canonicalLink || article.link} dbUpdateSucceeded=${Boolean(updatedArticle)} finalThumbnail=${updatedArticle?.thumbnail || nextThumbnail || ""}`
+    );
+  }
 
   broadcast("article:update", {
     type: "article:update",
