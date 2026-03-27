@@ -200,7 +200,6 @@ function articleMatchesFilters(article) {
 
 function getVisibleArticles() {
   return state.articles
-    .filter((article) => !article.isDuplicate)
     .filter(articleMatchesFilters)
     .sort((left, right) => toDate(right.pubDate).getTime() - toDate(left.pubDate).getTime());
 }
@@ -285,7 +284,10 @@ async function apiRequest(path, options = {}) {
 }
 
 async function loadSnapshot() {
-  const [feeds, articles] = await Promise.all([apiRequest("/api/feeds"), apiRequest("/api/articles")]);
+  const [feeds, articles] = await Promise.all([
+    apiRequest("/api/feeds"),
+    apiRequest("/api/articles?showDuplicates=true&limit=400")
+  ]);
   state.feeds = feeds;
   state.articles = articles;
   renderDashboard();
