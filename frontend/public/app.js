@@ -1,3 +1,4 @@
+const PLACEHOLDER_IMAGE = "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image";
 const THEME_STORAGE_KEY = "rss-monitor-theme";
 const POLLING_INTERVAL_MS = 30000;
 const SUMMARY_METRICS = [
@@ -10,10 +11,6 @@ const SUMMARY_METRICS = [
 const state = {
   feeds: [],
   articles: [],
-  editingFeedId: null,
-  feedPanelCollapsed: false,
-  feedPanelFilter: "all",
-  feedPanelSearch: "",
   filters: {
     search: "",
     topic: "",
@@ -42,17 +39,11 @@ const elements = {
   themeToggle: document.getElementById("theme-toggle"),
   feedForm: document.getElementById("feed-form"),
   feedSubmit: document.getElementById("feed-submit"),
-  feedCancel: document.getElementById("feed-cancel"),
   feedName: document.getElementById("feed-name"),
   feedTopic: document.getElementById("feed-topic"),
-  feedSourceType: document.getElementById("feed-source-type"),
   feedUrl: document.getElementById("feed-url"),
   feedFormStatus: document.getElementById("feed-form-status"),
   feedCount: document.getElementById("feed-count"),
-  feedPanelToggle: document.getElementById("feed-panel-toggle"),
-  feedPanelContent: document.getElementById("feed-panel-content"),
-  feedVisibilityFilter: document.getElementById("feed-visibility-filter"),
-  feedPanelSearch: document.getElementById("feed-panel-search"),
   feedList: document.getElementById("feed-list"),
   summaryCardTemplate: document.getElementById("summary-card-template"),
   feedItemTemplate: document.getElementById("feed-item-template"),
@@ -153,73 +144,31 @@ function renderFeedOptions() {
   elements.feedFilter.value = state.filters.feedId;
 }
 
-function getVisibleFeedsForPanel() {
-  return state.feeds
-    .filter((feed) => {
-      if (state.feedPanelSearch) {
-        const haystack = [feed.name, feed.topic, feed.rssUrl, feed.sourceType].join(" ").toLowerCase();
-        if (!haystack.includes(state.feedPanelSearch.toLowerCase())) {
-          return false;
-        }
-      }
-
-      if (state.feedPanelFilter === "active") {
-        return feed.isActive !== false;
-      }
-
-      if (state.feedPanelFilter === "inactive") {
-        return feed.isActive === false || feed.lastStatus === "error";
-      }
-
-      return true;
-    })
-    .slice()
-    .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")));
-}
-
-function renderFeedPanelState() {
-  elements.feedPanelContent.classList.toggle("is-collapsed", state.feedPanelCollapsed);
-  elements.feedPanelToggle.textContent = state.feedPanelCollapsed ? "Show sources" : "Hide sources";
-  elements.feedPanelToggle.setAttribute("aria-expanded", String(!state.feedPanelCollapsed));
-  elements.feedVisibilityFilter.value = state.feedPanelFilter;
-  elements.feedPanelSearch.value = state.feedPanelSearch;
-}
-
 function renderFeedList() {
-  const feeds = getVisibleFeedsForPanel();
-  elements.feedCount.textContent = String(feeds.length);
+  elements.feedCount.textContent = String(state.feeds.length);
   elements.feedList.innerHTML = "";
-  renderFeedPanelState();
 
-  if (!feeds.length && !state.feeds.length) {
-    elements.feedList.innerHTML = `<div class="empty-state">No sources configured yet.</div>`;
-    return;
-  }
-
-  if (!feeds.length) {
-    elements.feedList.innerHTML = `<div class="empty-state">No sources match the current search or filter.</div>`;
+  if (!state.feeds.length) {
+    elements.feedList.innerHTML = `<div class="empty-state">No feeds configured yet.</div>`;
     return;
   }
 
   const fragment = document.createDocumentFragment();
-  feeds.forEach((feed) => {
+  state.feeds
+    .slice()
+    .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")))
+    .forEach((feed) => {
       const node = elements.feedItemTemplate.content.cloneNode(true);
       const title = node.querySelector(".feed-item-title");
       const meta = node.querySelector(".feed-item-meta");
       const status = node.querySelector(".feed-status");
-      const editButton = node.querySelector(".feed-edit-button");
-      const deleteButton = node.querySelector(".feed-delete-button");
       const lastFetched = feed.lastFetchedAt ? formatDate(feed.lastFetchedAt) : "Waiting for first sync";
       const tone = feed.lastStatus === "error" ? "is-error" : feed.lastStatus === "success" ? "is-success" : "is-idle";
-      const sourceLabel = feed.sourceType === "website" ? "Website" : "RSS";
 
-      title.textContent = feed.name || "Untitled source";
-      meta.textContent = `${sourceLabel} • ${feed.topic || "General"} • ${lastFetched}`;
+      title.textContent = feed.name || "Untitled feed";
+      meta.textContent = `${feed.topic || "General"} • ${lastFetched}`;
       status.textContent = feed.lastStatus || "idle";
       status.classList.add(tone);
-      editButton.dataset.feedId = feed.id;
-      deleteButton.dataset.feedId = feed.id;
-      editButton.disabled = state.editingFeedId === feed.id;
       fragment.appendChild(node);
     });
 
@@ -251,34 +200,8 @@ function articleMatchesFilters(article) {
 
 function getVisibleArticles() {
   return state.articles
-    .filter((article) => !article.isDuplicate)
     .filter(articleMatchesFilters)
     .sort((left, right) => toDate(right.pubDate).getTime() - toDate(left.pubDate).getTime());
-}
-
-function isAbsoluteUrl(value) {
-  try {
-    const parsed = new URL(String(value || ""));
-    return ["http:", "https:"].includes(parsed.protocol);
-  } catch {
-    return false;
-  }
-}
-
-function getArticleDestination(article) {
-  if (isAbsoluteUrl(article.canonicalLink)) {
-    return article.canonicalLink;
-  }
-
-  if (String(article.canonicalLink || "").startsWith("/") && isAbsoluteUrl(article.link)) {
-    try {
-      return new URL(article.canonicalLink, article.link).toString();
-    } catch {
-      return article.link;
-    }
-  }
-
-  return article.link;
 }
 
 function renderSkeletons() {
@@ -312,53 +235,25 @@ function renderArticles() {
   articles.forEach((article) => {
     const node = elements.articleCardTemplate.content.cloneNode(true);
     const link = node.querySelector(".article-link");
-    const media = node.querySelector(".article-media");
     const image = node.querySelector(".article-image");
-    const thumbnailState = node.querySelector(".article-thumbnail-state");
     const topic = node.querySelector(".article-topic");
     const source = node.querySelector(".article-source");
     const date = node.querySelector(".article-date");
     const title = node.querySelector(".article-title");
     const feed = node.querySelector(".article-feed");
-    const hasThumbnail = Boolean(article.thumbnail && String(article.thumbnail).trim());
-    const finalImageSrc = hasThumbnail ? `/api/image?url=${encodeURIComponent(article.thumbnail.trim())}` : "";
 
-    link.href = getArticleDestination(article);
-    if (hasThumbnail) {
-      image.setAttribute("src", finalImageSrc);
-      image.classList.remove("is-hidden");
-      media.classList.remove("is-empty");
-      media.dataset.thumbnailState = "has-thumbnail";
-      thumbnailState.textContent = "has-thumbnail";
-    } else {
-      image.removeAttribute("src");
-      image.classList.add("is-hidden");
-      media.classList.add("is-empty");
-      media.dataset.thumbnailState = "no-thumbnail";
-      thumbnailState.textContent = "no-thumbnail";
-    }
+    link.href = article.canonicalLink || article.link;
+    image.src = article.thumbnail || PLACEHOLDER_IMAGE;
     image.alt = article.title || "Article thumbnail";
     image.onerror = () => {
-      console.warn("Article image failed to load", {
-        title: article.title,
-        thumbnail: article.thumbnail || "",
-        domSrc: image.getAttribute("src") || "",
-      });
+      image.onerror = null;
+      image.src = PLACEHOLDER_IMAGE;
     };
     topic.textContent = article.topic || "General";
     source.textContent = article.source || "Unknown source";
     date.textContent = formatDate(article.pubDate);
     title.textContent = article.title || "Untitled article";
     feed.textContent = getFeedName(article.feedId);
-
-    console.log("Article image render debug", {
-      title: article.title,
-      thumbnail: article.thumbnail || "",
-      finalImageSrc,
-      domSrc: image.getAttribute("src") || "",
-      thumbnailState: media.dataset.thumbnailState,
-    });
-
     fragment.appendChild(node);
   });
 
@@ -370,75 +265,6 @@ function renderDashboard() {
   renderFeedOptions();
   renderFeedList();
   renderArticles();
-}
-
-function initializeFeedPanelState() {
-  state.feedPanelCollapsed = window.matchMedia("(max-width: 720px)").matches;
-}
-
-function syncFeedFormMode() {
-  elements.feedSubmit.disabled = false;
-  elements.feedSubmit.textContent = state.editingFeedId ? "Save changes" : "Add source";
-  elements.feedCancel.hidden = !state.editingFeedId;
-}
-
-function resetFeedForm(statusMessage = "Monitor up to 50 RSS feeds and websites.") {
-  state.editingFeedId = null;
-  elements.feedForm.reset();
-  elements.feedSourceType.value = "rss";
-  syncFeedFormMode();
-  elements.feedFormStatus.textContent = statusMessage;
-}
-
-function startFeedEdit(feedId) {
-  const feed = state.feeds.find((item) => item.id === feedId);
-  if (!feed) {
-    elements.feedFormStatus.textContent = "Unable to find that feed.";
-    return;
-  }
-
-  state.editingFeedId = feedId;
-  elements.feedName.value = feed.name || "";
-  elements.feedTopic.value = feed.topic || "";
-  elements.feedSourceType.value = feed.sourceType || "rss";
-  elements.feedUrl.value = feed.rssUrl || "";
-  syncFeedFormMode();
-  elements.feedFormStatus.textContent = `Editing ${feed.name || "source"}.`;
-  renderFeedList();
-  elements.feedName.focus();
-}
-
-async function deleteFeed(feedId) {
-  const feed = state.feeds.find((item) => item.id === feedId);
-  if (!feed) {
-    return;
-  }
-
-  const confirmed = window.confirm(`Delete "${feed.name || "this source"}"? This will also remove its stored articles.`);
-  if (!confirmed) {
-    return;
-  }
-
-  elements.feedFormStatus.textContent = `Deleting ${feed.name || "source"}...`;
-
-  try {
-    await apiRequest(`/api/feeds/${feedId}`, { method: "DELETE" });
-
-    if (state.editingFeedId === feedId) {
-      resetFeedForm();
-    }
-
-    state.feeds = state.feeds.filter((item) => item.id !== feedId);
-    state.articles = state.articles.filter((article) => article.feedId !== feedId);
-    if (state.filters.feedId === feedId) {
-      state.filters.feedId = "";
-      elements.feedFilter.value = "";
-    }
-    renderDashboard();
-    elements.feedFormStatus.textContent = "Feed deleted successfully.";
-  } catch (error) {
-    elements.feedFormStatus.textContent = error.message;
-  }
 }
 
 async function apiRequest(path, options = {}) {
@@ -457,19 +283,10 @@ async function apiRequest(path, options = {}) {
   return response.json().catch(() => ({}));
 }
 
-async function optionalApiRequest(path, fallbackValue) {
-  try {
-    return await apiRequest(path);
-  } catch (error) {
-    console.warn(`Optional API request failed for ${path}:`, error);
-    return fallbackValue;
-  }
-}
-
 async function loadSnapshot() {
   const [feeds, articles] = await Promise.all([
     apiRequest("/api/feeds"),
-    optionalApiRequest("/api/articles", []),
+    apiRequest("/api/articles?showDuplicates=true&limit=400")
   ]);
   state.feeds = feeds;
   state.articles = articles;
@@ -562,43 +379,34 @@ function bindEvents() {
   });
 
   elements.refreshButton.addEventListener("click", async () => {
-    elements.connectionStatus.textContent = "Refreshing sources...";
+    elements.connectionStatus.textContent = "Refreshing feeds...";
     try {
       const result = await apiRequest("/api/feeds/refresh", { method: "POST" });
-      elements.connectionStatus.textContent = result.message || "Source refresh started.";
+      elements.connectionStatus.textContent = result.message || "Feed refresh started.";
     } catch (error) {
-      elements.connectionStatus.textContent = "Source refresh is not enabled yet.";
+      elements.connectionStatus.textContent = error.message;
     }
-  });
-
-  elements.feedCancel.addEventListener("click", () => {
-    resetFeedForm();
-    renderFeedList();
   });
 
   elements.feedForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     elements.feedSubmit.disabled = true;
-    const isEditing = Boolean(state.editingFeedId);
-    elements.feedFormStatus.textContent = isEditing ? "Saving changes..." : "Adding feed...";
+    elements.feedFormStatus.textContent = "Adding feed...";
 
     try {
-      const payload = {
-        name: elements.feedName.value.trim(),
-        topic: elements.feedTopic.value.trim(),
-        rssUrl: elements.feedUrl.value.trim(),
-        sourceType: elements.feedSourceType.value,
-        isActive: true,
-      };
-
-      await apiRequest(isEditing ? `/api/feeds/${state.editingFeedId}` : "/api/feeds", {
-        method: isEditing ? "PUT" : "POST",
+      await apiRequest("/api/feeds", {
+        method: "POST",
         body: JSON.stringify({
-          ...payload,
+          name: elements.feedName.value.trim(),
+          topic: elements.feedTopic.value.trim(),
+          rssUrl: elements.feedUrl.value.trim(),
+          sourceType: "rss",
+          isActive: true,
         }),
       });
 
-      resetFeedForm(isEditing ? "Feed updated successfully." : "Feed added successfully.");
+      elements.feedForm.reset();
+      elements.feedFormStatus.textContent = "Feed added successfully.";
       await loadSnapshot();
     } catch (error) {
       elements.feedFormStatus.textContent = error.message;
@@ -606,40 +414,10 @@ function bindEvents() {
       elements.feedSubmit.disabled = false;
     }
   });
-
-  elements.feedList.addEventListener("click", (event) => {
-    const editButton = event.target.closest(".feed-edit-button");
-    if (editButton) {
-      startFeedEdit(editButton.dataset.feedId);
-      return;
-    }
-
-    const deleteButton = event.target.closest(".feed-delete-button");
-    if (deleteButton) {
-      void deleteFeed(deleteButton.dataset.feedId);
-    }
-  });
-
-  elements.feedPanelToggle.addEventListener("click", () => {
-    state.feedPanelCollapsed = !state.feedPanelCollapsed;
-    renderFeedPanelState();
-  });
-
-  elements.feedVisibilityFilter.addEventListener("change", (event) => {
-    state.feedPanelFilter = event.target.value;
-    renderFeedList();
-  });
-
-  elements.feedPanelSearch.addEventListener("input", (event) => {
-    state.feedPanelSearch = event.target.value.trim();
-    renderFeedList();
-  });
 }
 
 async function init() {
   loadTheme();
-  initializeFeedPanelState();
-  syncFeedFormMode();
   bindEvents();
   renderSkeletons();
   await loadSnapshot();
