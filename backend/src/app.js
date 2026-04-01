@@ -8,7 +8,7 @@ import { listArticles } from "./controllers/articleController.js";
 import { createFeed, deleteFeed, listFeeds, refreshAll, refreshFeed, updateFeed } from "./controllers/feedController.js";
 import { asyncHandler } from "./utils/asyncHandler.js";
 import { canonicalizeUrl, normalizeText } from "./utils/text.js";
-
+import { importDmvFeeds } from "./controllers/dmvImportController.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,6 +31,7 @@ export function createApp() {
 
   app.get("/api/feeds", asyncHandler(listFeeds));
   app.post("/api/feeds", asyncHandler(createFeed));
+  app.post("/api/admin/import-dmv", importDmvFeeds);
   app.post("/api/feeds/refresh", asyncHandler(refreshAll));
   app.put("/api/feeds/:feedId", asyncHandler(updateFeed));
   app.delete("/api/feeds/:feedId", asyncHandler(deleteFeed));
