@@ -1,19 +1,15 @@
 import axios from "axios";
-import { getFeeds, createFeed } from "../services/feedService.js";
-
-function normalizeName(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
-}
+import { findFeedByRssUrl } from "../database/feedRepository.js";
+import { createFeed as createFeedRecord } from "../database/feedRepository.js";
+import { broadcast } from "../services/realtimeService.js";
+import { toFeedDto } from "../services/presenterService.js";
 
 function extractFeedUrl(item) {
-  return item.rss_url || item.rssUrl || item.feed_url || item.feedUrl || item.url || null;
+  return item.rss_url || item.rssUrl || item.url || null;
 }
 
 function extractName(item) {
-  return item.name || item.state || item.title || "DMV Feed";
+  return item.name || item.state || "DMV Feed";
 }
 
 export async function importDmvFeeds(_req, res) {
@@ -22,27 +18,14 @@ export async function importDmvFeeds(_req, res) {
 
     const response = await axios.get(manifestUrl, {
       timeout: 15000,
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "RSS Scraper Dashboard/1.0"
-      }
+      headers: { Accept: "application/json" }
     });
 
     const manifest = Array.isArray(response.data) ? response.data : [];
-    const existingFeeds = await getFeeds();
-
-    const existingByUrl = new Map();
-    const existingByName = new Map();
-
-    for (const feed of existingFeeds) {
-      if (feed?.url) existingByUrl.set(feed.url, feed);
-      if (feed?.name) existingByName.set(normalizeName(feed.name), feed);
-    }
 
     let imported = 0;
     let skipped = 0;
     let failed = 0;
-    const errors = [];
 
     for (const item of manifest) {
       try {
@@ -50,54 +33,49 @@ export async function importDmvFeeds(_req, res) {
         const name = extractName(item);
 
         if (!rssUrl) {
-          failed += 1;
-          errors.push({ name, reason: "Missing rss URL" });
+          failed++;
           continue;
         }
 
-        if (existingByUrl.has(rssUrl) || existingByName.has(normalizeName(name))) {
-          skipped += 1;
+        const existing = await findFeedByRssUrl(rssUrl);
+        if (existing) {
+          skipped++;
           continue;
         }
 
-        await createFeed({
+        const feed = await createFeedRecord({
           name,
-          url: rssUrl,
           topic: "Identity Documents",
-          active: true
+          rssUrl,
+          sourceType: "rss",
+          isActive: true
         });
 
-        imported += 1;
-      } catch (error) {
-        failed += 1;
-        errors.push({
-          name: extractName(item),
-          reason: error?.message || "Unknown import error"
+        broadcast("feed:update", {
+          type: "feed:update",
+          action: "created",
+          feed: toFeedDto(feed)
         });
+
+        imported++;
+      } catch (err) {
+        console.error("DMV import item error:", err);
+        failed++;
       }
     }
-
-    console.log("DMV import completed", {
-      imported,
-      skipped,
-      failed,
-      total: manifest.length
-    });
 
     res.json({
       success: true,
       imported,
       skipped,
       failed,
-      total: manifest.length,
-      errors
+      total: manifest.length
     });
   } catch (error) {
-    console.error("DMV import failed", error);
+    console.error("DMV import failed:", error);
     res.status(500).json({
       success: false,
-      error: "Failed to import DMV feeds",
-      message: error?.message || "Unknown error"
+      error: "Failed to import DMV feeds"
     });
   }
 }
