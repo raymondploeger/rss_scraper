@@ -152,20 +152,41 @@ function renderSummary() {
 }
 
 function renderFeedOptions() {
-  const topics = Array.from(new Set(state.feeds.map((feed) => String(feed.topic || "").trim()).filter(Boolean))).sort();
+  const topics = Array.from(
+    new Set(state.feeds.map((feed) => String(feed.topic || "").trim()).filter(Boolean))
+  ).sort();
+
   elements.topicFilter.innerHTML = [`<option value="">All topics</option>`]
     .concat(topics.map((topic) => `<option value="${topic}">${topic}</option>`))
     .join("");
   elements.topicFilter.value = state.filters.topic;
 
-  elements.feedFilter.innerHTML = [`<option value="">All feeds</option>`]
-    .concat(
-      state.feeds
-        .slice()
-        .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")))
-        .map((feed) => `<option value="${feed.id}">${feed.name || "Untitled Feed"}</option>`),
-    )
-    .join("");
+  const sortedFeeds = state.feeds
+    .slice()
+    .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")));
+
+  const dmvFeeds = sortedFeeds.filter(isDmvWrapperFeed);
+  const otherFeeds = sortedFeeds.filter((feed) => !isDmvWrapperFeed(feed));
+
+  const feedOptions = ['<option value="">All feeds</option>'];
+
+  if (dmvFeeds.length) {
+    feedOptions.push('<optgroup label="DMV Feeds">');
+    dmvFeeds.forEach((feed) => {
+      feedOptions.push(`<option value="${feed.id}">${feed.name || "Untitled Feed"}</option>`);
+    });
+    feedOptions.push("</optgroup>");
+  }
+
+  if (otherFeeds.length) {
+    feedOptions.push('<optgroup label="Other Feeds">');
+    otherFeeds.forEach((feed) => {
+      feedOptions.push(`<option value="${feed.id}">${feed.name || "Untitled Feed"}</option>`);
+    });
+    feedOptions.push("</optgroup>");
+  }
+
+  elements.feedFilter.innerHTML = feedOptions.join("");
   elements.feedFilter.value = state.filters.feedId;
 }
 
@@ -200,7 +221,12 @@ function createFeedSection(title, feeds) {
       const editButton = node.querySelector(".feed-edit-button");
       const deleteButton = node.querySelector(".feed-delete-button");
       const lastFetched = feed.lastFetchedAt ? formatDate(feed.lastFetchedAt) : "Waiting for first sync";
-      const tone = feed.lastStatus === "error" ? "is-error" : feed.lastStatus === "success" ? "is-success" : "is-idle";
+      const tone =
+        feed.lastStatus === "error"
+          ? "is-error"
+          : feed.lastStatus === "success"
+            ? "is-success"
+            : "is-idle";
 
       title.textContent = feed.name || "Untitled feed";
       meta.textContent = `${feed.topic || "General"} • ${lastFetched} • ${feed.rssUrl || ""}`;
@@ -259,7 +285,9 @@ function articleMatchesFilters(article) {
   }
 
   if (state.filters.search) {
-    const haystack = [article.title, article.source, article.topic, getFeedName(article.feedId)].join(" ").toLowerCase();
+    const haystack = [article.title, article.source, article.topic, getFeedName(article.feedId)]
+      .join(" ")
+      .toLowerCase();
     if (!haystack.includes(state.filters.search.toLowerCase())) {
       return false;
     }
@@ -313,7 +341,11 @@ function renderArticles() {
     const feed = node.querySelector(".article-feed");
     const finalImageSrc = getArticleImageSrc(article);
 
-    if (isNotafiliaUrl(article.link) || isNotafiliaUrl(article.canonicalLink) || isNotafiliaUrl(article.thumbnail)) {
+    if (
+      isNotafiliaUrl(article.link) ||
+      isNotafiliaUrl(article.canonicalLink) ||
+      isNotafiliaUrl(article.thumbnail)
+    ) {
       console.log(
         `[notafilia][frontend] articleUrl=${article.canonicalLink || article.link} apiThumbnail=${article.thumbnail || ""} finalImageSrc=${finalImageSrc || ""}`
       );
@@ -366,7 +398,9 @@ async function loadAllArticles() {
   let totalPages = 1;
 
   while (page <= totalPages) {
-    const response = await apiRequest(`/api/articles?includePagination=true&showDuplicates=true&limit=${ARTICLE_PAGE_SIZE}&page=${page}`);
+    const response = await apiRequest(
+      `/api/articles?includePagination=true&showDuplicates=true&limit=${ARTICLE_PAGE_SIZE}&page=${page}`
+    );
     const items = Array.isArray(response?.items) ? response.items : [];
     articles.push(...items);
     totalPages = Math.max(1, Number(response?.pagination?.totalPages) || 1);
@@ -377,10 +411,7 @@ async function loadAllArticles() {
 }
 
 async function loadSnapshot() {
-  const [feeds, articles] = await Promise.all([
-    apiRequest("/api/feeds"),
-    loadAllArticles()
-  ]);
+  const [feeds, articles] = await Promise.all([apiRequest("/api/feeds"), loadAllArticles()]);
   state.feeds = feeds;
   state.articles = articles;
   renderDashboard();
