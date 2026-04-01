@@ -41,8 +41,12 @@ async function loadSnapshot() {
     setConnectionStatus("Loading dashboard...");
 
     const [feedsRes, articlesRes] = await Promise.all([
-      fetch(`${API_BASE}/feeds`, { headers: { Accept: "application/json" } }),
-      fetch(`${API_BASE}/articles`, { headers: { Accept: "application/json" } })
+      fetch(`${API_BASE}/feeds`, {
+        headers: { Accept: "application/json" }
+      }),
+      fetch(`${API_BASE}/articles`, {
+        headers: { Accept: "application/json" }
+      })
     ]);
 
     if (!feedsRes.ok) {
@@ -104,7 +108,7 @@ function getFeedMeta(feed) {
   const parts = [];
   if (feed.topic) parts.push(feed.topic);
   if (feed.sourceType) parts.push(feed.sourceType.toUpperCase());
-  if (feed.url || feed.rssUrl) parts.push(feed.url || feed.rssUrl);
+  if (feed.rssUrl) parts.push(feed.rssUrl);
   return parts.join(" • ");
 }
 
@@ -124,10 +128,11 @@ function renderFeeds() {
         <p class="feed-item-meta">${escapeHtml(getFeedMeta(feed))}</p>
       </div>
       <div class="feed-item-side">
-        <span class="feed-status">${escapeHtml(feed.status || "idle")}</span>
+        <span class="feed-status">${escapeHtml(feed.lastStatus || "idle")}</span>
         <div class="feed-item-actions">
-          <button class="ghost-button feed-edit-button" type="button" disabled>Edit</button>
-          <button class="ghost-button feed-delete-button" type="button" disabled>Delete</button>
+          <button class="ghost-button feed-edit-button" type="button" data-edit-id="${escapeHtml(feed.id)}">Edit</button>
+          <button class="ghost-button feed-refresh-button" type="button" data-refresh-id="${escapeHtml(feed.id)}">Refresh</button>
+          <button class="ghost-button feed-delete-button" type="button" data-delete-id="${escapeHtml(feed.id)}">Delete</button>
         </div>
       </div>
     `;
@@ -214,6 +219,97 @@ async function importDmvFeeds() {
   }
 }
 
+async function editFeed(feedId) {
+  const feed = state.feeds.find((item) => item.id === feedId);
+  if (!feed) return;
+
+  const newName = window.prompt("Edit source name", feed.name || "");
+  if (newName === null) return;
+
+  const trimmedName = newName.trim();
+  if (!trimmedName) {
+    setFormStatus("Name cannot be empty.");
+    return;
+  }
+
+  try {
+    setFormStatus("Saving source...");
+    const res = await fetch(`${API_BASE}/feeds/${feedId}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json"
+      },
+      body: JSON.stringify({
+        name: trimmedName
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data?.message || data?.error || "Failed to update source");
+    }
+
+    setFormStatus("Source updated.");
+    await loadSnapshot();
+  } catch (error) {
+    console.error("Edit feed failed:", error);
+    setFormStatus(error?.message || "Failed to update source");
+  }
+}
+
+async function refreshFeed(feedId) {
+  try {
+    setFormStatus("Refreshing source...");
+    const res = await fetch(`${API_BASE}/feeds/${feedId}/refresh`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json"
+      }
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      throw new Error(data?.message || data?.error || "Failed to refresh source");
+    }
+
+    setFormStatus("Source refresh started.");
+    await loadSnapshot();
+  } catch (error) {
+    console.error("Refresh feed failed:", error);
+    setFormStatus(error?.message || "Failed to refresh source");
+  }
+}
+
+async function deleteFeed(feedId) {
+  const confirmed = window.confirm("Delete this source?");
+  if (!confirmed) return;
+
+  try {
+    setFormStatus("Deleting source...");
+    const res = await fetch(`${API_BASE}/feeds/${feedId}`, {
+      method: "DELETE",
+      headers: {
+        Accept: "application/json"
+      }
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      throw new Error(data?.message || data?.error || "Failed to delete source");
+    }
+
+    setFormStatus("Source deleted.");
+    await loadSnapshot();
+  } catch (error) {
+    console.error("Delete feed failed:", error);
+    setFormStatus(error?.message || "Failed to delete source");
+  }
+}
+
 function bindEvents() {
   const refreshBtn = $("refresh-button");
   if (refreshBtn) {
@@ -242,6 +338,25 @@ function bindEvents() {
       panelContent.hidden = expanded;
     });
   }
+
+  document.addEventListener("click", (event) => {
+    const editButton = event.target.closest("[data-edit-id]");
+    if (editButton) {
+      editFeed(editButton.getAttribute("data-edit-id"));
+      return;
+    }
+
+    const refreshButton = event.target.closest("[data-refresh-id]");
+    if (refreshButton) {
+      refreshFeed(refreshButton.getAttribute("data-refresh-id"));
+      return;
+    }
+
+    const deleteButton = event.target.closest("[data-delete-id]");
+    if (deleteButton) {
+      deleteFeed(deleteButton.getAttribute("data-delete-id"));
+    }
+  });
 }
 
 document.addEventListener("DOMContentLoaded", () => {
