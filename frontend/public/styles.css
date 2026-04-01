@@ -1,97 +1,78 @@
-/* === BASIS === */
+/* ===== BASE ===== */
+
 :root {
   --bg: #f4f7fb;
-  --bg-elevated: #ffffff;
-  --bg-soft: #eef3f9;
-  --text: #162130;
-  --muted: #6a7a8f;
-  --line: #d9e4f0;
-  --accent: #1660ff;
-  --accent-soft: rgba(22, 96, 255, 0.08);
-  --success: #0f9f7f;
-  --danger: #d14d72;
-  --shadow: 0 20px 50px rgba(15, 23, 42, 0.08);
-  --radius-lg: 24px;
-  --radius-md: 18px;
-  --radius-sm: 14px;
-}
-
-:root[data-theme="dark"] {
-  --bg: #07111a;
-  --bg-elevated: #0d1823;
-  --bg-soft: #132433;
-  --text: #edf6ff;
-  --muted: #8ca3b8;
-  --line: #223547;
-  --accent: #6ba2ff;
-  --accent-soft: rgba(107, 162, 255, 0.16);
-  --success: #4bd1af;
-  --danger: #ff8aa8;
-  --shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
-}
-
-/* === GLOBAL === */
-* {
-  box-sizing: border-box;
+  --bg-card: #ffffff;
+  --text: #1a1a1a;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --primary: #2563eb;
 }
 
 body {
   margin: 0;
-  min-height: 100vh;
+  font-family: Arial, sans-serif;
+  background: var(--bg);
   color: var(--text);
-  font-family: "Segoe UI", Arial, sans-serif;
-  background:
-    radial-gradient(circle at top left, rgba(22, 96, 255, 0.08), transparent 24%),
-    radial-gradient(circle at top right, rgba(15, 159, 127, 0.08), transparent 22%),
-    linear-gradient(180deg, #fbfcfe 0%, var(--bg) 100%);
 }
 
-/* === LAYOUT === */
-.dashboard-layout {
-  display: grid;
-  grid-template-columns: 360px minmax(0, 1fr);
-  gap: 22px;
+/* ===== LAYOUT ===== */
+
+.dashboard {
+  display: flex;
+  gap: 20px;
+  padding: 20px;
 }
 
 .sidebar {
-  display: grid;
-  gap: 20px;
+  width: 320px;
 }
 
-/* === PANEL === */
-.panel {
-  padding: 20px;
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
-  border: 1px solid var(--line);
+.main {
+  flex: 1;
 }
 
-/* === FEEDS === */
+/* ===== CARDS ===== */
+
+.card {
+  background: var(--bg-card);
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+}
+
+/* ===== FEEDS ===== */
+
 .feed-list {
-  max-height: min(50vh, 560px);
+  max-height: 600px;
   overflow-y: auto;
 }
 
 .feed-item {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  align-items: center;
 
-  padding: 14px;
-  border-radius: var(--radius-md);
-  background: var(--bg-soft);
-  border: 1px solid var(--line);
+  padding: 12px;
+  margin-bottom: 10px;
+
+  border-radius: 12px;
+  background: #f9fafb;
+  border: 1px solid var(--border);
+
+  gap: 10px;
 }
 
-/* 🔥 FIX HIER */
+/* 🔥 FIX (belangrijk) */
 .feed-item-main {
   flex: 1;
   min-width: 0;
 }
 
 .feed-item-title {
-  margin: 0 0 4px;
-  font-weight: 600;
+  font-weight: bold;
+  margin-bottom: 4px;
 }
 
 .feed-item-meta {
@@ -103,7 +84,6 @@ body {
   text-overflow: ellipsis;
 }
 
-/* rechter kant */
 .feed-item-side {
   display: flex;
   flex-direction: column;
@@ -111,69 +91,60 @@ body {
   gap: 6px;
 }
 
-/* knoppen */
 .feed-item-actions {
   display: flex;
   gap: 6px;
-  flex-wrap: nowrap;
 }
 
 .feed-item-actions button {
-  font-size: 11px;
-  padding: 6px 10px;
-}
-
-/* status */
-.feed-status {
   font-size: 12px;
-  padding: 6px 10px;
-  border-radius: 999px;
-}
-
-.feed-status.is-success {
-  color: var(--success);
-  background: rgba(15, 159, 127, 0.12);
-}
-
-.feed-status.is-error {
-  color: var(--danger);
-  background: rgba(209, 77, 114, 0.12);
-}
-
-/* === BUTTONS === */
-button {
-  border-radius: var(--radius-sm);
+  padding: 4px 8px;
   cursor: pointer;
 }
 
-.ghost-button {
-  border: 1px solid var(--line);
-  background: var(--bg-elevated);
+/* ===== BUTTONS ===== */
+
+button {
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: white;
 }
 
-.primary-button {
-  background: var(--accent);
-  color: white;
+button:hover {
+  background: #f3f4f6;
 }
 
-/* === ARTICLES === */
+/* ===== ARTICLES ===== */
+
 .articles-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 18px;
+  gap: 16px;
 }
 
-/* === MOBILE === */
-@media (max-width: 720px) {
-  .dashboard-layout {
-    grid-template-columns: 1fr;
-  }
+.article-card {
+  background: white;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
 
-  .feed-item {
-    flex-direction: column;
-  }
+.article-image {
+  width: 100%;
+  height: 160px;
+  object-fit: cover;
+}
 
-  .feed-item-side {
-    align-items: stretch;
-  }
+.article-content {
+  padding: 12px;
+}
+
+.article-title {
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.article-meta {
+  font-size: 12px;
+  color: var(--muted);
 }
