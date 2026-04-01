@@ -1,20 +1,27 @@
 import axios from "axios";
-import { findFeedByRssUrl } from "../database/feedRepository.js";
-import { createFeed as createFeedRecord } from "../database/feedRepository.js";
+import { findFeedByRssUrl, createFeed as createFeedRecord } from "../database/feedRepository.js";
 import { broadcast } from "../services/realtimeService.js";
 import { toFeedDto } from "../services/presenterService.js";
 
+const DMV_BASE_URL = "https://rssdmv-production.up.railway.app";
+
 function extractFeedUrl(item) {
+  if (item.feed_path) {
+    return `${DMV_BASE_URL}${item.feed_path}`;
+  }
+
   return item.rss_url || item.rssUrl || item.url || null;
 }
 
 function extractName(item) {
-  return item.name || item.state || "DMV Feed";
+  if (item.name) return item.name;
+  if (item.state) return `${item.state} DMV`;
+  return "DMV Feed";
 }
 
 export async function importDmvFeeds(_req, res) {
   try {
-    const manifestUrl = "https://rssdmv-production.up.railway.app/feeds.json";
+    const manifestUrl = `${DMV_BASE_URL}/feeds.json`;
 
     const response = await axios.get(manifestUrl, {
       timeout: 15000,
