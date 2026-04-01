@@ -49,6 +49,7 @@ const elements = {
   summaryCardTemplate: document.getElementById("summary-card-template"),
   feedItemTemplate: document.getElementById("feed-item-template"),
   articleCardTemplate: document.getElementById("article-card-template"),
+  importDmvButton: document.getElementById("import-dmv-button"),
 };
 
 function debounce(callback, wait = 250) {
@@ -83,6 +84,12 @@ function isNotafiliaUrl(value) {
   } catch {
     return false;
   }
+}
+
+function isDmvWrapperFeed(feed) {
+  return Boolean(
+    String(feed?.rssUrl || "").includes("rssdmv-production.up.railway.app/feeds/")
+  );
 }
 
 function getArticleImageSrc(article) {
@@ -162,6 +169,59 @@ function renderFeedOptions() {
   elements.feedFilter.value = state.filters.feedId;
 }
 
+function createFeedSection(title, feeds) {
+  const section = document.createElement("section");
+  section.className = "feed-section";
+
+  const header = document.createElement("div");
+  header.className = "feed-section-header";
+  header.innerHTML = `
+    <h3 class="feed-section-title">${title}</h3>
+    <span class="pill">${feeds.length}</span>
+  `;
+  section.appendChild(header);
+
+  const list = document.createElement("div");
+  list.className = "feed-section-list";
+
+  if (!feeds.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = `No feeds in ${title.toLowerCase()}.`;
+    list.appendChild(empty);
+  } else {
+    const fragment = document.createDocumentFragment();
+
+    feeds.forEach((feed) => {
+      const node = elements.feedItemTemplate.content.cloneNode(true);
+      const title = node.querySelector(".feed-item-title");
+      const meta = node.querySelector(".feed-item-meta");
+      const status = node.querySelector(".feed-status");
+      const editButton = node.querySelector(".feed-edit-button");
+      const deleteButton = node.querySelector(".feed-delete-button");
+      const lastFetched = feed.lastFetchedAt ? formatDate(feed.lastFetchedAt) : "Waiting for first sync";
+      const tone = feed.lastStatus === "error" ? "is-error" : feed.lastStatus === "success" ? "is-success" : "is-idle";
+
+      title.textContent = feed.name || "Untitled feed";
+      meta.textContent = `${feed.topic || "General"} • ${lastFetched} • ${feed.rssUrl || ""}`;
+      status.textContent = feed.lastStatus || "idle";
+      status.classList.add(tone);
+
+      editButton.dataset.feedId = feed.id;
+      deleteButton.dataset.feedId = feed.id;
+      editButton.dataset.action = "edit-feed";
+      deleteButton.dataset.action = "delete-feed";
+
+      fragment.appendChild(node);
+    });
+
+    list.appendChild(fragment);
+  }
+
+  section.appendChild(list);
+  return section;
+}
+
 function renderFeedList() {
   elements.feedCount.textContent = String(state.feeds.length);
   elements.feedList.innerHTML = "";
@@ -171,24 +231,16 @@ function renderFeedList() {
     return;
   }
 
-  const fragment = document.createDocumentFragment();
-  state.feeds
+  const sortedFeeds = state.feeds
     .slice()
-    .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")))
-    .forEach((feed) => {
-      const node = elements.feedItemTemplate.content.cloneNode(true);
-      const title = node.querySelector(".feed-item-title");
-      const meta = node.querySelector(".feed-item-meta");
-      const status = node.querySelector(".feed-status");
-      const lastFetched = feed.lastFetchedAt ? formatDate(feed.lastFetchedAt) : "Waiting for first sync";
-      const tone = feed.lastStatus === "error" ? "is-error" : feed.lastStatus === "success" ? "is-success" : "is-idle";
+    .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")));
 
-      title.textContent = feed.name || "Untitled feed";
-      meta.textContent = `${feed.topic || "General"} • ${lastFetched}`;
-      status.textContent = feed.lastStatus || "idle";
-      status.classList.add(tone);
-      fragment.appendChild(node);
-    });
+  const dmvFeeds = sortedFeeds.filter(isDmvWrapperFeed);
+  const otherFeeds = sortedFeeds.filter((feed) => !isDmvWrapperFeed(feed));
+
+  const fragment = document.createDocumentFragment();
+  fragment.appendChild(createFeedSection("DMV Feeds", dmvFeeds));
+  fragment.appendChild(createFeedSection("Other Feeds", otherFeeds));
 
   elements.feedList.appendChild(fragment);
 }
@@ -379,6 +431,44 @@ function initRealtime() {
   }
 }
 
+async function updateFeed(feedId, payload) {
+  return apiRequest(`/api/feeds/${feedId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+async function deleteFeed(feedId) {
+  return apiRequest(`/api/feeds/${feedId}`, {
+    method: "DELETE",
+  });
+}
+
+async function importDmvFeeds() {
+  if (!elements.importDmvButton) {
+    return;
+  }
+
+  const originalLabel = elements.importDmvButton.textContent;
+  elements.importDmvButton.disabled = true;
+  elements.importDmvButton.textContent = "Importing DMV feeds...";
+  elements.feedFormStatus.textContent = "Importing DMV feeds...";
+
+  try {
+    const result = await apiRequest("/api/admin/import-dmv", {
+      method: "POST",
+    });
+
+    elements.feedFormStatus.textContent = `Imported ${result.imported ?? 0}, skipped ${result.skipped ?? 0}, failed ${result.failed ?? 0}`;
+    await loadSnapshot();
+  } catch (error) {
+    elements.feedFormStatus.textContent = error.message;
+  } finally {
+    elements.importDmvButton.disabled = false;
+    elements.importDmvButton.textContent = originalLabel;
+  }
+}
+
 function bindEvents() {
   elements.searchFilter.addEventListener("input", (event) => {
     state.filters.search = event.target.value.trim();
@@ -453,6 +543,64 @@ function bindEvents() {
       elements.feedFormStatus.textContent = error.message;
     } finally {
       elements.feedSubmit.disabled = false;
+    }
+  });
+
+  if (elements.importDmvButton) {
+    elements.importDmvButton.addEventListener("click", async () => {
+      await importDmvFeeds();
+    });
+  }
+
+  elements.feedList.addEventListener("click", async (event) => {
+    const editButton = event.target.closest('[data-action="edit-feed"]');
+    const deleteButton = event.target.closest('[data-action="delete-feed"]');
+
+    if (editButton) {
+      const feedId = editButton.dataset.feedId;
+      const feed = state.feeds.find((item) => item.id === feedId);
+      if (!feed) {
+        return;
+      }
+
+      const nextName = window.prompt("Edit feed name", feed.name || "");
+      if (nextName === null) {
+        return;
+      }
+
+      const trimmedName = nextName.trim();
+      if (!trimmedName) {
+        elements.feedFormStatus.textContent = "Feed name cannot be empty.";
+        return;
+      }
+
+      try {
+        elements.feedFormStatus.textContent = "Saving feed...";
+        await updateFeed(feedId, { name: trimmedName });
+        elements.feedFormStatus.textContent = "Feed updated.";
+        await loadSnapshot();
+      } catch (error) {
+        elements.feedFormStatus.textContent = error.message;
+      }
+
+      return;
+    }
+
+    if (deleteButton) {
+      const feedId = deleteButton.dataset.feedId;
+      const confirmed = window.confirm("Delete this feed?");
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        elements.feedFormStatus.textContent = "Deleting feed...";
+        await deleteFeed(feedId);
+        elements.feedFormStatus.textContent = "Feed deleted.";
+        await loadSnapshot();
+      } catch (error) {
+        elements.feedFormStatus.textContent = error.message;
+      }
     }
   });
 }
