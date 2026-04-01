@@ -39,18 +39,26 @@ function formatDate(value) {
 async function loadSnapshot() {
   try {
     setConnectionStatus("Loading dashboard...");
-    const res = await fetch(`${API_BASE}/dashboard`, {
-      headers: { Accept: "application/json" }
-    });
 
-    if (!res.ok) {
-      throw new Error(`Dashboard load failed (${res.status})`);
+    const [feedsRes, articlesRes] = await Promise.all([
+      fetch(`${API_BASE}/feeds`, { headers: { Accept: "application/json" } }),
+      fetch(`${API_BASE}/articles`, { headers: { Accept: "application/json" } })
+    ]);
+
+    if (!feedsRes.ok) {
+      throw new Error(`Feeds load failed (${feedsRes.status})`);
     }
 
-    const data = await res.json();
-    state.feeds = data.feeds || [];
-    state.articles = data.articles || [];
-    state.stats = data.stats || {};
+    if (!articlesRes.ok) {
+      throw new Error(`Articles load failed (${articlesRes.status})`);
+    }
+
+    const feeds = await feedsRes.json();
+    const articles = await articlesRes.json();
+
+    state.feeds = Array.isArray(feeds) ? feeds : [];
+    state.articles = Array.isArray(articles) ? articles : [];
+    state.stats = {};
 
     renderSummary();
     renderFeeds();
