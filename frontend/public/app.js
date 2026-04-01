@@ -17,6 +17,7 @@ const state = {
     topic: "",
     feedId: "",
     date: "",
+    dmvOnly: false,
   },
 };
 
@@ -43,13 +44,19 @@ const elements = {
   feedName: document.getElementById("feed-name"),
   feedTopic: document.getElementById("feed-topic"),
   feedUrl: document.getElementById("feed-url"),
+  feedSourceType: document.getElementById("feed-source-type"),
   feedFormStatus: document.getElementById("feed-form-status"),
   feedCount: document.getElementById("feed-count"),
   feedList: document.getElementById("feed-list"),
+  feedPanelSearch: document.getElementById("feed-panel-search"),
+  feedVisibilityFilter: document.getElementById("feed-visibility-filter"),
+  feedPanelToggle: document.getElementById("feed-panel-toggle"),
+  feedPanelContent: document.getElementById("feed-panel-content"),
   summaryCardTemplate: document.getElementById("summary-card-template"),
   feedItemTemplate: document.getElementById("feed-item-template"),
   articleCardTemplate: document.getElementById("article-card-template"),
   importDmvButton: document.getElementById("import-dmv-button"),
+  dmvToggleButton: document.getElementById("dmv-toggle-button"),
 };
 
 function debounce(callback, wait = 250) {
@@ -64,7 +71,6 @@ function toDate(value) {
   if (!value) {
     return new Date(0);
   }
-
   return new Date(value);
 }
 
@@ -98,7 +104,9 @@ function getArticleImageSrc(article) {
     return "";
   }
 
-  return isNotafiliaUrl(thumbnail) ? `/api/image?url=${encodeURIComponent(thumbnail)}` : thumbnail;
+  return isNotafiliaUrl(thumbnail)
+    ? `/api/image?url=${encodeURIComponent(thumbnail)}`
+    : thumbnail;
 }
 
 function toDateInputValue(value) {
@@ -130,7 +138,9 @@ function getSummaryMetrics() {
 
   return {
     activeFeeds: state.feeds.filter((feed) => feed.isActive !== false).length,
-    topics: new Set(state.feeds.map((feed) => String(feed.topic || "").trim()).filter(Boolean)).size,
+    topics: new Set(
+      state.feeds.map((feed) => String(feed.topic || "").trim()).filter(Boolean)
+    ).size,
     articlesToday: state.articles.filter((article) => toDate(article.pubDate) >= startOfToday).length,
     totalArticles: state.articles.length,
   };
@@ -161,114 +171,112 @@ function renderFeedOptions() {
     .join("");
   elements.topicFilter.value = state.filters.topic;
 
-  const sortedFeeds = state.feeds
-    .slice()
-    .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")));
+  elements.feedFilter.innerHTML = [`<option value="">All feeds</option>`]
+    .concat(
+      state.feeds
+        .slice()
+        .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")))
+        .map((feed) => `<option value="${feed.id}">${feed.name || "Untitled Feed"}</option>`)
+    )
+    .join("");
 
-  const dmvFeeds = sortedFeeds.filter(isDmvWrapperFeed);
-  const otherFeeds = sortedFeeds.filter((feed) => !isDmvWrapperFeed(feed));
-
-  const feedOptions = ['<option value="">All feeds</option>'];
-
-  if (dmvFeeds.length) {
-    feedOptions.push('<optgroup label="DMV Feeds">');
-    dmvFeeds.forEach((feed) => {
-      feedOptions.push(`<option value="${feed.id}">${feed.name || "Untitled Feed"}</option>`);
-    });
-    feedOptions.push("</optgroup>");
-  }
-
-  if (otherFeeds.length) {
-    feedOptions.push('<optgroup label="Other Feeds">');
-    otherFeeds.forEach((feed) => {
-      feedOptions.push(`<option value="${feed.id}">${feed.name || "Untitled Feed"}</option>`);
-    });
-    feedOptions.push("</optgroup>");
-  }
-
-  elements.feedFilter.innerHTML = feedOptions.join("");
   elements.feedFilter.value = state.filters.feedId;
 }
 
-function createFeedSection(title, feeds) {
-  const section = document.createElement("section");
-  section.className = "feed-section";
+function getVisibleFeeds() {
+  let feeds = state.feeds.slice();
 
-  const header = document.createElement("div");
-  header.className = "feed-section-header";
-  header.innerHTML = `
-    <h3 class="feed-section-title">${title}</h3>
-    <span class="pill">${feeds.length}</span>
-  `;
-  section.appendChild(header);
+  const feedPanelSearch = String(elements.feedPanelSearch?.value || "").trim().toLowerCase();
+  const visibilityFilter = elements.feedVisibilityFilter?.value || "all";
 
-  const list = document.createElement("div");
-  list.className = "feed-section-list";
-
-  if (!feeds.length) {
-    const empty = document.createElement("div");
-    empty.className = "empty-state";
-    empty.textContent = `No feeds in ${title.toLowerCase()}.`;
-    list.appendChild(empty);
-  } else {
-    const fragment = document.createDocumentFragment();
-
-    feeds.forEach((feed) => {
-      const node = elements.feedItemTemplate.content.cloneNode(true);
-      const title = node.querySelector(".feed-item-title");
-      const meta = node.querySelector(".feed-item-meta");
-      const status = node.querySelector(".feed-status");
-      const editButton = node.querySelector(".feed-edit-button");
-      const deleteButton = node.querySelector(".feed-delete-button");
-      const lastFetched = feed.lastFetchedAt ? formatDate(feed.lastFetchedAt) : "Waiting for first sync";
-      const tone =
-        feed.lastStatus === "error"
-          ? "is-error"
-          : feed.lastStatus === "success"
-            ? "is-success"
-            : "is-idle";
-
-      title.textContent = feed.name || "Untitled feed";
-      meta.textContent = `${feed.topic || "General"} • ${lastFetched} • ${feed.rssUrl || ""}`;
-      status.textContent = feed.lastStatus || "idle";
-      status.classList.add(tone);
-
-      editButton.dataset.feedId = feed.id;
-      deleteButton.dataset.feedId = feed.id;
-      editButton.dataset.action = "edit-feed";
-      deleteButton.dataset.action = "delete-feed";
-
-      fragment.appendChild(node);
-    });
-
-    list.appendChild(fragment);
+  if (state.filters.dmvOnly) {
+    feeds = feeds.filter(isDmvWrapperFeed);
   }
 
-  section.appendChild(list);
-  return section;
+  if (visibilityFilter === "active") {
+    feeds = feeds.filter((feed) => feed.isActive !== false && feed.lastStatus !== "error");
+  }
+
+  if (visibilityFilter === "inactive") {
+    feeds = feeds.filter((feed) => feed.isActive === false || feed.lastStatus === "error");
+  }
+
+  if (feedPanelSearch) {
+    feeds = feeds.filter((feed) => {
+      const haystack = [
+        feed.name,
+        feed.topic,
+        feed.rssUrl,
+        feed.sourceType,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(feedPanelSearch);
+    });
+  }
+
+  return feeds.sort((left, right) =>
+    String(left.name || "").localeCompare(String(right.name || ""))
+  );
+}
+
+function updateDmvToggleButton() {
+  if (!elements.dmvToggleButton) return;
+
+  if (state.filters.dmvOnly) {
+    elements.dmvToggleButton.textContent = "Show all feeds";
+    elements.dmvToggleButton.classList.add("active-toggle");
+  } else {
+    elements.dmvToggleButton.textContent = "Show DMV feeds";
+    elements.dmvToggleButton.classList.remove("active-toggle");
+  }
 }
 
 function renderFeedList() {
-  elements.feedCount.textContent = String(state.feeds.length);
+  const visibleFeeds = getVisibleFeeds();
+
+  elements.feedCount.textContent = String(visibleFeeds.length);
   elements.feedList.innerHTML = "";
 
-  if (!state.feeds.length) {
-    elements.feedList.innerHTML = `<div class="empty-state">No feeds configured yet.</div>`;
+  if (!visibleFeeds.length) {
+    elements.feedList.innerHTML = `<div class="empty-state">No feeds match the current view.</div>`;
+    updateDmvToggleButton();
     return;
   }
 
-  const sortedFeeds = state.feeds
-    .slice()
-    .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")));
-
-  const dmvFeeds = sortedFeeds.filter(isDmvWrapperFeed);
-  const otherFeeds = sortedFeeds.filter((feed) => !isDmvWrapperFeed(feed));
-
   const fragment = document.createDocumentFragment();
-  fragment.appendChild(createFeedSection("DMV Feeds", dmvFeeds));
-  fragment.appendChild(createFeedSection("Other Feeds", otherFeeds));
+
+  visibleFeeds.forEach((feed) => {
+    const node = elements.feedItemTemplate.content.cloneNode(true);
+    const title = node.querySelector(".feed-item-title");
+    const meta = node.querySelector(".feed-item-meta");
+    const status = node.querySelector(".feed-status");
+    const editButton = node.querySelector(".feed-edit-button");
+    const deleteButton = node.querySelector(".feed-delete-button");
+    const lastFetched = feed.lastFetchedAt ? formatDate(feed.lastFetchedAt) : "Waiting for first sync";
+    const tone =
+      feed.lastStatus === "error"
+        ? "is-error"
+        : feed.lastStatus === "success"
+          ? "is-success"
+          : "is-idle";
+
+    title.textContent = feed.name || "Untitled feed";
+    meta.textContent = `${feed.topic || "General"} • ${lastFetched} • ${feed.rssUrl || ""}`;
+    status.textContent = feed.lastStatus || "idle";
+    status.classList.add(tone);
+
+    editButton.dataset.feedId = feed.id;
+    deleteButton.dataset.feedId = feed.id;
+    editButton.dataset.action = "edit-feed";
+    deleteButton.dataset.action = "delete-feed";
+
+    fragment.appendChild(node);
+  });
 
   elements.feedList.appendChild(fragment);
+  updateDmvToggleButton();
 }
 
 function articleMatchesFilters(article) {
@@ -288,6 +296,7 @@ function articleMatchesFilters(article) {
     const haystack = [article.title, article.source, article.topic, getFeedName(article.feedId)]
       .join(" ")
       .toLowerCase();
+
     if (!haystack.includes(state.filters.search.toLowerCase())) {
       return false;
     }
@@ -314,7 +323,7 @@ function renderSkeletons() {
             <div class="skeleton-line medium"></div>
           </div>
         </article>
-      `,
+      `
     )
     .join("");
 }
@@ -325,11 +334,13 @@ function renderArticles() {
   elements.articlesGrid.innerHTML = "";
 
   if (!articles.length) {
-    elements.articlesGrid.innerHTML = `<div class="empty-state">No articles match the active filters.</div>`;
+    elements.articlesGrid.innerHTML =
+      `<div class="empty-state">No articles match the active filters.</div>`;
     return;
   }
 
   const fragment = document.createDocumentFragment();
+
   articles.forEach((article) => {
     const node = elements.articleCardTemplate.content.cloneNode(true);
     const link = node.querySelector(".article-link");
@@ -358,11 +369,13 @@ function renderArticles() {
       image.onerror = null;
       image.src = PLACEHOLDER_IMAGE;
     };
+
     topic.textContent = article.topic || "General";
     source.textContent = article.source || "Unknown source";
     date.textContent = formatDate(article.pubDate);
     title.textContent = article.title || "Untitled article";
     feed.textContent = getFeedName(article.feedId);
+
     fragment.appendChild(node);
   });
 
@@ -411,7 +424,11 @@ async function loadAllArticles() {
 }
 
 async function loadSnapshot() {
-  const [feeds, articles] = await Promise.all([apiRequest("/api/feeds"), loadAllArticles()]);
+  const [feeds, articles] = await Promise.all([
+    apiRequest("/api/feeds"),
+    loadAllArticles(),
+  ]);
+
   state.feeds = feeds;
   state.articles = articles;
   renderDashboard();
@@ -490,7 +507,8 @@ async function importDmvFeeds() {
       method: "POST",
     });
 
-    elements.feedFormStatus.textContent = `Imported ${result.imported ?? 0}, skipped ${result.skipped ?? 0}, failed ${result.failed ?? 0}`;
+    elements.feedFormStatus.textContent =
+      `Imported ${result.imported ?? 0}, skipped ${result.skipped ?? 0}, failed ${result.failed ?? 0}`;
     await loadSnapshot();
   } catch (error) {
     elements.feedFormStatus.textContent = error.message;
@@ -527,16 +545,27 @@ function bindEvents() {
       topic: "",
       feedId: "",
       date: "",
+      dmvOnly: false,
     };
+
     elements.searchFilter.value = "";
     elements.topicFilter.value = "";
     elements.feedFilter.value = "";
     elements.dateFilter.value = "";
+    if (elements.feedPanelSearch) {
+      elements.feedPanelSearch.value = "";
+    }
+    if (elements.feedVisibilityFilter) {
+      elements.feedVisibilityFilter.value = "all";
+    }
+
     renderArticles();
+    renderFeedList();
   });
 
   elements.themeToggle.addEventListener("click", () => {
-    const nextTheme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    const nextTheme =
+      document.documentElement.dataset.theme === "dark" ? "light" : "dark";
     applyTheme(nextTheme);
   });
 
@@ -562,7 +591,7 @@ function bindEvents() {
           name: elements.feedName.value.trim(),
           topic: elements.feedTopic.value.trim(),
           rssUrl: elements.feedUrl.value.trim(),
-          sourceType: "rss",
+          sourceType: elements.feedSourceType?.value || "rss",
           isActive: true,
         }),
       });
@@ -580,6 +609,37 @@ function bindEvents() {
   if (elements.importDmvButton) {
     elements.importDmvButton.addEventListener("click", async () => {
       await importDmvFeeds();
+    });
+  }
+
+  if (elements.dmvToggleButton) {
+    elements.dmvToggleButton.addEventListener("click", () => {
+      state.filters.dmvOnly = !state.filters.dmvOnly;
+      renderFeedList();
+    });
+  }
+
+  if (elements.feedPanelSearch) {
+    elements.feedPanelSearch.addEventListener(
+      "input",
+      debounce(() => {
+        renderFeedList();
+      }, 150)
+    );
+  }
+
+  if (elements.feedVisibilityFilter) {
+    elements.feedVisibilityFilter.addEventListener("change", () => {
+      renderFeedList();
+    });
+  }
+
+  if (elements.feedPanelToggle && elements.feedPanelContent) {
+    elements.feedPanelToggle.addEventListener("click", () => {
+      const expanded = elements.feedPanelToggle.getAttribute("aria-expanded") === "true";
+      elements.feedPanelToggle.setAttribute("aria-expanded", String(!expanded));
+      elements.feedPanelToggle.textContent = expanded ? "Show sources" : "Hide sources";
+      elements.feedPanelContent.hidden = expanded;
     });
   }
 
