@@ -196,6 +196,10 @@ h3 {
   gap: 14px;
 }
 
+.feed-panel-content[hidden] {
+  display: none !important;
+}
+
 .feed-panel-content.is-collapsed {
   display: none;
 }

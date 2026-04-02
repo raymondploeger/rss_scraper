@@ -132,6 +132,10 @@ function getFeedName(feedId) {
   return state.feeds.find((feed) => feed.id === feedId)?.name || "Unknown feed";
 }
 
+function getNonDmvFeeds() {
+  return state.feeds.filter((feed) => !isDmvWrapperFeed(feed));
+}
+
 function getSummaryMetrics() {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
@@ -165,6 +169,16 @@ function renderFeedOptions() {
   const topics = Array.from(
     new Set(state.feeds.map((feed) => String(feed.topic || "").trim()).filter(Boolean))
   ).sort();
+  const nonDmvFeeds = getNonDmvFeeds()
+    .slice()
+    .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")));
+
+  if (
+    state.filters.feedId &&
+    !nonDmvFeeds.some((feed) => feed.id === state.filters.feedId)
+  ) {
+    state.filters.feedId = "";
+  }
 
   elements.topicFilter.innerHTML = [`<option value="">All topics</option>`]
     .concat(topics.map((topic) => `<option value="${topic}">${topic}</option>`))
@@ -173,10 +187,7 @@ function renderFeedOptions() {
 
   elements.feedFilter.innerHTML = [`<option value="">All feeds</option>`]
     .concat(
-      state.feeds
-        .slice()
-        .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")))
-        .map((feed) => `<option value="${feed.id}">${feed.name || "Untitled Feed"}</option>`)
+      nonDmvFeeds.map((feed) => `<option value="${feed.id}">${feed.name || "Untitled Feed"}</option>`)
     )
     .join("");
 
@@ -227,10 +238,23 @@ function updateDmvToggleButton() {
   if (state.filters.dmvOnly) {
     elements.dmvToggleButton.textContent = "Show all feeds";
     elements.dmvToggleButton.classList.add("active-toggle");
+    elements.dmvToggleButton.setAttribute("aria-pressed", "true");
   } else {
     elements.dmvToggleButton.textContent = "Show DMV feeds";
     elements.dmvToggleButton.classList.remove("active-toggle");
+    elements.dmvToggleButton.setAttribute("aria-pressed", "false");
   }
+}
+
+function syncFeedPanelVisibility(expanded) {
+  if (!elements.feedPanelToggle || !elements.feedPanelContent) {
+    return;
+  }
+
+  elements.feedPanelToggle.setAttribute("aria-expanded", String(expanded));
+  elements.feedPanelToggle.textContent = expanded ? "Hide sources" : "Show sources";
+  elements.feedPanelContent.hidden = !expanded;
+  elements.feedPanelContent.classList.toggle("is-collapsed", !expanded);
 }
 
 function renderFeedList() {
@@ -635,11 +659,13 @@ function bindEvents() {
   }
 
   if (elements.feedPanelToggle && elements.feedPanelContent) {
+    syncFeedPanelVisibility(
+      elements.feedPanelToggle.getAttribute("aria-expanded") !== "false"
+    );
+
     elements.feedPanelToggle.addEventListener("click", () => {
       const expanded = elements.feedPanelToggle.getAttribute("aria-expanded") === "true";
-      elements.feedPanelToggle.setAttribute("aria-expanded", String(!expanded));
-      elements.feedPanelToggle.textContent = expanded ? "Show sources" : "Hide sources";
-      elements.feedPanelContent.hidden = expanded;
+      syncFeedPanelVisibility(!expanded);
     });
   }
 
