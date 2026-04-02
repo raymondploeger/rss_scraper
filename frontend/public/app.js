@@ -146,6 +146,10 @@ function getActiveArticleFeedId() {
   return state.filters.feedId || state.filters.dmvFeedId;
 }
 
+function getActiveSidebarFeedId() {
+  return state.filters.feedId || state.filters.dmvFeedId;
+}
+
 function getSummaryMetrics() {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
@@ -224,11 +228,13 @@ function renderFeedOptions() {
 
 function getVisibleFeeds() {
   let feeds = state.feeds.slice();
-
+  const activeSidebarFeedId = getActiveSidebarFeedId();
   const feedPanelSearch = String(elements.feedPanelSearch?.value || "").trim().toLowerCase();
   const visibilityFilter = elements.feedVisibilityFilter?.value || "all";
 
-  if (state.filters.dmvOnly) {
+  if (activeSidebarFeedId) {
+    feeds = feeds.filter((feed) => feed.id === activeSidebarFeedId);
+  } else if (state.filters.dmvOnly) {
     feeds = feeds.filter(isDmvWrapperFeed);
   }
 
@@ -584,9 +590,11 @@ function bindEvents() {
   elements.feedFilter.addEventListener("change", (event) => {
     state.filters.feedId = event.target.value;
     state.filters.dmvFeedId = "";
+    state.filters.dmvOnly = false;
     if (elements.dmvFeedFilter) {
       elements.dmvFeedFilter.value = "";
     }
+    renderFeedList();
     renderArticles();
   });
 
@@ -594,7 +602,9 @@ function bindEvents() {
     elements.dmvFeedFilter.addEventListener("change", (event) => {
       state.filters.dmvFeedId = event.target.value;
       state.filters.feedId = "";
+      state.filters.dmvOnly = true;
       elements.feedFilter.value = "";
+      renderFeedList();
       renderArticles();
     });
   }
@@ -684,7 +694,14 @@ function bindEvents() {
   if (elements.dmvToggleButton) {
     elements.dmvToggleButton.addEventListener("click", () => {
       state.filters.dmvOnly = !state.filters.dmvOnly;
+      if (!state.filters.dmvOnly) {
+        state.filters.dmvFeedId = "";
+        if (elements.dmvFeedFilter) {
+          elements.dmvFeedFilter.value = "";
+        }
+      }
       renderFeedList();
+      renderArticles();
     });
   }
 
