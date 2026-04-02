@@ -7,6 +7,7 @@ COPY backend/prisma ./backend/prisma
 RUN cd backend && npm install
 
 COPY backend/src ./backend/src
+COPY backend/data ./backend/data
 COPY frontend/public ./frontend/public
 
 ENV HOST=0.0.0.0
