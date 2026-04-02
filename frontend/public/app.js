@@ -16,6 +16,7 @@ const state = {
     search: "",
     topic: "",
     feedId: "",
+    dmvFeedId: "",
     date: "",
     dmvOnly: false,
   },
@@ -32,6 +33,7 @@ const elements = {
   articlesGrid: document.getElementById("articles-grid"),
   topicFilter: document.getElementById("topic-filter"),
   feedFilter: document.getElementById("feed-filter"),
+  dmvFeedFilter: document.getElementById("dmv-feed-filter"),
   dateFilter: document.getElementById("date-filter"),
   searchFilter: document.getElementById("search-filter"),
   clearFilters: document.getElementById("clear-filters"),
@@ -136,6 +138,14 @@ function getNonDmvFeeds() {
   return state.feeds.filter((feed) => !isDmvWrapperFeed(feed));
 }
 
+function getDmvFeeds() {
+  return state.feeds.filter(isDmvWrapperFeed);
+}
+
+function getActiveArticleFeedId() {
+  return state.filters.feedId || state.filters.dmvFeedId;
+}
+
 function getSummaryMetrics() {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
@@ -172,12 +182,22 @@ function renderFeedOptions() {
   const nonDmvFeeds = getNonDmvFeeds()
     .slice()
     .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")));
+  const dmvFeeds = getDmvFeeds()
+    .slice()
+    .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")));
 
   if (
     state.filters.feedId &&
     !nonDmvFeeds.some((feed) => feed.id === state.filters.feedId)
   ) {
     state.filters.feedId = "";
+  }
+
+  if (
+    state.filters.dmvFeedId &&
+    !dmvFeeds.some((feed) => feed.id === state.filters.dmvFeedId)
+  ) {
+    state.filters.dmvFeedId = "";
   }
 
   elements.topicFilter.innerHTML = [`<option value="">All topics</option>`]
@@ -190,8 +210,16 @@ function renderFeedOptions() {
       nonDmvFeeds.map((feed) => `<option value="${feed.id}">${feed.name || "Untitled Feed"}</option>`)
     )
     .join("");
-
   elements.feedFilter.value = state.filters.feedId;
+
+  if (elements.dmvFeedFilter) {
+    elements.dmvFeedFilter.innerHTML = [`<option value="">All DMV states</option>`]
+      .concat(
+        dmvFeeds.map((feed) => `<option value="${feed.id}">${feed.name || "Untitled Feed"}</option>`)
+      )
+      .join("");
+    elements.dmvFeedFilter.value = state.filters.dmvFeedId;
+  }
 }
 
 function getVisibleFeeds() {
@@ -308,7 +336,7 @@ function articleMatchesFilters(article) {
     return false;
   }
 
-  if (state.filters.feedId && article.feedId !== state.filters.feedId) {
+  if (getActiveArticleFeedId() && article.feedId !== getActiveArticleFeedId()) {
     return false;
   }
 
@@ -555,8 +583,21 @@ function bindEvents() {
 
   elements.feedFilter.addEventListener("change", (event) => {
     state.filters.feedId = event.target.value;
+    state.filters.dmvFeedId = "";
+    if (elements.dmvFeedFilter) {
+      elements.dmvFeedFilter.value = "";
+    }
     renderArticles();
   });
+
+  if (elements.dmvFeedFilter) {
+    elements.dmvFeedFilter.addEventListener("change", (event) => {
+      state.filters.dmvFeedId = event.target.value;
+      state.filters.feedId = "";
+      elements.feedFilter.value = "";
+      renderArticles();
+    });
+  }
 
   elements.dateFilter.addEventListener("change", (event) => {
     state.filters.date = event.target.value;
@@ -568,6 +609,7 @@ function bindEvents() {
       search: "",
       topic: "",
       feedId: "",
+      dmvFeedId: "",
       date: "",
       dmvOnly: false,
     };
@@ -575,6 +617,9 @@ function bindEvents() {
     elements.searchFilter.value = "";
     elements.topicFilter.value = "";
     elements.feedFilter.value = "";
+    if (elements.dmvFeedFilter) {
+      elements.dmvFeedFilter.value = "";
+    }
     elements.dateFilter.value = "";
     if (elements.feedPanelSearch) {
       elements.feedPanelSearch.value = "";
