@@ -1,9 +1,14 @@
-import axios from "axios";
+import { readFile } from "fs/promises";
+import path from "path";
+import { fileURLToPath } from "url";
 import { findFeedByRssUrl, createFeed as createFeedRecord } from "../database/feedRepository.js";
 import { broadcast } from "../services/realtimeService.js";
 import { toFeedDto } from "../services/presenterService.js";
 
 const DMV_BASE_URL = "https://rssdmv-production.up.railway.app";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const DMV_CATALOG_PATH = path.resolve(__dirname, "../../data/dmvFeeds.json");
 
 function extractFeedUrl(item) {
   if (item.feed_path) {
@@ -19,16 +24,15 @@ function extractName(item) {
   return "DMV Feed";
 }
 
+async function loadDmvCatalog() {
+  const raw = await readFile(DMV_CATALOG_PATH, "utf8");
+  const parsed = JSON.parse(raw);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
 export async function importDmvFeeds(_req, res) {
   try {
-    const manifestUrl = `${DMV_BASE_URL}/feeds.json`;
-
-    const response = await axios.get(manifestUrl, {
-      timeout: 15000,
-      headers: { Accept: "application/json" }
-    });
-
-    const manifest = Array.isArray(response.data) ? response.data : [];
+    const manifest = await loadDmvCatalog();
 
     let imported = 0;
     let skipped = 0;
