@@ -229,6 +229,16 @@ h3 {
   color: var(--muted);
 }
 
+.dmv-official-link {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.dmv-official-link:hover {
+  text-decoration: underline;
+}
+
 .field input,
 .field select,
 .ghost-button,

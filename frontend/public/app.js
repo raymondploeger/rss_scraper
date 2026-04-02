@@ -34,6 +34,8 @@ const elements = {
   topicFilter: document.getElementById("topic-filter"),
   feedFilter: document.getElementById("feed-filter"),
   dmvFeedFilter: document.getElementById("dmv-feed-filter"),
+  dmvOfficialLinkWrap: document.getElementById("dmv-official-link-wrap"),
+  dmvOfficialLink: document.getElementById("dmv-official-link"),
   dateFilter: document.getElementById("date-filter"),
   searchFilter: document.getElementById("search-filter"),
   clearFilters: document.getElementById("clear-filters"),
@@ -150,6 +152,14 @@ function getActiveSidebarFeedId() {
   return state.filters.feedId || state.filters.dmvFeedId;
 }
 
+function getSelectedDmvFeed() {
+  if (!state.filters.dmvFeedId) {
+    return null;
+  }
+
+  return state.feeds.find((feed) => feed.id === state.filters.dmvFeedId) || null;
+}
+
 function getSummaryMetrics() {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
@@ -224,6 +234,24 @@ function renderFeedOptions() {
       .join("");
     elements.dmvFeedFilter.value = state.filters.dmvFeedId;
   }
+}
+
+function renderDmvOfficialLink() {
+  if (!elements.dmvOfficialLinkWrap || !elements.dmvOfficialLink) {
+    return;
+  }
+
+  const selectedDmvFeed = getSelectedDmvFeed();
+  const officialUrl = String(selectedDmvFeed?.officialUrl || "").trim();
+
+  if (!officialUrl) {
+    elements.dmvOfficialLinkWrap.hidden = true;
+    elements.dmvOfficialLink.removeAttribute("href");
+    return;
+  }
+
+  elements.dmvOfficialLinkWrap.hidden = false;
+  elements.dmvOfficialLink.href = officialUrl;
 }
 
 function getVisibleFeeds() {
@@ -443,6 +471,7 @@ function renderArticles() {
 function renderDashboard() {
   renderSummary();
   renderFeedOptions();
+  renderDmvOfficialLink();
   renderFeedList();
   renderArticles();
 }
@@ -595,6 +624,7 @@ function bindEvents() {
       elements.dmvFeedFilter.value = "";
     }
     renderFeedList();
+    renderDmvOfficialLink();
     renderArticles();
   });
 
@@ -605,6 +635,7 @@ function bindEvents() {
       state.filters.dmvOnly = true;
       elements.feedFilter.value = "";
       renderFeedList();
+      renderDmvOfficialLink();
       renderArticles();
     });
   }
@@ -638,6 +669,7 @@ function bindEvents() {
       elements.feedVisibilityFilter.value = "all";
     }
 
+    renderDmvOfficialLink();
     renderArticles();
     renderFeedList();
   });
@@ -701,6 +733,7 @@ function bindEvents() {
         }
       }
       renderFeedList();
+      renderDmvOfficialLink();
       renderArticles();
     });
   }
