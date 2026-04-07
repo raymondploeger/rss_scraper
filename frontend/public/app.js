@@ -548,6 +548,69 @@ function getVisibleArticles() {
     .sort((left, right) => toDate(right.pubDate).getTime() - toDate(left.pubDate).getTime());
 }
 
+function renderArticleCard(article) {
+  const node = elements.articleCardTemplate.content.cloneNode(true);
+  const link = node.querySelector(".article-link");
+  const image = node.querySelector(".article-image");
+  const topic = node.querySelector(".article-topic");
+  const source = node.querySelector(".article-source");
+  const date = node.querySelector(".article-date");
+  const title = node.querySelector(".article-title");
+  const feed = node.querySelector(".article-feed");
+  const finalImageSrc = getArticleImageSrc(article);
+
+  if (
+    isNotafiliaUrl(article.link) ||
+    isNotafiliaUrl(article.canonicalLink) ||
+    isNotafiliaUrl(article.thumbnail)
+  ) {
+    console.log(
+      `[notafilia][frontend] articleUrl=${article.canonicalLink || article.link} apiThumbnail=${article.thumbnail || ""} finalImageSrc=${finalImageSrc || ""}`
+    );
+  }
+
+  link.href = article.canonicalLink || article.link;
+  image.src = finalImageSrc || PLACEHOLDER_IMAGE;
+  image.alt = article.title || "Article thumbnail";
+  image.onerror = () => {
+    image.onerror = null;
+    image.src = PLACEHOLDER_IMAGE;
+  };
+
+  topic.textContent = article.topic || "General";
+  source.textContent = article.source || "Unknown source";
+  date.textContent = formatDate(article.pubDate);
+  title.textContent = article.title || "Untitled article";
+  feed.textContent = getFeedName(article.feedId);
+
+  return node;
+}
+
+function renderDmvPlaceholderCard(feed) {
+  const node = elements.articleCardTemplate.content.cloneNode(true);
+  const link = node.querySelector(".article-link");
+  const image = node.querySelector(".article-image");
+  const topic = node.querySelector(".article-topic");
+  const source = node.querySelector(".article-source");
+  const date = node.querySelector(".article-date");
+  const title = node.querySelector(".article-title");
+  const feedName = node.querySelector(".article-feed");
+  const media = node.querySelector(".article-media");
+  const officialUrl = String(feed.officialUrl || feed.rssUrl || "#").trim();
+
+  link.href = officialUrl || "#";
+  image.src = PLACEHOLDER_IMAGE;
+  image.alt = `${feed.name || "DMV feed"} placeholder`;
+  topic.textContent = feed.topic || "General";
+  source.textContent = feed.name || "DMV feed";
+  date.textContent = "No news yet";
+  title.textContent = "Open official DMV page";
+  feedName.textContent = feed.name || "Untitled feed";
+  media.classList.add("is-empty");
+
+  return node;
+}
+
 function renderSkeletons() {
   elements.articlesGrid.innerHTML = Array.from({ length: 8 })
     .map(
@@ -567,6 +630,46 @@ function renderSkeletons() {
 
 function renderArticles() {
   const articles = getVisibleArticles();
+  if (state.filters.dmvOnly && !getActiveArticleFeedId()) {
+    const dmvFeeds = getUsDmvFeeds();
+    const articlesByFeedId = new Map();
+
+    articles.forEach((article) => {
+      const items = articlesByFeedId.get(article.feedId) || [];
+      items.push(article);
+      articlesByFeedId.set(article.feedId, items);
+    });
+
+    const cards = [];
+    dmvFeeds.forEach((feed) => {
+      const feedArticles = articlesByFeedId.get(feed.id) || [];
+      if (feedArticles.length) {
+        cards.push(...feedArticles);
+        return;
+      }
+
+      cards.push({ __dmvPlaceholder: true, feed });
+    });
+
+    elements.resultsCount.textContent = `${cards.length} results`;
+    elements.articlesGrid.innerHTML = "";
+
+    if (!cards.length) {
+      elements.articlesGrid.innerHTML =
+        `<div class="empty-state">No articles match the active filters.</div>`;
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    cards.forEach((item) => {
+      fragment.appendChild(
+        item.__dmvPlaceholder ? renderDmvPlaceholderCard(item.feed) : renderArticleCard(item)
+      );
+    });
+    elements.articlesGrid.appendChild(fragment);
+    return;
+  }
+
   elements.resultsCount.textContent = `${articles.length} results`;
   elements.articlesGrid.innerHTML = "";
 
@@ -595,41 +698,7 @@ function renderArticles() {
   const fragment = document.createDocumentFragment();
 
   articles.forEach((article) => {
-    const node = elements.articleCardTemplate.content.cloneNode(true);
-    const link = node.querySelector(".article-link");
-    const image = node.querySelector(".article-image");
-    const topic = node.querySelector(".article-topic");
-    const source = node.querySelector(".article-source");
-    const date = node.querySelector(".article-date");
-    const title = node.querySelector(".article-title");
-    const feed = node.querySelector(".article-feed");
-    const finalImageSrc = getArticleImageSrc(article);
-
-    if (
-      isNotafiliaUrl(article.link) ||
-      isNotafiliaUrl(article.canonicalLink) ||
-      isNotafiliaUrl(article.thumbnail)
-    ) {
-      console.log(
-        `[notafilia][frontend] articleUrl=${article.canonicalLink || article.link} apiThumbnail=${article.thumbnail || ""} finalImageSrc=${finalImageSrc || ""}`
-      );
-    }
-
-    link.href = article.canonicalLink || article.link;
-    image.src = finalImageSrc || PLACEHOLDER_IMAGE;
-    image.alt = article.title || "Article thumbnail";
-    image.onerror = () => {
-      image.onerror = null;
-      image.src = PLACEHOLDER_IMAGE;
-    };
-
-    topic.textContent = article.topic || "General";
-    source.textContent = article.source || "Unknown source";
-    date.textContent = formatDate(article.pubDate);
-    title.textContent = article.title || "Untitled article";
-    feed.textContent = getFeedName(article.feedId);
-
-    fragment.appendChild(node);
+    fragment.appendChild(renderArticleCard(article));
   });
 
   elements.articlesGrid.appendChild(fragment);
