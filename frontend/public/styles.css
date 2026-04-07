@@ -243,6 +243,22 @@ h3 {
   margin: -2px 0 0;
 }
 
+.dmv-feed-group {
+  display: grid;
+  gap: 12px;
+}
+
+.dmv-feed-group-title {
+  margin: 0;
+  color: var(--text);
+}
+
+.dmv-feed-group-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 18px;
+}
+
 .field input,
 .field select,
 .ghost-button,

@@ -14,6 +14,7 @@ const state = {
   feeds: [],
   dmvCatalog: [],
   articles: [],
+  dashboardMode: "normal",
   filters: {
     search: "",
     topic: "",
@@ -22,7 +23,6 @@ const state = {
     canadaDmvFeedPath: "",
     canadaDmvAll: false,
     date: "",
-    dmvOnly: false,
   },
 };
 
@@ -67,6 +67,7 @@ const elements = {
   articleCardTemplate: document.getElementById("article-card-template"),
   importDmvButton: document.getElementById("import-dmv-button"),
   dmvToggleButton: document.getElementById("dmv-toggle-button"),
+  canadaToggleButton: document.getElementById("canada-toggle-button"),
 };
 
 function debounce(callback, wait = 250) {
@@ -214,11 +215,15 @@ function getSourceListMode() {
     return "dmv-feed";
   }
 
-  if (state.filters.dmvOnly) {
+  if (state.filters.canadaDmvAll) {
+    return "canada-all";
+  }
+
+  if (state.dashboardMode === "usa") {
     return "dmv-only";
   }
 
-  if (state.filters.canadaDmvAll) {
+  if (state.dashboardMode === "canada") {
     return "canada-all";
   }
 
@@ -379,7 +384,19 @@ function renderDmvModeIndicator() {
     return;
   }
 
-  elements.dmvModeIndicator.hidden = !state.filters.dmvOnly;
+  if (state.dashboardMode === "usa") {
+    elements.dmvModeIndicator.hidden = false;
+    elements.dmvModeIndicator.textContent = "Showing USA DMV feeds only";
+    return;
+  }
+
+  if (state.dashboardMode === "canada") {
+    elements.dmvModeIndicator.hidden = false;
+    elements.dmvModeIndicator.textContent = "Showing Canada DMV feeds only";
+    return;
+  }
+
+  elements.dmvModeIndicator.hidden = true;
 }
 
 function getVisibleFeeds() {
@@ -431,14 +448,28 @@ function getVisibleFeeds() {
 function updateDmvToggleButton() {
   if (!elements.dmvToggleButton) return;
 
-  if (state.filters.dmvOnly) {
+  if (state.dashboardMode === "usa") {
     elements.dmvToggleButton.textContent = "Show all feeds";
     elements.dmvToggleButton.classList.add("active-toggle");
     elements.dmvToggleButton.setAttribute("aria-pressed", "true");
   } else {
-    elements.dmvToggleButton.textContent = "Show DMV feeds";
+    elements.dmvToggleButton.textContent = "Show USA feeds";
     elements.dmvToggleButton.classList.remove("active-toggle");
     elements.dmvToggleButton.setAttribute("aria-pressed", "false");
+  }
+
+  if (!elements.canadaToggleButton) {
+    return;
+  }
+
+  if (state.dashboardMode === "canada") {
+    elements.canadaToggleButton.textContent = "Show all feeds";
+    elements.canadaToggleButton.classList.add("active-toggle");
+    elements.canadaToggleButton.setAttribute("aria-pressed", "true");
+  } else {
+    elements.canadaToggleButton.textContent = "Show Canada feeds";
+    elements.canadaToggleButton.classList.remove("active-toggle");
+    elements.canadaToggleButton.setAttribute("aria-pressed", "false");
   }
 }
 
@@ -521,7 +552,7 @@ function articleMatchesFilters(article) {
     return false;
   }
 
-  if (!getActiveArticleFeedId() && state.filters.dmvOnly && !isDmvFeedId(article.feedId)) {
+  if (!getActiveArticleFeedId() && state.dashboardMode === "usa" && !isDmvFeedId(article.feedId)) {
     return false;
   }
 
@@ -611,6 +642,23 @@ function renderDmvPlaceholderCard(feed) {
   return node;
 }
 
+function renderFeedGroup(titleText, cards) {
+  const section = document.createElement("section");
+  section.className = "dmv-feed-group";
+
+  const heading = document.createElement("h3");
+  heading.className = "dmv-feed-group-title";
+  heading.textContent = titleText;
+
+  const grid = document.createElement("div");
+  grid.className = "dmv-feed-group-grid";
+  cards.forEach((card) => grid.appendChild(card));
+
+  section.appendChild(heading);
+  section.appendChild(grid);
+  return section;
+}
+
 function renderSkeletons() {
   elements.articlesGrid.innerHTML = Array.from({ length: 8 })
     .map(
@@ -630,7 +678,7 @@ function renderSkeletons() {
 
 function renderArticles() {
   const articles = getVisibleArticles();
-  if (state.filters.dmvOnly && !getActiveArticleFeedId()) {
+  if (state.dashboardMode === "usa" && !getActiveArticleFeedId()) {
     const dmvFeeds = getUsDmvFeeds();
     const articlesByFeedId = new Map();
 
@@ -640,31 +688,62 @@ function renderArticles() {
       articlesByFeedId.set(article.feedId, items);
     });
 
-    const cards = [];
-    dmvFeeds.forEach((feed) => {
-      const feedArticles = articlesByFeedId.get(feed.id) || [];
-      if (feedArticles.length) {
-        cards.push(...feedArticles);
-        return;
-      }
-
-      cards.push({ __dmvPlaceholder: true, feed });
-    });
-
-    elements.resultsCount.textContent = `${cards.length} results`;
+    elements.resultsCount.textContent = `${dmvFeeds.length} results`;
     elements.articlesGrid.innerHTML = "";
 
-    if (!cards.length) {
+    if (!dmvFeeds.length) {
       elements.articlesGrid.innerHTML =
         `<div class="empty-state">No articles match the active filters.</div>`;
       return;
     }
 
     const fragment = document.createDocumentFragment();
-    cards.forEach((item) => {
-      fragment.appendChild(
-        item.__dmvPlaceholder ? renderDmvPlaceholderCard(item.feed) : renderArticleCard(item)
-      );
+    dmvFeeds.forEach((feed) => {
+      const feedArticles = articlesByFeedId.get(feed.id) || [];
+      const groupCards = feedArticles.length
+        ? feedArticles.map((article) => renderArticleCard(article))
+        : [renderDmvPlaceholderCard(feed)];
+      fragment.appendChild(renderFeedGroup(feed.name || "Untitled feed", groupCards));
+    });
+    elements.articlesGrid.appendChild(fragment);
+    return;
+  }
+
+  if (state.dashboardMode === "canada" && !state.filters.canadaDmvFeedPath) {
+    const canadaEntries = getCanadaDmvCatalogEntries();
+    const importedCanadaFeeds = getCanadaImportedDmvFeeds();
+    const articlesByFeedId = new Map();
+
+    articles.forEach((article) => {
+      const items = articlesByFeedId.get(article.feedId) || [];
+      items.push(article);
+      articlesByFeedId.set(article.feedId, items);
+    });
+
+    elements.resultsCount.textContent = `${canadaEntries.length} results`;
+    elements.articlesGrid.innerHTML = "";
+
+    if (!canadaEntries.length) {
+      elements.articlesGrid.innerHTML =
+        `<div class="empty-state">No imported news available for Canada DMV entries yet.</div>`;
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    canadaEntries.forEach((entry) => {
+      const importedFeed =
+        importedCanadaFeeds.find((feed) => feed.dmvFeedPath === entry.feedPath) || null;
+      const feedArticles = importedFeed ? articlesByFeedId.get(importedFeed.id) || [] : [];
+      const feedLike = importedFeed || {
+        name: entry.state,
+        topic: "General",
+        officialUrl: entry.officialUrl,
+        rssUrl: "",
+      };
+      const groupCards = feedArticles.length
+        ? feedArticles.map((article) => renderArticleCard(article))
+        : [renderDmvPlaceholderCard(feedLike)];
+      fragment.appendChild(renderFeedGroup(entry.state || "Untitled feed", groupCards));
     });
     elements.articlesGrid.appendChild(fragment);
     return;
@@ -860,7 +939,7 @@ function bindEvents() {
     state.filters.dmvFeedId = "";
     state.filters.canadaDmvFeedPath = "";
     state.filters.canadaDmvAll = false;
-    state.filters.dmvOnly = false;
+    state.dashboardMode = "normal";
     if (elements.dmvFeedFilter) {
       elements.dmvFeedFilter.value = "";
     }
@@ -879,6 +958,7 @@ function bindEvents() {
       state.filters.feedId = "";
       state.filters.canadaDmvFeedPath = "";
       state.filters.canadaDmvAll = false;
+      state.dashboardMode = "normal";
       elements.feedFilter.value = "";
       if (elements.canadaDmvFilter) {
         elements.canadaDmvFilter.value = "";
@@ -896,7 +976,7 @@ function bindEvents() {
       state.filters.canadaDmvAll = event.target.value === "";
       state.filters.feedId = "";
       state.filters.dmvFeedId = "";
-      state.filters.dmvOnly = false;
+      state.dashboardMode = "normal";
       elements.feedFilter.value = "";
       if (elements.dmvFeedFilter) {
         elements.dmvFeedFilter.value = "";
@@ -922,8 +1002,8 @@ function bindEvents() {
       canadaDmvFeedPath: "",
       canadaDmvAll: false,
       date: "",
-      dmvOnly: false,
     };
+    state.dashboardMode = "normal";
 
     elements.searchFilter.value = "";
     elements.topicFilter.value = "";
@@ -999,12 +1079,38 @@ function bindEvents() {
 
   if (elements.dmvToggleButton) {
     elements.dmvToggleButton.addEventListener("click", () => {
-      state.filters.dmvOnly = !state.filters.dmvOnly;
-      if (!state.filters.dmvOnly) {
-        state.filters.dmvFeedId = "";
-        if (elements.dmvFeedFilter) {
-          elements.dmvFeedFilter.value = "";
-        }
+      state.dashboardMode = state.dashboardMode === "usa" ? "normal" : "usa";
+      state.filters.feedId = "";
+      state.filters.dmvFeedId = "";
+      state.filters.canadaDmvFeedPath = "";
+      state.filters.canadaDmvAll = false;
+      elements.feedFilter.value = "";
+      if (elements.dmvFeedFilter) {
+        elements.dmvFeedFilter.value = "";
+      }
+      if (elements.canadaDmvFilter) {
+        elements.canadaDmvFilter.value = "";
+      }
+      renderFeedList();
+      renderDmvOfficialLink();
+      renderDmvModeIndicator();
+      renderArticles();
+    });
+  }
+
+  if (elements.canadaToggleButton) {
+    elements.canadaToggleButton.addEventListener("click", () => {
+      state.dashboardMode = state.dashboardMode === "canada" ? "normal" : "canada";
+      state.filters.feedId = "";
+      state.filters.dmvFeedId = "";
+      state.filters.canadaDmvFeedPath = "";
+      state.filters.canadaDmvAll = false;
+      elements.feedFilter.value = "";
+      if (elements.dmvFeedFilter) {
+        elements.dmvFeedFilter.value = "";
+      }
+      if (elements.canadaDmvFilter) {
+        elements.canadaDmvFilter.value = "";
       }
       renderFeedList();
       renderDmvOfficialLink();
