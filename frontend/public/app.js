@@ -571,11 +571,24 @@ function renderArticles() {
   elements.articlesGrid.innerHTML = "";
 
   if (!articles.length) {
-    elements.articlesGrid.innerHTML = state.filters.canadaDmvAll
-      ? `<div class="empty-state">No imported news available for Canada DMV entries yet.</div>`
-      : getSelectedCanadaCatalogEntry()
-      ? `<div class="empty-state">No imported news available for this Canada DMV entry yet.</div>`
-      : `<div class="empty-state">No articles match the active filters.</div>`;
+    const selectedUsDmvFeed = getSelectedDmvFeed();
+    const selectedCanadaEntry = getSelectedCanadaCatalogEntry();
+    const emptyStateMessage = state.filters.canadaDmvAll
+      ? "No imported news available for Canada DMV entries yet."
+      : selectedCanadaEntry
+        ? "No imported news available for this Canada DMV entry yet."
+        : selectedUsDmvFeed
+          ? "No imported news available for this USA DMV entry yet."
+          : "No articles match the active filters.";
+    const officialUrl = String(
+      selectedUsDmvFeed?.officialUrl || selectedCanadaEntry?.officialUrl || ""
+    ).trim();
+
+    elements.articlesGrid.innerHTML =
+      `<div class="empty-state">${emptyStateMessage}</div>` +
+      (!state.filters.canadaDmvAll && officialUrl
+        ? `<div class="empty-state"><a class="dmv-official-link" href="${officialUrl}" target="_blank" rel="noopener noreferrer">Open official DMV page</a></div>`
+        : "");
     return;
   }
 
