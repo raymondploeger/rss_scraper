@@ -661,7 +661,6 @@ function bindEvents() {
     elements.dmvFeedFilter.addEventListener("change", (event) => {
       state.filters.dmvFeedId = event.target.value;
       state.filters.feedId = "";
-      state.filters.dmvOnly = event.target.value !== "";
       elements.feedFilter.value = "";
       renderFeedList();
       renderDmvOfficialLink();
