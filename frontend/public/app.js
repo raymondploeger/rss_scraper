@@ -280,8 +280,9 @@ function renderDmvModeIndicator() {
 }
 
 function getVisibleFeeds() {
-  let feeds = state.feeds.slice();
   const sourceListMode = getSourceListMode();
+  let feeds =
+    sourceListMode === "dmv-only" ? getDmvFeeds().slice() : state.feeds.slice();
   const feedPanelSearch = String(elements.feedPanelSearch?.value || "").trim().toLowerCase();
   const visibilityFilter = elements.feedVisibilityFilter?.value || "all";
 
@@ -289,8 +290,6 @@ function getVisibleFeeds() {
     feeds = feeds.filter((feed) => feed.id === state.filters.feedId);
   } else if (sourceListMode === "dmv-feed") {
     feeds = feeds.filter((feed) => feed.id === state.filters.dmvFeedId);
-  } else if (sourceListMode === "dmv-only") {
-    feeds = feeds.filter(isDmvWrapperFeed);
   }
 
   if (visibilityFilter === "active") {
