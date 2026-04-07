@@ -678,6 +678,24 @@ function renderSkeletons() {
 
 function renderArticles() {
   const articles = getVisibleArticles();
+  if (state.filters.feedId) {
+    elements.resultsCount.textContent = `${articles.length} results`;
+    elements.articlesGrid.innerHTML = "";
+
+    if (!articles.length) {
+      elements.articlesGrid.innerHTML =
+        `<div class="empty-state">No articles match the active filters.</div>`;
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    articles.forEach((article) => {
+      fragment.appendChild(renderArticleCard(article));
+    });
+    elements.articlesGrid.appendChild(fragment);
+    return;
+  }
+
   if (state.dashboardMode === "usa" && !getActiveArticleFeedId()) {
     const dmvFeeds = getUsDmvFeeds();
     const articlesByFeedId = new Map();
