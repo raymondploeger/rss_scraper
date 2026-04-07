@@ -177,6 +177,10 @@ function getSelectedDmvFeed() {
   return state.feeds.find((feed) => feed.id === state.filters.dmvFeedId) || null;
 }
 
+function isDmvFeedId(feedId) {
+  return state.feeds.some((feed) => feed.id === feedId && isDmvWrapperFeed(feed));
+}
+
 function getSummaryMetrics() {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
@@ -397,6 +401,10 @@ function articleMatchesFilters(article) {
   }
 
   if (getActiveArticleFeedId() && article.feedId !== getActiveArticleFeedId()) {
+    return false;
+  }
+
+  if (!getActiveArticleFeedId() && state.filters.dmvOnly && !isDmvFeedId(article.feedId)) {
     return false;
   }
 
