@@ -1,5 +1,6 @@
 const PLACEHOLDER_IMAGE = "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image";
 const THEME_STORAGE_KEY = "rss-monitor-theme";
+const FEED_PANEL_COLLAPSED_STORAGE_KEY = "feedPanelCollapsed";
 const POLLING_INTERVAL_MS = 30000;
 const ARTICLE_PAGE_SIZE = 400;
 const SUMMARY_METRICS = [
@@ -131,6 +132,10 @@ function applyTheme(theme) {
 
 function loadTheme() {
   applyTheme(window.localStorage.getItem(THEME_STORAGE_KEY) || "light");
+}
+
+function isFeedPanelCollapsed() {
+  return window.localStorage.getItem(FEED_PANEL_COLLAPSED_STORAGE_KEY) !== "false";
 }
 
 function getFeedName(feedId) {
@@ -792,13 +797,16 @@ function bindEvents() {
   }
 
   if (elements.feedPanelToggle && elements.feedPanelContent) {
-    syncFeedPanelVisibility(
-      elements.feedPanelToggle.getAttribute("aria-expanded") !== "false"
-    );
+    syncFeedPanelVisibility(!isFeedPanelCollapsed());
 
     elements.feedPanelToggle.addEventListener("click", () => {
       const expanded = elements.feedPanelToggle.getAttribute("aria-expanded") === "true";
-      syncFeedPanelVisibility(!expanded);
+      const nextExpanded = !expanded;
+      syncFeedPanelVisibility(nextExpanded);
+      window.localStorage.setItem(
+        FEED_PANEL_COLLAPSED_STORAGE_KEY,
+        String(!nextExpanded)
+      );
     });
   }
 
