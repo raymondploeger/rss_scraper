@@ -20,6 +20,7 @@ const state = {
     feedId: "",
     dmvFeedId: "",
     canadaDmvFeedPath: "",
+    canadaDmvAll: false,
     date: "",
     dmvOnly: false,
   },
@@ -217,6 +218,10 @@ function getSourceListMode() {
     return "dmv-only";
   }
 
+  if (state.filters.canadaDmvAll) {
+    return "canada-all";
+  }
+
   return "all";
 }
 
@@ -313,6 +318,10 @@ function renderFeedOptions() {
     state.filters.canadaDmvFeedPath = "";
   }
 
+  if (state.filters.canadaDmvAll && !canadaCatalogEntries.length) {
+    state.filters.canadaDmvAll = false;
+  }
+
   elements.topicFilter.innerHTML = [`<option value="">All topics</option>`]
     .concat(topics.map((topic) => `<option value="${topic}">${topic}</option>`))
     .join("");
@@ -387,6 +396,8 @@ function getVisibleFeeds() {
     feeds = selectedCanadaFeed ? feeds.filter((feed) => feed.id === selectedCanadaFeed.id) : [];
   } else if (sourceListMode === "dmv-feed") {
     feeds = feeds.filter((feed) => feed.id === state.filters.dmvFeedId);
+  } else if (sourceListMode === "canada-all") {
+    feeds = getCanadaImportedDmvFeeds().slice();
   }
 
   if (visibilityFilter === "active") {
@@ -504,6 +515,12 @@ function articleMatchesFilters(article) {
     return false;
   }
 
+  if (!getActiveArticleFeedId() && state.filters.canadaDmvAll && !isCanadianDmvAbbr(
+    state.feeds.find((feed) => feed.id === article.feedId)?.dmvAbbr
+  )) {
+    return false;
+  }
+
   if (!getActiveArticleFeedId() && state.filters.dmvOnly && !isDmvFeedId(article.feedId)) {
     return false;
   }
@@ -554,7 +571,9 @@ function renderArticles() {
   elements.articlesGrid.innerHTML = "";
 
   if (!articles.length) {
-    elements.articlesGrid.innerHTML = getSelectedCanadaCatalogEntry()
+    elements.articlesGrid.innerHTML = state.filters.canadaDmvAll
+      ? `<div class="empty-state">No imported news available for Canada DMV entries yet.</div>`
+      : getSelectedCanadaCatalogEntry()
       ? `<div class="empty-state">No imported news available for this Canada DMV entry yet.</div>`
       : `<div class="empty-state">No articles match the active filters.</div>`;
     return;
@@ -758,6 +777,7 @@ function bindEvents() {
     state.filters.feedId = event.target.value;
     state.filters.dmvFeedId = "";
     state.filters.canadaDmvFeedPath = "";
+    state.filters.canadaDmvAll = false;
     state.filters.dmvOnly = false;
     if (elements.dmvFeedFilter) {
       elements.dmvFeedFilter.value = "";
@@ -776,6 +796,7 @@ function bindEvents() {
       state.filters.dmvFeedId = event.target.value;
       state.filters.feedId = "";
       state.filters.canadaDmvFeedPath = "";
+      state.filters.canadaDmvAll = false;
       elements.feedFilter.value = "";
       if (elements.canadaDmvFilter) {
         elements.canadaDmvFilter.value = "";
@@ -790,6 +811,7 @@ function bindEvents() {
   if (elements.canadaDmvFilter) {
     elements.canadaDmvFilter.addEventListener("change", (event) => {
       state.filters.canadaDmvFeedPath = event.target.value;
+      state.filters.canadaDmvAll = event.target.value === "";
       state.filters.feedId = "";
       state.filters.dmvFeedId = "";
       state.filters.dmvOnly = false;
@@ -816,6 +838,7 @@ function bindEvents() {
       feedId: "",
       dmvFeedId: "",
       canadaDmvFeedPath: "",
+      canadaDmvAll: false,
       date: "",
       dmvOnly: false,
     };
