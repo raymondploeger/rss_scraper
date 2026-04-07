@@ -304,5 +304,83 @@
     "abbr": "WY",
     "official_url": "https://www.dot.state.wy.us/driverservices",
     "feed_path": "/feeds/wyoming.xml"
+  },
+  {
+    "state": "Alberta",
+    "abbr": "AB",
+    "official_url": "https://www.alberta.ca",
+    "feed_path": "/feeds/alberta.xml"
+  },
+  {
+    "state": "British Columbia",
+    "abbr": "BC",
+    "official_url": "https://www.icbc.com",
+    "feed_path": "/feeds/british_columbia.xml"
+  },
+  {
+    "state": "Manitoba",
+    "abbr": "MB",
+    "official_url": "https://www.mpi.mb.ca",
+    "feed_path": "/feeds/manitoba.xml"
+  },
+  {
+    "state": "New Brunswick",
+    "abbr": "NB",
+    "official_url": "https://www2.snb.ca",
+    "feed_path": "/feeds/new_brunswick.xml"
+  },
+  {
+    "state": "Newfoundland and Labrador",
+    "abbr": "NL",
+    "official_url": "https://www.gov.nl.ca/motorregistration",
+    "feed_path": "/feeds/newfoundland_and_labrador.xml"
+  },
+  {
+    "state": "Nova Scotia",
+    "abbr": "NS",
+    "official_url": "https://novascotia.ca/driving-and-road-safety/",
+    "feed_path": "/feeds/nova_scotia.xml"
+  },
+  {
+    "state": "Ontario",
+    "abbr": "ON",
+    "official_url": "https://www.ontario.ca/page/serviceontario",
+    "feed_path": "/feeds/ontario.xml"
+  },
+  {
+    "state": "Prince Edward Island",
+    "abbr": "PE",
+    "official_url": "https://www.princeedwardisland.ca/en/topic/transportation-and-infrastructure",
+    "feed_path": "/feeds/prince_edward_island.xml"
+  },
+  {
+    "state": "Quebec",
+    "abbr": "QC",
+    "official_url": "https://saaq.gouv.qc.ca/",
+    "feed_path": "/feeds/quebec.xml"
+  },
+  {
+    "state": "Saskatchewan",
+    "abbr": "SK",
+    "official_url": "https://www.sgi.sk.ca/",
+    "feed_path": "/feeds/saskatchewan.xml"
+  },
+  {
+    "state": "Northwest Territories",
+    "abbr": "NT",
+    "official_url": "https://www.inf.gov.nt.ca/en/services/driver-and-vehicle-services",
+    "feed_path": "/feeds/northwest_territories.xml"
+  },
+  {
+    "state": "Nunavut",
+    "abbr": "NU",
+    "official_url": "https://gov.nu.ca/motor_vehicles",
+    "feed_path": "/feeds/nunavut.xml"
+  },
+  {
+    "state": "Yukon",
+    "abbr": "YT",
+    "official_url": "https://yukon.ca/en/driving-and-transportation",
+    "feed_path": "/feeds/yukon.xml"
   }
 ]
