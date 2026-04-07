@@ -1,44 +1,5 @@
 import { env } from "../config/env.js";
-import { readFileSync } from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
-
-const DMV_BASE_URL = "https://rssdmv-production.up.railway.app";
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const DMV_CATALOG_PATH = path.resolve(__dirname, "../../data/dmvFeeds.json");
-
-let cachedDmvCatalog = null;
-
-function loadDmvCatalog() {
-  if (cachedDmvCatalog) {
-    return cachedDmvCatalog;
-  }
-
-  try {
-    const raw = readFileSync(DMV_CATALOG_PATH, "utf8");
-    const parsed = JSON.parse(raw);
-    cachedDmvCatalog = Array.isArray(parsed) ? parsed : [];
-  } catch {
-    cachedDmvCatalog = [];
-  }
-
-  return cachedDmvCatalog;
-}
-
-function getDmvCatalogEntry(feed) {
-  const rssUrl = String(feed?.rssUrl || "");
-  if (!rssUrl.includes(`${DMV_BASE_URL}/feeds/`)) {
-    return null;
-  }
-
-  return (
-    loadDmvCatalog().find((entry) => {
-      const feedPath = String(entry?.feed_path || "");
-      return feedPath && rssUrl.endsWith(feedPath);
-    }) || null
-  );
-}
+import { getDmvCatalogEntry, isCanadianDmvAbbr } from "./dmvCatalogService.js";
 
 function isNotafiliaUrl(value) {
   try {
@@ -76,6 +37,7 @@ export function toFeedDto(feed) {
     dmvState: dmvCatalogEntry?.state || null,
     dmvAbbr: dmvCatalogEntry?.abbr || null,
     dmvFeedPath: dmvCatalogEntry?.feed_path || null,
+    dmvRegion: dmvCatalogEntry ? (isCanadianDmvAbbr(dmvCatalogEntry.abbr) ? "canada" : "us") : null,
     sourceType: feed.sourceType || "rss",
     sourceFallbackImage: feed.sourceFallbackImage || null,
     isActive: feed.isActive !== false,
