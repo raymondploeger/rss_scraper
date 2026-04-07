@@ -239,6 +239,10 @@ h3 {
   text-decoration: underline;
 }
 
+.dmv-mode-indicator {
+  margin: -2px 0 0;
+}
+
 .field input,
 .field select,
 .ghost-button,

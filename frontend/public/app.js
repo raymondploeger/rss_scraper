@@ -36,6 +36,7 @@ const elements = {
   dmvFeedFilter: document.getElementById("dmv-feed-filter"),
   dmvOfficialLinkWrap: document.getElementById("dmv-official-link-wrap"),
   dmvOfficialLink: document.getElementById("dmv-official-link"),
+  dmvModeIndicator: document.getElementById("dmv-mode-indicator"),
   dateFilter: document.getElementById("date-filter"),
   searchFilter: document.getElementById("search-filter"),
   clearFilters: document.getElementById("clear-filters"),
@@ -152,6 +153,22 @@ function getActiveSidebarFeedId() {
   return state.filters.feedId || state.filters.dmvFeedId;
 }
 
+function getSourceListMode() {
+  if (state.filters.feedId) {
+    return "normal-feed";
+  }
+
+  if (state.filters.dmvFeedId) {
+    return "dmv-feed";
+  }
+
+  if (state.filters.dmvOnly) {
+    return "dmv-only";
+  }
+
+  return "all";
+}
+
 function getSelectedDmvFeed() {
   if (!state.filters.dmvFeedId) {
     return null;
@@ -254,15 +271,25 @@ function renderDmvOfficialLink() {
   elements.dmvOfficialLink.href = officialUrl;
 }
 
+function renderDmvModeIndicator() {
+  if (!elements.dmvModeIndicator) {
+    return;
+  }
+
+  elements.dmvModeIndicator.hidden = !state.filters.dmvOnly;
+}
+
 function getVisibleFeeds() {
   let feeds = state.feeds.slice();
-  const activeSidebarFeedId = getActiveSidebarFeedId();
+  const sourceListMode = getSourceListMode();
   const feedPanelSearch = String(elements.feedPanelSearch?.value || "").trim().toLowerCase();
   const visibilityFilter = elements.feedVisibilityFilter?.value || "all";
 
-  if (activeSidebarFeedId) {
-    feeds = feeds.filter((feed) => feed.id === activeSidebarFeedId);
-  } else if (state.filters.dmvOnly) {
+  if (sourceListMode === "normal-feed") {
+    feeds = feeds.filter((feed) => feed.id === state.filters.feedId);
+  } else if (sourceListMode === "dmv-feed") {
+    feeds = feeds.filter((feed) => feed.id === state.filters.dmvFeedId);
+  } else if (sourceListMode === "dmv-only") {
     feeds = feeds.filter(isDmvWrapperFeed);
   }
 
@@ -472,6 +499,7 @@ function renderDashboard() {
   renderSummary();
   renderFeedOptions();
   renderDmvOfficialLink();
+  renderDmvModeIndicator();
   renderFeedList();
   renderArticles();
 }
@@ -625,6 +653,7 @@ function bindEvents() {
     }
     renderFeedList();
     renderDmvOfficialLink();
+    renderDmvModeIndicator();
     renderArticles();
   });
 
@@ -632,10 +661,11 @@ function bindEvents() {
     elements.dmvFeedFilter.addEventListener("change", (event) => {
       state.filters.dmvFeedId = event.target.value;
       state.filters.feedId = "";
-      state.filters.dmvOnly = true;
+      state.filters.dmvOnly = event.target.value !== "";
       elements.feedFilter.value = "";
       renderFeedList();
       renderDmvOfficialLink();
+      renderDmvModeIndicator();
       renderArticles();
     });
   }
@@ -670,6 +700,7 @@ function bindEvents() {
     }
 
     renderDmvOfficialLink();
+    renderDmvModeIndicator();
     renderArticles();
     renderFeedList();
   });
@@ -734,6 +765,7 @@ function bindEvents() {
       }
       renderFeedList();
       renderDmvOfficialLink();
+      renderDmvModeIndicator();
       renderArticles();
     });
   }
