@@ -263,6 +263,15 @@ function isDmvFeedId(feedId) {
   return state.feeds.some((feed) => feed.id === feedId && isDmvWrapperFeed(feed));
 }
 
+function isOfficialFallbackArticle(article) {
+  const title = String(article?.title || "").toLowerCase();
+  return (
+    title.includes("dmv official site") ||
+    article?.sourceType === "dmv-official" ||
+    article?.isOfficialFallback === true
+  );
+}
+
 function getSummaryMetrics() {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
@@ -603,6 +612,10 @@ function renderFeedList() {
 }
 
 function articleMatchesFilters(article) {
+  if (isOfficialFallbackArticle(article)) {
+    return false;
+  }
+
   if (state.filters.topic && article.topic !== state.filters.topic) {
     return false;
   }
