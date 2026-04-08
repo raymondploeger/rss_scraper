@@ -763,6 +763,12 @@ function renderSkeletons() {
 
 function renderArticles() {
   const articles = getVisibleArticles();
+  const selectedUsDmvFeed = getSelectedDmvFeed();
+  const selectedCanadaEntry = getSelectedCanadaCatalogEntry();
+  const selectedDmvOfficialUrl = String(
+    selectedUsDmvFeed?.officialUrl || selectedCanadaEntry?.officialUrl || ""
+  ).trim();
+
   if (state.filters.feedId) {
     elements.resultsCount.textContent = `${articles.length} results`;
     elements.articlesGrid.innerHTML = "";
@@ -770,6 +776,27 @@ function renderArticles() {
     if (!articles.length) {
       elements.articlesGrid.innerHTML =
         `<div class="empty-state">No articles match the active filters.</div>`;
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    articles.forEach((article) => {
+      fragment.appendChild(renderArticleCard(article));
+    });
+    elements.articlesGrid.appendChild(fragment);
+    return;
+  }
+
+  if ((selectedUsDmvFeed || selectedCanadaEntry) && !state.filters.feedId) {
+    elements.resultsCount.textContent = `${articles.length} results`;
+    elements.articlesGrid.innerHTML = "";
+
+    if (!articles.length) {
+      elements.articlesGrid.innerHTML =
+        `<div class="empty-state">No news available</div>` +
+        (selectedDmvOfficialUrl
+          ? `<div class="empty-state"><a class="dmv-official-link" href="${selectedDmvOfficialUrl}" target="_blank" rel="noopener noreferrer">Open official DMV page</a></div>`
+          : "");
       return;
     }
 
@@ -856,8 +883,6 @@ function renderArticles() {
   elements.articlesGrid.innerHTML = "";
 
   if (!articles.length) {
-    const selectedUsDmvFeed = getSelectedDmvFeed();
-    const selectedCanadaEntry = getSelectedCanadaCatalogEntry();
     const emptyStateMessage = state.filters.canadaDmvAll
       ? "No imported news available for Canada DMV entries yet."
       : selectedCanadaEntry
