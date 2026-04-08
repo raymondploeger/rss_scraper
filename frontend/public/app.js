@@ -178,6 +178,14 @@ function getCanadaDmvCatalogEntries() {
     .sort((left, right) => String(left.state || "").localeCompare(String(right.state || "")));
 }
 
+function isCanadaLinkOnlyEntry(entry) {
+  return entry?.region === "canada" && entry?.mode === "link-only";
+}
+
+function isCanadaLinkOnlyFeed(feed) {
+  return feed?.dmvRegion === "canada" && feed?.dmvMode === "link-only";
+}
+
 function getActiveArticleFeedId() {
   if (state.filters.feedId) {
     return state.filters.feedId;
@@ -270,6 +278,27 @@ function isOfficialFallbackArticle(article) {
     article?.sourceType === "dmv-official" ||
     article?.isOfficialFallback === true
   );
+}
+
+function getFeedStatusPresentation(feed) {
+  if (isCanadaLinkOnlyFeed(feed)) {
+    return {
+      text: "link only",
+      tone: "is-idle",
+    };
+  }
+
+  const tone =
+    feed.lastStatus === "error"
+      ? "is-error"
+      : feed.lastStatus === "success"
+        ? "is-success"
+        : "is-idle";
+
+  return {
+    text: feed.lastStatus || "idle",
+    tone,
+  };
 }
 
 function getSummaryMetrics() {
@@ -429,11 +458,15 @@ function getVisibleFeeds() {
   }
 
   if (visibilityFilter === "active") {
-    feeds = feeds.filter((feed) => feed.isActive !== false && feed.lastStatus !== "error");
+    feeds = feeds.filter(
+      (feed) => feed.isActive !== false && (isCanadaLinkOnlyFeed(feed) || feed.lastStatus !== "error")
+    );
   }
 
   if (visibilityFilter === "inactive") {
-    feeds = feeds.filter((feed) => feed.isActive === false || feed.lastStatus === "error");
+    feeds = feeds.filter(
+      (feed) => feed.isActive === false || (!isCanadaLinkOnlyFeed(feed) && feed.lastStatus === "error")
+    );
   }
 
   if (feedPanelSearch) {
@@ -587,17 +620,12 @@ function renderFeedList() {
     const editButton = node.querySelector(".feed-edit-button");
     const deleteButton = node.querySelector(".feed-delete-button");
     const lastFetched = feed.lastFetchedAt ? formatDate(feed.lastFetchedAt) : "Waiting for first sync";
-    const tone =
-      feed.lastStatus === "error"
-        ? "is-error"
-        : feed.lastStatus === "success"
-          ? "is-success"
-          : "is-idle";
+    const statusPresentation = getFeedStatusPresentation(feed);
 
     title.textContent = feed.name || "Untitled feed";
     meta.textContent = `${feed.topic || "General"} • ${lastFetched} • ${feed.rssUrl || ""}`;
-    status.textContent = feed.lastStatus || "idle";
-    status.classList.add(tone);
+    status.textContent = statusPresentation.text;
+    status.classList.add(statusPresentation.tone);
 
     editButton.dataset.feedId = feed.id;
     deleteButton.dataset.feedId = feed.id;
@@ -713,18 +741,27 @@ function renderDmvPlaceholderCard(feed) {
   const feedName = node.querySelector(".article-feed");
   const media = node.querySelector(".article-media");
   const officialUrl = String(feed.officialUrl || feed.rssUrl || "#").trim();
+  const isLinkOnly = feed?.dmvMode === "link-only";
 
   link.href = officialUrl || "#";
   image.src = PLACEHOLDER_IMAGE;
   image.alt = `${feed.name || "DMV feed"} placeholder`;
   topic.textContent = feed.topic || "General";
   source.textContent = feed.name || "DMV feed";
-  date.textContent = "No news yet";
-  title.textContent = "Open official DMV page";
+  date.textContent = isLinkOnly ? "Link only" : "No news yet";
+  title.textContent = isLinkOnly ? "No RSS feed available" : "Open official DMV page";
   feedName.textContent = feed.name || "Untitled feed";
   media.classList.add("is-empty");
 
   return node;
+}
+
+function renderDmvEmptyState(message, officialUrl = "") {
+  elements.articlesGrid.innerHTML =
+    `<div class="empty-state">${message}</div>` +
+    (officialUrl
+      ? `<div class="empty-state"><a class="dmv-official-link" href="${officialUrl}" target="_blank" rel="noopener noreferrer">Open official DMV page</a></div>`
+      : "");
 }
 
 function renderFeedGroup(titleText, cards) {
@@ -792,11 +829,12 @@ function renderArticles() {
     elements.articlesGrid.innerHTML = "";
 
     if (!articles.length) {
-      elements.articlesGrid.innerHTML =
-        `<div class="empty-state">No news available</div>` +
-        (selectedDmvOfficialUrl
-          ? `<div class="empty-state"><a class="dmv-official-link" href="${selectedDmvOfficialUrl}" target="_blank" rel="noopener noreferrer">Open official DMV page</a></div>`
-          : "");
+      renderDmvEmptyState(
+        isCanadaLinkOnlyEntry(selectedCanadaEntry)
+          ? "This Canada DMV entry is available as an official link only."
+          : "No news available",
+        selectedDmvOfficialUrl
+      );
       return;
     }
 
@@ -869,6 +907,8 @@ function renderArticles() {
         topic: "General",
         officialUrl: entry.officialUrl,
         rssUrl: "",
+        dmvMode: entry.mode,
+        dmvRegion: entry.region,
       };
       const groupCards = feedArticles.length
         ? feedArticles.map((article) => renderArticleCard(article))
@@ -884,21 +924,16 @@ function renderArticles() {
 
   if (!articles.length) {
     const emptyStateMessage = state.filters.canadaDmvAll
-      ? "No imported news available for Canada DMV entries yet."
+      ? "Canada DMV entries are shown as official links unless RSS news is available."
       : selectedCanadaEntry
-        ? "No imported news available for this Canada DMV entry yet."
+        ? isCanadaLinkOnlyEntry(selectedCanadaEntry)
+          ? "This Canada DMV entry is available as an official link only."
+          : "No imported news available for this Canada DMV entry yet."
         : selectedUsDmvFeed
           ? "No imported news available for this USA DMV entry yet."
           : "No articles match the active filters.";
-    const officialUrl = String(
-      selectedUsDmvFeed?.officialUrl || selectedCanadaEntry?.officialUrl || ""
-    ).trim();
-
-    elements.articlesGrid.innerHTML =
-      `<div class="empty-state">${emptyStateMessage}</div>` +
-      (!state.filters.canadaDmvAll && officialUrl
-        ? `<div class="empty-state"><a class="dmv-official-link" href="${officialUrl}" target="_blank" rel="noopener noreferrer">Open official DMV page</a></div>`
-        : "");
+    const officialUrl = !state.filters.canadaDmvAll ? selectedDmvOfficialUrl : "";
+    renderDmvEmptyState(emptyStateMessage, officialUrl);
     return;
   }
 

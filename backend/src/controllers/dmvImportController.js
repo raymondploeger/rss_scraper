@@ -40,6 +40,11 @@ export async function importDmvFeeds(_req, res) {
 
     for (const item of manifest) {
       try {
+        if (item.region === "canada" && item.mode === "link-only") {
+          skipped++;
+          continue;
+        }
+
         const rssUrl = extractFeedUrl(item);
         const name = extractName(item);
 

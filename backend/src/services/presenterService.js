@@ -37,7 +37,10 @@ export function toFeedDto(feed) {
     dmvState: dmvCatalogEntry?.state || null,
     dmvAbbr: dmvCatalogEntry?.abbr || null,
     dmvFeedPath: dmvCatalogEntry?.feed_path || null,
-    dmvRegion: dmvCatalogEntry ? (isCanadianDmvAbbr(dmvCatalogEntry.abbr) ? "canada" : "us") : null,
+    dmvRegion: dmvCatalogEntry
+      ? dmvCatalogEntry.region || (isCanadianDmvAbbr(dmvCatalogEntry.abbr) ? "canada" : "us")
+      : null,
+    dmvMode: dmvCatalogEntry?.mode || "rss",
     sourceType: feed.sourceType || "rss",
     sourceFallbackImage: feed.sourceFallbackImage || null,
     isActive: feed.isActive !== false,

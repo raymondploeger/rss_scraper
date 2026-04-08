@@ -50,6 +50,7 @@ export function toDmvCatalogDto(entry) {
     abbr: entry.abbr,
     officialUrl: entry.official_url,
     feedPath: entry.feed_path,
-    region: isCanadianDmvAbbr(entry.abbr) ? "canada" : "us",
+    region: entry.region || (isCanadianDmvAbbr(entry.abbr) ? "canada" : "us"),
+    mode: entry.mode || "rss",
   };
 }
