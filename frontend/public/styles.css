@@ -338,7 +338,6 @@ h3 {
   justify-content: space-between;
   gap: 12px;
   min-width: 0;
-  overflow: hidden;
   padding: 14px;
   border-radius: var(--radius-md);
   background: var(--bg-soft);
@@ -359,6 +358,7 @@ h3 {
 
 .feed-item-title {
   margin-bottom: 4px;
+  overflow-wrap: anywhere;
 }
 
 .feed-item-meta {
@@ -377,6 +377,7 @@ h3 {
 .feed-item-actions {
   flex-wrap: wrap;
   justify-content: flex-end;
+  row-gap: 8px;
 }
 
 .feed-item-actions .ghost-button {
