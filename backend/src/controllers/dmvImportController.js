@@ -4,17 +4,11 @@ import { fileURLToPath } from "url";
 import { findFeedByRssUrl, createFeed as createFeedRecord } from "../database/feedRepository.js";
 import { broadcast } from "../services/realtimeService.js";
 import { toFeedDto } from "../services/presenterService.js";
-
-const DMV_BASE_URL = "https://rssdmv-production.up.railway.app";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DMV_CATALOG_PATH = path.resolve(__dirname, "../../data/dmvFeeds.json");
 
 function extractFeedUrl(item) {
-  if (item.feed_path) {
-    return `${DMV_BASE_URL}${item.feed_path}`;
-  }
-
   return item.rss_url || item.rssUrl || item.url || null;
 }
 
@@ -40,7 +34,7 @@ export async function importDmvFeeds(_req, res) {
 
     for (const item of manifest) {
       try {
-        if (item.region === "canada" && item.mode === "link-only") {
+        if (item.mode === "link-only") {
           skipped++;
           continue;
         }
@@ -49,7 +43,7 @@ export async function importDmvFeeds(_req, res) {
         const name = extractName(item);
 
         if (!rssUrl) {
-          failed++;
+          skipped++;
           continue;
         }
 

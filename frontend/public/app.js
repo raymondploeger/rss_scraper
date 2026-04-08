@@ -106,9 +106,7 @@ function isNotafiliaUrl(value) {
 }
 
 function isDmvWrapperFeed(feed) {
-  return Boolean(
-    String(feed?.rssUrl || "").includes("rssdmv-production.up.railway.app/feeds/")
-  );
+  return Boolean(feed?.dmvState || feed?.dmvRegion);
 }
 
 function getArticleImageSrc(article) {

@@ -1,14 +1,19 @@
 import { readFileSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-
-const DMV_BASE_URL = "https://rssdmv-production.up.railway.app";
 const CANADA_ABBRS = new Set(["AB", "BC", "MB", "NB", "NL", "NS", "ON", "PE", "QC", "SK", "NT", "NU", "YT"]);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DMV_CATALOG_PATH = path.resolve(__dirname, "../../data/dmvFeeds.json");
 
 let cachedDmvCatalog = null;
+
+function normalizeCatalogText(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
 
 export function isCanadianDmvAbbr(abbr) {
   return CANADA_ABBRS.has(String(abbr || "").toUpperCase());
@@ -31,15 +36,20 @@ export function loadDmvCatalog() {
 }
 
 export function getDmvCatalogEntry(feed) {
-  const rssUrl = String(feed?.rssUrl || "");
-  if (!rssUrl.includes(`${DMV_BASE_URL}/feeds/`)) {
-    return null;
-  }
+  const rssUrl = String(feed?.rssUrl || "").trim();
+  const feedName = normalizeCatalogText(feed?.name);
 
   return (
     loadDmvCatalog().find((entry) => {
-      const feedPath = String(entry?.feed_path || "");
-      return feedPath && rssUrl.endsWith(feedPath);
+      const entryRssUrl = String(entry?.rss_url || entry?.rssUrl || "").trim();
+      const entryStateName = normalizeCatalogText(entry?.state);
+      const entryDmvName = normalizeCatalogText(entry?.state ? `${entry.state} DMV` : "");
+
+      if (entryRssUrl && rssUrl && entryRssUrl === rssUrl) {
+        return true;
+      }
+
+      return Boolean(feedName && (feedName === entryDmvName || feedName === entryStateName));
     }) || null
   );
 }
@@ -48,6 +58,7 @@ export function toDmvCatalogDto(entry) {
   return {
     state: entry.state,
     abbr: entry.abbr,
+    rssUrl: entry.rss_url || entry.rssUrl || null,
     officialUrl: entry.official_url,
     feedPath: entry.feed_path,
     region: entry.region || (isCanadianDmvAbbr(entry.abbr) ? "canada" : "us"),
