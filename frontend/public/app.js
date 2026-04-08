@@ -498,6 +498,36 @@ function syncFeedFormMode() {
   }
 }
 
+function resetDashboardState() {
+  state.dashboardMode = "normal";
+  state.filters.search = "";
+  state.filters.topic = "";
+  state.filters.feedId = "";
+  state.filters.dmvFeedId = "";
+  state.filters.canadaDmvFeedPath = "";
+  state.filters.canadaDmvAll = false;
+  state.filters.date = "";
+
+  if (elements.searchFilter) {
+    elements.searchFilter.value = "";
+  }
+  if (elements.topicFilter) {
+    elements.topicFilter.value = "";
+  }
+  if (elements.feedFilter) {
+    elements.feedFilter.value = "";
+  }
+  if (elements.dmvFeedFilter) {
+    elements.dmvFeedFilter.value = "";
+  }
+  if (elements.canadaDmvFilter) {
+    elements.canadaDmvFilter.value = "";
+  }
+  if (elements.dateFilter) {
+    elements.dateFilter.value = "";
+  }
+}
+
 function resetFeedForm(options = {}) {
   const { preserveStatus = false } = options;
   state.editingFeedId = "";
@@ -1260,6 +1290,7 @@ function bindEvents() {
 
 async function init() {
   loadTheme();
+  resetDashboardState();
   syncFeedFormMode();
   bindEvents();
   renderSkeletons();
