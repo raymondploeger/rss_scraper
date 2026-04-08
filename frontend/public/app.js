@@ -15,6 +15,7 @@ const state = {
   dmvCatalog: [],
   articles: [],
   dashboardMode: "normal",
+  editingFeedId: "",
   filters: {
     search: "",
     topic: "",
@@ -51,6 +52,7 @@ const elements = {
   themeToggle: document.getElementById("theme-toggle"),
   feedForm: document.getElementById("feed-form"),
   feedSubmit: document.getElementById("feed-submit"),
+  feedCancel: document.getElementById("feed-cancel"),
   feedName: document.getElementById("feed-name"),
   feedTopic: document.getElementById("feed-topic"),
   feedUrl: document.getElementById("feed-url"),
@@ -482,6 +484,46 @@ function syncFeedPanelVisibility(expanded) {
   elements.feedPanelToggle.textContent = expanded ? "Hide sources" : "Show sources";
   elements.feedPanelContent.hidden = !expanded;
   elements.feedPanelContent.classList.toggle("is-collapsed", !expanded);
+}
+
+function syncFeedFormMode() {
+  const isEditing = Boolean(state.editingFeedId);
+
+  if (elements.feedSubmit) {
+    elements.feedSubmit.textContent = isEditing ? "Save changes" : "Add source";
+  }
+
+  if (elements.feedCancel) {
+    elements.feedCancel.hidden = !isEditing;
+  }
+}
+
+function resetFeedForm(options = {}) {
+  const { preserveStatus = false } = options;
+  state.editingFeedId = "";
+  elements.feedForm.reset();
+  syncFeedFormMode();
+
+  if (!preserveStatus) {
+    elements.feedFormStatus.textContent = "Monitor up to 50 RSS feeds and websites.";
+  }
+}
+
+function startFeedEdit(feed) {
+  if (!feed) {
+    return;
+  }
+
+  state.editingFeedId = feed.id;
+  elements.feedName.value = feed.name || "";
+  elements.feedTopic.value = feed.topic || "";
+  elements.feedUrl.value = feed.rssUrl || "";
+  if (elements.feedSourceType) {
+    elements.feedSourceType.value = feed.sourceType || "rss";
+  }
+  syncFeedFormMode();
+  elements.feedFormStatus.textContent = "Editing source. Update the fields and save your changes.";
+  elements.feedName.focus();
 }
 
 function renderFeedList() {
@@ -1065,22 +1107,32 @@ function bindEvents() {
   elements.feedForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     elements.feedSubmit.disabled = true;
-    elements.feedFormStatus.textContent = "Adding feed...";
+    const isEditing = Boolean(state.editingFeedId);
+    elements.feedFormStatus.textContent = isEditing ? "Saving changes..." : "Adding feed...";
 
     try {
-      await apiRequest("/api/feeds", {
-        method: "POST",
-        body: JSON.stringify({
-          name: elements.feedName.value.trim(),
-          topic: elements.feedTopic.value.trim(),
-          rssUrl: elements.feedUrl.value.trim(),
-          sourceType: elements.feedSourceType?.value || "rss",
-          isActive: true,
-        }),
-      });
+      const payload = {
+        name: elements.feedName.value.trim(),
+        topic: elements.feedTopic.value.trim(),
+        rssUrl: elements.feedUrl.value.trim(),
+        sourceType: elements.feedSourceType?.value || "rss",
+      };
 
-      elements.feedForm.reset();
-      elements.feedFormStatus.textContent = "Feed added successfully.";
+      if (isEditing) {
+        await updateFeed(state.editingFeedId, payload);
+        elements.feedFormStatus.textContent = "Feed updated successfully.";
+      } else {
+        await apiRequest("/api/feeds", {
+          method: "POST",
+          body: JSON.stringify({
+            ...payload,
+            isActive: true,
+          }),
+        });
+        elements.feedFormStatus.textContent = "Feed added successfully.";
+      }
+
+      resetFeedForm({ preserveStatus: true });
       await loadSnapshot();
     } catch (error) {
       elements.feedFormStatus.textContent = error.message;
@@ -1092,6 +1144,12 @@ function bindEvents() {
   if (elements.importDmvButton) {
     elements.importDmvButton.addEventListener("click", async () => {
       await importDmvFeeds();
+    });
+  }
+
+  if (elements.feedCancel) {
+    elements.feedCancel.addEventListener("click", () => {
+      resetFeedForm();
     });
   }
 
@@ -1176,26 +1234,7 @@ function bindEvents() {
       if (!feed) {
         return;
       }
-
-      const nextName = window.prompt("Edit feed name", feed.name || "");
-      if (nextName === null) {
-        return;
-      }
-
-      const trimmedName = nextName.trim();
-      if (!trimmedName) {
-        elements.feedFormStatus.textContent = "Feed name cannot be empty.";
-        return;
-      }
-
-      try {
-        elements.feedFormStatus.textContent = "Saving feed...";
-        await updateFeed(feedId, { name: trimmedName });
-        elements.feedFormStatus.textContent = "Feed updated.";
-        await loadSnapshot();
-      } catch (error) {
-        elements.feedFormStatus.textContent = error.message;
-      }
+      startFeedEdit(feed);
 
       return;
     }
@@ -1221,6 +1260,7 @@ function bindEvents() {
 
 async function init() {
   loadTheme();
+  syncFeedFormMode();
   bindEvents();
   renderSkeletons();
   await loadSnapshot();
