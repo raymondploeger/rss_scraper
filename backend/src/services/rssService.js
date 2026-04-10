@@ -366,9 +366,21 @@ function resolveItemLink(item) {
   return "";
 }
 
+const missingLinkDebugCounts = new Map();
+
 function normalizeItem(feed, item) {
   const link = resolveItemLink(item);
   if (!link) {
+    const feedKey = String(feed?.id || feed?.name || feed?.rssUrl || "unknown-feed");
+    const currentCount = missingLinkDebugCounts.get(feedKey) || 0;
+
+    if (currentCount < 5) {
+      console.log(
+        `[rss][missing-link] feed="${feed?.name || "Unknown feed"}" title="${String(item?.title || "")}" link="${String(item?.link || "")}" guid="${String(item?.guid || "")}" id="${String(item?.id || "")}" url="${String(item?.url || "")}"`
+      );
+      missingLinkDebugCounts.set(feedKey, currentCount + 1);
+    }
+
     return null;
   }
 
@@ -464,6 +476,7 @@ function queueThumbnailEnrichment(article) {
 export async function syncFeed(feed) {
   const startedAt = new Date();
   let newArticles = 0;
+  let normalizedItems = 0;
 
   try {
     console.log(`Starting feed sync for ${feed.id} (${feed.name || feed.rssUrl})`);
@@ -480,7 +493,9 @@ export async function syncFeed(feed) {
       const parsedFeed = await parser.parseURL(feed.rssUrl);
       resolvedItems = Array.isArray(parsedFeed.items) ? parsedFeed.items : [];
     }
-    console.log(`Fetched ${resolvedItems.length} items for feed ${feed.id}`);
+    console.log(
+      `[rss][parsed] feed="${feed.name || "Unknown feed"}" url="${feed.rssUrl}" parsedItems=${resolvedItems.length}`
+    );
 
     for (const item of resolvedItems) {
       try {
@@ -488,6 +503,8 @@ export async function syncFeed(feed) {
         if (!normalized) {
           continue;
         }
+
+        normalizedItems += 1;
 
         console.log(
           `Thumbnail source for article ${normalized.id}: ${normalized.thumbnailSource || "placeholder"}`
@@ -507,6 +524,10 @@ export async function syncFeed(feed) {
         console.error(`Article ingestion error for feed ${feed.id}:`, itemError?.stack || itemError);
       }
     }
+
+    console.log(
+      `[rss][summary] feed="${feed.name || "Unknown feed"}" parsedItems=${resolvedItems.length} normalizedItems=${normalizedItems} insertedArticles=${newArticles}`
+    );
 
     const updatedFeed = await updateFeedRecord(feed.id, {
       lastFetchedAt: new Date(),
