@@ -169,11 +169,22 @@ function getCanadaImportedDmvFeeds() {
   return getDmvFeeds().filter((feed) => isCanadianDmvAbbr(feed.dmvAbbr));
 }
 
+function getUsDmvCatalogEntries() {
+  return state.dmvCatalog
+    .filter((entry) => entry.region === "us")
+    .slice()
+    .sort((left, right) => String(left.state || "").localeCompare(String(right.state || "")));
+}
+
 function getCanadaDmvCatalogEntries() {
   return state.dmvCatalog
     .filter((entry) => entry.region === "canada")
     .slice()
     .sort((left, right) => String(left.state || "").localeCompare(String(right.state || "")));
+}
+
+function isUsLinkOnlyEntry(entry) {
+  return entry?.region === "us" && entry?.mode === "link-only";
 }
 
 function isCanadaLinkOnlyEntry(entry) {
@@ -238,12 +249,14 @@ function getSourceListMode() {
   return "all";
 }
 
-function getSelectedDmvFeed() {
+function getSelectedUsDmvCatalogEntry() {
   if (!state.filters.dmvFeedId) {
     return null;
   }
 
-  return state.feeds.find((feed) => feed.id === state.filters.dmvFeedId) || null;
+  return state.dmvCatalog.find(
+    (entry) => entry.region === "us" && entry.abbr === state.filters.dmvFeedId
+  ) || null;
 }
 
 function getSelectedCanadaCatalogEntry() {
@@ -254,15 +267,30 @@ function getSelectedCanadaCatalogEntry() {
   return state.dmvCatalog.find((entry) => entry.feedPath === state.filters.canadaDmvFeedPath) || null;
 }
 
-function getSelectedCanadaFeed() {
-  const selectedEntry = getSelectedCanadaCatalogEntry();
-  if (!selectedEntry) {
+function getFeedForCatalogEntry(entry) {
+  if (!entry) {
     return null;
   }
 
-  return (
-    getCanadaImportedDmvFeeds().find((feed) => feed.dmvFeedPath === selectedEntry.feedPath) || null
-  );
+  return state.feeds.find((feed) => {
+    if (entry.rssUrl && feed.rssUrl === entry.rssUrl) {
+      return true;
+    }
+
+    if (entry.abbr && feed.dmvAbbr === entry.abbr) {
+      return true;
+    }
+
+    return false;
+  }) || null;
+}
+
+function getSelectedDmvFeed() {
+  return getFeedForCatalogEntry(getSelectedUsDmvCatalogEntry());
+}
+
+function getSelectedCanadaFeed() {
+  return getFeedForCatalogEntry(getSelectedCanadaCatalogEntry());
 }
 
 function isDmvFeedId(feedId) {
@@ -335,9 +363,7 @@ function renderFeedOptions() {
   const nonDmvFeeds = getNonDmvFeeds()
     .slice()
     .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")));
-  const usDmvFeeds = getUsDmvFeeds()
-    .slice()
-    .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")));
+  const usDmvCatalogEntries = getUsDmvCatalogEntries();
   const canadaCatalogEntries = getCanadaDmvCatalogEntries();
 
   if (
@@ -349,7 +375,7 @@ function renderFeedOptions() {
 
   if (
     state.filters.dmvFeedId &&
-    !usDmvFeeds.some((feed) => feed.id === state.filters.dmvFeedId)
+    !usDmvCatalogEntries.some((entry) => entry.abbr === state.filters.dmvFeedId)
   ) {
     state.filters.dmvFeedId = "";
   }
@@ -380,7 +406,9 @@ function renderFeedOptions() {
   if (elements.dmvFeedFilter) {
     elements.dmvFeedFilter.innerHTML = [`<option value="">All DMV states</option>`]
       .concat(
-        usDmvFeeds.map((feed) => `<option value="${feed.id}">${feed.name || "Untitled Feed"}</option>`)
+        usDmvCatalogEntries.map(
+          (entry) => `<option value="${entry.abbr}">${entry.state || "Untitled Feed"}</option>`
+        )
       )
       .join("");
     elements.dmvFeedFilter.value = state.filters.dmvFeedId;
@@ -404,8 +432,14 @@ function renderDmvOfficialLink() {
   }
 
   const selectedDmvFeed = getSelectedDmvFeed();
+  const selectedUsDmvEntry = getSelectedUsDmvCatalogEntry();
   const selectedCanadaEntry = getSelectedCanadaCatalogEntry();
-  const officialUrl = String(selectedDmvFeed?.officialUrl || selectedCanadaEntry?.officialUrl || "").trim();
+  const officialUrl = String(
+    selectedDmvFeed?.officialUrl ||
+      selectedUsDmvEntry?.officialUrl ||
+      selectedCanadaEntry?.officialUrl ||
+      ""
+  ).trim();
 
   if (!officialUrl) {
     elements.dmvOfficialLinkWrap.hidden = true;
@@ -450,7 +484,8 @@ function getVisibleFeeds() {
     const selectedCanadaFeed = getSelectedCanadaFeed();
     feeds = selectedCanadaFeed ? feeds.filter((feed) => feed.id === selectedCanadaFeed.id) : [];
   } else if (sourceListMode === "dmv-feed") {
-    feeds = feeds.filter((feed) => feed.id === state.filters.dmvFeedId);
+    const selectedUsFeed = getSelectedDmvFeed();
+    feeds = selectedUsFeed ? feeds.filter((feed) => feed.id === selectedUsFeed.id) : [];
   } else if (sourceListMode === "canada-all") {
     feeds = getCanadaImportedDmvFeeds().slice();
   }
@@ -642,6 +677,18 @@ function articleMatchesFilters(article) {
     return false;
   }
 
+  const selectedUsDmvEntry = getSelectedUsDmvCatalogEntry();
+  if (selectedUsDmvEntry) {
+    if (isUsLinkOnlyEntry(selectedUsDmvEntry)) {
+      return false;
+    }
+
+    const selectedUsFeed = getSelectedDmvFeed();
+    if (!selectedUsFeed || article.feedId !== selectedUsFeed.id) {
+      return false;
+    }
+  }
+
   if (state.filters.topic && article.topic !== state.filters.topic) {
     return false;
   }
@@ -798,10 +845,14 @@ function renderSkeletons() {
 
 function renderArticles() {
   const articles = getVisibleArticles();
+  const selectedUsDmvEntry = getSelectedUsDmvCatalogEntry();
   const selectedUsDmvFeed = getSelectedDmvFeed();
   const selectedCanadaEntry = getSelectedCanadaCatalogEntry();
   const selectedDmvOfficialUrl = String(
-    selectedUsDmvFeed?.officialUrl || selectedCanadaEntry?.officialUrl || ""
+    selectedUsDmvFeed?.officialUrl ||
+      selectedUsDmvEntry?.officialUrl ||
+      selectedCanadaEntry?.officialUrl ||
+      ""
   ).trim();
 
   if (state.filters.feedId) {
@@ -822,14 +873,14 @@ function renderArticles() {
     return;
   }
 
-  if ((selectedUsDmvFeed || selectedCanadaEntry) && !state.filters.feedId) {
+  if ((selectedUsDmvEntry || selectedCanadaEntry) && !state.filters.feedId) {
     elements.resultsCount.textContent = `${articles.length} results`;
     elements.articlesGrid.innerHTML = "";
 
     if (!articles.length) {
       renderDmvEmptyState(
-        isCanadaLinkOnlyEntry(selectedCanadaEntry)
-          ? "This Canada DMV entry is available as an official link only."
+        isUsLinkOnlyEntry(selectedUsDmvEntry) || isCanadaLinkOnlyEntry(selectedCanadaEntry)
+          ? "No RSS feed available for this DMV."
           : "No news available",
         selectedDmvOfficialUrl
       );
@@ -927,6 +978,10 @@ function renderArticles() {
         ? isCanadaLinkOnlyEntry(selectedCanadaEntry)
           ? "This Canada DMV entry is available as an official link only."
           : "No imported news available for this Canada DMV entry yet."
+        : selectedUsDmvEntry
+          ? isUsLinkOnlyEntry(selectedUsDmvEntry)
+            ? "No RSS feed available for this DMV."
+            : "No imported news available for this USA DMV entry yet."
         : selectedUsDmvFeed
           ? "No imported news available for this USA DMV entry yet."
           : "No articles match the active filters.";
