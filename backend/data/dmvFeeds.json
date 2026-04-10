@@ -68,6 +68,8 @@
   {
     "state": "Hawaii",
     "abbr": "HI",
+    "mode": "rss",
+    "rss_url": "https://hidot.hawaii.gov/feed/",
     "official_url": "https://hidot.hawaii.gov/blog/category/news/",
     "feed_path": "/feeds/hawaii.xml"
   },
@@ -134,7 +136,7 @@
   {
     "state": "Michigan",
     "abbr": "MI",
-    "official_url": "https://www.michigan.gov",
+    "official_url": "https://www.michigan.gov/sos/license-id",
     "feed_path": "/feeds/michigan.xml"
   },
   {
@@ -152,6 +154,8 @@
   {
     "state": "Missouri",
     "abbr": "MO",
+    "mode": "rss",
+    "rss_url": "https://dor.mo.gov/news/rss",
     "official_url": "https://dor.mo.gov",
     "feed_path": "/feeds/missouri.xml"
   },
@@ -164,6 +168,8 @@
   {
     "state": "Nebraska",
     "abbr": "NE",
+    "mode": "rss",
+    "rss_url": "https://dmv.nebraska.gov/rss/news",
     "official_url": "https://dmv.nebraska.gov/",
     "feed_path": "/feeds/nebraska.xml"
   },
