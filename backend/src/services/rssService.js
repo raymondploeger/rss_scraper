@@ -308,8 +308,66 @@ async function fetchWebsiteHtml(url, attempt = 0) {
   }
 }
 
+function extractAtomLinkHref(linkValue) {
+  if (!linkValue) {
+    return "";
+  }
+
+  if (typeof linkValue === "string") {
+    return linkValue;
+  }
+
+  if (Array.isArray(linkValue)) {
+    for (const entry of linkValue) {
+      const href = extractAtomLinkHref(entry);
+      if (href) {
+        return href;
+      }
+    }
+
+    return "";
+  }
+
+  if (typeof linkValue === "object") {
+    if (typeof linkValue.href === "string" && linkValue.href.trim()) {
+      return linkValue.href;
+    }
+
+    if (typeof linkValue.url === "string" && linkValue.url.trim()) {
+      return linkValue.url;
+    }
+
+    if (linkValue.$ && typeof linkValue.$.href === "string" && linkValue.$.href.trim()) {
+      return linkValue.$.href;
+    }
+  }
+
+  return "";
+}
+
+function resolveItemLink(item) {
+  const candidates = [
+    item?.link,
+    item?.guid,
+    item?.id,
+    item?.url,
+    extractAtomLinkHref(item?.link),
+    extractAtomLinkHref(item?.links),
+    extractAtomLinkHref(item?.atomLink),
+  ];
+
+  for (const candidate of candidates) {
+    const resolved = resolveArticleLink(normalizeText(candidate));
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  return "";
+}
+
 function normalizeItem(feed, item) {
-  const link = resolveArticleLink(normalizeText(item.link));
+  const link = resolveItemLink(item);
   if (!link) {
     return null;
   }
