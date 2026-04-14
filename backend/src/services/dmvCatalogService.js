@@ -55,13 +55,15 @@ export function getDmvCatalogEntry(feed) {
 }
 
 export function toDmvCatalogDto(entry) {
+  const rssUrl = entry.rss_url || entry.rssUrl || null;
+
   return {
     state: entry.state,
     abbr: entry.abbr,
-    rssUrl: entry.rss_url || entry.rssUrl || null,
+    rssUrl,
     officialUrl: entry.official_url,
     feedPath: entry.feed_path,
     region: entry.region || (isCanadianDmvAbbr(entry.abbr) ? "canada" : "us"),
-    mode: entry.mode || "rss",
+    mode: entry.mode || (rssUrl ? "rss" : "link-only"),
   };
 }

@@ -34,7 +34,7 @@ export async function importDmvFeeds(_req, res) {
 
     for (const item of manifest) {
       try {
-        if (item.mode === "link-only") {
+        if (item.mode !== "rss") {
           skipped++;
           continue;
         }

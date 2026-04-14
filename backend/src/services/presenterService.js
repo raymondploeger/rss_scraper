@@ -27,6 +27,7 @@ function resolveCanonicalLink(canonicalLink, link) {
 
 export function toFeedDto(feed) {
   const dmvCatalogEntry = getDmvCatalogEntry(feed);
+  const dmvRssUrl = dmvCatalogEntry?.rss_url || dmvCatalogEntry?.rssUrl || null;
 
   return {
     id: String(feed.id || feed._id),
@@ -40,7 +41,7 @@ export function toFeedDto(feed) {
     dmvRegion: dmvCatalogEntry
       ? dmvCatalogEntry.region || (isCanadianDmvAbbr(dmvCatalogEntry.abbr) ? "canada" : "us")
       : null,
-    dmvMode: dmvCatalogEntry?.mode || "rss",
+    dmvMode: dmvCatalogEntry ? dmvCatalogEntry.mode || (dmvRssUrl ? "rss" : "link-only") : null,
     sourceType: feed.sourceType || "rss",
     sourceFallbackImage: feed.sourceFallbackImage || null,
     isActive: feed.isActive !== false,

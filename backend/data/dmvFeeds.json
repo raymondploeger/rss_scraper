@@ -1,418 +1,578 @@
-[
-  {
-    "state": "Alabama",
-    "abbr": "AL",
-    "official_url": "https://www.revenue.alabama.gov/news/",
-    "feed_path": "/feeds/alabama.xml"
-  },
-  {
-    "state": "Alaska",
-    "abbr": "AK",
-    "official_url": "https://dmv.alaska.gov/home/news/",
-    "feed_path": "/feeds/alaska.xml"
-  },
-  {
-    "state": "Arizona",
-    "abbr": "AZ",
-    "official_url": "https://azdot.gov/mvd/services",
-    "feed_path": "/feeds/arizona.xml"
-  },
-  {
-    "state": "Arkansas",
-    "abbr": "AR",
-    "official_url": "https://www.dfa.arkansas.gov/office/mydmv/",
-    "feed_path": "/feeds/arkansas.xml"
-  },
-  {
-    "state": "California",
-    "abbr": "CA",
-    "official_url": "https://www.dmv.ca.gov/portal/news-and-media/",
-    "feed_path": "/feeds/california.xml"
-  },
-  {
-    "state": "Colorado",
-    "abbr": "CO",
-    "official_url": "https://dmv.colorado.gov/category/press-release",
-    "feed_path": "/feeds/colorado.xml"
-  },
-  {
-    "state": "Connecticut",
-    "abbr": "CT",
-    "official_url": "https://portal.ct.gov/dmv/resources/dmv-news?language=en_US",
-    "feed_path": "/feeds/connecticut.xml"
-  },
-  {
-    "state": "Delaware",
-    "abbr": "DE",
-    "official_url": "https://dmv.de.gov/",
-    "feed_path": "/feeds/delaware.xml"
-  },
-  {
-    "state": "District of Columbia",
-    "abbr": "DC",
-    "official_url": "https://dmv.dc.gov/",
-    "feed_path": "/feeds/district_of_columbia.xml"
-  },
-  {
-    "state": "Florida",
-    "abbr": "FL",
-    "official_url": "https://www.flhsmv.gov/media/press-releases/",
-    "feed_path": "/feeds/florida.xml"
-  },
-  {
-    "state": "Georgia",
-    "abbr": "GA",
-    "official_url": "https://dor.georgia.gov/motor-vehicles",
-    "feed_path": "/feeds/georgia.xml"
-  },
-  {
-    "state": "Hawaii",
-    "abbr": "HI",
-    "mode": "rss",
-    "rss_url": "https://hidot.hawaii.gov/feed/",
-    "official_url": "https://hidot.hawaii.gov/blog/category/news/",
-    "feed_path": "/feeds/hawaii.xml"
-  },
-  {
-    "state": "Idaho",
-    "abbr": "ID",
-    "official_url": "https://itd.idaho.gov/dmv",
-    "feed_path": "/feeds/idaho.xml"
-  },
-  {
-    "state": "Illinois",
-    "abbr": "IL",
-    "official_url": "https://www.ilsos.gov",
-    "feed_path": "/feeds/illinois.xml"
-  },
-  {
-    "state": "Indiana",
-    "abbr": "IN",
-    "official_url": "https://www.in.gov/bmv/",
-    "feed_path": "/feeds/indiana.xml"
-  },
-  {
-    "state": "Iowa",
-    "abbr": "IA",
-    "official_url": "https://iowadot.gov/drivers-licenses-ids",
-    "feed_path": "/feeds/iowa.xml"
-  },
-  {
-    "state": "Kansas",
-    "abbr": "KS",
-    "official_url": "https://www.ksrevenue.gov/dovindex.html",
-    "feed_path": "/feeds/kansas.xml"
-  },
-  {
-    "state": "Kentucky",
-    "abbr": "KY",
-    "official_url": "https://drive.ky.gov/Pages/index.aspx",
-    "feed_path": "/feeds/kentucky.xml"
-  },
-  {
-    "state": "Louisiana",
-    "abbr": "LA",
-    "official_url": "https://expresslane.la.gov/omv",
-    "feed_path": "/feeds/louisiana.xml"
-  },
-  {
-    "state": "Maine",
-    "abbr": "ME",
-    "official_url": "https://www.maine.gov/sos/bmv",
-    "feed_path": "/feeds/maine.xml"
-  },
-  {
-    "state": "Maryland",
-    "abbr": "MD",
-    "official_url": "https://mva.maryland.gov/Pages/mva-newsroom.aspx",
-    "feed_path": "/feeds/maryland.xml"
-  },
-  {
-    "state": "Massachusetts",
-    "abbr": "MA",
-    "official_url": "https://atlas-myrmv.massdot.state.ma.us/myrmv/_/",
-    "feed_path": "/feeds/massachusetts.xml"
-  },
-  {
-    "state": "Michigan",
-    "abbr": "MI",
-    "official_url": "https://www.michigan.gov/sos/license-id",
-    "feed_path": "/feeds/michigan.xml"
-  },
-  {
-    "state": "Minnesota",
-    "abbr": "MN",
-    "official_url": "https://onlineservices.dps.mn.gov/EServices/_/",
-    "feed_path": "/feeds/minnesota.xml"
-  },
-  {
-    "state": "Mississippi",
-    "abbr": "MS",
-    "official_url": "https://www.mmvc.ms.gov",
-    "feed_path": "/feeds/mississippi.xml"
-  },
-  {
-    "state": "Missouri",
-    "abbr": "MO",
-    "mode": "rss",
-    "rss_url": "https://dor.mo.gov/news/rss",
-    "official_url": "https://dor.mo.gov",
-    "feed_path": "/feeds/missouri.xml"
-  },
-  {
-    "state": "Montana",
-    "abbr": "MT",
-    "official_url": "https://mvdmt.gov",
-    "feed_path": "/feeds/montana.xml"
-  },
-  {
-    "state": "Nebraska",
-    "abbr": "NE",
-    "mode": "rss",
-    "rss_url": "https://dmv.nebraska.gov/rss/news",
-    "official_url": "https://dmv.nebraska.gov/",
-    "feed_path": "/feeds/nebraska.xml"
-  },
-  {
-    "state": "Nevada",
-    "abbr": "NV",
-    "official_url": "https://dmv.nv.gov/news.htm",
-    "feed_path": "/feeds/nevada.xml"
-  },
-  {
-    "state": "New Hampshire",
-    "abbr": "NH",
-    "official_url": "https://www.dmv.nh.gov/",
-    "feed_path": "/feeds/new_hampshire.xml"
-  },
-  {
-    "state": "New Jersey",
-    "abbr": "NJ",
-    "official_url": "https://www.nj.gov/mvc/",
-    "feed_path": "/feeds/new_jersey.xml"
-  },
-  {
-    "state": "New Mexico",
-    "abbr": "NM",
-    "official_url": "https://www.mvd.newmexico.gov",
-    "feed_path": "/feeds/new_mexico.xml"
-  },
-  {
-    "state": "New York",
-    "abbr": "NY",
-    "official_url": "https://dmv.ny.gov",
-    "feed_path": "/feeds/new_york.xml"
-  },
-  {
-    "state": "North Carolina",
-    "abbr": "NC",
-    "official_url": "https://www.ncdot.gov/dmv/Pages/news.aspx",
-    "feed_path": "/feeds/north_carolina.xml"
-  },
-  {
-    "state": "North Dakota",
-    "abbr": "ND",
-    "official_url": "https://www.dot.nd.gov/",
-    "feed_path": "/feeds/north_dakota.xml"
-  },
-  {
-    "state": "Ohio",
-    "abbr": "OH",
-    "official_url": "https://www.ohiobmv.gov/",
-    "feed_path": "/feeds/ohio.xml"
-  },
-  {
-    "state": "Oklahoma",
-    "abbr": "OK",
-    "official_url": "https://oklahoma.gov/service/all-services/driving-and-automobiles.html",
-    "feed_path": "/feeds/oklahoma.xml"
-  },
-  {
-    "state": "Oregon",
-    "abbr": "OR",
-    "official_url": "https://www.oregon.gov/odot/dmv/pages/index.aspx",
-    "feed_path": "/feeds/oregon.xml"
-  },
-  {
-    "state": "Pennsylvania",
-    "abbr": "PA",
-    "official_url": "https://www.pa.gov/agencies/dmv",
-    "feed_path": "/feeds/pennsylvania.xml"
-  },
-  {
-    "state": "Rhode Island",
-    "abbr": "RI",
-    "official_url": "https://dmv.ri.gov",
-    "feed_path": "/feeds/rhode_island.xml"
-  },
-  {
-    "state": "South Carolina",
-    "abbr": "SC",
-    "official_url": "https://dmv.sc.gov/news",
-    "feed_path": "/feeds/south_carolina.xml"
-  },
-  {
-    "state": "South Dakota",
-    "abbr": "SD",
-    "official_url": "https://dor.sd.gov/newsroom/",
-    "feed_path": "/feeds/south_dakota.xml"
-  },
-  {
-    "state": "Tennessee",
-    "abbr": "TN",
-    "official_url": "https://www.tn.gov/safety/driver-services.html",
-    "feed_path": "/feeds/tennessee.xml"
-  },
-  {
-    "state": "Texas",
-    "abbr": "TX",
-    "official_url": "https://www.txdmv.gov",
-    "feed_path": "/feeds/texas.xml"
-  },
-  {
-    "state": "Utah",
-    "abbr": "UT",
-    "official_url": "https://dmv.utah.gov",
-    "feed_path": "/feeds/utah.xml"
-  },
-  {
-    "state": "Vermont",
-    "abbr": "VT",
-    "official_url": "https://dmv.vermont.gov",
-    "feed_path": "/feeds/vermont.xml"
-  },
-  {
-    "state": "Virginia",
-    "abbr": "VA",
-    "official_url": "https://www.dmv.virginia.gov/news",
-    "feed_path": "/feeds/virginia.xml"
-  },
-  {
-    "state": "Washington",
-    "abbr": "WA",
-    "official_url": "https://dol.wa.gov/",
-    "feed_path": "/feeds/washington.xml"
-  },
-  {
-    "state": "West Virginia",
-    "abbr": "WV",
-    "official_url": "https://transportation.wv.gov/DMV/Pages/default.aspx",
-    "feed_path": "/feeds/west_virginia.xml"
-  },
-  {
-    "state": "Wisconsin",
-    "abbr": "WI",
-    "official_url": "https://wisconsindot.gov/Pages/online-srvcs/external/dmv.aspx",
-    "feed_path": "/feeds/wisconsin.xml"
-  },
-  {
-    "state": "Wyoming",
-    "abbr": "WY",
-    "official_url": "https://www.dot.state.wy.us/driverservices",
-    "feed_path": "/feeds/wyoming.xml"
-  },
-  {
-    "state": "Alberta",
-    "abbr": "AB",
-    "region": "canada",
-    "mode": "link-only",
-    "official_url": "https://www.alberta.ca",
-    "feed_path": "/feeds/alberta.xml"
-  },
-  {
-    "state": "British Columbia",
-    "abbr": "BC",
-    "region": "canada",
-    "mode": "rss",
-    "official_url": "https://www.icbc.com",
-    "feed_path": "/feeds/british_columbia.xml"
-  },
-  {
-    "state": "Manitoba",
-    "abbr": "MB",
-    "region": "canada",
-    "mode": "link-only",
-    "official_url": "https://www.mpi.mb.ca",
-    "feed_path": "/feeds/manitoba.xml"
-  },
-  {
-    "state": "New Brunswick",
-    "abbr": "NB",
-    "region": "canada",
-    "mode": "link-only",
-    "official_url": "https://www2.snb.ca",
-    "feed_path": "/feeds/new_brunswick.xml"
-  },
-  {
-    "state": "Newfoundland and Labrador",
-    "abbr": "NL",
-    "region": "canada",
-    "mode": "link-only",
-    "official_url": "https://www.gov.nl.ca/motorregistration",
-    "feed_path": "/feeds/newfoundland_and_labrador.xml"
-  },
-  {
-    "state": "Nova Scotia",
-    "abbr": "NS",
-    "region": "canada",
-    "mode": "link-only",
-    "official_url": "https://novascotia.ca/driving-and-road-safety/",
-    "feed_path": "/feeds/nova_scotia.xml"
-  },
-  {
-    "state": "Ontario",
-    "abbr": "ON",
-    "region": "canada",
-    "mode": "rss",
-    "official_url": "https://www.ontario.ca/page/serviceontario",
-    "feed_path": "/feeds/ontario.xml"
-  },
-  {
-    "state": "Prince Edward Island",
-    "abbr": "PE",
-    "region": "canada",
-    "mode": "link-only",
-    "official_url": "https://www.princeedwardisland.ca/en/topic/transportation-and-infrastructure",
-    "feed_path": "/feeds/prince_edward_island.xml"
-  },
-  {
-    "state": "Quebec",
-    "abbr": "QC",
-    "region": "canada",
-    "mode": "rss",
-    "official_url": "https://saaq.gouv.qc.ca/",
-    "feed_path": "/feeds/quebec.xml"
-  },
-  {
-    "state": "Saskatchewan",
-    "abbr": "SK",
-    "region": "canada",
-    "mode": "link-only",
-    "official_url": "https://www.sgi.sk.ca/",
-    "feed_path": "/feeds/saskatchewan.xml"
-  },
-  {
-    "state": "Northwest Territories",
-    "abbr": "NT",
-    "region": "canada",
-    "mode": "link-only",
-    "official_url": "https://www.inf.gov.nt.ca/en/services/driver-and-vehicle-services",
-    "feed_path": "/feeds/northwest_territories.xml"
-  },
-  {
-    "state": "Nunavut",
-    "abbr": "NU",
-    "region": "canada",
-    "mode": "link-only",
-    "official_url": "https://gov.nu.ca/motor_vehicles",
-    "feed_path": "/feeds/nunavut.xml"
-  },
-  {
-    "state": "Yukon",
-    "abbr": "YT",
-    "region": "canada",
-    "mode": "rss",
-    "official_url": "https://yukon.ca/en/driving-and-transportation",
-    "feed_path": "/feeds/yukon.xml"
-  }
+﻿[
+    {
+        "state":  "Alabama",
+        "abbr":  "AL",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.revenue.alabama.gov/news/",
+        "feed_path":  "/feeds/alabama.xml"
+    },
+    {
+        "state":  "Alaska",
+        "abbr":  "AK",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://dmv.alaska.gov/home/news/",
+        "feed_path":  "/feeds/alaska.xml"
+    },
+    {
+        "state":  "Arizona",
+        "abbr":  "AZ",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://azdot.gov/mvd/services",
+        "feed_path":  "/feeds/arizona.xml"
+    },
+    {
+        "state":  "Arkansas",
+        "abbr":  "AR",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.dfa.arkansas.gov/office/mydmv/",
+        "feed_path":  "/feeds/arkansas.xml"
+    },
+    {
+        "state":  "California",
+        "abbr":  "CA",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.dmv.ca.gov/portal/news-and-media/",
+        "feed_path":  "/feeds/california.xml"
+    },
+    {
+        "state":  "Colorado",
+        "abbr":  "CO",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://dmv.colorado.gov/category/press-release",
+        "feed_path":  "/feeds/colorado.xml"
+    },
+    {
+        "state":  "Connecticut",
+        "abbr":  "CT",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://portal.ct.gov/dmv/resources/dmv-news?language=en_US",
+        "feed_path":  "/feeds/connecticut.xml"
+    },
+    {
+        "state":  "Delaware",
+        "abbr":  "DE",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://dmv.de.gov/",
+        "feed_path":  "/feeds/delaware.xml"
+    },
+    {
+        "state":  "District of Columbia",
+        "abbr":  "DC",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://dmv.dc.gov/",
+        "feed_path":  "/feeds/district_of_columbia.xml"
+    },
+    {
+        "state":  "Florida",
+        "abbr":  "FL",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.flhsmv.gov/media/press-releases/",
+        "feed_path":  "/feeds/florida.xml"
+    },
+    {
+        "state":  "Georgia",
+        "abbr":  "GA",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://dor.georgia.gov/motor-vehicles",
+        "feed_path":  "/feeds/georgia.xml"
+    },
+    {
+        "state":  "Hawaii",
+        "abbr":  "HI",
+        "region":  "us",
+        "mode":  "rss",
+        "rss_url":  "https://hidot.hawaii.gov/feed/",
+        "official_url":  "https://hidot.hawaii.gov/blog/category/news/",
+        "feed_path":  "/feeds/hawaii.xml"
+    },
+    {
+        "state":  "Idaho",
+        "abbr":  "ID",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://itd.idaho.gov/dmv",
+        "feed_path":  "/feeds/idaho.xml"
+    },
+    {
+        "state":  "Illinois",
+        "abbr":  "IL",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.ilsos.gov",
+        "feed_path":  "/feeds/illinois.xml"
+    },
+    {
+        "state":  "Indiana",
+        "abbr":  "IN",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.in.gov/bmv/",
+        "feed_path":  "/feeds/indiana.xml"
+    },
+    {
+        "state":  "Iowa",
+        "abbr":  "IA",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://iowadot.gov/drivers-licenses-ids",
+        "feed_path":  "/feeds/iowa.xml"
+    },
+    {
+        "state":  "Kansas",
+        "abbr":  "KS",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.ksrevenue.gov/dovindex.html",
+        "feed_path":  "/feeds/kansas.xml"
+    },
+    {
+        "state":  "Kentucky",
+        "abbr":  "KY",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://drive.ky.gov/Pages/index.aspx",
+        "feed_path":  "/feeds/kentucky.xml"
+    },
+    {
+        "state":  "Louisiana",
+        "abbr":  "LA",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://expresslane.la.gov/omv",
+        "feed_path":  "/feeds/louisiana.xml"
+    },
+    {
+        "state":  "Maine",
+        "abbr":  "ME",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.maine.gov/sos/bmv",
+        "feed_path":  "/feeds/maine.xml"
+    },
+    {
+        "state":  "Maryland",
+        "abbr":  "MD",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://mva.maryland.gov/Pages/mva-newsroom.aspx",
+        "feed_path":  "/feeds/maryland.xml"
+    },
+    {
+        "state":  "Massachusetts",
+        "abbr":  "MA",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://atlas-myrmv.massdot.state.ma.us/myrmv/_/",
+        "feed_path":  "/feeds/massachusetts.xml"
+    },
+    {
+        "state":  "Michigan",
+        "abbr":  "MI",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.michigan.gov/sos/license-id",
+        "feed_path":  "/feeds/michigan.xml"
+    },
+    {
+        "state":  "Minnesota",
+        "abbr":  "MN",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://onlineservices.dps.mn.gov/EServices/_/",
+        "feed_path":  "/feeds/minnesota.xml"
+    },
+    {
+        "state":  "Mississippi",
+        "abbr":  "MS",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.mmvc.ms.gov",
+        "feed_path":  "/feeds/mississippi.xml"
+    },
+    {
+        "state":  "Missouri",
+        "abbr":  "MO",
+        "region":  "us",
+        "mode":  "rss",
+        "rss_url":  "https://dor.mo.gov/news/rss",
+        "official_url":  "https://dor.mo.gov",
+        "feed_path":  "/feeds/missouri.xml"
+    },
+    {
+        "state":  "Montana",
+        "abbr":  "MT",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://mvdmt.gov",
+        "feed_path":  "/feeds/montana.xml"
+    },
+    {
+        "state":  "Nebraska",
+        "abbr":  "NE",
+        "region":  "us",
+        "mode":  "rss",
+        "rss_url":  "https://dmv.nebraska.gov/rss/news",
+        "official_url":  "https://dmv.nebraska.gov/",
+        "feed_path":  "/feeds/nebraska.xml"
+    },
+    {
+        "state":  "Nevada",
+        "abbr":  "NV",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://dmv.nv.gov/news.htm",
+        "feed_path":  "/feeds/nevada.xml"
+    },
+    {
+        "state":  "New Hampshire",
+        "abbr":  "NH",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.dmv.nh.gov/",
+        "feed_path":  "/feeds/new_hampshire.xml"
+    },
+    {
+        "state":  "New Jersey",
+        "abbr":  "NJ",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.nj.gov/mvc/",
+        "feed_path":  "/feeds/new_jersey.xml"
+    },
+    {
+        "state":  "New Mexico",
+        "abbr":  "NM",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.mvd.newmexico.gov",
+        "feed_path":  "/feeds/new_mexico.xml"
+    },
+    {
+        "state":  "New York",
+        "abbr":  "NY",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://dmv.ny.gov",
+        "feed_path":  "/feeds/new_york.xml"
+    },
+    {
+        "state":  "North Carolina",
+        "abbr":  "NC",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.ncdot.gov/dmv/Pages/news.aspx",
+        "feed_path":  "/feeds/north_carolina.xml"
+    },
+    {
+        "state":  "North Dakota",
+        "abbr":  "ND",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.dot.nd.gov/",
+        "feed_path":  "/feeds/north_dakota.xml"
+    },
+    {
+        "state":  "Ohio",
+        "abbr":  "OH",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.ohiobmv.gov/",
+        "feed_path":  "/feeds/ohio.xml"
+    },
+    {
+        "state":  "Oklahoma",
+        "abbr":  "OK",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://oklahoma.gov/service/all-services/driving-and-automobiles.html",
+        "feed_path":  "/feeds/oklahoma.xml"
+    },
+    {
+        "state":  "Oregon",
+        "abbr":  "OR",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.oregon.gov/odot/dmv/pages/index.aspx",
+        "feed_path":  "/feeds/oregon.xml"
+    },
+    {
+        "state":  "Pennsylvania",
+        "abbr":  "PA",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.pa.gov/agencies/dmv",
+        "feed_path":  "/feeds/pennsylvania.xml"
+    },
+    {
+        "state":  "Rhode Island",
+        "abbr":  "RI",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://dmv.ri.gov",
+        "feed_path":  "/feeds/rhode_island.xml"
+    },
+    {
+        "state":  "South Carolina",
+        "abbr":  "SC",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://dmv.sc.gov/news",
+        "feed_path":  "/feeds/south_carolina.xml"
+    },
+    {
+        "state":  "South Dakota",
+        "abbr":  "SD",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://dor.sd.gov/newsroom/",
+        "feed_path":  "/feeds/south_dakota.xml"
+    },
+    {
+        "state":  "Tennessee",
+        "abbr":  "TN",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.tn.gov/safety/driver-services.html",
+        "feed_path":  "/feeds/tennessee.xml"
+    },
+    {
+        "state":  "Texas",
+        "abbr":  "TX",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.txdmv.gov",
+        "feed_path":  "/feeds/texas.xml"
+    },
+    {
+        "state":  "Utah",
+        "abbr":  "UT",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://dmv.utah.gov",
+        "feed_path":  "/feeds/utah.xml"
+    },
+    {
+        "state":  "Vermont",
+        "abbr":  "VT",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://dmv.vermont.gov",
+        "feed_path":  "/feeds/vermont.xml"
+    },
+    {
+        "state":  "Virginia",
+        "abbr":  "VA",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.dmv.virginia.gov/news",
+        "feed_path":  "/feeds/virginia.xml"
+    },
+    {
+        "state":  "Washington",
+        "abbr":  "WA",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://dol.wa.gov/",
+        "feed_path":  "/feeds/washington.xml"
+    },
+    {
+        "state":  "West Virginia",
+        "abbr":  "WV",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://transportation.wv.gov/DMV/Pages/default.aspx",
+        "feed_path":  "/feeds/west_virginia.xml"
+    },
+    {
+        "state":  "Wisconsin",
+        "abbr":  "WI",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://wisconsindot.gov/Pages/online-srvcs/external/dmv.aspx",
+        "feed_path":  "/feeds/wisconsin.xml"
+    },
+    {
+        "state":  "Wyoming",
+        "abbr":  "WY",
+        "region":  "us",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.dot.state.wy.us/driverservices",
+        "feed_path":  "/feeds/wyoming.xml"
+    },
+    {
+        "state":  "Alberta",
+        "abbr":  "AB",
+        "region":  "canada",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.alberta.ca",
+        "feed_path":  "/feeds/alberta.xml"
+    },
+    {
+        "state":  "British Columbia",
+        "abbr":  "BC",
+        "region":  "canada",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.icbc.com",
+        "feed_path":  "/feeds/british_columbia.xml"
+    },
+    {
+        "state":  "Manitoba",
+        "abbr":  "MB",
+        "region":  "canada",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.mpi.mb.ca",
+        "feed_path":  "/feeds/manitoba.xml"
+    },
+    {
+        "state":  "New Brunswick",
+        "abbr":  "NB",
+        "region":  "canada",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www2.snb.ca",
+        "feed_path":  "/feeds/new_brunswick.xml"
+    },
+    {
+        "state":  "Newfoundland and Labrador",
+        "abbr":  "NL",
+        "region":  "canada",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.gov.nl.ca/motorregistration",
+        "feed_path":  "/feeds/newfoundland_and_labrador.xml"
+    },
+    {
+        "state":  "Nova Scotia",
+        "abbr":  "NS",
+        "region":  "canada",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://novascotia.ca/driving-and-road-safety/",
+        "feed_path":  "/feeds/nova_scotia.xml"
+    },
+    {
+        "state":  "Ontario",
+        "abbr":  "ON",
+        "region":  "canada",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.ontario.ca/page/serviceontario",
+        "feed_path":  "/feeds/ontario.xml"
+    },
+    {
+        "state":  "Prince Edward Island",
+        "abbr":  "PE",
+        "region":  "canada",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.princeedwardisland.ca/en/topic/transportation-and-infrastructure",
+        "feed_path":  "/feeds/prince_edward_island.xml"
+    },
+    {
+        "state":  "Quebec",
+        "abbr":  "QC",
+        "region":  "canada",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://saaq.gouv.qc.ca/",
+        "feed_path":  "/feeds/quebec.xml"
+    },
+    {
+        "state":  "Saskatchewan",
+        "abbr":  "SK",
+        "region":  "canada",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.sgi.sk.ca/",
+        "feed_path":  "/feeds/saskatchewan.xml"
+    },
+    {
+        "state":  "Northwest Territories",
+        "abbr":  "NT",
+        "region":  "canada",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://www.inf.gov.nt.ca/en/services/driver-and-vehicle-services",
+        "feed_path":  "/feeds/northwest_territories.xml"
+    },
+    {
+        "state":  "Nunavut",
+        "abbr":  "NU",
+        "region":  "canada",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://gov.nu.ca/motor_vehicles",
+        "feed_path":  "/feeds/nunavut.xml"
+    },
+    {
+        "state":  "Yukon",
+        "abbr":  "YT",
+        "region":  "canada",
+        "mode":  "link-only",
+        "rss_url":  null,
+        "official_url":  "https://yukon.ca/en/driving-and-transportation",
+        "feed_path":  "/feeds/yukon.xml"
+    }
 ]
