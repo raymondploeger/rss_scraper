@@ -411,6 +411,14 @@ h3 {
   gap: 18px;
 }
 
+.articles-grid.is-grouped-feed-view {
+  grid-template-columns: 1fr;
+}
+
+.articles-grid.is-grouped-feed-view .dmv-feed-group {
+  width: 100%;
+}
+
 .article-card {
   width: 100%;
   overflow: hidden;

@@ -822,6 +822,7 @@ function renderFeedGroup(titleText, cards) {
 }
 
 function renderSkeletons() {
+  elements.articlesGrid.classList.remove("is-grouped-feed-view");
   elements.articlesGrid.innerHTML = Array.from({ length: 8 })
     .map(
       () => `
@@ -851,6 +852,7 @@ function renderArticles() {
   ).trim();
 
   if (state.filters.feedId) {
+    elements.articlesGrid.classList.remove("is-grouped-feed-view");
     elements.resultsCount.textContent = `${articles.length} results`;
     elements.articlesGrid.innerHTML = "";
 
@@ -869,6 +871,7 @@ function renderArticles() {
   }
 
   if ((selectedUsDmvEntry || selectedCanadaEntry) && !state.filters.feedId) {
+    elements.articlesGrid.classList.remove("is-grouped-feed-view");
     elements.resultsCount.textContent = `${articles.length} results`;
     elements.articlesGrid.innerHTML = "";
 
@@ -891,6 +894,7 @@ function renderArticles() {
   }
 
   if (state.dashboardMode === "usa" && !getActiveArticleFeedId()) {
+    elements.articlesGrid.classList.add("is-grouped-feed-view");
     const dmvFeeds = getUsDmvFeeds();
     const articlesByFeedId = new Map();
 
@@ -922,6 +926,7 @@ function renderArticles() {
   }
 
   if (state.dashboardMode === "canada" && !state.filters.canadaDmvFeedPath) {
+    elements.articlesGrid.classList.remove("is-grouped-feed-view");
     const canadaEntries = getCanadaDmvCatalogEntries();
     const importedCanadaFeeds = getCanadaImportedDmvFeeds();
     const articlesByFeedId = new Map();
@@ -964,6 +969,7 @@ function renderArticles() {
   }
 
   elements.resultsCount.textContent = `${articles.length} results`;
+  elements.articlesGrid.classList.remove("is-grouped-feed-view");
   elements.articlesGrid.innerHTML = "";
 
   if (!articles.length) {
