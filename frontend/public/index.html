@@ -148,16 +148,13 @@
                   <option value="inactive">Inactive or errored sources</option>
                 </select>
               </label>
-              <label class="field">
-                <span>Source group</span>
-                <select id="feed-group-filter">
-                  <option value="all">All</option>
-                  <option value="USA">USA</option>
-                  <option value="Canada">Canada</option>
-                  <option value="Google Alerts">Google Alerts</option>
-                  <option value="Other">Other</option>
-                </select>
-              </label>
+              <div id="feed-group-tabs" class="feed-group-tabs" aria-label="Source group filters">
+                <button class="feed-group-tab is-active" type="button" data-source-group="all" aria-pressed="true">All</button>
+                <button class="feed-group-tab" type="button" data-source-group="USA" aria-pressed="false">USA</button>
+                <button class="feed-group-tab" type="button" data-source-group="Canada" aria-pressed="false">Canada</button>
+                <button class="feed-group-tab" type="button" data-source-group="Google Alerts" aria-pressed="false">Google Alerts</button>
+                <button class="feed-group-tab" type="button" data-source-group="Other" aria-pressed="false">Other</button>
+              </div>
               <div id="feed-list" class="feed-list"></div>
             </div>
           </section>

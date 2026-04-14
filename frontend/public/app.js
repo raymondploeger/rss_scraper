@@ -23,6 +23,7 @@ const state = {
     dmvFeedId: "",
     canadaDmvFeedPath: "",
     canadaDmvAll: false,
+    sourceGroup: "all",
     date: "",
   },
 };
@@ -62,7 +63,7 @@ const elements = {
   feedList: document.getElementById("feed-list"),
   feedPanelSearch: document.getElementById("feed-panel-search"),
   feedVisibilityFilter: document.getElementById("feed-visibility-filter"),
-  feedGroupFilter: document.getElementById("feed-group-filter"),
+  feedGroupTabs: document.getElementById("feed-group-tabs"),
   feedPanelToggle: document.getElementById("feed-panel-toggle"),
   feedPanelContent: document.getElementById("feed-panel-content"),
   addSourceToggle: document.getElementById("add-source-toggle"),
@@ -562,7 +563,7 @@ function getVisibleFeeds() {
     sourceListMode === "dmv-only" ? getUsDmvFeeds().slice() : state.feeds.slice();
   const feedPanelSearch = String(elements.feedPanelSearch?.value || "").trim().toLowerCase();
   const visibilityFilter = elements.feedVisibilityFilter?.value || "all";
-  const groupFilter = elements.feedGroupFilter?.value || "all";
+  const groupFilter = state.filters.sourceGroup || "all";
 
   if (sourceListMode === "normal-feed") {
     feeds = feeds.filter((feed) => feed.id === state.filters.feedId);
@@ -661,6 +662,19 @@ function syncAddSourcePanel(expanded) {
   elements.addSourceContent.hidden = !expanded;
 }
 
+function syncSourceGroupTabs() {
+  if (!elements.feedGroupTabs) {
+    return;
+  }
+
+  const activeGroup = state.filters.sourceGroup || "all";
+  elements.feedGroupTabs.querySelectorAll("[data-source-group]").forEach((button) => {
+    const isActive = button.dataset.sourceGroup === activeGroup;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
+  });
+}
+
 function syncFeedFormMode() {
   const isEditing = Boolean(state.editingFeedId);
 
@@ -681,6 +695,7 @@ function resetDashboardState() {
   state.filters.dmvFeedId = "";
   state.filters.canadaDmvFeedPath = "";
   state.filters.canadaDmvAll = false;
+  state.filters.sourceGroup = "all";
   state.filters.date = "";
 
   if (elements.searchFilter) {
@@ -764,7 +779,9 @@ function renderFeedItem(feed) {
 
 function renderFeedList() {
   const visibleFeeds = getVisibleFeeds();
+  const activeGroup = state.filters.sourceGroup || "all";
 
+  syncSourceGroupTabs();
   elements.feedCount.textContent = String(visibleFeeds.length);
   elements.feedList.innerHTML = "";
 
@@ -775,17 +792,22 @@ function renderFeedList() {
   }
 
   const fragment = document.createDocumentFragment();
-  const groups = ["USA", "Canada", "Google Alerts", "Other"].map((label) => ({
-    label,
-    feeds: visibleFeeds.filter((feed) => getFeedGroupName(feed) === label),
-  }));
+  const groups =
+    activeGroup === "all"
+      ? ["USA", "Canada", "Google Alerts", "Other"].map((label) => ({
+          label,
+          feeds: visibleFeeds.filter((feed) => getFeedGroupName(feed) === label),
+        }))
+      : [{ label: activeGroup, feeds: visibleFeeds }];
 
   groups.forEach((group) => {
     if (!group.feeds.length) {
       return;
     }
 
-    fragment.appendChild(renderFeedGroupHeader(group.label));
+    if (activeGroup === "all") {
+      fragment.appendChild(renderFeedGroupHeader(group.label));
+    }
     group.feeds.forEach((feed) => {
       fragment.appendChild(renderFeedItem(feed));
     });
@@ -793,9 +815,7 @@ function renderFeedList() {
 
   elements.feedList.appendChild(fragment);
   updateDmvToggleButton();
-  return;
-
-  /*
+  return; /*
   visibleFeeds.forEach((feed) => {
     const node = elements.feedItemTemplate.content.cloneNode(true);
     const title = node.querySelector(".feed-item-title");
@@ -1386,6 +1406,7 @@ function bindEvents() {
       dmvFeedId: "",
       canadaDmvFeedPath: "",
       canadaDmvAll: false,
+      sourceGroup: "all",
       date: "",
     };
     state.dashboardMode = "normal";
@@ -1406,10 +1427,6 @@ function bindEvents() {
     if (elements.feedVisibilityFilter) {
       elements.feedVisibilityFilter.value = "all";
     }
-    if (elements.feedGroupFilter) {
-      elements.feedGroupFilter.value = "all";
-    }
-
     renderDmvOfficialLink();
     renderDmvModeIndicator();
     renderSummary();
@@ -1539,8 +1556,14 @@ function bindEvents() {
     });
   }
 
-  if (elements.feedGroupFilter) {
-    elements.feedGroupFilter.addEventListener("change", () => {
+  if (elements.feedGroupTabs) {
+    elements.feedGroupTabs.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-source-group]");
+      if (!button) {
+        return;
+      }
+
+      state.filters.sourceGroup = button.dataset.sourceGroup || "all";
       renderFeedList();
     });
   }
