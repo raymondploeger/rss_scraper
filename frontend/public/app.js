@@ -776,29 +776,38 @@ function renderArticleCard(article) {
 }
 
 function renderDmvPlaceholderCard(feed) {
-  const node = elements.articleCardTemplate.content.cloneNode(true);
-  const link = node.querySelector(".article-link");
-  const image = node.querySelector(".article-image");
-  const topic = node.querySelector(".article-topic");
-  const source = node.querySelector(".article-source");
-  const date = node.querySelector(".article-date");
-  const title = node.querySelector(".article-title");
-  const feedName = node.querySelector(".article-feed");
-  const media = node.querySelector(".article-media");
+  const card = document.createElement("article");
+  const link = document.createElement("a");
+  const body = document.createElement("div");
+  const meta = document.createElement("div");
+  const source = document.createElement("span");
+  const date = document.createElement("span");
+  const title = document.createElement("h3");
+  const feedName = document.createElement("p");
   const officialUrl = String(feed.officialUrl || feed.rssUrl || "#").trim();
   const isLinkOnly = feed?.dmvMode === "link-only";
 
+  card.className = "article-card";
+  link.className = "article-link";
+  body.className = "article-body";
+  meta.className = "article-meta";
+  title.className = "article-title";
+  feedName.className = "article-feed";
+
   link.href = officialUrl || "#";
-  image.src = PLACEHOLDER_IMAGE;
-  image.alt = `${feed.name || "DMV feed"} placeholder`;
-  topic.textContent = feed.topic || "General";
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
   source.textContent = feed.name || "DMV feed";
   date.textContent = isLinkOnly ? "Link only" : "No news available";
   title.textContent = isLinkOnly ? "No RSS feed available" : "Open official DMV page";
   feedName.textContent = feed.name || "Untitled feed";
-  media.classList.add("is-empty");
 
-  return node;
+  meta.append(source, date);
+  body.append(meta, title, feedName);
+  link.appendChild(body);
+  card.appendChild(link);
+
+  return card;
 }
 
 function renderDmvEmptyState(message, officialUrl = "") {
