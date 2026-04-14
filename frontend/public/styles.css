@@ -169,19 +169,10 @@ h3 {
   padding: 20px;
 }
 
-.add-source-panel {
-  padding: 14px 16px;
-}
-
-.add-source-panel .panel-head {
-  align-items: center;
-  justify-content: flex-start;
-}
-
 .add-source-content {
   display: grid;
   gap: 14px;
-  margin-top: 14px;
+  margin: 14px 0 16px;
 }
 
 .add-source-content[hidden] {
@@ -189,6 +180,7 @@ h3 {
 }
 
 .add-source-toggle {
+  padding: 9px 12px;
   white-space: nowrap;
 }
 
@@ -396,11 +388,13 @@ h3 {
 }
 
 .feed-group-heading {
+  border-top: 1px solid var(--line);
   color: var(--muted);
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.12em;
-  margin: 8px 2px 0;
+  margin: 14px 2px 0;
+  padding-top: 12px;
   text-transform: uppercase;
 }
 

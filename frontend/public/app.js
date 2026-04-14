@@ -625,7 +625,7 @@ function syncAddSourcePanel(expanded) {
   }
 
   elements.addSourceToggle.setAttribute("aria-expanded", String(expanded));
-  elements.addSourceToggle.textContent = expanded ? "Hide add source" : "+ Add source";
+  elements.addSourceToggle.textContent = expanded ? "Hide add" : "+ Add";
   elements.addSourceContent.hidden = !expanded;
 }
 
