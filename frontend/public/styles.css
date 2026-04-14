@@ -169,6 +169,29 @@ h3 {
   padding: 20px;
 }
 
+.add-source-panel {
+  padding: 14px 16px;
+}
+
+.add-source-panel .panel-head {
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.add-source-content {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.add-source-content[hidden] {
+  display: none !important;
+}
+
+.add-source-toggle {
+  white-space: nowrap;
+}
+
 .panel-head-actions {
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -370,6 +393,15 @@ h3 {
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 4px;
+}
+
+.feed-group-heading {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  margin: 8px 2px 0;
+  text-transform: uppercase;
 }
 
 .feed-item-main {

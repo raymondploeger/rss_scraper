@@ -64,6 +64,8 @@ const elements = {
   feedVisibilityFilter: document.getElementById("feed-visibility-filter"),
   feedPanelToggle: document.getElementById("feed-panel-toggle"),
   feedPanelContent: document.getElementById("feed-panel-content"),
+  addSourceToggle: document.getElementById("add-source-toggle"),
+  addSourceContent: document.getElementById("add-source-content"),
   summaryCardTemplate: document.getElementById("summary-card-template"),
   feedItemTemplate: document.getElementById("feed-item-template"),
   articleCardTemplate: document.getElementById("article-card-template"),
@@ -193,6 +195,35 @@ function isCanadaLinkOnlyEntry(entry) {
 
 function isCanadaLinkOnlyFeed(feed) {
   return feed?.dmvRegion === "canada" && feed?.dmvMode === "link-only";
+}
+
+function isGoogleAlertsFeed(feed) {
+  const haystack = [
+    feed?.sourceType,
+    feed?.name,
+    feed?.rssUrl,
+    feed?.topic,
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  return feed?.sourceType === "google" || haystack.includes("google") || haystack.includes("alert");
+}
+
+function getFeedGroupName(feed) {
+  if (feed?.dmvRegion === "us") {
+    return "USA";
+  }
+
+  if (feed?.dmvRegion === "canada") {
+    return "Canada";
+  }
+
+  if (isGoogleAlertsFeed(feed)) {
+    return "Google Alerts";
+  }
+
+  return "Other";
 }
 
 function getActiveArticleFeedId() {
@@ -588,6 +619,16 @@ function syncFeedPanelVisibility(expanded) {
   elements.feedPanelContent.classList.toggle("is-collapsed", !expanded);
 }
 
+function syncAddSourcePanel(expanded) {
+  if (!elements.addSourceToggle || !elements.addSourceContent) {
+    return;
+  }
+
+  elements.addSourceToggle.setAttribute("aria-expanded", String(expanded));
+  elements.addSourceToggle.textContent = expanded ? "Hide add source" : "+ Add source";
+  elements.addSourceContent.hidden = !expanded;
+}
+
 function syncFeedFormMode() {
   const isEditing = Boolean(state.editingFeedId);
 
@@ -654,8 +695,39 @@ function startFeedEdit(feed) {
     elements.feedSourceType.value = feed.sourceType || "rss";
   }
   syncFeedFormMode();
+  syncAddSourcePanel(true);
   elements.feedFormStatus.textContent = "Editing source. Update the fields and save your changes.";
   elements.feedName.focus();
+}
+
+function renderFeedGroupHeader(label) {
+  const header = document.createElement("div");
+  header.className = "feed-group-heading";
+  header.textContent = label;
+  return header;
+}
+
+function renderFeedItem(feed) {
+  const node = elements.feedItemTemplate.content.cloneNode(true);
+  const title = node.querySelector(".feed-item-title");
+  const meta = node.querySelector(".feed-item-meta");
+  const status = node.querySelector(".feed-status");
+  const editButton = node.querySelector(".feed-edit-button");
+  const deleteButton = node.querySelector(".feed-delete-button");
+  const lastFetched = feed.lastFetchedAt ? formatDate(feed.lastFetchedAt) : "Waiting for first sync";
+  const statusPresentation = getFeedStatusPresentation(feed);
+
+  title.textContent = feed.name || "Untitled feed";
+  meta.textContent = `${feed.topic || "General"} • ${lastFetched} • ${feed.rssUrl || ""}`;
+  status.textContent = statusPresentation.text;
+  status.classList.add(statusPresentation.tone);
+
+  editButton.dataset.feedId = feed.id;
+  deleteButton.dataset.feedId = feed.id;
+  editButton.dataset.action = "edit-feed";
+  deleteButton.dataset.action = "delete-feed";
+
+  return node;
 }
 
 function renderFeedList() {
@@ -671,7 +743,27 @@ function renderFeedList() {
   }
 
   const fragment = document.createDocumentFragment();
+  const groups = ["USA", "Canada", "Google Alerts", "Other"].map((label) => ({
+    label,
+    feeds: visibleFeeds.filter((feed) => getFeedGroupName(feed) === label),
+  }));
 
+  groups.forEach((group) => {
+    if (!group.feeds.length) {
+      return;
+    }
+
+    fragment.appendChild(renderFeedGroupHeader(group.label));
+    group.feeds.forEach((feed) => {
+      fragment.appendChild(renderFeedItem(feed));
+    });
+  });
+
+  elements.feedList.appendChild(fragment);
+  updateDmvToggleButton();
+  return;
+
+  /*
   visibleFeeds.forEach((feed) => {
     const node = elements.feedItemTemplate.content.cloneNode(true);
     const title = node.querySelector(".feed-item-title");
@@ -697,6 +789,7 @@ function renderFeedList() {
 
   elements.feedList.appendChild(fragment);
   updateDmvToggleButton();
+  */
 }
 
 function articleMatchesFilters(article) {
@@ -1422,6 +1515,15 @@ function bindEvents() {
         FEED_PANEL_COLLAPSED_STORAGE_KEY,
         String(!nextExpanded)
       );
+    });
+  }
+
+  if (elements.addSourceToggle && elements.addSourceContent) {
+    syncAddSourcePanel(false);
+
+    elements.addSourceToggle.addEventListener("click", () => {
+      const expanded = elements.addSourceToggle.getAttribute("aria-expanded") === "true";
+      syncAddSourcePanel(!expanded);
     });
   }
 

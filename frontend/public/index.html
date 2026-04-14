@@ -94,41 +94,40 @@
             </div>
           </section>
 
-          <section class="panel">
+          <section class="panel add-source-panel">
             <div class="panel-head">
-              <div>
-                <p class="eyebrow">Source Intake</p>
-                <h2>Add source</h2>
-              </div>
+              <button id="add-source-toggle" class="ghost-button add-source-toggle" type="button" aria-expanded="false">+ Add source</button>
             </div>
 
-            <form id="feed-form" class="feed-form">
-              <label class="field">
-                <span>Source name</span>
-                <input id="feed-name" type="text" placeholder="Nebraska DMV or Google Alerts - Acme" required />
-              </label>
-              <label class="field">
-                <span>Topic</span>
-                <input id="feed-topic" type="text" placeholder="Acme Corp" required />
-              </label>
-              <label class="field">
-                <span>Source type</span>
-                <select id="feed-source-type">
-                  <option value="rss">RSS Feed</option>
-                  <option value="website">Website</option>
-                </select>
-              </label>
-              <label class="field field-full">
-                <span>Source URL</span>
-                <input id="feed-url" type="url" placeholder="https://www.google.com/alerts/feeds/... or https://dmv.nebraska.gov" required />
-              </label>
-              <div class="feed-form-actions">
-                <button id="feed-submit" class="primary-button" type="submit">Add source</button>
-                <button id="feed-cancel" class="ghost-button" type="button" hidden>Cancel edit</button>
-              </div>
-            </form>
+            <div id="add-source-content" class="add-source-content" hidden>
+              <form id="feed-form" class="feed-form">
+                <label class="field">
+                  <span>Source name</span>
+                  <input id="feed-name" type="text" placeholder="Nebraska DMV or Google Alerts - Acme" required />
+                </label>
+                <label class="field">
+                  <span>Topic</span>
+                  <input id="feed-topic" type="text" placeholder="Acme Corp" required />
+                </label>
+                <label class="field">
+                  <span>Source type</span>
+                  <select id="feed-source-type">
+                    <option value="rss">RSS Feed</option>
+                    <option value="website">Website</option>
+                  </select>
+                </label>
+                <label class="field field-full">
+                  <span>Source URL</span>
+                  <input id="feed-url" type="url" placeholder="https://www.google.com/alerts/feeds/... or https://dmv.nebraska.gov" required />
+                </label>
+                <div class="feed-form-actions">
+                  <button id="feed-submit" class="primary-button" type="submit">Add source</button>
+                  <button id="feed-cancel" class="ghost-button" type="button" hidden>Cancel edit</button>
+                </div>
+              </form>
 
-            <p id="feed-form-status" class="status-line" role="status">Monitor up to 50 RSS feeds and websites.</p>
+              <p id="feed-form-status" class="status-line" role="status">Monitor up to 50 RSS feeds and websites.</p>
+            </div>
           </section>
 
           <section class="panel">
