@@ -199,25 +199,26 @@ function isCanadaLinkOnlyFeed(feed) {
 }
 
 function isGoogleAlertsFeed(feed) {
-  const haystack = [
-    feed?.sourceType,
-    feed?.name,
-    feed?.rssUrl,
-    feed?.topic,
-  ]
-    .join(" ")
-    .toLowerCase();
+  const name = String(feed?.name || "").toLowerCase();
+  const rssUrl = String(feed?.rssUrl || "").toLowerCase();
 
-  return feed?.sourceType === "google" || haystack.includes("google") || haystack.includes("alert");
+  return (
+    feed?.sourceType === "google" ||
+    name.includes("google") ||
+    name.includes("alert") ||
+    rssUrl.includes("google.com/alerts")
+  );
 }
 
 function getFeedGroupName(feed) {
-  if (feed?.dmvRegion === "us") {
-    return "USA";
+  const name = String(feed?.name || "").toLowerCase();
+
+  if (feed?.dmvRegion === "canada" || name.includes("canada")) {
+    return "Canada";
   }
 
-  if (feed?.dmvRegion === "canada") {
-    return "Canada";
+  if (feed?.dmvRegion === "us" || name.includes("dmv")) {
+    return "USA";
   }
 
   if (isGoogleAlertsFeed(feed)) {
