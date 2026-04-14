@@ -926,9 +926,8 @@ function renderArticles() {
   }
 
   if (state.dashboardMode === "canada" && !state.filters.canadaDmvFeedPath) {
-    elements.articlesGrid.classList.remove("is-grouped-feed-view");
+    elements.articlesGrid.classList.add("is-grouped-feed-view");
     const canadaEntries = getCanadaDmvCatalogEntries();
-    const importedCanadaFeeds = getCanadaImportedDmvFeeds();
     const articlesByFeedId = new Map();
 
     articles.forEach((article) => {
@@ -948,8 +947,7 @@ function renderArticles() {
 
     const fragment = document.createDocumentFragment();
     canadaEntries.forEach((entry) => {
-      const importedFeed =
-        importedCanadaFeeds.find((feed) => feed.dmvFeedPath === entry.feedPath) || null;
+      const importedFeed = getFeedForCatalogEntry(entry);
       const feedArticles = importedFeed ? articlesByFeedId.get(importedFeed.id) || [] : [];
       const feedLike = importedFeed || {
         name: entry.state,
