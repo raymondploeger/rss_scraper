@@ -201,7 +201,7 @@ function getActiveArticleFeedId() {
   }
 
   if (state.filters.dmvFeedId) {
-    return state.filters.dmvFeedId;
+    return getSelectedDmvFeed()?.id || "";
   }
 
   const selectedCanadaFeed = getSelectedCanadaFeed();
