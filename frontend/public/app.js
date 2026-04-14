@@ -776,36 +776,22 @@ function renderArticleCard(article) {
 }
 
 function renderDmvPlaceholderCard(feed) {
-  const card = document.createElement("article");
+  const card = document.createElement("div");
+  const message = document.createElement("p");
   const link = document.createElement("a");
-  const body = document.createElement("div");
-  const meta = document.createElement("div");
-  const source = document.createElement("span");
-  const date = document.createElement("span");
-  const title = document.createElement("h3");
-  const feedName = document.createElement("p");
   const officialUrl = String(feed.officialUrl || feed.rssUrl || "#").trim();
   const isLinkOnly = feed?.dmvMode === "link-only";
 
-  card.className = "article-card";
-  link.className = "article-link";
-  body.className = "article-body";
-  meta.className = "article-meta";
-  title.className = "article-title";
-  feedName.className = "article-feed";
+  card.className = "empty-state";
+  message.textContent = isLinkOnly ? "No RSS feed available" : "No news available";
 
   link.href = officialUrl || "#";
   link.target = "_blank";
   link.rel = "noopener noreferrer";
-  source.textContent = feed.name || "DMV feed";
-  date.textContent = isLinkOnly ? "Link only" : "No news available";
-  title.textContent = isLinkOnly ? "No RSS feed available" : "Open official DMV page";
-  feedName.textContent = feed.name || "Untitled feed";
+  link.className = "dmv-official-link";
+  link.textContent = "Open official DMV page";
 
-  meta.append(source, date);
-  body.append(meta, title, feedName);
-  link.appendChild(body);
-  card.appendChild(link);
+  card.append(message, link);
 
   return card;
 }
