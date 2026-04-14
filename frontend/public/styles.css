@@ -246,6 +246,7 @@ h3 {
 .dmv-feed-group {
   display: grid;
   gap: 12px;
+  min-height: 220px;
 }
 
 .dmv-feed-group-title {
@@ -411,6 +412,7 @@ h3 {
 }
 
 .article-card {
+  width: 100%;
   overflow: hidden;
   transition: transform 140ms ease, box-shadow 140ms ease;
 }
