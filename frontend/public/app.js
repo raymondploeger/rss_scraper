@@ -210,14 +210,39 @@ function isGoogleAlertsFeed(feed) {
   );
 }
 
+function isCanadianDmvName(name) {
+  return [
+    "alberta",
+    "british columbia",
+    "manitoba",
+    "new brunswick",
+    "newfoundland and labrador",
+    "nova scotia",
+    "northwest territories",
+    "nunavut",
+    "ontario",
+    "prince edward island",
+    "quebec",
+    "saskatchewan",
+    "yukon",
+  ].some((province) => name.includes(province));
+}
+
 function getFeedGroupName(feed) {
   const name = String(feed?.name || "").toLowerCase();
+  const dmvRegion = String(feed?.dmvRegion || "").toLowerCase();
 
-  if (feed?.dmvRegion === "canada" || name.includes("canada")) {
+  if (
+    dmvRegion === "canada" ||
+    dmvRegion === "ca" ||
+    isCanadianDmvAbbr(feed?.dmvAbbr) ||
+    isCanadianDmvName(name) ||
+    name.includes("canada")
+  ) {
     return "Canada";
   }
 
-  if (feed?.dmvRegion === "us" || name.includes("dmv")) {
+  if (dmvRegion === "us" || name.includes("dmv")) {
     return "USA";
   }
 
