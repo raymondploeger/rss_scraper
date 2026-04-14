@@ -371,8 +371,9 @@ function renderSummary() {
 
 function applyTodayArticleFilter() {
   const today = toDateInputValue(new Date());
-  state.filters.date = today;
-  elements.dateFilter.value = today;
+  const nextDate = state.filters.date === today ? "" : today;
+  state.filters.date = nextDate;
+  elements.dateFilter.value = nextDate;
   renderSummary();
   renderArticles();
 }
