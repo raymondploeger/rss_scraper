@@ -196,7 +196,33 @@ function isCanadaLinkOnlyEntry(entry) {
 }
 
 function isCanadaLinkOnlyFeed(feed) {
-  return feed?.dmvRegion === "canada" && feed?.dmvMode === "link-only";
+  const name = String(feed?.name || "").toLowerCase();
+  const dmvRegion = String(feed?.dmvRegion || "").toLowerCase();
+  const isCanadaFeed =
+    dmvRegion === "canada" ||
+    dmvRegion === "ca" ||
+    isCanadianDmvAbbr(feed?.dmvAbbr) ||
+    isCanadianDmvName(name) ||
+    name.includes("canada");
+
+  if (!isCanadaFeed || feed?.dmvMode === "rss") {
+    return false;
+  }
+
+  if (feed?.dmvMode === "link-only") {
+    return true;
+  }
+
+  return getCanadaDmvCatalogEntries().some((entry) => {
+    const entryName = String(entry.state || "").toLowerCase();
+
+    return (
+      entry.mode === "link-only" &&
+      ((entry.abbr && entry.abbr === feed?.dmvAbbr) ||
+        (entryName && name.includes(entryName)) ||
+        (entry.rssUrl && feed?.rssUrl === entry.rssUrl))
+    );
+  });
 }
 
 function isGoogleAlertsFeed(feed) {
