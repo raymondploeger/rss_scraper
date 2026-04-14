@@ -345,15 +345,41 @@ function renderSummary() {
   const metrics = getSummaryMetrics();
   elements.summaryGrid.innerHTML = "";
   const fragment = document.createDocumentFragment();
+  const todayFilterActive = state.filters.date === toDateInputValue(new Date());
 
   SUMMARY_METRICS.forEach((item) => {
     const card = elements.summaryCardTemplate.content.cloneNode(true);
+    const summaryCard = card.querySelector(".summary-card");
     card.querySelector(".summary-label").textContent = item.label;
     card.querySelector(".summary-value").textContent = String(metrics[item.key]);
+
+    if (item.key === "articlesToday") {
+      summaryCard.classList.add("is-clickable");
+      summaryCard.classList.toggle("is-active", todayFilterActive);
+      summaryCard.dataset.action = "filter-today";
+      summaryCard.setAttribute("role", "button");
+      summaryCard.setAttribute("tabindex", "0");
+      summaryCard.setAttribute("aria-pressed", String(todayFilterActive));
+      summaryCard.setAttribute("aria-label", "Show today's articles");
+    }
+
     fragment.appendChild(card);
   });
 
   elements.summaryGrid.appendChild(fragment);
+}
+
+function applyTodayArticleFilter() {
+  const today = toDateInputValue(new Date());
+  state.filters.date = today;
+  elements.dateFilter.value = today;
+  renderSummary();
+  renderArticles();
+}
+
+function getTodaySummaryCardFromEvent(event) {
+  const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+  return target?.closest('[data-action="filter-today"]');
 }
 
 function renderFeedOptions() {
@@ -1205,7 +1231,25 @@ function bindEvents() {
 
   elements.dateFilter.addEventListener("change", (event) => {
     state.filters.date = event.target.value;
+    renderSummary();
     renderArticles();
+  });
+
+  elements.summaryGrid.addEventListener("click", (event) => {
+    const todayCard = getTodaySummaryCardFromEvent(event);
+    if (todayCard) {
+      applyTodayArticleFilter();
+    }
+  });
+
+  elements.summaryGrid.addEventListener("keydown", (event) => {
+    const todayCard = getTodaySummaryCardFromEvent(event);
+    if (!todayCard || (event.key !== "Enter" && event.key !== " ")) {
+      return;
+    }
+
+    event.preventDefault();
+    applyTodayArticleFilter();
   });
 
   elements.clearFilters.addEventListener("click", () => {
@@ -1239,6 +1283,7 @@ function bindEvents() {
 
     renderDmvOfficialLink();
     renderDmvModeIndicator();
+    renderSummary();
     renderArticles();
     renderFeedList();
   });

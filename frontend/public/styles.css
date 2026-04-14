@@ -178,6 +178,26 @@ h3 {
   padding: 18px;
 }
 
+.summary-card.is-clickable {
+  cursor: pointer;
+  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.summary-card.is-clickable:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+}
+
+.summary-card.is-clickable:focus-visible {
+  outline: 2px solid rgba(22, 96, 255, 0.24);
+  outline-offset: 2px;
+}
+
+.summary-card.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
 .summary-value {
   display: block;
   margin-top: 8px;
