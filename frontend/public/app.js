@@ -793,7 +793,7 @@ function renderDmvPlaceholderCard(feed) {
   image.alt = `${feed.name || "DMV feed"} placeholder`;
   topic.textContent = feed.topic || "General";
   source.textContent = feed.name || "DMV feed";
-  date.textContent = isLinkOnly ? "Link only" : "No news yet";
+  date.textContent = isLinkOnly ? "Link only" : "No news available";
   title.textContent = isLinkOnly ? "No RSS feed available" : "Open official DMV page";
   feedName.textContent = feed.name || "Untitled feed";
   media.classList.add("is-empty");
