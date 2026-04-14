@@ -62,6 +62,7 @@ const elements = {
   feedList: document.getElementById("feed-list"),
   feedPanelSearch: document.getElementById("feed-panel-search"),
   feedVisibilityFilter: document.getElementById("feed-visibility-filter"),
+  feedGroupFilter: document.getElementById("feed-group-filter"),
   feedPanelToggle: document.getElementById("feed-panel-toggle"),
   feedPanelContent: document.getElementById("feed-panel-content"),
   addSourceToggle: document.getElementById("add-source-toggle"),
@@ -535,6 +536,7 @@ function getVisibleFeeds() {
     sourceListMode === "dmv-only" ? getUsDmvFeeds().slice() : state.feeds.slice();
   const feedPanelSearch = String(elements.feedPanelSearch?.value || "").trim().toLowerCase();
   const visibilityFilter = elements.feedVisibilityFilter?.value || "all";
+  const groupFilter = elements.feedGroupFilter?.value || "all";
 
   if (sourceListMode === "normal-feed") {
     feeds = feeds.filter((feed) => feed.id === state.filters.feedId);
@@ -573,6 +575,10 @@ function getVisibleFeeds() {
 
       return haystack.includes(feedPanelSearch);
     });
+  }
+
+  if (groupFilter !== "all") {
+    feeds = feeds.filter((feed) => getFeedGroupName(feed) === groupFilter);
   }
 
   return feeds.sort((left, right) =>
@@ -1374,6 +1380,9 @@ function bindEvents() {
     if (elements.feedVisibilityFilter) {
       elements.feedVisibilityFilter.value = "all";
     }
+    if (elements.feedGroupFilter) {
+      elements.feedGroupFilter.value = "all";
+    }
 
     renderDmvOfficialLink();
     renderDmvModeIndicator();
@@ -1500,6 +1509,12 @@ function bindEvents() {
 
   if (elements.feedVisibilityFilter) {
     elements.feedVisibilityFilter.addEventListener("change", () => {
+      renderFeedList();
+    });
+  }
+
+  if (elements.feedGroupFilter) {
+    elements.feedGroupFilter.addEventListener("change", () => {
       renderFeedList();
     });
   }
