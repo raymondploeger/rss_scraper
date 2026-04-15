@@ -196,6 +196,10 @@ function isCanadaLinkOnlyEntry(entry) {
 }
 
 function isCanadaLinkOnlyFeed(feed) {
+  if (feed?.isCatalogOnly && feed?.dmvRegion === "canada") {
+    return true;
+  }
+
   const name = String(feed?.name || "").toLowerCase();
   const dmvRegion = String(feed?.dmvRegion || "").toLowerCase();
   const isCanadaFeed =
@@ -223,6 +227,35 @@ function isCanadaLinkOnlyFeed(feed) {
         (entry.rssUrl && feed?.rssUrl === entry.rssUrl))
     );
   });
+}
+
+function toCanadaCatalogSource(entry) {
+  const stateName = String(entry?.state || entry?.abbr || "Canada DMV").trim();
+  const title = stateName.toLowerCase().includes("dmv") ? stateName : `${stateName} DMV`;
+
+  return {
+    id: `catalog-canada-${entry?.feedPath || entry?.abbr || stateName}`,
+    name: title,
+    topic: "Canada DMV",
+    rssUrl: entry?.officialUrl || "",
+    officialUrl: entry?.officialUrl || "",
+    sourceType: "link-only",
+    isActive: true,
+    isCatalogOnly: true,
+    lastFetchedAt: null,
+    lastStatus: "idle",
+    dmvState: entry?.state || null,
+    dmvAbbr: entry?.abbr || null,
+    dmvFeedPath: entry?.feedPath || null,
+    dmvRegion: "canada",
+    dmvMode: entry?.mode || "link-only",
+  };
+}
+
+function getCanadaCatalogOnlySources() {
+  return getCanadaDmvCatalogEntries()
+    .filter((entry) => entry.mode === "link-only" && !getFeedForCatalogEntry(entry))
+    .map(toCanadaCatalogSource);
 }
 
 function isGoogleAlertsFeed(feed) {
@@ -358,11 +391,18 @@ function getFeedForCatalogEntry(entry) {
   }
 
   return state.feeds.find((feed) => {
+    const entryState = String(entry.state || "").toLowerCase();
+    const feedName = String(feed.name || "").toLowerCase();
+
     if (entry.rssUrl && feed.rssUrl === entry.rssUrl) {
       return true;
     }
 
     if (entry.abbr && feed.dmvAbbr === entry.abbr) {
+      return true;
+    }
+
+    if (entryState && feedName.includes(entryState) && feedName.includes("dmv")) {
       return true;
     }
 
@@ -585,22 +625,31 @@ function renderDmvModeIndicator() {
 
 function getVisibleFeeds() {
   const sourceListMode = getSourceListMode();
-  let feeds =
-    sourceListMode === "dmv-only" ? getUsDmvFeeds().slice() : state.feeds.slice();
+  let feeds = state.feeds.slice();
+  const canadaCatalogOnlySources = getCanadaCatalogOnlySources();
   const feedPanelSearch = String(elements.feedPanelSearch?.value || "").trim().toLowerCase();
   const visibilityFilter = elements.feedVisibilityFilter?.value || "all";
   const groupFilter = state.filters.sourceGroup || "all";
 
-  if (sourceListMode === "normal-feed") {
+  if (sourceListMode === "dmv-only") {
+    feeds = getUsDmvFeeds().slice();
+  } else if (sourceListMode === "normal-feed") {
     feeds = feeds.filter((feed) => feed.id === state.filters.feedId);
   } else if (sourceListMode === "canada-entry") {
     const selectedCanadaFeed = getSelectedCanadaFeed();
-    feeds = selectedCanadaFeed ? feeds.filter((feed) => feed.id === selectedCanadaFeed.id) : [];
+    const selectedCanadaEntry = getSelectedCanadaCatalogEntry();
+    feeds = selectedCanadaFeed
+      ? feeds.filter((feed) => feed.id === selectedCanadaFeed.id)
+      : selectedCanadaEntry && selectedCanadaEntry.mode === "link-only"
+        ? [toCanadaCatalogSource(selectedCanadaEntry)]
+        : [];
   } else if (sourceListMode === "dmv-feed") {
     const selectedUsFeed = getSelectedDmvFeed();
     feeds = selectedUsFeed ? feeds.filter((feed) => feed.id === selectedUsFeed.id) : [];
   } else if (sourceListMode === "canada-all") {
-    feeds = getCanadaImportedDmvFeeds().slice();
+    feeds = getCanadaImportedDmvFeeds().concat(canadaCatalogOnlySources);
+  } else {
+    feeds = feeds.concat(canadaCatalogOnlySources);
   }
 
   if (visibilityFilter === "active") {
@@ -782,23 +831,35 @@ function renderFeedGroupHeader(label) {
 
 function renderFeedItem(feed) {
   const node = elements.feedItemTemplate.content.cloneNode(true);
+  const item = node.querySelector(".feed-item");
   const title = node.querySelector(".feed-item-title");
   const meta = node.querySelector(".feed-item-meta");
   const status = node.querySelector(".feed-status");
   const editButton = node.querySelector(".feed-edit-button");
   const deleteButton = node.querySelector(".feed-delete-button");
-  const lastFetched = feed.lastFetchedAt ? formatDate(feed.lastFetchedAt) : "Waiting for first sync";
+  const isCatalogOnly = Boolean(feed.isCatalogOnly);
+  const lastFetched = feed.lastFetchedAt
+    ? formatDate(feed.lastFetchedAt)
+    : isCatalogOnly
+      ? "Official link only"
+      : "Waiting for first sync";
   const statusPresentation = getFeedStatusPresentation(feed);
 
+  item.classList.toggle("is-catalog-only", isCatalogOnly);
   title.textContent = feed.name || "Untitled feed";
   meta.textContent = `${feed.topic || "General"} • ${lastFetched} • ${feed.rssUrl || ""}`;
   status.textContent = statusPresentation.text;
   status.classList.add(statusPresentation.tone);
 
-  editButton.dataset.feedId = feed.id;
-  deleteButton.dataset.feedId = feed.id;
-  editButton.dataset.action = "edit-feed";
-  deleteButton.dataset.action = "delete-feed";
+  if (isCatalogOnly) {
+    editButton.hidden = true;
+    deleteButton.hidden = true;
+  } else {
+    editButton.dataset.feedId = feed.id;
+    deleteButton.dataset.feedId = feed.id;
+    editButton.dataset.action = "edit-feed";
+    deleteButton.dataset.action = "delete-feed";
+  }
 
   return node;
 }

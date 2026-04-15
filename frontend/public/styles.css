@@ -405,6 +405,10 @@ h3 {
   border: 1px solid var(--line);
 }
 
+.feed-item.is-catalog-only {
+  border-style: dashed;
+}
+
 .feed-list {
   max-height: min(50vh, 560px);
   overflow-y: auto;
