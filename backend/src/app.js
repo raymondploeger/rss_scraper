@@ -38,7 +38,10 @@ export function createApp() {
   app.post("/api/feeds", asyncHandler(createFeed));
   app.post("/api/admin/import-dmv", importDmvFeeds);
   app.post("/api/admin/cleanup-canada-feeds", asyncHandler(async (_request, response) => {
-    response.json(await cleanupLegacyCanadaFeeds());
+    response.json({
+      success: true,
+      ...(await cleanupLegacyCanadaFeeds()),
+    });
   }));
   app.post("/api/feeds/refresh", asyncHandler(refreshAll));
   app.put("/api/feeds/:feedId", asyncHandler(updateFeed));

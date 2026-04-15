@@ -1,10 +1,25 @@
 import { deleteFeed, listFeeds } from "../database/feedRepository.js";
 import { getDmvCatalogEntry, isCanadianDmvAbbr, loadDmvCatalog } from "./dmvCatalogService.js";
 
-const LEGACY_DMV_PROXY_HOST = "rssdmv-production.up.railway.app";
+const LEGACY_DMV_PROXY_PREFIX = "rssdmv-production.up.railway.app/feeds/";
+const CANADA_NAME_TOKENS = [
+  "alberta",
+  "british columbia",
+  "manitoba",
+  "new brunswick",
+  "newfoundland",
+  "nova scotia",
+  "ontario",
+  "prince edward island",
+  "quebec",
+  "saskatchewan",
+  "northwest territories",
+  "nunavut",
+  "yukon",
+];
 
 function isLegacyDmvProxyFeed(feed) {
-  return String(feed?.rssUrl || "").includes(LEGACY_DMV_PROXY_HOST);
+  return String(feed?.rssUrl || "").includes(LEGACY_DMV_PROXY_PREFIX);
 }
 
 function getCanadaCatalogEntryByLegacyPath(feed) {
@@ -32,7 +47,13 @@ function isCanadaDmvFeed(feed) {
   }
 
   const dmvRegion = String(feed?.dmvRegion || "").toLowerCase();
-  return dmvRegion === "canada" || dmvRegion === "ca" || isCanadianDmvAbbr(feed?.dmvAbbr);
+  const feedName = String(feed?.name || "").toLowerCase();
+  return (
+    dmvRegion === "canada" ||
+    dmvRegion === "ca" ||
+    isCanadianDmvAbbr(feed?.dmvAbbr) ||
+    CANADA_NAME_TOKENS.some((token) => feedName.includes(token))
+  );
 }
 
 export async function cleanupLegacyCanadaFeeds() {
