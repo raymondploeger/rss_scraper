@@ -10,6 +10,7 @@ import { asyncHandler } from "./utils/asyncHandler.js";
 import { canonicalizeUrl, normalizeText } from "./utils/text.js";
 import { importDmvFeeds } from "./controllers/dmvImportController.js";
 import { loadDmvCatalog, toDmvCatalogDto } from "./services/dmvCatalogService.js";
+import { cleanupLegacyCanadaFeeds } from "./services/legacyCanadaFeedCleanupService.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,6 +37,9 @@ export function createApp() {
   });
   app.post("/api/feeds", asyncHandler(createFeed));
   app.post("/api/admin/import-dmv", importDmvFeeds);
+  app.post("/api/admin/cleanup-canada-feeds", asyncHandler(async (_request, response) => {
+    response.json(await cleanupLegacyCanadaFeeds());
+  }));
   app.post("/api/feeds/refresh", asyncHandler(refreshAll));
   app.put("/api/feeds/:feedId", asyncHandler(updateFeed));
   app.delete("/api/feeds/:feedId", asyncHandler(deleteFeed));
