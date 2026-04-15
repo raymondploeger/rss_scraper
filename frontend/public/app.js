@@ -200,19 +200,22 @@ function isCanadaLinkOnlyFeed(feed) {
   const catalogEntry = getCanadaCatalogEntryForFeed(feed);
 
   if (catalogEntry) {
+    if (catalogEntry.mode === "rss") {
+      return false;
+    }
+
     return catalogEntry.mode === "link-only";
   }
 
   const name = String(feed?.name || "").toLowerCase();
   const dmvRegion = String(feed?.dmvRegion || "").toLowerCase();
-  const isCanadaFeed =
+
+  return (
     dmvRegion === "canada" ||
     dmvRegion === "ca" ||
     isCanadianDmvAbbr(feed?.dmvAbbr) ||
-    isCanadianDmvName(name) ||
-    name.includes("canada");
-
-  return isCanadaFeed && feed?.dmvMode === "link-only";
+    isCanadianDmvName(name)
+  );
 }
 
 function toCanadaCatalogSource(entry) {
@@ -1728,6 +1731,7 @@ async function init() {
   bindEvents();
   renderSkeletons();
   await loadSnapshot();
+  syncFeedPanelVisibility();
   initRealtime();
 }
 
