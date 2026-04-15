@@ -16,6 +16,7 @@ const state = {
   articles: [],
   dashboardMode: "normal",
   editingFeedId: "",
+  feedPanelCollapsed: false,
   filters: {
     search: "",
     topic: "",
@@ -144,7 +145,7 @@ function loadTheme() {
 }
 
 function isFeedPanelCollapsed() {
-  return window.localStorage.getItem(FEED_PANEL_COLLAPSED_STORAGE_KEY) !== "false";
+  return window.localStorage.getItem(FEED_PANEL_COLLAPSED_STORAGE_KEY) === "true";
 }
 
 function getFeedName(feedId) {
@@ -196,8 +197,10 @@ function isCanadaLinkOnlyEntry(entry) {
 }
 
 function isCanadaLinkOnlyFeed(feed) {
-  if (feed?.isCatalogOnly && feed?.dmvRegion === "canada") {
-    return true;
+  const catalogEntry = getCanadaCatalogEntryForFeed(feed);
+
+  if (catalogEntry) {
+    return catalogEntry.mode === "link-only";
   }
 
   const name = String(feed?.name || "").toLowerCase();
@@ -209,24 +212,7 @@ function isCanadaLinkOnlyFeed(feed) {
     isCanadianDmvName(name) ||
     name.includes("canada");
 
-  if (!isCanadaFeed || feed?.dmvMode === "rss") {
-    return false;
-  }
-
-  if (feed?.dmvMode === "link-only") {
-    return true;
-  }
-
-  return getCanadaDmvCatalogEntries().some((entry) => {
-    const entryName = String(entry.state || "").toLowerCase();
-
-    return (
-      entry.mode === "link-only" &&
-      ((entry.abbr && entry.abbr === feed?.dmvAbbr) ||
-        (entryName && name.includes(entryName)) ||
-        (entry.rssUrl && feed?.rssUrl === entry.rssUrl))
-    );
-  });
+  return isCanadaFeed && feed?.dmvMode === "link-only";
 }
 
 function toCanadaCatalogSource(entry) {
@@ -410,6 +396,28 @@ function getFeedForCatalogEntry(entry) {
   }) || null;
 }
 
+function getCanadaCatalogEntryForFeed(feed) {
+  if (!feed) {
+    return null;
+  }
+
+  const feedName = String(feed.name || "").toLowerCase();
+  const feedUrl = String(feed.rssUrl || "").trim();
+  const feedAbbr = String(feed.dmvAbbr || "").toUpperCase();
+
+  return getCanadaDmvCatalogEntries().find((entry) => {
+    const entryUrl = String(entry.rss_url || entry.rssUrl || "").trim();
+    const entryState = String(entry.state || "").toLowerCase();
+    const entryAbbr = String(entry.abbr || "").toUpperCase();
+
+    return (
+      (entryUrl && feedUrl === entryUrl) ||
+      (entryAbbr && feedAbbr === entryAbbr) ||
+      (entryState && feedName.includes(entryState))
+    );
+  }) || null;
+}
+
 function getSelectedDmvFeed() {
   return getFeedForCatalogEntry(getSelectedUsDmvCatalogEntry());
 }
@@ -434,7 +442,7 @@ function isOfficialFallbackArticle(article) {
 function getFeedStatusPresentation(feed) {
   if (isCanadaLinkOnlyFeed(feed)) {
     return {
-      text: "link only",
+      text: "No RSS",
       tone: "is-idle",
     };
   }
@@ -716,11 +724,12 @@ function updateDmvToggleButton() {
   }
 }
 
-function syncFeedPanelVisibility(expanded) {
+function syncFeedPanelVisibility() {
   if (!elements.feedPanelToggle || !elements.feedPanelContent) {
     return;
   }
 
+  const expanded = !state.feedPanelCollapsed;
   elements.feedPanelToggle.setAttribute("aria-expanded", String(expanded));
   elements.feedPanelToggle.textContent = expanded ? "Hide sources" : "Show sources";
   elements.feedPanelContent.hidden = !expanded;
@@ -1656,15 +1665,14 @@ function bindEvents() {
   }
 
   if (elements.feedPanelToggle && elements.feedPanelContent) {
-    syncFeedPanelVisibility(!isFeedPanelCollapsed());
+    syncFeedPanelVisibility();
 
     elements.feedPanelToggle.addEventListener("click", () => {
-      const expanded = elements.feedPanelToggle.getAttribute("aria-expanded") === "true";
-      const nextExpanded = !expanded;
-      syncFeedPanelVisibility(nextExpanded);
+      state.feedPanelCollapsed = !state.feedPanelCollapsed;
+      syncFeedPanelVisibility();
       window.localStorage.setItem(
         FEED_PANEL_COLLAPSED_STORAGE_KEY,
-        String(!nextExpanded)
+        String(state.feedPanelCollapsed)
       );
     });
   }
@@ -1714,6 +1722,7 @@ function bindEvents() {
 
 async function init() {
   loadTheme();
+  state.feedPanelCollapsed = isFeedPanelCollapsed();
   resetDashboardState();
   syncFeedFormMode();
   bindEvents();
