@@ -891,6 +891,7 @@ function renderFeedList() {
   if (!visibleFeeds.length) {
     elements.feedList.innerHTML = `<div class="empty-state">No feeds match the current view.</div>`;
     updateDmvToggleButton();
+    syncFeedPanelVisibility();
     return;
   }
 
@@ -918,33 +919,7 @@ function renderFeedList() {
 
   elements.feedList.appendChild(fragment);
   updateDmvToggleButton();
-  return; /*
-  visibleFeeds.forEach((feed) => {
-    const node = elements.feedItemTemplate.content.cloneNode(true);
-    const title = node.querySelector(".feed-item-title");
-    const meta = node.querySelector(".feed-item-meta");
-    const status = node.querySelector(".feed-status");
-    const editButton = node.querySelector(".feed-edit-button");
-    const deleteButton = node.querySelector(".feed-delete-button");
-    const lastFetched = feed.lastFetchedAt ? formatDate(feed.lastFetchedAt) : "Waiting for first sync";
-    const statusPresentation = getFeedStatusPresentation(feed);
-
-    title.textContent = feed.name || "Untitled feed";
-    meta.textContent = `${feed.topic || "General"} • ${lastFetched} • ${feed.rssUrl || ""}`;
-    status.textContent = statusPresentation.text;
-    status.classList.add(statusPresentation.tone);
-
-    editButton.dataset.feedId = feed.id;
-    deleteButton.dataset.feedId = feed.id;
-    editButton.dataset.action = "edit-feed";
-    deleteButton.dataset.action = "delete-feed";
-
-    fragment.appendChild(node);
-  });
-
-  elements.feedList.appendChild(fragment);
-  updateDmvToggleButton();
-  */
+  syncFeedPanelVisibility();
 }
 
 function articleMatchesFilters(article) {
