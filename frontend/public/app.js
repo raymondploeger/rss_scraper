@@ -17,6 +17,7 @@ const state = {
   dashboardMode: "normal",
   editingFeedId: "",
   feedPanelCollapsed: false,
+  addSourceExpanded: false,
   filters: {
     search: "",
     topic: "",
@@ -736,7 +737,13 @@ function syncFeedPanelVisibility() {
     return;
   }
 
+  console.log("Panel collapsed:", state.feedPanelCollapsed);
   const expanded = !state.feedPanelCollapsed;
+  if (!expanded) {
+    state.addSourceExpanded = false;
+  }
+
+  const addSourceExpanded = expanded && state.addSourceExpanded;
   const trackedSourcesPanel = elements.feedPanelContent.closest(".panel");
 
   elements.feedPanelToggle.setAttribute("aria-expanded", String(expanded));
@@ -747,22 +754,22 @@ function syncFeedPanelVisibility() {
   trackedSourcesPanel?.setAttribute("data-collapsed", String(!expanded));
 
   if (elements.addSourceContent) {
-    if (!expanded) {
-      syncAddSourcePanel(false);
-    } else if (elements.addSourceToggle?.getAttribute("aria-expanded") !== "true") {
-      elements.addSourceContent.hidden = true;
-    }
+    elements.addSourceContent.hidden = !addSourceExpanded;
+  }
+
+  if (elements.addSourceToggle) {
+    elements.addSourceToggle.setAttribute("aria-expanded", String(addSourceExpanded));
+    elements.addSourceToggle.textContent = addSourceExpanded ? "Hide add" : "+ Add";
   }
 }
 
 function syncAddSourcePanel(expanded) {
-  if (!elements.addSourceToggle || !elements.addSourceContent) {
+  if (!elements.addSourceToggle) {
     return;
   }
 
-  elements.addSourceToggle.setAttribute("aria-expanded", String(expanded));
-  elements.addSourceToggle.textContent = expanded ? "Hide add" : "+ Add";
-  elements.addSourceContent.hidden = !expanded;
+  state.addSourceExpanded = expanded;
+  syncFeedPanelVisibility();
 }
 
 function syncSourceGroupTabs() {
