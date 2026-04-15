@@ -379,6 +379,10 @@ function getFeedForCatalogEntry(entry) {
     return null;
   }
 
+  if (entry.region === "canada" && entry.mode === "link-only") {
+    return null;
+  }
+
   return state.feeds.find((feed) => {
     const entryState = String(entry.state || "").toLowerCase();
     const feedName = String(feed.name || "").toLowerCase();
@@ -733,13 +737,21 @@ function syncFeedPanelVisibility() {
   }
 
   const expanded = !state.feedPanelCollapsed;
+  const trackedSourcesPanel = elements.feedPanelContent.closest(".panel");
+
   elements.feedPanelToggle.setAttribute("aria-expanded", String(expanded));
   elements.feedPanelToggle.textContent = expanded ? "Hide sources" : "Show sources";
   elements.feedPanelContent.hidden = !expanded;
   elements.feedPanelContent.classList.toggle("is-collapsed", !expanded);
+  trackedSourcesPanel?.classList.toggle("is-collapsed", !expanded);
+  trackedSourcesPanel?.setAttribute("data-collapsed", String(!expanded));
 
-  if (state.feedPanelCollapsed && elements.addSourceContent) {
-    syncAddSourcePanel(false);
+  if (elements.addSourceContent) {
+    if (!expanded) {
+      syncAddSourcePanel(false);
+    } else if (elements.addSourceToggle?.getAttribute("aria-expanded") !== "true") {
+      elements.addSourceContent.hidden = true;
+    }
   }
 }
 
