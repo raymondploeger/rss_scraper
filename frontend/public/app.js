@@ -737,6 +737,10 @@ function syncFeedPanelVisibility() {
   elements.feedPanelToggle.textContent = expanded ? "Hide sources" : "Show sources";
   elements.feedPanelContent.hidden = !expanded;
   elements.feedPanelContent.classList.toggle("is-collapsed", !expanded);
+
+  if (state.feedPanelCollapsed && elements.addSourceContent) {
+    syncAddSourcePanel(false);
+  }
 }
 
 function syncAddSourcePanel(expanded) {
@@ -1276,6 +1280,7 @@ function renderDashboard() {
   renderDmvModeIndicator();
   renderFeedList();
   renderArticles();
+  syncFeedPanelVisibility();
 }
 
 async function apiRequest(path, options = {}) {
