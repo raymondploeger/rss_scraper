@@ -297,12 +297,16 @@ h3 {
   gap: 14px;
 }
 
-.analytics-grid > div {
+.analytics-panel {
   min-width: 0;
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--bg-soft);
+}
+
+.analytics-panel-wide {
+  grid-column: span 1;
 }
 
 .analytics-label {
@@ -319,6 +323,42 @@ h3 {
   margin: 0;
   color: var(--text);
   line-height: 1.45;
+}
+
+.analytics-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.analytics-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+.analytics-list span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analytics-list strong {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--accent);
+  font-size: 0.82rem;
+}
+
+.analytics-empty {
+  color: var(--muted);
 }
 
 .summary-card.is-clickable {

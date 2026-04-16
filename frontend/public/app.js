@@ -753,7 +753,7 @@ function getFeedArticleCounts(articles) {
   }, new Map());
 }
 
-function getTopFeedCounts(counts, limit = 3) {
+function getTopFeedCounts(counts, limit = 5) {
   return Array.from(counts.entries())
     .map(([feedId, count]) => ({
       feedId,
@@ -770,6 +770,27 @@ function formatAnalyticsList(items, emptyText) {
   }
 
   return items.map((item) => `${item.name} (${item.count})`).join(", ");
+}
+
+function renderAnalyticsRows(items, emptyText) {
+  if (!items.length) {
+    return `<p class="analytics-empty">${escapeHtml(emptyText)}</p>`;
+  }
+
+  return `
+    <ol class="analytics-list">
+      ${items
+        .map(
+          (item) => `
+            <li>
+              <span>${escapeHtml(item.name)}</span>
+              <strong>${item.count}</strong>
+            </li>
+          `
+        )
+        .join("")}
+    </ol>
+  `;
 }
 
 function escapeHtml(value) {
@@ -792,8 +813,11 @@ function getDashboardAnalytics() {
   const activeFeeds = state.feeds.filter((feed) => feed.isActive !== false).length;
   const inactiveFeeds = state.feeds.filter((feed) => feed.isActive === false || feed.lastStatus === "error").length;
   const rssFeedCount = state.feeds.filter((feed) => feed.sourceType !== "link-only").length;
-  const linkOnlyCount = getNonUsCatalogOnlySources().length;
-  const feedCount = state.feeds.length || 1;
+  const catalogOnlySources = getNonUsCatalogOnlySources();
+  const linkOnlyCount =
+    state.feeds.filter((feed) => feed.sourceType === "link-only" || isLinkOnlyDmvSource(feed)).length +
+    catalogOnlySources.length;
+  const feedCount = state.feeds.length + catalogOnlySources.length || 1;
 
   return {
     topFeeds: getTopFeedCounts(articleCounts),
@@ -822,27 +846,27 @@ function renderAnalyticsCard() {
       <span class="analytics-note">articles per feed</span>
     </div>
     <div class="analytics-grid">
-      <div>
+      <div class="analytics-panel analytics-panel-wide">
         <span class="analytics-label">Top feeds</span>
-        <p>${escapeHtml(formatAnalyticsList(analytics.topFeeds, "No article volume yet"))}</p>
+        ${renderAnalyticsRows(analytics.topFeeds, "No article volume yet")}
       </div>
-      <div>
+      <div class="analytics-panel analytics-panel-wide">
         <span class="analytics-label">Top today</span>
-        <p>${escapeHtml(formatAnalyticsList(analytics.topTodayFeeds, "No articles today yet"))}</p>
+        ${renderAnalyticsRows(analytics.topTodayFeeds, "No articles today yet")}
       </div>
-      <div>
+      <div class="analytics-panel">
         <span class="analytics-label">Feed health</span>
         <p>${analytics.activeFeeds} active, ${analytics.inactiveFeeds} inactive/error</p>
       </div>
-      <div>
+      <div class="analytics-panel">
         <span class="analytics-label">Source mix</span>
         <p>${analytics.rssFeedCount} RSS-backed, ${analytics.linkOnlyCount} link-only</p>
       </div>
-      <div>
+      <div class="analytics-panel">
         <span class="analytics-label">DMV directory</span>
         <p>${analytics.usaFeeds} USA, ${analytics.canadaRssFeeds} Canada RSS, ${analytics.canadaLinkOnly} Canada link-only</p>
       </div>
-      <div>
+      <div class="analytics-panel">
         <span class="analytics-label">Google Alerts</span>
         <p>${analytics.googleAlertsFeeds} feeds, ${analytics.averageArticlesTodayPerFeed} articles today/feed</p>
       </div>
