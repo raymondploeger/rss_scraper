@@ -1,12 +1,7 @@
-import { readFile } from "fs/promises";
-import path from "path";
-import { fileURLToPath } from "url";
 import { findFeedByRssUrl, createFeed as createFeedRecord } from "../database/feedRepository.js";
 import { broadcast } from "../services/realtimeService.js";
+import { loadDmvCatalog } from "../services/dmvCatalogService.js";
 import { toFeedDto } from "../services/presenterService.js";
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const DMV_CATALOG_PATH = path.resolve(__dirname, "../../data/dmvFeeds.json");
 
 function extractFeedUrl(item) {
   return item.rss_url || item.rssUrl || item.url || null;
@@ -16,12 +11,6 @@ function extractName(item) {
   if (item.name) return item.name;
   if (item.state) return `${item.state} DMV`;
   return "DMV Feed";
-}
-
-async function loadDmvCatalog() {
-  const raw = await readFile(DMV_CATALOG_PATH, "utf8");
-  const parsed = JSON.parse(raw);
-  return Array.isArray(parsed) ? parsed : [];
 }
 
 export async function importDmvFeeds(_req, res) {
@@ -82,7 +71,7 @@ export async function importDmvFeeds(_req, res) {
       total: manifest.length
     });
   } catch (error) {
-    console.error("DMV import failed:", error);
+    console.error("DMV import failed:", error?.stack || error?.message || error);
     res.status(500).json({
       success: false,
       error: "Failed to import DMV feeds"
