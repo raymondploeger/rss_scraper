@@ -67,6 +67,71 @@ img {
   max-width: 100%;
 }
 
+.notification-region {
+  position: fixed;
+  z-index: 50;
+  top: 18px;
+  right: 18px;
+  display: grid;
+  gap: 10px;
+  width: min(360px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.notification-toast {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 14px 14px 16px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+}
+
+.notification-toast.is-success {
+  border-left-color: var(--success);
+}
+
+.notification-toast.is-warning {
+  border-left-color: var(--danger);
+}
+
+.notification-content {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.notification-content strong {
+  line-height: 1.25;
+}
+
+.notification-content p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.notification-close {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 2px;
+}
+
+.notification-close:hover,
+.notification-close:focus-visible {
+  color: var(--accent);
+}
+
 .page-shell {
   max-width: 1500px;
   margin: 0 auto;
@@ -857,6 +922,13 @@ h3 {
 @media (max-width: 720px) {
   .page-shell {
     padding: 20px 16px 32px;
+  }
+
+  .notification-region {
+    top: 12px;
+    right: 12px;
+    left: 12px;
+    width: auto;
   }
 
   .app-header,

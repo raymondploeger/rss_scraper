@@ -3,6 +3,7 @@ const THEME_STORAGE_KEY = "rss-monitor-theme";
 const FEED_PANEL_COLLAPSED_STORAGE_KEY = "feedPanelCollapsed";
 const POLLING_INTERVAL_MS = 30000;
 const ARTICLE_PAGE_SIZE = 400;
+const NOTIFICATION_TIMEOUT_MS = 7000;
 const SUMMARY_METRICS = [
   { label: "Active feeds", key: "activeFeeds" },
   { label: "Tracked topics", key: "topics" },
@@ -34,9 +35,14 @@ const runtime = {
   pollTimer: null,
   eventSource: null,
   realtimeEnabled: false,
+  notificationId: 0,
+  notificationTimers: new Map(),
+  knownErrorFeedIds: new Set(),
+  snapshotLoaded: false,
 };
 
 const elements = {
+  notificationRegion: document.getElementById("notification-region"),
   summaryGrid: document.getElementById("summary-grid"),
   articlesGrid: document.getElementById("articles-grid"),
   topicFilter: document.getElementById("topic-filter"),
@@ -103,6 +109,61 @@ function formatDate(value) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(toDate(value));
+}
+
+function dismissNotification(notificationId) {
+  const notification = elements.notificationRegion?.querySelector(`[data-notification-id="${notificationId}"]`);
+  if (!notification) {
+    return;
+  }
+
+  window.clearTimeout(runtime.notificationTimers.get(notificationId));
+  runtime.notificationTimers.delete(notificationId);
+  notification.remove();
+}
+
+function showNotification({ title, message = "", type = "info", timeout = NOTIFICATION_TIMEOUT_MS }) {
+  if (!elements.notificationRegion) {
+    return;
+  }
+
+  const notificationId = String((runtime.notificationId += 1));
+  const notification = document.createElement("article");
+  const content = document.createElement("div");
+  const titleElement = document.createElement("strong");
+  const messageElement = document.createElement("p");
+  const closeButton = document.createElement("button");
+
+  notification.className = `notification-toast is-${type}`;
+  notification.dataset.notificationId = notificationId;
+  content.className = "notification-content";
+  titleElement.textContent = title;
+  messageElement.textContent = message;
+  closeButton.className = "notification-close";
+  closeButton.type = "button";
+  closeButton.setAttribute("aria-label", "Dismiss notification");
+  closeButton.textContent = "Dismiss";
+  closeButton.addEventListener("click", () => dismissNotification(notificationId));
+
+  content.append(titleElement);
+  if (message) {
+    content.appendChild(messageElement);
+  }
+  notification.append(content, closeButton);
+  elements.notificationRegion.appendChild(notification);
+
+  if (timeout > 0) {
+    const timer = window.setTimeout(() => dismissNotification(notificationId), timeout);
+    runtime.notificationTimers.set(notificationId, timer);
+  }
+}
+
+function parseStreamPayload(event) {
+  try {
+    return JSON.parse(event?.data || "{}");
+  } catch {
+    return {};
+  }
 }
 
 function isNotafiliaUrl(value) {
@@ -499,6 +560,31 @@ function getFeedStatusPresentation(feed) {
     text: feed.lastStatus || "idle",
     tone,
   };
+}
+
+function isFeedError(feed) {
+  return feed?.lastStatus === "error" && !isCanadaLinkOnlyFeed(feed);
+}
+
+function syncFeedErrorNotifications() {
+  const errorFeeds = state.feeds.filter(isFeedError);
+  const currentErrorFeedIds = new Set(errorFeeds.map((feed) => feed.id));
+
+  if (runtime.snapshotLoaded) {
+    errorFeeds
+      .filter((feed) => !runtime.knownErrorFeedIds.has(feed.id))
+      .slice(0, 3)
+      .forEach((feed) => {
+        showNotification({
+          title: "Feed error detected",
+          message: feed.name || "A feed reported an error.",
+          type: "warning",
+        });
+      });
+  }
+
+  runtime.knownErrorFeedIds = currentErrorFeedIds;
+  runtime.snapshotLoaded = true;
 }
 
 function getSummaryMetrics() {
@@ -1623,6 +1709,7 @@ async function loadSnapshot() {
   state.articles = articles;
   state.dmvCatalog = Array.isArray(dmvCatalog) ? dmvCatalog : [];
   renderDashboard();
+  syncFeedErrorNotifications();
 }
 
 function startPolling() {
@@ -1653,7 +1740,26 @@ function initRealtime() {
       elements.connectionStatus.textContent = "Live updates enabled.";
     });
 
-    ["article:new", "article:update", "feed:update", "refresh:complete"].forEach((eventName) => {
+    eventSource.addEventListener("article:new", (event) => {
+      const payload = parseStreamPayload(event);
+      showNotification({
+        title: "New article detected",
+        message: payload?.title || payload?.article?.title || "A new article was added to the live stream.",
+        type: "info",
+      });
+      refreshSnapshot();
+    });
+
+    eventSource.addEventListener("refresh:complete", () => {
+      showNotification({
+        title: "Feed refresh completed",
+        message: "Latest feed data has been loaded.",
+        type: "success",
+      });
+      refreshSnapshot();
+    });
+
+    ["article:update", "feed:update"].forEach((eventName) => {
       eventSource.addEventListener(eventName, refreshSnapshot);
     });
 
@@ -1700,9 +1806,19 @@ async function importDmvFeeds() {
 
     elements.feedFormStatus.textContent =
       `Imported ${result.imported ?? 0}, skipped ${result.skipped ?? 0}, failed ${result.failed ?? 0}`;
+    showNotification({
+      title: "DMV import completed",
+      message: `Imported ${result.imported ?? 0}, skipped ${result.skipped ?? 0}, failed ${result.failed ?? 0}.`,
+      type: result.failed ? "warning" : "success",
+    });
     await loadSnapshot();
   } catch (error) {
     elements.feedFormStatus.textContent = error.message;
+    showNotification({
+      title: "DMV import failed",
+      message: error.message,
+      type: "warning",
+    });
   } finally {
     elements.importDmvButton.disabled = false;
     elements.importDmvButton.textContent = originalLabel;
@@ -1856,8 +1972,18 @@ function bindEvents() {
     try {
       const result = await apiRequest("/api/feeds/refresh", { method: "POST" });
       elements.connectionStatus.textContent = result.message || "Feed refresh started.";
+      showNotification({
+        title: "Feed refresh started",
+        message: result.message || "Refresh is running in the background.",
+        type: "info",
+      });
     } catch (error) {
       elements.connectionStatus.textContent = error.message;
+      showNotification({
+        title: "Feed refresh failed",
+        message: error.message,
+        type: "warning",
+      });
     }
   });
 
