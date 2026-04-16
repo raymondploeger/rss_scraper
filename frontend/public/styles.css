@@ -497,6 +497,15 @@ h3 {
   border-style: dashed;
 }
 
+.feed-item.is-canada-link-only {
+  border-color: rgba(22, 96, 255, 0.18);
+  background: rgba(22, 96, 255, 0.035);
+}
+
+.feed-item.is-canada-rss {
+  border-color: rgba(15, 159, 127, 0.26);
+}
+
 .feed-list {
   max-height: min(50vh, 560px);
   overflow-y: auto;
@@ -546,6 +555,13 @@ h3 {
 
 .feed-item-actions .ghost-button {
   padding: 8px 12px;
+}
+
+.feed-official-link {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
+  text-decoration: none;
 }
 
 .feed-status {

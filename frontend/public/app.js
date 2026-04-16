@@ -1034,23 +1034,44 @@ function renderFeedItem(feed) {
   const status = node.querySelector(".feed-status");
   const editButton = node.querySelector(".feed-edit-button");
   const deleteButton = node.querySelector(".feed-delete-button");
+  const actions = node.querySelector(".feed-item-actions");
   const isCatalogOnly = Boolean(feed.isCatalogOnly);
+  const isCanadaLinkOnly = isCanadaLinkOnlyFeed(feed);
+  const isCanadaRssBacked = isCanadaRssBackedFeed(feed);
   const lastFetched = feed.lastFetchedAt
     ? formatDate(feed.lastFetchedAt)
     : isCatalogOnly
       ? "Official link only"
       : "Waiting for first sync";
   const statusPresentation = getFeedStatusPresentation(feed);
+  const sourceKind = isCanadaLinkOnly
+    ? "Link-only source"
+    : isCanadaRssBacked
+      ? "RSS-backed source"
+      : "";
 
   item.classList.toggle("is-catalog-only", isCatalogOnly);
+  item.classList.toggle("is-canada-link-only", isCanadaLinkOnly);
+  item.classList.toggle("is-canada-rss", isCanadaRssBacked);
   title.textContent = feed.name || "Untitled feed";
-  meta.textContent = `${feed.topic || "General"} • ${lastFetched} • ${feed.rssUrl || ""}`;
+  meta.textContent = [feed.topic || "General", sourceKind, lastFetched, feed.rssUrl || ""]
+    .filter(Boolean)
+    .join(" - ");
   status.textContent = statusPresentation.text;
   status.classList.add(statusPresentation.tone);
 
   if (isCatalogOnly) {
     editButton.hidden = true;
     deleteButton.hidden = true;
+    if (feed.officialUrl && actions) {
+      const officialLink = document.createElement("a");
+      officialLink.className = "ghost-button feed-official-link";
+      officialLink.href = feed.officialUrl;
+      officialLink.target = "_blank";
+      officialLink.rel = "noopener noreferrer";
+      officialLink.textContent = "Open official";
+      actions.appendChild(officialLink);
+    }
   } else {
     editButton.dataset.feedId = feed.id;
     deleteButton.dataset.feedId = feed.id;
