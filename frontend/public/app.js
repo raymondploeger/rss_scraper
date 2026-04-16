@@ -169,12 +169,20 @@ function isCanadianDmvAbbr(abbr) {
   );
 }
 
+function getCatalogEntryMode(entry) {
+  return String(entry?.mode || (entry?.rssUrl ? "rss" : "link-only")).toLowerCase();
+}
+
+function getCatalogEntryRssUrl(entry) {
+  return String(entry?.rssUrl || entry?.rss_url || "").trim();
+}
+
 function getUsDmvFeeds() {
   return getDmvFeeds().filter((feed) => !isCanadianDmvAbbr(feed.dmvAbbr));
 }
 
 function getCanadaImportedDmvFeeds() {
-  return getDmvFeeds().filter((feed) => isCanadianDmvAbbr(feed.dmvAbbr));
+  return getDmvFeeds().filter(isCanadaRssBackedFeed);
 }
 
 function getUsDmvCatalogEntries() {
@@ -192,22 +200,22 @@ function getCanadaDmvCatalogEntries() {
 }
 
 function isUsLinkOnlyEntry(entry) {
-  return entry?.region === "us" && entry?.mode === "link-only";
+  return entry?.region === "us" && getCatalogEntryMode(entry) === "link-only";
 }
 
 function isCanadaLinkOnlyEntry(entry) {
-  return entry?.region === "canada" && entry?.mode === "link-only";
+  return entry?.region === "canada" && getCatalogEntryMode(entry) === "link-only";
 }
 
 function isCanadaLinkOnlyFeed(feed) {
   const catalogEntry = getCanadaCatalogEntryForFeed(feed);
 
   if (catalogEntry) {
-    if (catalogEntry.mode === "rss") {
+    if (getCatalogEntryMode(catalogEntry) === "rss") {
       return false;
     }
 
-    return catalogEntry.mode === "link-only";
+    return isCanadaLinkOnlyEntry(catalogEntry);
   }
 
   const name = String(feed?.name || "").toLowerCase();
@@ -218,6 +226,19 @@ function isCanadaLinkOnlyFeed(feed) {
     dmvRegion === "ca" ||
     isCanadianDmvAbbr(feed?.dmvAbbr) ||
     isCanadianDmvName(name)
+  );
+}
+
+function isCanadaRssBackedFeed(feed) {
+  const catalogEntry = getCanadaCatalogEntryForFeed(feed);
+  const catalogRssUrl = getCatalogEntryRssUrl(catalogEntry);
+  const feedRssUrl = String(feed?.rssUrl || "").trim();
+
+  return Boolean(
+    catalogEntry?.region === "canada" &&
+      getCatalogEntryMode(catalogEntry) === "rss" &&
+      catalogRssUrl &&
+      feedRssUrl === catalogRssUrl
   );
 }
 
@@ -246,7 +267,7 @@ function toCanadaCatalogSource(entry) {
 
 function getCanadaCatalogOnlySources() {
   return getCanadaDmvCatalogEntries()
-    .filter((entry) => entry.mode === "link-only" && !getFeedForCatalogEntry(entry))
+    .filter((entry) => isCanadaLinkOnlyEntry(entry) && !getFeedForCatalogEntry(entry))
     .map(toCanadaCatalogSource);
 }
 
@@ -382,8 +403,14 @@ function getFeedForCatalogEntry(entry) {
     return null;
   }
 
-  if (entry.region === "canada" && entry.mode === "link-only") {
-    return null;
+  if (entry.region === "canada") {
+    const entryRssUrl = getCatalogEntryRssUrl(entry);
+
+    if (getCatalogEntryMode(entry) !== "rss" || !entryRssUrl) {
+      return null;
+    }
+
+    return state.feeds.find((feed) => String(feed.rssUrl || "").trim() === entryRssUrl) || null;
   }
 
   return state.feeds.find((feed) => {
@@ -416,12 +443,16 @@ function getCanadaCatalogEntryForFeed(feed) {
   const feedAbbr = String(feed.dmvAbbr || "").toUpperCase();
 
   return getCanadaDmvCatalogEntries().find((entry) => {
-    const entryUrl = String(entry.rss_url || entry.rssUrl || "").trim();
+    const entryMode = getCatalogEntryMode(entry);
+    const entryUrl = getCatalogEntryRssUrl(entry);
     const entryState = String(entry.state || "").toLowerCase();
     const entryAbbr = String(entry.abbr || "").toUpperCase();
 
+    if (entryMode === "rss") {
+      return Boolean(entryUrl && feedUrl === entryUrl);
+    }
+
     return (
-      (entryUrl && feedUrl === entryUrl) ||
       (entryAbbr && feedAbbr === entryAbbr) ||
       (entryState && feedName.includes(entryState))
     );

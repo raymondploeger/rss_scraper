@@ -54,8 +54,14 @@ export function getDmvCatalogEntry(feed) {
   return (
     loadDmvCatalog().find((entry) => {
       const entryRssUrl = String(entry?.rss_url || entry?.rssUrl || "").trim();
+      const entryRegion = String(entry?.region || (isCanadianDmvAbbr(entry?.abbr) ? "canada" : "us")).toLowerCase();
+      const entryMode = String(entry?.mode || (entryRssUrl ? "rss" : "link-only")).toLowerCase();
       const entryStateName = normalizeCatalogText(entry?.state);
       const entryDmvName = normalizeCatalogText(entry?.state ? `${entry.state} DMV` : "");
+
+      if (entryRegion === "canada") {
+        return Boolean(entryMode === "rss" && entryRssUrl && rssUrl && entryRssUrl === rssUrl);
+      }
 
       if (entryRssUrl && rssUrl && entryRssUrl === rssUrl) {
         return true;
