@@ -571,7 +571,7 @@ function addActiveFilterChip(fragment, label, value, filterKey) {
   chip.type = "button";
   chip.dataset.clearFilter = filterKey;
   chip.setAttribute("aria-label", `Clear ${label} filter`);
-  chip.textContent = `${label}: ${value} x`;
+  chip.textContent = `${label}: ${value}`;
   fragment.appendChild(chip);
 }
 
@@ -639,8 +639,14 @@ function syncFilterUx() {
   elements.activeFilterList.innerHTML = "";
   elements.activeFilterList.hidden = !fragment.childNodes.length;
   elements.activeFilterList.appendChild(fragment);
-  elements.clearFilters.classList.toggle("is-active-filter", Boolean(elements.activeFilterList.childNodes.length));
-  elements.clearFilters.textContent = elements.activeFilterList.childNodes.length ? "Clear filters" : "Reset";
+  const hasActiveFilters = Boolean(elements.activeFilterList.childNodes.length);
+  elements.clearFilters.classList.toggle("is-active-filter", hasActiveFilters);
+  elements.clearFilters.textContent = hasActiveFilters ? "Clear active" : "Reset";
+  elements.clearFilters.setAttribute(
+    "aria-label",
+    hasActiveFilters ? "Clear all active filters" : "Reset filters"
+  );
+  elements.clearFilters.title = hasActiveFilters ? "Clear all active filters" : "Reset filters";
 }
 
 function clearActiveFilter(filterKey) {

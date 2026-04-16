@@ -234,6 +234,7 @@ h3 {
 .feed-group-tabs {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 7px;
 }
 
@@ -259,6 +260,7 @@ h3 {
 
 .filter-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
 }
 
 .field {
@@ -271,6 +273,9 @@ h3 {
 }
 
 .field span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 0.82rem;
   color: var(--muted);
 }
@@ -287,6 +292,9 @@ h3 {
 }
 
 .active-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   border: 1px solid rgba(22, 96, 255, 0.18);
   border-radius: 999px;
   background: var(--accent-soft);
@@ -296,6 +304,15 @@ h3 {
   font-weight: 700;
   padding: 7px 10px;
   transition: border-color 140ms ease, transform 140ms ease;
+}
+
+.active-filter-chip::after {
+  content: "clear";
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 .active-filter-chip:hover {
@@ -360,11 +377,19 @@ h3 {
   font-weight: 700;
 }
 
+.field.is-active-filter span::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  content: "";
+}
+
 .field.is-active-filter input,
 .field.is-active-filter select {
   border-color: var(--accent);
   background: var(--accent-soft);
-  box-shadow: 0 0 0 1px rgba(22, 96, 255, 0.08);
+  box-shadow: 0 0 0 2px rgba(22, 96, 255, 0.1);
 }
 
 .field input:focus-visible,
@@ -391,14 +416,20 @@ h3 {
   font-size: 0.78rem;
   font-weight: 700;
   padding: 7px 10px;
-  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease, color 140ms ease;
 }
 
-.feed-group-tab:hover,
-.feed-group-tab.is-active {
+.feed-group-tab:hover {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--text);
+}
+
+.feed-group-tab.is-active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #ffffff;
+  box-shadow: 0 10px 22px rgba(22, 96, 255, 0.18);
 }
 
 .ghost-button {
@@ -409,8 +440,9 @@ h3 {
 
 .ghost-button.is-active-filter {
   border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--accent);
+  color: #ffffff;
+  box-shadow: 0 10px 22px rgba(22, 96, 255, 0.18);
 }
 
 .primary-button {
