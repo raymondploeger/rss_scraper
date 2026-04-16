@@ -505,14 +505,127 @@ function getSummaryMetrics() {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
 
+  const realArticles = state.articles.filter((article) => !isOfficialFallbackArticle(article));
+
   return {
     activeFeeds: state.feeds.filter((feed) => feed.isActive !== false).length,
     topics: new Set(
       state.feeds.map((feed) => String(feed.topic || "").trim()).filter(Boolean)
     ).size,
-    articlesToday: state.articles.filter((article) => toDate(article.pubDate) >= startOfToday).length,
-    totalArticles: state.articles.length,
+    articlesToday: realArticles.filter((article) => toDate(article.pubDate) >= startOfToday).length,
+    totalArticles: realArticles.length,
   };
+}
+
+function getFeedArticleCounts(articles) {
+  return articles.reduce((counts, article) => {
+    const feedId = article.feedId || "";
+    if (!feedId) {
+      return counts;
+    }
+
+    counts.set(feedId, (counts.get(feedId) || 0) + 1);
+    return counts;
+  }, new Map());
+}
+
+function getTopFeedCounts(counts, limit = 3) {
+  return Array.from(counts.entries())
+    .map(([feedId, count]) => ({
+      feedId,
+      count,
+      name: getFeedName(feedId),
+    }))
+    .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name))
+    .slice(0, limit);
+}
+
+function formatAnalyticsList(items, emptyText) {
+  if (!items.length) {
+    return emptyText;
+  }
+
+  return items.map((item) => `${item.name} (${item.count})`).join(", ");
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function getDashboardAnalytics() {
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const realArticles = state.articles.filter((article) => !isOfficialFallbackArticle(article));
+  const todayArticles = realArticles.filter((article) => toDate(article.pubDate) >= startOfToday);
+  const articleCounts = getFeedArticleCounts(realArticles);
+  const todayCounts = getFeedArticleCounts(todayArticles);
+  const activeFeeds = state.feeds.filter((feed) => feed.isActive !== false).length;
+  const inactiveFeeds = state.feeds.filter((feed) => feed.isActive === false || feed.lastStatus === "error").length;
+  const rssFeedCount = state.feeds.filter((feed) => feed.sourceType !== "link-only").length;
+  const linkOnlyCount = getCanadaCatalogOnlySources().length;
+  const feedCount = state.feeds.length || 1;
+
+  return {
+    topFeeds: getTopFeedCounts(articleCounts),
+    topTodayFeeds: getTopFeedCounts(todayCounts),
+    averageArticlesPerFeed: (realArticles.length / feedCount).toFixed(1),
+    averageArticlesTodayPerFeed: (todayArticles.length / feedCount).toFixed(1),
+    activeFeeds,
+    inactiveFeeds,
+    rssFeedCount,
+    linkOnlyCount,
+    usaFeeds: getUsDmvCatalogEntries().length,
+    canadaRssFeeds: getCanadaImportedDmvFeeds().length,
+    canadaLinkOnly: linkOnlyCount,
+    googleAlertsFeeds: state.feeds.filter(isGoogleAlertsFeed).length,
+  };
+}
+
+function renderAnalyticsCard() {
+  const analytics = getDashboardAnalytics();
+  const card = document.createElement("article");
+  card.className = "summary-card analytics-card";
+  card.innerHTML = `
+    <div class="analytics-card-head">
+      <span class="summary-label">Feed analytics</span>
+      <strong class="summary-value">${analytics.averageArticlesPerFeed}</strong>
+      <span class="analytics-note">articles per feed</span>
+    </div>
+    <div class="analytics-grid">
+      <div>
+        <span class="analytics-label">Top feeds</span>
+        <p>${escapeHtml(formatAnalyticsList(analytics.topFeeds, "No article volume yet"))}</p>
+      </div>
+      <div>
+        <span class="analytics-label">Top today</span>
+        <p>${escapeHtml(formatAnalyticsList(analytics.topTodayFeeds, "No articles today yet"))}</p>
+      </div>
+      <div>
+        <span class="analytics-label">Feed health</span>
+        <p>${analytics.activeFeeds} active, ${analytics.inactiveFeeds} inactive/error</p>
+      </div>
+      <div>
+        <span class="analytics-label">Source mix</span>
+        <p>${analytics.rssFeedCount} RSS-backed, ${analytics.linkOnlyCount} link-only</p>
+      </div>
+      <div>
+        <span class="analytics-label">DMV directory</span>
+        <p>${analytics.usaFeeds} USA, ${analytics.canadaRssFeeds} Canada RSS, ${analytics.canadaLinkOnly} Canada link-only</p>
+      </div>
+      <div>
+        <span class="analytics-label">Google Alerts</span>
+        <p>${analytics.googleAlertsFeeds} feeds, ${analytics.averageArticlesTodayPerFeed} articles today/feed</p>
+      </div>
+    </div>
+  `;
+
+  return card;
 }
 
 function renderSummary() {
@@ -540,6 +653,7 @@ function renderSummary() {
     fragment.appendChild(card);
   });
 
+  fragment.appendChild(renderAnalyticsCard());
   elements.summaryGrid.appendChild(fragment);
 }
 
