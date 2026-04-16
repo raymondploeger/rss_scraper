@@ -19,6 +19,45 @@ export function isCanadianDmvAbbr(abbr) {
   return CANADA_ABBRS.has(String(abbr || "").toUpperCase());
 }
 
+export function getCatalogEntryCountry(entry) {
+  const explicitCountry = String(entry?.country || "").trim().toLowerCase();
+  if (explicitCountry) {
+    return explicitCountry === "usa" ||
+      explicitCountry === "united states" ||
+      explicitCountry === "united states of america"
+      ? "us"
+      : explicitCountry;
+  }
+
+  const region = String(entry?.region || "").trim().toLowerCase();
+  if (region === "canada" || region === "ca" || isCanadianDmvAbbr(entry?.abbr)) {
+    return "canada";
+  }
+
+  return region || "us";
+}
+
+export function getCatalogEntryMode(entry) {
+  const rssUrl = entry?.rss_url || entry?.rssUrl || null;
+  return String(entry?.mode || (rssUrl ? "rss" : "link-only")).toLowerCase();
+}
+
+export function getCatalogEntrySubdivision(entry) {
+  return entry?.subdivision || entry?.province || entry?.state || null;
+}
+
+export function getCatalogEntrySubdivisionType(entry) {
+  if (entry?.subdivisionType) {
+    return entry.subdivisionType;
+  }
+
+  return getCatalogEntryCountry(entry) === "canada" ? "province-territory" : "state";
+}
+
+export function getCatalogEntrySourceFamily(entry) {
+  return entry?.sourceFamily || entry?.source_family || "dmv";
+}
+
 export function loadDmvCatalog() {
   if (cachedDmvCatalog) {
     return cachedDmvCatalog;
@@ -54,12 +93,13 @@ export function getDmvCatalogEntry(feed) {
   return (
     loadDmvCatalog().find((entry) => {
       const entryRssUrl = String(entry?.rss_url || entry?.rssUrl || "").trim();
-      const entryRegion = String(entry?.region || (isCanadianDmvAbbr(entry?.abbr) ? "canada" : "us")).toLowerCase();
-      const entryMode = String(entry?.mode || (entryRssUrl ? "rss" : "link-only")).toLowerCase();
-      const entryStateName = normalizeCatalogText(entry?.state);
-      const entryDmvName = normalizeCatalogText(entry?.state ? `${entry.state} DMV` : "");
+      const entryCountry = getCatalogEntryCountry(entry);
+      const entryMode = getCatalogEntryMode(entry);
+      const subdivision = getCatalogEntrySubdivision(entry);
+      const entryStateName = normalizeCatalogText(subdivision);
+      const entryDmvName = normalizeCatalogText(subdivision ? `${subdivision} DMV` : "");
 
-      if (entryRegion === "canada") {
+      if (entryCountry !== "us") {
         return Boolean(entryMode === "rss" && entryRssUrl && rssUrl && entryRssUrl === rssUrl);
       }
 
@@ -74,14 +114,21 @@ export function getDmvCatalogEntry(feed) {
 
 export function toDmvCatalogDto(entry) {
   const rssUrl = entry.rss_url || entry.rssUrl || null;
+  const country = getCatalogEntryCountry(entry);
+  const subdivision = getCatalogEntrySubdivision(entry);
 
   return {
+    country,
+    subdivision,
+    subdivisionType: getCatalogEntrySubdivisionType(entry),
+    sourceFamily: getCatalogEntrySourceFamily(entry),
+    category: entry.category || entry.sourceCategory || "driver-vehicle",
     state: entry.state,
     abbr: entry.abbr,
     rssUrl,
-    officialUrl: entry.official_url,
-    feedPath: entry.feed_path,
-    region: entry.region || (isCanadianDmvAbbr(entry.abbr) ? "canada" : "us"),
-    mode: entry.mode || (rssUrl ? "rss" : "link-only"),
+    officialUrl: entry.official_url || entry.officialUrl || null,
+    feedPath: entry.feed_path || entry.feedPath || null,
+    region: entry.region || country,
+    mode: getCatalogEntryMode(entry),
   };
 }

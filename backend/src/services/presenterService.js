@@ -1,5 +1,12 @@
 import { env } from "../config/env.js";
-import { getDmvCatalogEntry, isCanadianDmvAbbr } from "./dmvCatalogService.js";
+import {
+  getCatalogEntryCountry,
+  getCatalogEntryMode,
+  getCatalogEntrySourceFamily,
+  getCatalogEntrySubdivision,
+  getCatalogEntrySubdivisionType,
+  getDmvCatalogEntry,
+} from "./dmvCatalogService.js";
 
 function isNotafiliaUrl(value) {
   try {
@@ -27,7 +34,7 @@ function resolveCanonicalLink(canonicalLink, link) {
 
 export function toFeedDto(feed) {
   const dmvCatalogEntry = getDmvCatalogEntry(feed);
-  const dmvRssUrl = dmvCatalogEntry?.rss_url || dmvCatalogEntry?.rssUrl || null;
+  const dmvCountry = dmvCatalogEntry ? getCatalogEntryCountry(dmvCatalogEntry) : null;
 
   return {
     id: String(feed.id || feed._id),
@@ -38,10 +45,12 @@ export function toFeedDto(feed) {
     dmvState: dmvCatalogEntry?.state || null,
     dmvAbbr: dmvCatalogEntry?.abbr || null,
     dmvFeedPath: dmvCatalogEntry?.feed_path || null,
-    dmvRegion: dmvCatalogEntry
-      ? dmvCatalogEntry.region || (isCanadianDmvAbbr(dmvCatalogEntry.abbr) ? "canada" : "us")
-      : null,
-    dmvMode: dmvCatalogEntry ? dmvCatalogEntry.mode || (dmvRssUrl ? "rss" : "link-only") : null,
+    dmvRegion: dmvCatalogEntry ? dmvCatalogEntry.region || dmvCountry : null,
+    dmvCountry,
+    dmvSubdivision: dmvCatalogEntry ? getCatalogEntrySubdivision(dmvCatalogEntry) : null,
+    dmvSubdivisionType: dmvCatalogEntry ? getCatalogEntrySubdivisionType(dmvCatalogEntry) : null,
+    dmvSourceFamily: dmvCatalogEntry ? getCatalogEntrySourceFamily(dmvCatalogEntry) : null,
+    dmvMode: dmvCatalogEntry ? getCatalogEntryMode(dmvCatalogEntry) : null,
     sourceType: feed.sourceType || "rss",
     sourceFallbackImage: feed.sourceFallbackImage || null,
     isActive: feed.isActive !== false,

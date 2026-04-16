@@ -10,6 +10,7 @@ const SUMMARY_METRICS = [
   { label: "Articles today", key: "articlesToday" },
   { label: "Latest articles", key: "totalArticles" },
 ];
+const DEFAULT_SOURCE_GROUPS = ["USA", "Canada", "Google Alerts", "Other"];
 
 const state = {
   feeds: [],
@@ -175,7 +176,7 @@ function isNotafiliaUrl(value) {
 }
 
 function isDmvWrapperFeed(feed) {
-  return Boolean(feed?.dmvState || feed?.dmvRegion);
+  return isDmvSource(feed);
 }
 
 function getArticleImageSrc(article) {
@@ -230,8 +231,68 @@ function isCanadianDmvAbbr(abbr) {
   );
 }
 
+function normalizeCountry(value) {
+  const country = String(value || "").trim().toLowerCase();
+  if (country === "usa" || country === "united states" || country === "united states of america") {
+    return "us";
+  }
+  if (country === "ca") {
+    return "canada";
+  }
+  return country;
+}
+
+function getCountryLabel(country) {
+  const normalized = normalizeCountry(country);
+  if (normalized === "us") {
+    return "USA";
+  }
+  if (normalized === "canada") {
+    return "Canada";
+  }
+  return normalized
+    ? normalized.replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
+    : "";
+}
+
+function getCatalogEntryCountry(entry) {
+  if (!entry) {
+    return "";
+  }
+
+  return (
+    normalizeCountry(entry?.country || entry?.dmvCountry || entry?.region) ||
+    (isCanadianDmvAbbr(entry?.abbr) ? "canada" : "us")
+  );
+}
+
+function getFeedCountry(feed) {
+  return (
+    normalizeCountry(feed?.country || feed?.dmvCountry || feed?.dmvRegion) ||
+    (isCanadianDmvAbbr(feed?.dmvAbbr) ? "canada" : "")
+  );
+}
+
+function getCatalogEntrySubdivisionLabel(entry) {
+  return entry?.subdivision || entry?.province || entry?.state || entry?.abbr || "Untitled Feed";
+}
+
+function getSourceFamily(item) {
+  return String(item?.sourceFamily || item?.dmvSourceFamily || item?.source_family || "")
+    .trim()
+    .toLowerCase();
+}
+
+function isDmvSource(item) {
+  return (
+    getSourceFamily(item) === "dmv" ||
+    Boolean(item?.dmvState || item?.dmvRegion || item?.dmvCountry)
+  );
+}
+
 function getCatalogEntryMode(entry) {
-  return String(entry?.mode || (entry?.rssUrl ? "rss" : "link-only")).toLowerCase();
+  const rssUrl = entry?.rssUrl || entry?.rss_url || "";
+  return String(entry?.mode || (rssUrl ? "rss" : "link-only")).toLowerCase();
 }
 
 function getCatalogEntryRssUrl(entry) {
@@ -239,7 +300,10 @@ function getCatalogEntryRssUrl(entry) {
 }
 
 function getUsDmvFeeds() {
-  return getDmvFeeds().filter((feed) => !isCanadianDmvAbbr(feed.dmvAbbr));
+  return getDmvFeeds().filter((feed) => {
+    const country = getFeedCountry(feed);
+    return country === "us" || (!country && !isCanadianDmvAbbr(feed.dmvAbbr));
+  });
 }
 
 function getCanadaImportedDmvFeeds() {
@@ -248,24 +312,28 @@ function getCanadaImportedDmvFeeds() {
 
 function getUsDmvCatalogEntries() {
   return state.dmvCatalog
-    .filter((entry) => entry.region === "us")
+    .filter((entry) => getCatalogEntryCountry(entry) === "us")
     .slice()
-    .sort((left, right) => String(left.state || "").localeCompare(String(right.state || "")));
+    .sort((left, right) =>
+      String(getCatalogEntrySubdivisionLabel(left)).localeCompare(String(getCatalogEntrySubdivisionLabel(right)))
+    );
 }
 
 function getCanadaDmvCatalogEntries() {
   return state.dmvCatalog
-    .filter((entry) => entry.region === "canada")
+    .filter((entry) => getCatalogEntryCountry(entry) === "canada")
     .slice()
-    .sort((left, right) => String(left.state || "").localeCompare(String(right.state || "")));
+    .sort((left, right) =>
+      String(getCatalogEntrySubdivisionLabel(left)).localeCompare(String(getCatalogEntrySubdivisionLabel(right)))
+    );
 }
 
 function isUsLinkOnlyEntry(entry) {
-  return entry?.region === "us" && getCatalogEntryMode(entry) === "link-only";
+  return getCatalogEntryCountry(entry) === "us" && getCatalogEntryMode(entry) === "link-only";
 }
 
 function isCanadaLinkOnlyEntry(entry) {
-  return entry?.region === "canada" && getCatalogEntryMode(entry) === "link-only";
+  return getCatalogEntryCountry(entry) === "canada" && getCatalogEntryMode(entry) === "link-only";
 }
 
 function isCanadaLinkOnlyFeed(feed) {
@@ -280,11 +348,10 @@ function isCanadaLinkOnlyFeed(feed) {
   }
 
   const name = String(feed?.name || "").toLowerCase();
-  const dmvRegion = String(feed?.dmvRegion || "").toLowerCase();
+  const country = getFeedCountry(feed);
 
   return (
-    dmvRegion === "canada" ||
-    dmvRegion === "ca" ||
+    country === "canada" ||
     isCanadianDmvAbbr(feed?.dmvAbbr) ||
     isCanadianDmvName(name)
   );
@@ -296,21 +363,35 @@ function isCanadaRssBackedFeed(feed) {
   const feedRssUrl = String(feed?.rssUrl || "").trim();
 
   return Boolean(
-    catalogEntry?.region === "canada" &&
+    getCatalogEntryCountry(catalogEntry) === "canada" &&
       getCatalogEntryMode(catalogEntry) === "rss" &&
       catalogRssUrl &&
       feedRssUrl === catalogRssUrl
   );
 }
 
-function toCanadaCatalogSource(entry) {
-  const stateName = String(entry?.state || entry?.abbr || "Canada DMV").trim();
+function isLinkOnlyDmvSource(feed) {
+  return Boolean(
+    isCanadaLinkOnlyFeed(feed) ||
+      feed?.isCatalogOnly ||
+      feed?.sourceType === "link-only" ||
+      feed?.dmvMode === "link-only"
+  );
+}
+
+function isRssBackedDmvFeed(feed) {
+  return Boolean(isCanadaRssBackedFeed(feed) || (isDmvSource(feed) && feed?.dmvMode === "rss"));
+}
+
+function toCatalogSource(entry, { idPrefix = "catalog-dmv", topic = "DMV Directory" } = {}) {
+  const stateName = String(getCatalogEntrySubdivisionLabel(entry) || "DMV Directory").trim();
   const title = stateName.toLowerCase().includes("dmv") ? stateName : `${stateName} DMV`;
+  const country = getCatalogEntryCountry(entry);
 
   return {
-    id: `catalog-canada-${entry?.feedPath || entry?.abbr || stateName}`,
+    id: `${idPrefix}-${country}-${entry?.feedPath || entry?.abbr || stateName}`,
     name: title,
-    topic: "Canada DMV",
+    topic,
     rssUrl: entry?.officialUrl || "",
     officialUrl: entry?.officialUrl || "",
     sourceType: "link-only",
@@ -318,18 +399,57 @@ function toCanadaCatalogSource(entry) {
     isCatalogOnly: true,
     lastFetchedAt: null,
     lastStatus: "idle",
-    dmvState: entry?.state || null,
+    dmvState: getCatalogEntrySubdivisionLabel(entry),
     dmvAbbr: entry?.abbr || null,
     dmvFeedPath: entry?.feedPath || null,
-    dmvRegion: "canada",
-    dmvMode: entry?.mode || "link-only",
+    dmvRegion: country,
+    dmvCountry: country,
+    dmvSubdivision: getCatalogEntrySubdivisionLabel(entry),
+    dmvSubdivisionType: entry?.subdivisionType || (country === "canada" ? "province-territory" : "region"),
+    dmvSourceFamily: entry?.sourceFamily || "dmv",
+    dmvMode: getCatalogEntryMode(entry),
   };
 }
 
+function getCatalogOnlySourcesForCountry(country) {
+  const normalizedCountry = normalizeCountry(country);
+  const countryLabel = getCountryLabel(normalizedCountry) || "DMV";
+
+  return state.dmvCatalog
+    .filter(
+      (entry) =>
+        getCatalogEntryCountry(entry) === normalizedCountry &&
+        getCatalogEntryMode(entry) === "link-only" &&
+        !getFeedForCatalogEntry(entry)
+    )
+    .map((entry) =>
+      toCatalogSource(entry, {
+        idPrefix: `catalog-${normalizedCountry}`,
+        topic: `${countryLabel} DMV`,
+      })
+    );
+}
+
+function getNonUsCatalogOnlySources() {
+  return state.dmvCatalog
+    .filter(
+      (entry) =>
+        getCatalogEntryCountry(entry) !== "us" &&
+        getCatalogEntryMode(entry) === "link-only" &&
+        !getFeedForCatalogEntry(entry)
+    )
+    .map((entry) => {
+      const country = getCatalogEntryCountry(entry);
+      const countryLabel = getCountryLabel(country) || "DMV";
+      return toCatalogSource(entry, {
+        idPrefix: `catalog-${country}`,
+        topic: `${countryLabel} DMV`,
+      });
+    });
+}
+
 function getCanadaCatalogOnlySources() {
-  return getCanadaDmvCatalogEntries()
-    .filter((entry) => isCanadaLinkOnlyEntry(entry) && !getFeedForCatalogEntry(entry))
-    .map(toCanadaCatalogSource);
+  return getCatalogOnlySourcesForCountry("canada");
 }
 
 function isGoogleAlertsFeed(feed) {
@@ -364,11 +484,13 @@ function isCanadianDmvName(name) {
 
 function getFeedGroupName(feed) {
   const name = String(feed?.name || "").toLowerCase();
-  const dmvRegion = String(feed?.dmvRegion || "").toLowerCase();
+  const country = getFeedCountry(feed);
+
+  if (isDmvSource(feed) && country) {
+    return getCountryLabel(country);
+  }
 
   if (
-    dmvRegion === "canada" ||
-    dmvRegion === "ca" ||
     isCanadianDmvAbbr(feed?.dmvAbbr) ||
     isCanadianDmvName(name) ||
     name.includes("canada")
@@ -376,7 +498,7 @@ function getFeedGroupName(feed) {
     return "Canada";
   }
 
-  if (dmvRegion === "us" || name.includes("dmv")) {
+  if (name.includes("dmv")) {
     return "USA";
   }
 
@@ -385,6 +507,21 @@ function getFeedGroupName(feed) {
   }
 
   return "Other";
+}
+
+function getSourceGroupLabels(feeds) {
+  const labels = new Set(DEFAULT_SOURCE_GROUPS.filter((label) => label !== "Other"));
+  feeds.forEach((feed) => {
+    const label = getFeedGroupName(feed);
+    if (label && label !== "Other") {
+      labels.add(label);
+    }
+  });
+  return Array.from(labels).concat("Other");
+}
+
+function getSourceGroupTabLabels() {
+  return ["all"].concat(getSourceGroupLabels(state.feeds.concat(getNonUsCatalogOnlySources())));
 }
 
 function getActiveArticleFeedId() {
@@ -447,7 +584,7 @@ function getSelectedUsDmvCatalogEntry() {
   }
 
   return state.dmvCatalog.find(
-    (entry) => entry.region === "us" && entry.abbr === state.filters.dmvFeedId
+    (entry) => getCatalogEntryCountry(entry) === "us" && entry.abbr === state.filters.dmvFeedId
   ) || null;
 }
 
@@ -464,7 +601,7 @@ function getFeedForCatalogEntry(entry) {
     return null;
   }
 
-  if (entry.region === "canada") {
+  if (getCatalogEntryCountry(entry) !== "us") {
     const entryRssUrl = getCatalogEntryRssUrl(entry);
 
     if (getCatalogEntryMode(entry) !== "rss" || !entryRssUrl) {
@@ -475,10 +612,11 @@ function getFeedForCatalogEntry(entry) {
   }
 
   return state.feeds.find((feed) => {
-    const entryState = String(entry.state || "").toLowerCase();
+    const entryState = String(getCatalogEntrySubdivisionLabel(entry) || "").toLowerCase();
     const feedName = String(feed.name || "").toLowerCase();
+    const entryRssUrl = getCatalogEntryRssUrl(entry);
 
-    if (entry.rssUrl && feed.rssUrl === entry.rssUrl) {
+    if (entryRssUrl && String(feed.rssUrl || "").trim() === entryRssUrl) {
       return true;
     }
 
@@ -506,7 +644,7 @@ function getCanadaCatalogEntryForFeed(feed) {
   return getCanadaDmvCatalogEntries().find((entry) => {
     const entryMode = getCatalogEntryMode(entry);
     const entryUrl = getCatalogEntryRssUrl(entry);
-    const entryState = String(entry.state || "").toLowerCase();
+    const entryState = String(getCatalogEntrySubdivisionLabel(entry)).toLowerCase();
     const entryAbbr = String(entry.abbr || "").toUpperCase();
 
     if (entryMode === "rss") {
@@ -542,7 +680,7 @@ function isOfficialFallbackArticle(article) {
 }
 
 function getFeedStatusPresentation(feed) {
-  if (isCanadaLinkOnlyFeed(feed)) {
+  if (isLinkOnlyDmvSource(feed)) {
     return {
       text: "No RSS",
       tone: "is-idle",
@@ -563,7 +701,7 @@ function getFeedStatusPresentation(feed) {
 }
 
 function isFeedError(feed) {
-  return feed?.lastStatus === "error" && !isCanadaLinkOnlyFeed(feed);
+  return feed?.lastStatus === "error" && !isLinkOnlyDmvSource(feed);
 }
 
 function syncFeedErrorNotifications() {
@@ -654,7 +792,7 @@ function getDashboardAnalytics() {
   const activeFeeds = state.feeds.filter((feed) => feed.isActive !== false).length;
   const inactiveFeeds = state.feeds.filter((feed) => feed.isActive === false || feed.lastStatus === "error").length;
   const rssFeedCount = state.feeds.filter((feed) => feed.sourceType !== "link-only").length;
-  const linkOnlyCount = getCanadaCatalogOnlySources().length;
+  const linkOnlyCount = getNonUsCatalogOnlySources().length;
   const feedCount = state.feeds.length || 1;
 
   return {
@@ -668,7 +806,7 @@ function getDashboardAnalytics() {
     linkOnlyCount,
     usaFeeds: getUsDmvCatalogEntries().length,
     canadaRssFeeds: getCanadaImportedDmvFeeds().length,
-    canadaLinkOnly: linkOnlyCount,
+    canadaLinkOnly: getCanadaCatalogOnlySources().length,
     googleAlertsFeeds: state.feeds.filter(isGoogleAlertsFeed).length,
   };
 }
@@ -937,7 +1075,7 @@ function renderFeedOptions() {
     elements.dmvFeedFilter.innerHTML = [`<option value="">All DMV states</option>`]
       .concat(
         usDmvCatalogEntries.map(
-          (entry) => `<option value="${entry.abbr}">${entry.state || "Untitled Feed"}</option>`
+          (entry) => `<option value="${entry.abbr}">${getCatalogEntrySubdivisionLabel(entry)}</option>`
         )
       )
       .join("");
@@ -948,7 +1086,7 @@ function renderFeedOptions() {
     elements.canadaDmvFilter.innerHTML = [`<option value="">All Canada DMV</option>`]
       .concat(
         canadaCatalogEntries.map(
-          (entry) => `<option value="${entry.feedPath}">${entry.state || "Untitled Feed"}</option>`
+          (entry) => `<option value="${entry.feedPath}">${getCatalogEntrySubdivisionLabel(entry)}</option>`
         )
       )
       .join("");
@@ -1005,6 +1143,7 @@ function getVisibleFeeds() {
   const sourceListMode = getSourceListMode();
   let feeds = state.feeds.slice();
   const canadaCatalogOnlySources = getCanadaCatalogOnlySources();
+  const nonUsCatalogOnlySources = getNonUsCatalogOnlySources();
   const feedPanelSearch = String(elements.feedPanelSearch?.value || "").trim().toLowerCase();
   const visibilityFilter = elements.feedVisibilityFilter?.value || "all";
   const groupFilter = state.filters.sourceGroup || "all";
@@ -1018,8 +1157,8 @@ function getVisibleFeeds() {
     const selectedCanadaEntry = getSelectedCanadaCatalogEntry();
     feeds = selectedCanadaFeed
       ? feeds.filter((feed) => feed.id === selectedCanadaFeed.id)
-      : selectedCanadaEntry && selectedCanadaEntry.mode === "link-only"
-        ? [toCanadaCatalogSource(selectedCanadaEntry)]
+      : selectedCanadaEntry && getCatalogEntryMode(selectedCanadaEntry) === "link-only"
+        ? [toCatalogSource(selectedCanadaEntry, { idPrefix: "catalog-canada", topic: "Canada DMV" })]
         : [];
   } else if (sourceListMode === "dmv-feed") {
     const selectedUsFeed = getSelectedDmvFeed();
@@ -1027,18 +1166,18 @@ function getVisibleFeeds() {
   } else if (sourceListMode === "canada-all") {
     feeds = getCanadaImportedDmvFeeds().concat(canadaCatalogOnlySources);
   } else {
-    feeds = feeds.concat(canadaCatalogOnlySources);
+    feeds = feeds.concat(nonUsCatalogOnlySources);
   }
 
   if (visibilityFilter === "active") {
     feeds = feeds.filter(
-      (feed) => feed.isActive !== false && (isCanadaLinkOnlyFeed(feed) || feed.lastStatus !== "error")
+      (feed) => feed.isActive !== false && (isLinkOnlyDmvSource(feed) || feed.lastStatus !== "error")
     );
   }
 
   if (visibilityFilter === "inactive") {
     feeds = feeds.filter(
-      (feed) => feed.isActive === false || (!isCanadaLinkOnlyFeed(feed) && feed.lastStatus === "error")
+      (feed) => feed.isActive === false || (!isLinkOnlyDmvSource(feed) && feed.lastStatus === "error")
     );
   }
 
@@ -1139,11 +1278,23 @@ function syncSourceGroupTabs() {
     return;
   }
 
+  const labels = getSourceGroupTabLabels();
+  if (!labels.includes(state.filters.sourceGroup || "all")) {
+    state.filters.sourceGroup = "all";
+  }
+
   const activeGroup = state.filters.sourceGroup || "all";
-  elements.feedGroupTabs.querySelectorAll("[data-source-group]").forEach((button) => {
-    const isActive = button.dataset.sourceGroup === activeGroup;
-    button.classList.toggle("is-active", isActive);
+  elements.feedGroupTabs.innerHTML = "";
+  labels.forEach((label) => {
+    const button = document.createElement("button");
+    const isActive = label === activeGroup;
+    button.className = "feed-group-tab";
+    button.type = "button";
+    button.dataset.sourceGroup = label;
     button.setAttribute("aria-pressed", String(isActive));
+    button.classList.toggle("is-active", isActive);
+    button.textContent = label === "all" ? "All" : label;
+    elements.feedGroupTabs.appendChild(button);
   });
 }
 
@@ -1236,23 +1387,25 @@ function renderFeedItem(feed) {
   const deleteButton = node.querySelector(".feed-delete-button");
   const actions = node.querySelector(".feed-item-actions");
   const isCatalogOnly = Boolean(feed.isCatalogOnly);
-  const isCanadaLinkOnly = isCanadaLinkOnlyFeed(feed);
-  const isCanadaRssBacked = isCanadaRssBackedFeed(feed);
+  const isLinkOnly = isLinkOnlyDmvSource(feed);
+  const isRssBacked = isRssBackedDmvFeed(feed);
   const lastFetched = feed.lastFetchedAt
     ? formatDate(feed.lastFetchedAt)
     : isCatalogOnly
       ? "Official link only"
       : "Waiting for first sync";
   const statusPresentation = getFeedStatusPresentation(feed);
-  const sourceKind = isCanadaLinkOnly
+  const sourceKind = isLinkOnly
     ? "Link-only source"
-    : isCanadaRssBacked
+    : isRssBacked
       ? "RSS-backed source"
       : "";
 
   item.classList.toggle("is-catalog-only", isCatalogOnly);
-  item.classList.toggle("is-canada-link-only", isCanadaLinkOnly);
-  item.classList.toggle("is-canada-rss", isCanadaRssBacked);
+  item.classList.toggle("is-canada-link-only", isCanadaLinkOnlyFeed(feed));
+  item.classList.toggle("is-canada-rss", isCanadaRssBackedFeed(feed));
+  item.classList.toggle("is-link-only-source", isLinkOnly);
+  item.classList.toggle("is-rss-backed-source", isRssBacked);
   title.textContent = feed.name || "Untitled feed";
   meta.textContent = [feed.topic || "General", sourceKind, lastFetched, feed.rssUrl || ""]
     .filter(Boolean)
@@ -1283,10 +1436,10 @@ function renderFeedItem(feed) {
 }
 
 function renderFeedList() {
+  syncSourceGroupTabs();
   const visibleFeeds = getVisibleFeeds();
   const activeGroup = state.filters.sourceGroup || "all";
 
-  syncSourceGroupTabs();
   elements.feedCount.textContent = String(visibleFeeds.length);
   elements.feedList.innerHTML = "";
 
@@ -1301,7 +1454,7 @@ function renderFeedList() {
   const fragment = document.createDocumentFragment();
   const groups =
     activeGroup === "all"
-      ? ["USA", "Canada", "Google Alerts", "Other"].map((label) => ({
+      ? getSourceGroupLabels(visibleFeeds).map((label) => ({
           label,
           feeds: visibleFeeds.filter((feed) => getFeedGroupName(feed) === label),
         }))
@@ -1605,18 +1758,24 @@ function renderArticles() {
     canadaEntries.forEach((entry) => {
       const importedFeed = getFeedForCatalogEntry(entry);
       const feedArticles = importedFeed ? articlesByFeedId.get(importedFeed.id) || [] : [];
+      const entryLabel = getCatalogEntrySubdivisionLabel(entry);
+      const entryCountry = getCatalogEntryCountry(entry);
       const feedLike = importedFeed || {
-        name: entry.state,
+        name: entryLabel,
         topic: "General",
         officialUrl: entry.officialUrl,
         rssUrl: "",
-        dmvMode: entry.mode,
-        dmvRegion: entry.region,
+        dmvMode: getCatalogEntryMode(entry),
+        dmvRegion: entryCountry,
+        dmvCountry: entryCountry,
+        dmvSubdivision: entryLabel,
+        dmvSubdivisionType: entry.subdivisionType || "province-territory",
+        dmvSourceFamily: entry.sourceFamily || "dmv",
       };
       const groupCards = feedArticles.length
         ? feedArticles.map((article) => renderArticleCard(article))
         : [renderDmvPlaceholderCard(feedLike)];
-      fragment.appendChild(renderFeedGroup(entry.state || "Untitled feed", groupCards));
+      fragment.appendChild(renderFeedGroup(entryLabel, groupCards));
     });
     elements.articlesGrid.appendChild(fragment);
     return;

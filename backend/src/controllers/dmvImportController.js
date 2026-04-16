@@ -1,6 +1,10 @@
 import { findFeedByRssUrl, createFeed as createFeedRecord } from "../database/feedRepository.js";
 import { broadcast } from "../services/realtimeService.js";
-import { loadDmvCatalog } from "../services/dmvCatalogService.js";
+import {
+  getCatalogEntryMode,
+  getCatalogEntrySubdivision,
+  loadDmvCatalog,
+} from "../services/dmvCatalogService.js";
 import { toFeedDto } from "../services/presenterService.js";
 
 function extractFeedUrl(item) {
@@ -9,7 +13,8 @@ function extractFeedUrl(item) {
 
 function extractName(item) {
   if (item.name) return item.name;
-  if (item.state) return `${item.state} DMV`;
+  const subdivision = getCatalogEntrySubdivision(item);
+  if (subdivision) return `${subdivision} DMV`;
   return "DMV Feed";
 }
 
@@ -24,7 +29,7 @@ export async function importDmvFeeds(_req, res) {
 
     for (const item of manifest) {
       try {
-        if (item.mode !== "rss") {
+        if (getCatalogEntryMode(item) !== "rss") {
           skipped++;
           continue;
         }
