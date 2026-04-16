@@ -70,7 +70,7 @@ img {
 .page-shell {
   max-width: 1500px;
   margin: 0 auto;
-  padding: 32px 24px 40px;
+  padding: 34px 24px 44px;
 }
 
 .app-header,
@@ -88,7 +88,7 @@ img {
 .dashboard-layout {
   display: grid;
   grid-template-columns: 360px minmax(0, 1fr);
-  gap: 22px;
+  gap: 24px;
   align-items: start;
 }
 
@@ -99,7 +99,7 @@ img {
 
 .sidebar {
   display: grid;
-  gap: 20px;
+  gap: 18px;
 }
 
 .eyebrow {
@@ -146,7 +146,7 @@ h3 {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
-  margin: 20px 0;
+  margin: 22px 0 24px;
 }
 
 .panel,
@@ -166,7 +166,7 @@ h3 {
 }
 
 .panel {
-  padding: 20px;
+  padding: 22px;
 }
 
 .add-source-content {
@@ -189,8 +189,15 @@ h3 {
   justify-content: flex-end;
 }
 
+.panel-head,
+.content-head {
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
 .summary-card {
-  padding: 18px;
+  padding: 20px;
 }
 
 .summary-card.is-clickable {
@@ -223,12 +230,12 @@ h3 {
 .feed-form,
 .feed-list {
   display: grid;
-  gap: 12px;
+  gap: 13px;
 }
 
 .feed-panel-content {
   display: grid;
-  gap: 12px;
+  gap: 13px;
 }
 
 .feed-group-tabs {
@@ -341,13 +348,22 @@ h3 {
 
 .dmv-feed-group {
   display: grid;
-  gap: 12px;
+  gap: 14px;
   min-height: 220px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.42);
+}
+
+:root[data-theme="dark"] .dmv-feed-group {
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .dmv-feed-group-title {
   margin: 0;
   color: var(--text);
+  font-size: 1.05rem;
 }
 
 .dmv-feed-group-grid {
@@ -366,7 +382,7 @@ h3 {
 .field input,
 .field select {
   width: 100%;
-  padding: 10px 12px;
+  padding: 11px 12px;
   border: 1px solid var(--line);
   background: var(--bg-elevated);
   color: var(--text);
@@ -474,6 +490,7 @@ h3 {
   border-radius: 999px;
   font-size: 0.8rem;
   font-weight: 700;
+  line-height: 1;
 }
 
 .results-pill,
@@ -487,10 +504,16 @@ h3 {
   justify-content: space-between;
   gap: 12px;
   min-width: 0;
-  padding: 14px;
+  padding: 15px;
   border-radius: var(--radius-md);
   background: var(--bg-soft);
   border: 1px solid var(--line);
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.feed-item:hover {
+  border-color: rgba(22, 96, 255, 0.22);
+  background: var(--bg-elevated);
 }
 
 .feed-item.is-catalog-only {
@@ -519,8 +542,8 @@ h3 {
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.12em;
-  margin: 14px 2px 0;
-  padding-top: 12px;
+  margin: 18px 2px 2px;
+  padding-top: 14px;
   text-transform: uppercase;
 }
 
@@ -530,8 +553,9 @@ h3 {
 }
 
 .feed-item-title {
-  margin-bottom: 4px;
+  margin-bottom: 5px;
   overflow-wrap: anywhere;
+  line-height: 1.35;
 }
 
 .feed-item-meta {
@@ -539,6 +563,7 @@ h3 {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.45;
 }
 
 .feed-item-side {
@@ -565,7 +590,7 @@ h3 {
 }
 
 .feed-status {
-  padding: 8px 10px;
+  padding: 8px 11px;
   min-width: 74px;
 }
 
@@ -587,7 +612,7 @@ h3 {
 .articles-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 18px;
+  gap: 20px;
 }
 
 .articles-grid.is-grouped-feed-view {
@@ -601,10 +626,11 @@ h3 {
 .article-card {
   width: 100%;
   overflow: hidden;
-  transition: transform 140ms ease, box-shadow 140ms ease;
+  transition: border-color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
 }
 
 .article-card:hover {
+  border-color: rgba(22, 96, 255, 0.22);
   transform: translateY(-3px);
   box-shadow: 0 24px 56px rgba(15, 23, 42, 0.12);
 }
@@ -677,26 +703,28 @@ h3 {
 
 .article-body {
   display: grid;
-  gap: 12px;
-  padding: 18px;
+  gap: 13px;
+  padding: 20px;
 }
 
 .article-title {
   margin-bottom: 0;
-  line-height: 1.45;
+  line-height: 1.42;
 }
 
 .article-meta {
   font-size: 0.85rem;
+  line-height: 1.45;
 }
 
 .empty-state,
 .error-state {
-  padding: 28px;
+  padding: 30px;
   border-radius: var(--radius-lg);
   border: 1px dashed var(--line);
   background: var(--bg-elevated);
   color: var(--muted);
+  line-height: 1.5;
   text-align: center;
 }
 
