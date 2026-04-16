@@ -1238,8 +1238,8 @@ function syncFeedPanelVisibility() {
     return;
   }
 
-  console.log("Panel collapsed:", state.feedPanelCollapsed);
-  const expanded = !state.feedPanelCollapsed;
+  const collapsed = Boolean(state.feedPanelCollapsed);
+  const expanded = !collapsed;
   if (!expanded) {
     state.addSourceExpanded = false;
   }
@@ -1249,10 +1249,10 @@ function syncFeedPanelVisibility() {
 
   elements.feedPanelToggle.setAttribute("aria-expanded", String(expanded));
   elements.feedPanelToggle.textContent = expanded ? "Hide sources" : "Show sources";
-  elements.feedPanelContent.hidden = !expanded;
-  elements.feedPanelContent.classList.toggle("is-collapsed", !expanded);
-  trackedSourcesPanel?.classList.toggle("is-collapsed", !expanded);
-  trackedSourcesPanel?.setAttribute("data-collapsed", String(!expanded));
+  elements.feedPanelContent.hidden = collapsed;
+  elements.feedPanelContent.classList.toggle("is-collapsed", collapsed);
+  trackedSourcesPanel?.classList.toggle("is-collapsed", collapsed);
+  trackedSourcesPanel?.setAttribute("data-collapsed", String(collapsed));
 
   if (elements.addSourceContent) {
     elements.addSourceContent.hidden = !addSourceExpanded;
@@ -1262,6 +1262,11 @@ function syncFeedPanelVisibility() {
     elements.addSourceToggle.setAttribute("aria-expanded", String(addSourceExpanded));
     elements.addSourceToggle.textContent = addSourceExpanded ? "Hide add" : "+ Add";
   }
+
+  console.log("Panel collapsed:", collapsed, {
+    feedPanelContentHidden: elements.feedPanelContent.hidden,
+    addSourceContentHidden: elements.addSourceContent?.hidden,
+  });
 }
 
 function syncAddSourcePanel(expanded) {
@@ -1869,6 +1874,7 @@ async function loadSnapshot() {
   state.dmvCatalog = Array.isArray(dmvCatalog) ? dmvCatalog : [];
   renderDashboard();
   syncFeedErrorNotifications();
+  syncFeedPanelVisibility();
 }
 
 function startPolling() {
