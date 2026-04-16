@@ -241,6 +241,11 @@ h3 {
   display: none !important;
 }
 
+.panel[data-collapsed="true"] .feed-panel-content,
+.panel[data-collapsed="true"] .add-source-content {
+  display: none !important;
+}
+
 .feed-panel-content.is-collapsed {
   display: none;
 }

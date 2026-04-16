@@ -94,7 +94,7 @@
             </div>
           </section>
 
-          <section class="panel">
+          <section id="feed-panel" class="panel is-collapsed" data-collapsed="true">
             <div class="panel-head">
               <div>
                 <p class="eyebrow">Sources</p>
@@ -103,7 +103,7 @@
               <div class="panel-head-actions">
                 <span id="feed-count" class="pill">0</span>
                 <button id="add-source-toggle" class="ghost-button add-source-toggle" type="button" aria-expanded="false">+ Add</button>
-                <button id="feed-panel-toggle" class="ghost-button" type="button" aria-expanded="true">Hide sources</button>
+                <button id="feed-panel-toggle" class="ghost-button" type="button" aria-expanded="false">Show sources</button>
               </div>
             </div>
             <div id="add-source-content" class="add-source-content" hidden>
@@ -135,7 +135,7 @@
 
               <p id="feed-form-status" class="status-line" role="status">Monitor up to 50 RSS feeds and websites.</p>
             </div>
-            <div id="feed-panel-content" class="feed-panel-content">
+            <div id="feed-panel-content" class="feed-panel-content" hidden>
               <label class="field">
                 <span>Search sources</span>
                 <input id="feed-panel-search" type="search" placeholder="Search name, topic, URL" />
@@ -218,6 +218,6 @@
       </article>
     </template>
 
-    <script type="module" src="/app.js?v=20260326-5"></script>
+    <script type="module" src="/app.js?v=20260416-1"></script>
   </body>
 </html>

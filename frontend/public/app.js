@@ -66,6 +66,7 @@ const elements = {
   feedPanelSearch: document.getElementById("feed-panel-search"),
   feedVisibilityFilter: document.getElementById("feed-visibility-filter"),
   feedGroupTabs: document.getElementById("feed-group-tabs"),
+  feedPanel: document.getElementById("feed-panel"),
   feedPanelToggle: document.getElementById("feed-panel-toggle"),
   feedPanelContent: document.getElementById("feed-panel-content"),
   addSourceToggle: document.getElementById("add-source-toggle"),
@@ -744,7 +745,7 @@ function syncFeedPanelVisibility() {
   }
 
   const addSourceExpanded = expanded && state.addSourceExpanded;
-  const trackedSourcesPanel = elements.feedPanelContent.closest(".panel");
+  const trackedSourcesPanel = elements.feedPanel || elements.feedPanelContent.closest(".panel");
 
   elements.feedPanelToggle.setAttribute("aria-expanded", String(expanded));
   elements.feedPanelToggle.textContent = expanded ? "Hide sources" : "Show sources";
