@@ -28,7 +28,8 @@ export function loadDmvCatalog() {
 
   try {
     const raw = readFileSync(DMV_CATALOG_PATH, "utf8");
-    const parsed = JSON.parse(raw);
+    const cleanedRaw = raw.startsWith("\uFEFF") ? raw.slice(1) : raw;
+    const parsed = JSON.parse(cleanedRaw);
     const isArray = Array.isArray(parsed);
 
     if (!isArray) {
