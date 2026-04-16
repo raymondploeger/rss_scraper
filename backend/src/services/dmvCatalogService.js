@@ -28,8 +28,9 @@ export function loadDmvCatalog() {
     const raw = readFileSync(DMV_CATALOG_PATH, "utf8");
     const parsed = JSON.parse(raw);
     cachedDmvCatalog = Array.isArray(parsed) ? parsed : [];
-  } catch {
-    cachedDmvCatalog = [];
+  } catch (error) {
+    console.error(`Failed to load DMV catalog from ${DMV_CATALOG_PATH}:`, error?.stack || error);
+    return [];
   }
 
   return cachedDmvCatalog;
