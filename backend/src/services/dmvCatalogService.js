@@ -24,10 +24,20 @@ export function loadDmvCatalog() {
     return cachedDmvCatalog;
   }
 
+  console.log(`Loading DMV catalog from ${DMV_CATALOG_PATH}`);
+
   try {
     const raw = readFileSync(DMV_CATALOG_PATH, "utf8");
     const parsed = JSON.parse(raw);
-    cachedDmvCatalog = Array.isArray(parsed) ? parsed : [];
+    const isArray = Array.isArray(parsed);
+
+    if (!isArray) {
+      console.error(`Invalid DMV catalog at ${DMV_CATALOG_PATH}: parsed JSON is not an array`);
+      return [];
+    }
+
+    cachedDmvCatalog = parsed;
+    console.log(`Loaded DMV catalog from ${DMV_CATALOG_PATH}: isArray=${isArray}, length=${cachedDmvCatalog.length}`);
   } catch (error) {
     console.error(`Failed to load DMV catalog from ${DMV_CATALOG_PATH}:`, error?.stack || error);
     return [];

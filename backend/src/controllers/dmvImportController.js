@@ -16,6 +16,7 @@ function extractName(item) {
 export async function importDmvFeeds(_req, res) {
   try {
     const manifest = await loadDmvCatalog();
+    console.log(`DMV import catalog length: ${manifest.length}`);
 
     let imported = 0;
     let skipped = 0;
