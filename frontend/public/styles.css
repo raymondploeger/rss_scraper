@@ -223,18 +223,18 @@ h3 {
 .feed-form,
 .feed-list {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
 .feed-panel-content {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
 .feed-group-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 7px;
 }
 
 .feed-panel-content[hidden] {
@@ -263,7 +263,7 @@ h3 {
 
 .field {
   display: grid;
-  gap: 8px;
+  gap: 7px;
 }
 
 .field-full {
@@ -273,6 +273,39 @@ h3 {
 .field span {
   font-size: 0.82rem;
   color: var(--muted);
+}
+
+.active-filter-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.active-filter-list[hidden] {
+  display: none !important;
+}
+
+.active-filter-chip {
+  border: 1px solid rgba(22, 96, 255, 0.18);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 7px 10px;
+  transition: border-color 140ms ease, transform 140ms ease;
+}
+
+.active-filter-chip:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.active-filter-chip:focus-visible {
+  outline: 2px solid rgba(22, 96, 255, 0.24);
+  outline-offset: 2px;
 }
 
 .dmv-official-link {
@@ -316,10 +349,22 @@ h3 {
 .field input,
 .field select {
   width: 100%;
-  padding: 12px 14px;
+  padding: 10px 12px;
   border: 1px solid var(--line);
   background: var(--bg-elevated);
   color: var(--text);
+}
+
+.field.is-active-filter span {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.field.is-active-filter input,
+.field.is-active-filter select {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px rgba(22, 96, 255, 0.08);
 }
 
 .field input:focus-visible,
@@ -345,7 +390,7 @@ h3 {
   cursor: pointer;
   font-size: 0.78rem;
   font-weight: 700;
-  padding: 8px 11px;
+  padding: 7px 10px;
   transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
 }
 
@@ -360,6 +405,12 @@ h3 {
   border: 1px solid var(--line);
   background: var(--bg-elevated);
   color: var(--text);
+}
+
+.ghost-button.is-active-filter {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .primary-button {

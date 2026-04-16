@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Monitoring Dashboard</title>
-    <link rel="stylesheet" href="/styles.css?v=20260326-5" />
+    <link rel="stylesheet" href="/styles.css?v=20260416-2" />
   </head>
   <body>
     <div class="page-shell">
@@ -37,33 +37,33 @@
             </div>
 
             <div class="filter-grid">
-              <label class="field field-full">
+              <label class="field field-full" data-filter-field="search">
                 <span>Search</span>
                 <input id="search-filter" type="search" placeholder="Search title, source, topic" />
               </label>
 
-              <label class="field">
+              <label class="field" data-filter-field="topic">
                 <span>Topic</span>
                 <select id="topic-filter">
                   <option value="">All topics</option>
                 </select>
               </label>
 
-              <label class="field">
+              <label class="field" data-filter-field="feed">
                 <span>Feed</span>
                 <select id="feed-filter">
                   <option value="">All feeds</option>
                 </select>
               </label>
 
-              <label class="field">
+              <label class="field" data-filter-field="usa">
                 <span>USA Feeds</span>
                 <select id="dmv-feed-filter">
                   <option value="">All DMV states</option>
                 </select>
               </label>
 
-              <label class="field">
+              <label class="field" data-filter-field="canada">
                 <span>Canada DMV</span>
                 <select id="canada-dmv-filter">
                   <option value="">All Canada DMV</option>
@@ -87,10 +87,12 @@
                 Showing all DMV feeds
               </p>
 
-              <label class="field field-full">
+              <label class="field field-full" data-filter-field="date">
                 <span>Date</span>
                 <input id="date-filter" type="date" />
               </label>
+
+              <div id="active-filter-list" class="active-filter-list field-full" aria-live="polite" hidden></div>
             </div>
           </section>
 
@@ -218,6 +220,6 @@
       </article>
     </template>
 
-    <script type="module" src="/app.js?v=20260416-1"></script>
+    <script type="module" src="/app.js?v=20260416-2"></script>
   </body>
 </html>
