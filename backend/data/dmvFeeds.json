@@ -570,8 +570,8 @@
         "state":  "Yukon",
         "abbr":  "YT",
         "region":  "canada",
-        "mode":  "link-only",
-        "rss_url":  null,
+        "mode":  "rss",
+        "rss_url":  "https://yukon.ca/news-feed",
         "official_url":  "https://yukon.ca/en/driving-and-transportation",
         "feed_path":  "/feeds/yukon.xml"
     }
