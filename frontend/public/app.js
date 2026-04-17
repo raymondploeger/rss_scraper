@@ -1253,8 +1253,8 @@ function generateAlerts(previous, current) {
   console.log("[alerts][snapshot-compare]", { previous, current });
   const candidates = [];
   const feedDiffs = [];
-  const queueAlert = (priority, alert) => {
-    candidates.push({ priority, alert });
+  const queueAlert = (priority, alert, score = 0) => {
+    candidates.push({ priority, score, alert });
   };
 
   if (!previous) {
@@ -1297,6 +1297,8 @@ function generateAlerts(previous, current) {
     const currentToday = Number(currentStats.today) || 0;
     const todayDiff = previousToday === null ? 0 : currentToday - previousToday;
     const enteredError = previousFeed.lastStatus !== "error" && feed.lastStatus === "error";
+    const alertScore = currentToday * 3 + currentTotal * 0.1;
+    const passesFeedThreshold = canCompareFeedStats && (totalDiff >= 2 || todayDiff >= 1);
 
     if ((canCompareFeedStats && (totalDiff !== 0 || todayDiff !== 0)) || enteredError) {
       feedDiffs.push({
@@ -1308,6 +1310,7 @@ function generateAlerts(previous, current) {
         previousToday,
         currentToday,
         todayDiff,
+        score: alertScore,
         previousStatus: previousFeed.lastStatus,
         currentStatus: feed.lastStatus,
       });
@@ -1318,35 +1321,35 @@ function generateAlerts(previous, current) {
         title: `${feed.name} entered error state`,
         detail: "The feed reported an error in the latest snapshot.",
         type: "error",
-      });
+      }, alertScore);
     }
 
-    if (canCompareFeedStats && totalDiff > 0) {
+    if (passesFeedThreshold && totalDiff > 0) {
       queueAlert(2, {
         title: `${feed.name}: +${totalDiff} new articles`,
         detail: `${currentTotal} total article${currentTotal === 1 ? "" : "s"} for this feed.`,
         type: "success",
-      });
+      }, alertScore);
     }
 
-    if (canCompareFeedStats && previousToday === 0 && currentToday > 0) {
+    if (passesFeedThreshold && previousToday === 0 && currentToday > 0) {
       queueAlert(2, {
         title: `${feed.name} is active again`,
         detail: `+${todayDiff} new article${todayDiff === 1 ? "" : "s"} today.`,
         type: "success",
-      });
-    } else if (canCompareFeedStats && todayDiff > 0) {
+      }, alertScore);
+    } else if (passesFeedThreshold && todayDiff > 0) {
       queueAlert(2, {
         title: `${feed.name}: +${todayDiff} new articles today`,
         detail: `${currentToday} article${currentToday === 1 ? "" : "s"} today.`,
         type: "success",
-      });
-    } else if (canCompareFeedStats && previousToday > 0 && currentToday === 0) {
+      }, alertScore);
+    } else if (passesFeedThreshold && previousToday > 0 && currentToday === 0) {
       queueAlert(2, {
         title: `${feed.name} stopped producing`,
         detail: "No articles today in the latest snapshot.",
         type: "warning",
-      });
+      }, alertScore);
     }
   });
 
@@ -1405,11 +1408,13 @@ function generateAlerts(previous, current) {
   }
 
   const selectedAlerts = [];
-  candidates.sort((left, right) => left.priority - right.priority).forEach((candidate) => {
-    if (selectedAlerts.length < 5 && shouldShowDashboardAlert(candidate.alert)) {
-      selectedAlerts.push(candidate);
-    }
-  });
+  candidates
+    .sort((left, right) => left.priority - right.priority || right.score - left.score)
+    .forEach((candidate) => {
+      if (selectedAlerts.length < 5 && shouldShowDashboardAlert(candidate.alert)) {
+        selectedAlerts.push(candidate);
+      }
+    });
 
   selectedAlerts
     .slice()
