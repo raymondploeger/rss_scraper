@@ -94,6 +94,12 @@ function pickImageFromSrcset(value) {
     .find((candidate) => isMeaningfulImageCandidate(candidate)) || "";
 }
 
+function extractImageFromHtml(html) {
+  const markup = String(html || "");
+  const match = markup.match(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/i);
+  return match?.[1] || "";
+}
+
 function extractFirstMeaningfulHtmlImage(html, link) {
   const markup = normalizeText(html, "");
   if (!markup) {
@@ -131,7 +137,7 @@ function extractFirstMeaningfulHtmlImage(html, link) {
     }
   }
 
-  return "";
+  return resolveFeedImageCandidate(link, extractImageFromHtml(markup));
 }
 
 function isImageEnclosure(enclosure) {
