@@ -1,7 +1,7 @@
 const PLACEHOLDER_IMAGE = "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image";
 const THEME_STORAGE_KEY = "rss-monitor-theme";
 const FEED_PANEL_COLLAPSED_STORAGE_KEY = "feedPanelCollapsed";
-const ALERT_SNAPSHOT_STORAGE_KEY = "rss-monitor-alert-snapshot";
+const ALERT_SNAPSHOT_STORAGE_KEY = "prevSnapshot";
 const POLLING_INTERVAL_MS = 30000;
 const ARTICLE_PAGE_SIZE = 400;
 const NOTIFICATION_TIMEOUT_MS = 7000;
@@ -1002,6 +1002,14 @@ function createSnapshotStats(feeds, articles) {
   const realArticles = articles.filter((article) => !isOfficialFallbackArticle(article));
   const articleIds = new Set(realArticles.map((article) => article.id).filter(Boolean));
   const feedActivity = getFeedActivityStats(feeds, realArticles);
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const articlesTodayByFeed = realArticles.reduce((counts, article) => {
+    if (article.feedId && toDate(article.pubDate) >= todayStart) {
+      counts.set(article.feedId, (counts.get(article.feedId) || 0) + 1);
+    }
+    return counts;
+  }, new Map());
   const feedStates = new Map(
     feeds.map((feed) => [
       feed.id,
@@ -1011,6 +1019,7 @@ function createSnapshotStats(feeds, articles) {
         isActive: feed.isActive !== false,
         lastStatus: feed.lastStatus || "idle",
         isError: isFeedError(feed),
+        articlesToday: articlesTodayByFeed.get(feed.id) || 0,
       },
     ])
   );
@@ -1018,6 +1027,7 @@ function createSnapshotStats(feeds, articles) {
 
   return {
     articleIds,
+    totalArticles: realArticles.length,
     feedActivity,
     feedStates,
     feedErrors: new Set(feeds.filter(isFeedError).map((feed) => feed.id)),
@@ -1028,6 +1038,7 @@ function createSnapshotStats(feeds, articles) {
 function serializeSnapshotStats(snapshot) {
   return {
     articleIds: Array.from(snapshot.articleIds),
+    totalArticles: snapshot.totalArticles,
     feedErrors: Array.from(snapshot.feedErrors),
     feedStates: Array.from(snapshot.feedStates?.values?.() || []),
     feedActivity: Array.from(snapshot.feedActivity.entries()).map(([feedId, stats]) => ({
@@ -1077,6 +1088,7 @@ function hydrateSnapshotStats(snapshot) {
     isActive: item.isActive !== false,
     lastStatus: item.lastStatus || "idle",
     isError: item.lastStatus === "error",
+    articlesToday: 0,
   }));
   const feedStates = new Map(
     (Array.isArray(snapshot.feedStates) ? snapshot.feedStates : fallbackFeedStates).map((item) => [
@@ -1087,12 +1099,14 @@ function hydrateSnapshotStats(snapshot) {
         isActive: item.isActive !== false,
         lastStatus: item.lastStatus || "idle",
         isError: Boolean(item.isError),
+        articlesToday: Number(item.articlesToday) || 0,
       },
     ])
   );
 
   return {
     articleIds: new Set(snapshot.articleIds),
+    totalArticles: Number(snapshot.totalArticles) || snapshot.articleIds.length,
     feedErrors: new Set(Array.isArray(snapshot.feedErrors) ? snapshot.feedErrors : []),
     feedActivity,
     feedStates,
@@ -1128,32 +1142,24 @@ function saveAlertSnapshot(snapshot) {
   }
 }
 
-function syncDashboardAlerts(feeds, articles) {
-  const current = createSnapshotStats(feeds, articles);
-  const previous = runtime.previousSnapshotStats || loadStoredAlertSnapshot();
+function generateAlerts(previous, current) {
+  console.log("[alerts][snapshot-compare]", { previous, current });
 
   if (!previous) {
-    runtime.previousSnapshotStats = current;
-    saveAlertSnapshot(current);
+    addDashboardAlert({
+      title: "Monitoring started",
+      detail: "Alerts will compare future snapshots against this baseline.",
+      type: "info",
+    });
     return;
   }
 
-  const newArticles = Array.from(current.articleIds).filter((articleId) => !previous.articleIds.has(articleId));
-  if (newArticles.length) {
+  const newArticleCount = current.totalArticles - previous.totalArticles;
+  if (newArticleCount > 0) {
     addDashboardAlert({
-      title: `${newArticles.length} new article${newArticles.length === 1 ? "" : "s"} detected`,
+      title: `+${newArticleCount} new article${newArticleCount === 1 ? "" : "s"} detected`,
       detail: "New content appeared since the previous snapshot.",
       type: "info",
-    });
-  }
-
-  const newErrorFeeds = Array.from(current.feedErrors).filter((feedId) => !previous.feedErrors.has(feedId));
-  if (newErrorFeeds.length) {
-    const firstFeed = current.feedsById.get(newErrorFeeds[0]);
-    addDashboardAlert({
-      title: `${newErrorFeeds.length} feed${newErrorFeeds.length === 1 ? "" : "s"} entered error state`,
-      detail: firstFeed?.name || "A feed reported an error.",
-      type: "error",
     });
   }
 
@@ -1163,17 +1169,25 @@ function syncDashboardAlerts(feeds, articles) {
       return;
     }
 
-    if (feedState.isActive && !previousFeedState.isActive) {
+    if (previousFeedState.articlesToday === 0 && feedState.articlesToday > 0) {
       addDashboardAlert({
-        title: `${feedState.name} became active`,
-        detail: "The feed is enabled again.",
+        title: `${feedState.name} is active again`,
+        detail: `${feedState.articlesToday} article${feedState.articlesToday === 1 ? "" : "s"} today.`,
         type: "success",
       });
-    } else if (!feedState.isActive && previousFeedState.isActive) {
+    } else if (previousFeedState.articlesToday > 0 && feedState.articlesToday === 0) {
       addDashboardAlert({
-        title: `${feedState.name} became inactive`,
-        detail: "The feed was disabled.",
+        title: `${feedState.name} stopped producing articles`,
+        detail: "No articles today in the latest snapshot.",
         type: "warning",
+      });
+    }
+
+    if (previousFeedState.lastStatus !== "error" && feedState.lastStatus === "error") {
+      addDashboardAlert({
+        title: `${feedState.name} entered error state`,
+        detail: "The feed reported an error in the latest snapshot.",
+        type: "error",
       });
     }
   });
@@ -1218,7 +1232,13 @@ function syncDashboardAlerts(feeds, articles) {
       });
     }
   });
+}
 
+function syncDashboardAlerts(feeds, articles) {
+  const previous = loadStoredAlertSnapshot();
+  const current = createSnapshotStats(feeds, articles);
+
+  generateAlerts(previous, current);
   runtime.previousSnapshotStats = current;
   saveAlertSnapshot(current);
 }
