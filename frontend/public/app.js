@@ -2,6 +2,8 @@ const PLACEHOLDER_IMAGE = "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Im
 const THEME_STORAGE_KEY = "rss-monitor-theme";
 const FEED_PANEL_COLLAPSED_STORAGE_KEY = "feedPanelCollapsed";
 const ALERT_SNAPSHOT_STORAGE_KEY = "prevSnapshot";
+const ALERT_DEDUPE_STORAGE_KEY = "recentAlertKeys";
+const ALERT_DEDUPE_WINDOW_MS = 10 * 60 * 1000;
 const POLLING_INTERVAL_MS = 30000;
 const ARTICLE_PAGE_SIZE = 400;
 const NOTIFICATION_TIMEOUT_MS = 7000;
@@ -1212,6 +1214,41 @@ function saveAlertSnapshot(snapshot) {
   }
 }
 
+function getAlertDedupeKey(alert) {
+  return [alert.type || "info", alert.title || "", alert.detail || ""].join("|").toLowerCase();
+}
+
+function loadRecentAlertKeys() {
+  try {
+    const now = Date.now();
+    return JSON.parse(window.localStorage.getItem(ALERT_DEDUPE_STORAGE_KEY) || "[]").filter(
+      (entry) => entry?.key && now - Number(entry.shownAt || 0) < ALERT_DEDUPE_WINDOW_MS
+    );
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentAlertKeys(entries) {
+  try {
+    window.localStorage.setItem(ALERT_DEDUPE_STORAGE_KEY, JSON.stringify(entries));
+  } catch {
+    // Alert dedupe is a convenience; alerts can still render without storage access.
+  }
+}
+
+function shouldShowDashboardAlert(alert) {
+  const key = getAlertDedupeKey(alert);
+  const recentKeys = loadRecentAlertKeys();
+  if (recentKeys.some((entry) => entry.key === key)) {
+    return false;
+  }
+
+  recentKeys.unshift({ key, shownAt: Date.now() });
+  saveRecentAlertKeys(recentKeys.slice(0, 50));
+  return true;
+}
+
 function generateAlerts(previous, current) {
   console.log("[alerts][snapshot-compare]", { previous, current });
   const candidates = [];
@@ -1359,9 +1396,20 @@ function generateAlerts(previous, current) {
     }
   });
 
-  const selectedAlerts = candidates
-    .sort((left, right) => left.priority - right.priority)
-    .slice(0, 5);
+  if (!candidates.length) {
+    queueAlert(4, {
+      title: "Sources refreshed — no significant changes detected",
+      detail: "Article counts and feed status are unchanged since the previous snapshot.",
+      type: "info",
+    });
+  }
+
+  const selectedAlerts = [];
+  candidates.sort((left, right) => left.priority - right.priority).forEach((candidate) => {
+    if (selectedAlerts.length < 5 && shouldShowDashboardAlert(candidate.alert)) {
+      selectedAlerts.push(candidate);
+    }
+  });
 
   selectedAlerts
     .slice()
