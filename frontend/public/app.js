@@ -1144,6 +1144,10 @@ function saveAlertSnapshot(snapshot) {
 
 function generateAlerts(previous, current) {
   console.log("[alerts][snapshot-compare]", { previous, current });
+  const candidates = [];
+  const queueAlert = (priority, alert) => {
+    candidates.push({ priority, alert });
+  };
 
   if (!previous) {
     addDashboardAlert({
@@ -1156,9 +1160,9 @@ function generateAlerts(previous, current) {
 
   const newArticleCount = current.totalArticles - previous.totalArticles;
   if (newArticleCount > 0) {
-    addDashboardAlert({
-      title: `+${newArticleCount} new article${newArticleCount === 1 ? "" : "s"} detected`,
-      detail: "New content appeared since the previous snapshot.",
+    queueAlert(3, {
+      title: `+${newArticleCount} new article${newArticleCount === 1 ? "" : "s"} since last refresh`,
+      detail: "Total article count increased since the previous snapshot.",
       type: "info",
     });
   }
@@ -1169,25 +1173,35 @@ function generateAlerts(previous, current) {
       return;
     }
 
+    const todayDiff = feedState.articlesToday - previousFeedState.articlesToday;
+
+    if (previousFeedState.lastStatus !== "error" && feedState.lastStatus === "error") {
+      queueAlert(1, {
+        title: `${feedState.name} entered error state`,
+        detail: "The feed reported an error in the latest snapshot.",
+        type: "error",
+      });
+    }
+
+    if (todayDiff > 0) {
+      queueAlert(2, {
+        title: `${feedState.name}: +${todayDiff} new today`,
+        detail: `${feedState.articlesToday} article${feedState.articlesToday === 1 ? "" : "s"} today.`,
+        type: "success",
+      });
+    }
+
     if (previousFeedState.articlesToday === 0 && feedState.articlesToday > 0) {
-      addDashboardAlert({
+      queueAlert(2, {
         title: `${feedState.name} is active again`,
         detail: `${feedState.articlesToday} article${feedState.articlesToday === 1 ? "" : "s"} today.`,
         type: "success",
       });
     } else if (previousFeedState.articlesToday > 0 && feedState.articlesToday === 0) {
-      addDashboardAlert({
-        title: `${feedState.name} stopped producing articles`,
+      queueAlert(2, {
+        title: `${feedState.name} stopped producing`,
         detail: "No articles today in the latest snapshot.",
         type: "warning",
-      });
-    }
-
-    if (previousFeedState.lastStatus !== "error" && feedState.lastStatus === "error") {
-      addDashboardAlert({
-        title: `${feedState.name} entered error state`,
-        detail: "The feed reported an error in the latest snapshot.",
-        type: "error",
       });
     }
   });
@@ -1203,13 +1217,13 @@ function generateAlerts(previous, current) {
     const wasDmvRssFeed = previousStats.isDmvRssFeed || (isDmvSource(previousStats.feed) && previousStats.feed.dmvMode === "rss");
 
     if (stats.status === "dead" && previousStats.status !== "dead") {
-      addDashboardAlert({
+      queueAlert(1, {
         title: `${feedName} is now dead`,
         detail: "No imported articles are available for this feed.",
         type: "error",
       });
     } else if (stats.status === "inactive" && previousStats.status !== "inactive") {
-      addDashboardAlert({
+      queueAlert(2, {
         title: `${feedName} is now inactive`,
         detail: "No articles in the last 30 days.",
         type: "warning",
@@ -1217,7 +1231,7 @@ function generateAlerts(previous, current) {
     }
 
     if ((isDmvRssFeed || wasDmvRssFeed) && previousStats.total === 0 && stats.total > 0) {
-      addDashboardAlert({
+      queueAlert(2, {
         title: `${feedName} started producing articles`,
         detail: `${stats.total} article${stats.total === 1 ? "" : "s"} now available.`,
         type: "success",
@@ -1225,13 +1239,22 @@ function generateAlerts(previous, current) {
     }
 
     if ((isDmvRssFeed || wasDmvRssFeed) && stats.status === "inactive" && previousStats.status !== "inactive") {
-      addDashboardAlert({
+      queueAlert(2, {
         title: `${feedName} DMV activity stopped`,
         detail: "No DMV RSS articles in the last 30 days.",
         type: "warning",
       });
     }
   });
+
+  const selectedAlerts = candidates
+    .sort((left, right) => left.priority - right.priority)
+    .slice(0, 5);
+
+  selectedAlerts
+    .slice()
+    .reverse()
+    .forEach(({ alert }) => addDashboardAlert(alert));
 }
 
 function syncDashboardAlerts(feeds, articles) {
