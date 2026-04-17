@@ -39,6 +39,7 @@ const runtime = {
   notificationId: 0,
   notificationTimers: new Map(),
   knownErrorFeedIds: new Set(),
+  knownArticleIds: new Set(),
   snapshotLoaded: false,
 };
 
@@ -723,6 +724,35 @@ function syncFeedErrorNotifications() {
 
   runtime.knownErrorFeedIds = currentErrorFeedIds;
   runtime.snapshotLoaded = true;
+}
+
+function syncNewArticleNotifications(articles) {
+  const realArticles = articles.filter((article) => !isOfficialFallbackArticle(article));
+  const currentArticleIds = new Set(realArticles.map((article) => article.id).filter(Boolean));
+
+  if (!runtime.snapshotLoaded) {
+    runtime.knownArticleIds = currentArticleIds;
+    return;
+  }
+
+  if (!runtime.realtimeEnabled) {
+    const newArticles = realArticles.filter((article) => article.id && !runtime.knownArticleIds.has(article.id));
+    if (newArticles.length) {
+      const firstArticle = newArticles
+        .slice()
+        .sort((left, right) => toDate(right.pubDate).getTime() - toDate(left.pubDate).getTime())[0];
+      showNotification({
+        title: "New articles detected",
+        message:
+          newArticles.length === 1
+            ? firstArticle.title || "A new article was added."
+            : `${newArticles.length} new articles were added. Latest: ${firstArticle.title || "Untitled article"}`,
+        type: "info",
+      });
+    }
+  }
+
+  runtime.knownArticleIds = currentArticleIds;
 }
 
 function getSummaryMetrics() {
@@ -1995,6 +2025,7 @@ async function loadSnapshot() {
   state.articles = articles;
   state.dmvCatalog = Array.isArray(dmvCatalog) ? dmvCatalog : [];
   renderDashboard();
+  syncNewArticleNotifications(articles);
   syncFeedErrorNotifications();
   syncFeedPanelVisibility();
 }
@@ -2029,6 +2060,10 @@ function initRealtime() {
 
     eventSource.addEventListener("article:new", (event) => {
       const payload = parseStreamPayload(event);
+      const articleId = payload?.id || payload?.article?.id;
+      if (articleId) {
+        runtime.knownArticleIds.add(articleId);
+      }
       showNotification({
         title: "New article detected",
         message: payload?.title || payload?.article?.title || "A new article was added to the live stream.",
