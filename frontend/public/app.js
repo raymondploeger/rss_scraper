@@ -764,12 +764,60 @@ function getTopFeedCounts(counts, limit = 5) {
     .slice(0, limit);
 }
 
-function formatAnalyticsList(items, emptyText) {
-  if (!items.length) {
-    return emptyText;
-  }
+function getLowValueFeeds(articles, limit = 5) {
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now);
+  thirtyDaysAgo.setDate(now.getDate() - 30);
+  thirtyDaysAgo.setHours(0, 0, 0, 0);
 
-  return items.map((item) => `${item.name} (${item.count})`).join(", ");
+  const feedStats = new Map(
+    state.feeds
+      .filter((feed) => feed.sourceType !== "link-only" && !isLinkOnlyDmvSource(feed))
+      .map((feed) => [
+        feed.id,
+        {
+          feed,
+          total: 0,
+          recent: 0,
+          lastArticleDate: null,
+        },
+      ])
+  );
+
+  articles.forEach((article) => {
+    const stats = feedStats.get(article.feedId);
+    if (!stats) {
+      return;
+    }
+
+    const articleDate = toDate(article.pubDate);
+    stats.total += 1;
+    if (articleDate >= thirtyDaysAgo) {
+      stats.recent += 1;
+    }
+    if (!stats.lastArticleDate || articleDate > stats.lastArticleDate) {
+      stats.lastArticleDate = articleDate;
+    }
+  });
+
+  return Array.from(feedStats.values())
+    .filter((stats) => stats.total === 0 || stats.recent === 0)
+    .map((stats) => ({
+      id: stats.feed.id,
+      name: stats.feed.name || "Untitled feed",
+      total: stats.total,
+      lastArticleDate: stats.lastArticleDate,
+      status: stats.total === 0 ? "dead" : "inactive",
+    }))
+    .sort((left, right) => {
+      if (left.total === 0 && right.total !== 0) return -1;
+      if (left.total !== 0 && right.total === 0) return 1;
+
+      const leftTime = left.lastArticleDate ? left.lastArticleDate.getTime() : 0;
+      const rightTime = right.lastArticleDate ? right.lastArticleDate.getTime() : 0;
+      return leftTime - rightTime || left.name.localeCompare(right.name);
+    })
+    .slice(0, limit);
 }
 
 function renderAnalyticsRows(items, emptyText) {
@@ -788,6 +836,31 @@ function renderAnalyticsRows(items, emptyText) {
             </li>
           `
         )
+        .join("")}
+    </ol>
+  `;
+}
+
+function renderLowValueFeedRows(items) {
+  if (!items.length) {
+    return `<p class="analytics-empty">No dead or inactive feeds detected.</p>`;
+  }
+
+  return `
+    <ol class="analytics-list analytics-low-value-list">
+      ${items
+        .map((item) => {
+          const lastArticle = item.lastArticleDate ? formatDate(item.lastArticleDate) : "never";
+          return `
+            <li>
+              <span>
+                ${escapeHtml(item.name)}
+                <small>${item.total} total - last: ${escapeHtml(lastArticle)}</small>
+              </span>
+              <strong class="analytics-status is-${item.status}">${item.status}</strong>
+            </li>
+          `;
+        })
         .join("")}
     </ol>
   `;
@@ -822,6 +895,7 @@ function getDashboardAnalytics() {
   return {
     topFeeds: getTopFeedCounts(articleCounts),
     topTodayFeeds: getTopFeedCounts(todayCounts),
+    lowValueFeeds: getLowValueFeeds(realArticles),
     averageArticlesPerFeed: (realArticles.length / feedCount).toFixed(1),
     averageArticlesTodayPerFeed: (todayArticles.length / feedCount).toFixed(1),
     activeFeeds,
@@ -853,6 +927,10 @@ function renderAnalyticsCard() {
       <div class="analytics-panel analytics-panel-wide">
         <span class="analytics-label">Top today</span>
         ${renderAnalyticsRows(analytics.topTodayFeeds, "No articles today yet")}
+      </div>
+      <div class="analytics-panel analytics-panel-wide">
+        <span class="analytics-label">Dead / low value feeds</span>
+        ${renderLowValueFeedRows(analytics.lowValueFeeds)}
       </div>
       <div class="analytics-panel">
         <span class="analytics-label">Feed health</span>

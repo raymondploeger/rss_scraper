@@ -349,12 +349,31 @@ h3 {
   white-space: nowrap;
 }
 
+.analytics-low-value-list span {
+  display: grid;
+  gap: 2px;
+  white-space: normal;
+}
+
+.analytics-low-value-list small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
 .analytics-list strong {
   padding: 3px 8px;
   border-radius: 999px;
   background: var(--bg-elevated);
   color: var(--accent);
   font-size: 0.82rem;
+}
+
+.analytics-status.is-dead {
+  color: var(--danger);
+}
+
+.analytics-status.is-inactive {
+  color: var(--muted);
 }
 
 .analytics-empty {
