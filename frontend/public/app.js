@@ -4,6 +4,8 @@ const FEED_PANEL_COLLAPSED_STORAGE_KEY = "feedPanelCollapsed";
 const POLLING_INTERVAL_MS = 30000;
 const ARTICLE_PAGE_SIZE = 400;
 const NOTIFICATION_TIMEOUT_MS = 7000;
+const DASHBOARD_ALERT_LIMIT = 8;
+const LOW_VALUE_ARTICLE_THRESHOLD = 5;
 const SUMMARY_METRICS = [
   { label: "Active feeds", key: "activeFeeds" },
   { label: "Tracked topics", key: "topics" },
@@ -40,6 +42,9 @@ const runtime = {
   notificationTimers: new Map(),
   knownErrorFeedIds: new Set(),
   knownArticleIds: new Set(),
+  dashboardAlerts: [],
+  dashboardAlertId: 0,
+  previousSnapshotStats: null,
   snapshotLoaded: false,
 };
 
@@ -783,6 +788,64 @@ function getFeedArticleCounts(articles) {
   }, new Map());
 }
 
+function getRecentWindowStart() {
+  const start = new Date();
+  start.setDate(start.getDate() - 30);
+  start.setHours(0, 0, 0, 0);
+  return start;
+}
+
+function isAnalyticsFeed(feed) {
+  return Boolean(feed?.sourceType !== "link-only" && !isLinkOnlyDmvSource(feed));
+}
+
+function getFeedActivityStats(feeds, articles) {
+  const recentWindowStart = getRecentWindowStart();
+  const stats = new Map(
+    feeds
+      .filter(isAnalyticsFeed)
+      .map((feed) => [
+        feed.id,
+        {
+          feed,
+          total: 0,
+          recent: 0,
+          lastArticleDate: null,
+          status: "",
+        },
+      ])
+  );
+
+  articles.forEach((article) => {
+    const feedStats = stats.get(article.feedId);
+    if (!feedStats) {
+      return;
+    }
+
+    const articleDate = toDate(article.pubDate);
+    feedStats.total += 1;
+    if (articleDate >= recentWindowStart) {
+      feedStats.recent += 1;
+    }
+    if (!feedStats.lastArticleDate || articleDate > feedStats.lastArticleDate) {
+      feedStats.lastArticleDate = articleDate;
+    }
+  });
+
+  stats.forEach((feedStats) => {
+    feedStats.status =
+      feedStats.total === 0
+        ? "dead"
+        : feedStats.recent === 0
+          ? "inactive"
+          : feedStats.total < LOW_VALUE_ARTICLE_THRESHOLD
+            ? "low-value"
+            : "healthy";
+  });
+
+  return stats;
+}
+
 function getCombinedFeedRankings(totalCounts, todayCounts, recentCounts, limit = 8) {
   return Array.from(totalCounts.entries())
     .map(([feedId, total]) => ({
@@ -801,51 +864,15 @@ function getCombinedFeedRankings(totalCounts, todayCounts, recentCounts, limit =
 }
 
 function getLowValueFeeds(articles, limit = 8) {
-  const now = new Date();
-  const thirtyDaysAgo = new Date(now);
-  thirtyDaysAgo.setDate(now.getDate() - 30);
-  thirtyDaysAgo.setHours(0, 0, 0, 0);
-
-  const feedStats = new Map(
-    state.feeds
-      .filter((feed) => feed.sourceType !== "link-only" && !isLinkOnlyDmvSource(feed))
-      .map((feed) => [
-        feed.id,
-        {
-          feed,
-          total: 0,
-          recent: 0,
-          lastArticleDate: null,
-        },
-      ])
-  );
-
-  articles.forEach((article) => {
-    const stats = feedStats.get(article.feedId);
-    if (!stats) {
-      return;
-    }
-
-    const articleDate = toDate(article.pubDate);
-    stats.total += 1;
-    if (articleDate >= thirtyDaysAgo) {
-      stats.recent += 1;
-    }
-    if (!stats.lastArticleDate || articleDate > stats.lastArticleDate) {
-      stats.lastArticleDate = articleDate;
-    }
-  });
-
-  return Array.from(feedStats.values())
-    .filter((stats) => stats.total === 0 || stats.recent === 0)
+  return Array.from(getFeedActivityStats(state.feeds, articles).values())
+    .filter((stats) => stats.status !== "healthy")
     .map((stats) => ({
       id: stats.feed.id,
       name: stats.feed.name || "Untitled feed",
       total: stats.total,
       lastArticleDate: stats.lastArticleDate,
-      status: stats.total === 0 ? "dead" : stats.recent === 0 ? "inactive" : "low-value",
+      status: stats.status,
     }))
-    .filter((item) => item.status !== "low-value" || item.total < 5)
     .sort((left, right) => {
       const statusPriority = { dead: 0, inactive: 1, "low-value": 2 };
       const leftPriority = statusPriority[left.status] ?? 3;
@@ -929,6 +956,132 @@ function renderLowValueFeedRows(items) {
   `;
 }
 
+function addDashboardAlert({ title, detail = "", type = "info" }) {
+  runtime.dashboardAlertId += 1;
+  runtime.dashboardAlerts.unshift({
+    id: String(runtime.dashboardAlertId),
+    title,
+    detail,
+    type,
+    createdAt: new Date(),
+  });
+  runtime.dashboardAlerts = runtime.dashboardAlerts.slice(0, DASHBOARD_ALERT_LIMIT);
+}
+
+function dismissDashboardAlert(alertId) {
+  runtime.dashboardAlerts = runtime.dashboardAlerts.filter((alert) => alert.id !== alertId);
+  renderSummary();
+}
+
+function renderDashboardAlerts() {
+  if (!runtime.dashboardAlerts.length) {
+    return `<p class="analytics-empty">No recent feed alerts this session.</p>`;
+  }
+
+  return `
+    <ol class="dashboard-alert-list">
+      ${runtime.dashboardAlerts
+        .map(
+          (alert) => `
+            <li class="dashboard-alert is-${alert.type}">
+              <div>
+                <strong>${escapeHtml(alert.title)}</strong>
+                ${alert.detail ? `<small>${escapeHtml(alert.detail)}</small>` : ""}
+              </div>
+              <button type="button" data-dismiss-dashboard-alert="${alert.id}" aria-label="Dismiss alert">Dismiss</button>
+            </li>
+          `
+        )
+        .join("")}
+    </ol>
+  `;
+}
+
+function createSnapshotStats(feeds, articles) {
+  const realArticles = articles.filter((article) => !isOfficialFallbackArticle(article));
+  const articleIds = new Set(realArticles.map((article) => article.id).filter(Boolean));
+  const feedActivity = getFeedActivityStats(feeds, realArticles);
+  const feedsById = new Map(feeds.map((feed) => [feed.id, feed]));
+
+  return {
+    articleIds,
+    feedActivity,
+    feedErrors: new Set(feeds.filter(isFeedError).map((feed) => feed.id)),
+    feedsById,
+  };
+}
+
+function syncDashboardAlerts(feeds, articles) {
+  const current = createSnapshotStats(feeds, articles);
+  const previous = runtime.previousSnapshotStats;
+
+  if (!previous) {
+    runtime.previousSnapshotStats = current;
+    return;
+  }
+
+  const newArticles = Array.from(current.articleIds).filter((articleId) => !previous.articleIds.has(articleId));
+  if (newArticles.length) {
+    addDashboardAlert({
+      title: `${newArticles.length} new article${newArticles.length === 1 ? "" : "s"} detected`,
+      detail: "New content appeared since the previous snapshot.",
+      type: "info",
+    });
+  }
+
+  const newErrorFeeds = Array.from(current.feedErrors).filter((feedId) => !previous.feedErrors.has(feedId));
+  if (newErrorFeeds.length) {
+    const firstFeed = current.feedsById.get(newErrorFeeds[0]);
+    addDashboardAlert({
+      title: `${newErrorFeeds.length} feed${newErrorFeeds.length === 1 ? "" : "s"} entered error state`,
+      detail: firstFeed?.name || "A feed reported an error.",
+      type: "error",
+    });
+  }
+
+  current.feedActivity.forEach((stats, feedId) => {
+    const previousStats = previous.feedActivity.get(feedId);
+    if (!previousStats) {
+      return;
+    }
+
+    const feedName = stats.feed.name || "Untitled feed";
+    const isDmvRssFeed = isDmvSource(stats.feed) && stats.feed.dmvMode === "rss";
+
+    if (stats.status === "dead" && previousStats.status !== "dead") {
+      addDashboardAlert({
+        title: `${feedName} is now dead`,
+        detail: "No imported articles are available for this feed.",
+        type: "error",
+      });
+    } else if (stats.status === "inactive" && previousStats.status !== "inactive") {
+      addDashboardAlert({
+        title: `${feedName} is now inactive`,
+        detail: "No articles in the last 30 days.",
+        type: "warning",
+      });
+    }
+
+    if (isDmvRssFeed && previousStats.total === 0 && stats.total > 0) {
+      addDashboardAlert({
+        title: `${feedName} started producing articles`,
+        detail: `${stats.total} article${stats.total === 1 ? "" : "s"} now available.`,
+        type: "success",
+      });
+    }
+
+    if (isDmvRssFeed && stats.status === "inactive" && previousStats.status !== "inactive") {
+      addDashboardAlert({
+        title: `${feedName} DMV activity stopped`,
+        detail: "No DMV RSS articles in the last 30 days.",
+        type: "warning",
+      });
+    }
+  });
+
+  runtime.previousSnapshotStats = current;
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -1001,6 +1154,10 @@ function renderAnalyticsCard() {
       <div class="analytics-panel analytics-panel-wide">
         <span class="analytics-label">Dead / low value feeds</span>
         ${renderLowValueFeedRows(analytics.lowValueFeeds)}
+      </div>
+      <div class="analytics-panel analytics-panel-wide">
+        <span class="analytics-label">Recent alerts</span>
+        ${renderDashboardAlerts()}
       </div>
       <div class="analytics-panel">
         <span class="analytics-label">Feed health</span>
@@ -2044,6 +2201,7 @@ async function loadSnapshot() {
   state.feeds = feeds;
   state.articles = articles;
   state.dmvCatalog = Array.isArray(dmvCatalog) ? dmvCatalog : [];
+  syncDashboardAlerts(feeds, articles);
   renderDashboard();
   syncNewArticleNotifications(articles);
   syncFeedErrorNotifications();
@@ -2239,6 +2397,13 @@ function bindEvents() {
   });
 
   elements.summaryGrid.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+    const dismissButton = target?.closest("[data-dismiss-dashboard-alert]");
+    if (dismissButton) {
+      dismissDashboardAlert(dismissButton.dataset.dismissDashboardAlert || "");
+      return;
+    }
+
     const todayCard = getTodaySummaryCardFromEvent(event);
     if (todayCard) {
       applyTodayArticleFilter();
