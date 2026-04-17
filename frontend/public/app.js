@@ -998,24 +998,46 @@ function renderDashboardAlerts() {
   `;
 }
 
+function buildFeedStats(feeds, articles, todayStart) {
+  const feedStats = feeds.reduce((stats, feed) => {
+    stats[feed.id] = {
+      total: 0,
+      today: 0,
+    };
+    return stats;
+  }, {});
+
+  articles.forEach((article) => {
+    if (!article.feedId || !feedStats[article.feedId]) {
+      return;
+    }
+
+    feedStats[article.feedId].total += 1;
+    if (toDate(article.pubDate) >= todayStart) {
+      feedStats[article.feedId].today += 1;
+    }
+  });
+
+  return feedStats;
+}
+
 function createSnapshotStats(feeds, articles) {
   const realArticles = articles.filter((article) => !isOfficialFallbackArticle(article));
   const articleIds = new Set(realArticles.map((article) => article.id).filter(Boolean));
   const feedActivity = getFeedActivityStats(feeds, realArticles);
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
-  const articlesTodayByFeed = realArticles.reduce((counts, article) => {
-    if (article.feedId && toDate(article.pubDate) >= todayStart) {
-      counts.set(article.feedId, (counts.get(article.feedId) || 0) + 1);
-    }
-    return counts;
-  }, new Map());
+  const feedStats = buildFeedStats(feeds, realArticles, todayStart);
+  const snapshotArticles = realArticles.map((article) => ({
+    id: article.id,
+    feedId: article.feedId,
+    pubDate: article.pubDate,
+  }));
   const snapshotFeeds = feeds.map((feed) => ({
     id: feed.id,
     name: feed.name || "Untitled feed",
     isActive: feed.isActive !== false,
     lastStatus: feed.lastStatus || "idle",
-    articleCountToday: articlesTodayByFeed.get(feed.id) || 0,
   }));
   const feedStates = new Map(
     snapshotFeeds.map((feed) => [
@@ -1026,7 +1048,7 @@ function createSnapshotStats(feeds, articles) {
         isActive: feed.isActive,
         lastStatus: feed.lastStatus || "idle",
         isError: feed.lastStatus === "error",
-        articlesToday: feed.articleCountToday,
+        articlesToday: feedStats[feed.id]?.today || 0,
       },
     ])
   );
@@ -1034,8 +1056,10 @@ function createSnapshotStats(feeds, articles) {
 
   return {
     articleIds,
-    totalArticles: realArticles.length,
-    articlesToday: realArticles.filter((article) => toDate(article.pubDate) >= todayStart).length,
+    articles: snapshotArticles,
+    totalArticles: snapshotArticles.length,
+    articlesToday: snapshotArticles.filter((article) => toDate(article.pubDate) >= todayStart).length,
+    feedStats,
     feeds: snapshotFeeds,
     feedActivity,
     feedStates,
@@ -1047,8 +1071,10 @@ function createSnapshotStats(feeds, articles) {
 function serializeSnapshotStats(snapshot) {
   return {
     articleIds: Array.from(snapshot.articleIds),
+    articles: snapshot.articles || [],
     totalArticles: snapshot.totalArticles,
     articlesToday: snapshot.articlesToday,
+    feedStats: snapshot.feedStats || {},
     feeds: snapshot.feeds || Array.from(snapshot.feedStates?.values?.() || []).map((feed) => ({
       id: feed.id,
       name: feed.name,
@@ -1073,12 +1099,13 @@ function serializeSnapshotStats(snapshot) {
 }
 
 function hydrateSnapshotStats(snapshot) {
-  if (!snapshot || !Array.isArray(snapshot.articleIds) || !Array.isArray(snapshot.feedActivity)) {
+  if (!snapshot || !Array.isArray(snapshot.articleIds)) {
     return null;
   }
 
+  const feedActivityItems = Array.isArray(snapshot.feedActivity) ? snapshot.feedActivity : [];
   const feedActivity = new Map(
-    snapshot.feedActivity.map((item) => [
+    feedActivityItems.map((item) => [
       item.feedId,
       {
         feed: {
@@ -1099,7 +1126,7 @@ function hydrateSnapshotStats(snapshot) {
       },
     ])
   );
-  const fallbackFeedStates = snapshot.feedActivity.map((item) => ({
+  const fallbackFeedStates = feedActivityItems.map((item) => ({
     id: item.feedId,
     name: item.name,
     isActive: item.isActive !== false,
@@ -1114,8 +1141,17 @@ function hydrateSnapshotStats(snapshot) {
         name: item.name || "Untitled feed",
         isActive: item.isActive !== false,
         lastStatus: item.lastStatus || "idle",
-        articleCountToday: Number(item.articleCountToday ?? item.articlesToday) || 0,
       }));
+  const feedStats =
+    snapshot.feedStats && typeof snapshot.feedStats === "object"
+      ? snapshot.feedStats
+      : snapshotFeeds.reduce((stats, feed) => {
+          stats[feed.id] = {
+            total: 0,
+            today: Number(feed.articleCountToday ?? feed.articlesToday) || 0,
+          };
+          return stats;
+        }, {});
   const feedStates = new Map(
     snapshotFeeds.map((item) => [
       item.id,
@@ -1125,21 +1161,23 @@ function hydrateSnapshotStats(snapshot) {
         isActive: item.isActive !== false,
         lastStatus: item.lastStatus || "idle",
         isError: item.lastStatus === "error" || Boolean(item.isError),
-        articlesToday: Number(item.articleCountToday ?? item.articlesToday) || 0,
+        articlesToday: Number(feedStats[item.id]?.today) || 0,
       },
     ])
   );
 
   return {
     articleIds: new Set(snapshot.articleIds),
+    articles: Array.isArray(snapshot.articles) ? snapshot.articles : snapshot.articleIds.map((id) => ({ id })),
     totalArticles: Number(snapshot.totalArticles) || snapshot.articleIds.length,
     articlesToday: Number(snapshot.articlesToday) || 0,
+    feedStats,
     feeds: snapshotFeeds,
     feedErrors: new Set(Array.isArray(snapshot.feedErrors) ? snapshot.feedErrors : []),
     feedActivity,
     feedStates,
     feedsById: new Map(
-      snapshot.feedActivity.map((item) => [
+      feedActivityItems.map((item) => [
         item.feedId,
         {
           id: item.feedId,
@@ -1187,7 +1225,9 @@ function generateAlerts(previous, current) {
     return;
   }
 
-  const newArticleCount = current.totalArticles - previous.totalArticles;
+  const previousArticleCount = Array.isArray(previous.articles) ? previous.articles.length : previous.totalArticles;
+  const currentArticleCount = Array.isArray(current.articles) ? current.articles.length : current.totalArticles;
+  const newArticleCount = currentArticleCount - previousArticleCount;
   if (newArticleCount > 0) {
     queueAlert(3, {
       title: `+${newArticleCount} new article${newArticleCount === 1 ? "" : "s"} since last refresh`,
@@ -1197,22 +1237,32 @@ function generateAlerts(previous, current) {
   }
 
   const previousFeedsById = new Map((previous.feeds || []).map((feed) => [feed.id, feed]));
+  const previousFeedStats = previous.feedStats || {};
+  const currentFeedStats = current.feedStats || {};
 
   (current.feeds || []).forEach((feed) => {
     const previousFeed = previousFeedsById.get(feed.id);
-    if (!previousFeed) {
+    const previousStats = previousFeedStats[feed.id];
+    const currentStats = currentFeedStats[feed.id];
+    if (!previousFeed || !previousStats || !currentStats) {
       return;
     }
 
-    const previousToday = Number(previousFeed.articleCountToday) || 0;
-    const currentToday = Number(feed.articleCountToday) || 0;
+    const previousTotal = Number(previousStats.total) || 0;
+    const currentTotal = Number(currentStats.total) || 0;
+    const totalDiff = currentTotal - previousTotal;
+    const previousToday = Number(previousStats.today) || 0;
+    const currentToday = Number(currentStats.today) || 0;
     const todayDiff = currentToday - previousToday;
     const enteredError = previousFeed.lastStatus !== "error" && feed.lastStatus === "error";
 
-    if (todayDiff !== 0 || enteredError) {
+    if (totalDiff !== 0 || todayDiff !== 0 || enteredError) {
       feedDiffs.push({
         id: feed.id,
         name: feed.name,
+        previousTotal,
+        currentTotal,
+        totalDiff,
         previousToday,
         currentToday,
         todayDiff,
@@ -1226,6 +1276,14 @@ function generateAlerts(previous, current) {
         title: `${feed.name} entered error state`,
         detail: "The feed reported an error in the latest snapshot.",
         type: "error",
+      });
+    }
+
+    if (totalDiff > 0) {
+      queueAlert(2, {
+        title: `${feed.name}: +${totalDiff} new articles`,
+        detail: `${currentTotal} total article${currentTotal === 1 ? "" : "s"} for this feed.`,
+        type: "success",
       });
     }
 
