@@ -1060,6 +1060,7 @@ function createSnapshotStats(feeds, articles) {
     totalArticles: snapshotArticles.length,
     articlesToday: snapshotArticles.filter((article) => toDate(article.pubDate) >= todayStart).length,
     feedStats,
+    hasFeedStats: true,
     feeds: snapshotFeeds,
     feedActivity,
     feedStates,
@@ -1075,6 +1076,7 @@ function serializeSnapshotStats(snapshot) {
     totalArticles: snapshot.totalArticles,
     articlesToday: snapshot.articlesToday,
     feedStats: snapshot.feedStats || {},
+    hasFeedStats: snapshot.hasFeedStats === true,
     feeds: snapshot.feeds || Array.from(snapshot.feedStates?.values?.() || []).map((feed) => ({
       id: feed.id,
       name: feed.name,
@@ -1152,6 +1154,7 @@ function hydrateSnapshotStats(snapshot) {
           };
           return stats;
         }, {});
+  const hasFeedStats = snapshot.hasFeedStats === true || Boolean(snapshot.feedStats && typeof snapshot.feedStats === "object");
   const feedStates = new Map(
     snapshotFeeds.map((item) => [
       item.id,
@@ -1172,6 +1175,7 @@ function hydrateSnapshotStats(snapshot) {
     totalArticles: Number(snapshot.totalArticles) || snapshot.articleIds.length,
     articlesToday: Number(snapshot.articlesToday) || 0,
     feedStats,
+    hasFeedStats,
     feeds: snapshotFeeds,
     feedErrors: new Set(Array.isArray(snapshot.feedErrors) ? snapshot.feedErrors : []),
     feedActivity,
@@ -1239,24 +1243,25 @@ function generateAlerts(previous, current) {
   const previousFeedsById = new Map((previous.feeds || []).map((feed) => [feed.id, feed]));
   const previousFeedStats = previous.feedStats || {};
   const currentFeedStats = current.feedStats || {};
+  const canCompareFeedStats = previous.hasFeedStats === true;
 
   (current.feeds || []).forEach((feed) => {
     const previousFeed = previousFeedsById.get(feed.id);
     const previousStats = previousFeedStats[feed.id];
     const currentStats = currentFeedStats[feed.id];
-    if (!previousFeed || !previousStats || !currentStats) {
+    if (!previousFeed || !currentStats) {
       return;
     }
 
-    const previousTotal = Number(previousStats.total) || 0;
+    const previousTotal = canCompareFeedStats && previousStats ? Number(previousStats.total) || 0 : null;
     const currentTotal = Number(currentStats.total) || 0;
-    const totalDiff = currentTotal - previousTotal;
-    const previousToday = Number(previousStats.today) || 0;
+    const totalDiff = previousTotal === null ? 0 : currentTotal - previousTotal;
+    const previousToday = canCompareFeedStats && previousStats ? Number(previousStats.today) || 0 : null;
     const currentToday = Number(currentStats.today) || 0;
-    const todayDiff = currentToday - previousToday;
+    const todayDiff = previousToday === null ? 0 : currentToday - previousToday;
     const enteredError = previousFeed.lastStatus !== "error" && feed.lastStatus === "error";
 
-    if (totalDiff !== 0 || todayDiff !== 0 || enteredError) {
+    if ((canCompareFeedStats && (totalDiff !== 0 || todayDiff !== 0)) || enteredError) {
       feedDiffs.push({
         id: feed.id,
         name: feed.name,
@@ -1279,7 +1284,7 @@ function generateAlerts(previous, current) {
       });
     }
 
-    if (totalDiff > 0) {
+    if (canCompareFeedStats && totalDiff > 0) {
       queueAlert(2, {
         title: `${feed.name}: +${totalDiff} new articles`,
         detail: `${currentTotal} total article${currentTotal === 1 ? "" : "s"} for this feed.`,
@@ -1287,19 +1292,19 @@ function generateAlerts(previous, current) {
       });
     }
 
-    if (previousToday === 0 && currentToday > 0) {
+    if (canCompareFeedStats && previousToday === 0 && currentToday > 0) {
       queueAlert(2, {
         title: `${feed.name} is active again`,
         detail: `+${todayDiff} new article${todayDiff === 1 ? "" : "s"} today.`,
         type: "success",
       });
-    } else if (todayDiff > 0) {
+    } else if (canCompareFeedStats && todayDiff > 0) {
       queueAlert(2, {
         title: `${feed.name}: +${todayDiff} new articles today`,
         detail: `${currentToday} article${currentToday === 1 ? "" : "s"} today.`,
         type: "success",
       });
-    } else if (previousToday > 0 && currentToday === 0) {
+    } else if (canCompareFeedStats && previousToday > 0 && currentToday === 0) {
       queueAlert(2, {
         title: `${feed.name} stopped producing`,
         detail: "No articles today in the latest snapshot.",
