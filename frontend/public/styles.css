@@ -387,6 +387,10 @@ h3 {
   color: var(--muted);
 }
 
+.analytics-status.is-low-value {
+  color: var(--accent);
+}
+
 .analytics-empty {
   color: var(--muted);
 }

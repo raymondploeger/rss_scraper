@@ -783,19 +783,24 @@ function getFeedArticleCounts(articles) {
   }, new Map());
 }
 
-function getCombinedFeedRankings(totalCounts, todayCounts, limit = 8) {
+function getCombinedFeedRankings(totalCounts, todayCounts, recentCounts, limit = 8) {
   return Array.from(totalCounts.entries())
     .map(([feedId, total]) => ({
       feedId,
       total,
       today: todayCounts.get(feedId) || 0,
+      recent: recentCounts.get(feedId) || 0,
       name: getFeedName(feedId),
     }))
-    .sort((left, right) => right.total - left.total || right.today - left.today || left.name.localeCompare(right.name))
+    .map((item) => ({
+      ...item,
+      score: item.today * 12 + item.recent * 2 + Math.log10(item.total + 1) * 10,
+    }))
+    .sort((left, right) => right.score - left.score || right.today - left.today || right.total - left.total || left.name.localeCompare(right.name))
     .slice(0, limit);
 }
 
-function getLowValueFeeds(articles, limit = 5) {
+function getLowValueFeeds(articles, limit = 8) {
   const now = new Date();
   const thirtyDaysAgo = new Date(now);
   thirtyDaysAgo.setDate(now.getDate() - 30);
@@ -838,11 +843,14 @@ function getLowValueFeeds(articles, limit = 5) {
       name: stats.feed.name || "Untitled feed",
       total: stats.total,
       lastArticleDate: stats.lastArticleDate,
-      status: stats.total === 0 ? "dead" : "inactive",
+      status: stats.total === 0 ? "dead" : stats.recent === 0 ? "inactive" : "low-value",
     }))
+    .filter((item) => item.status !== "low-value" || item.total < 5)
     .sort((left, right) => {
-      if (left.total === 0 && right.total !== 0) return -1;
-      if (left.total !== 0 && right.total === 0) return 1;
+      const statusPriority = { dead: 0, inactive: 1, "low-value": 2 };
+      const leftPriority = statusPriority[left.status] ?? 3;
+      const rightPriority = statusPriority[right.status] ?? 3;
+      if (leftPriority !== rightPriority) return leftPriority - rightPriority;
 
       const leftTime = left.lastArticleDate ? left.lastArticleDate.getTime() : 0;
       const rightTime = right.lastArticleDate ? right.lastArticleDate.getTime() : 0;
@@ -936,24 +944,36 @@ function getDashboardAnalytics() {
 
   const realArticles = state.articles.filter((article) => !isOfficialFallbackArticle(article));
   const todayArticles = realArticles.filter((article) => toDate(article.pubDate) >= startOfToday);
+  const startOfRecentWindow = new Date();
+  startOfRecentWindow.setDate(startOfRecentWindow.getDate() - 30);
+  startOfRecentWindow.setHours(0, 0, 0, 0);
+  const recentArticles = realArticles.filter((article) => toDate(article.pubDate) >= startOfRecentWindow);
   const articleCounts = getFeedArticleCounts(realArticles);
   const todayCounts = getFeedArticleCounts(todayArticles);
+  const recentCounts = getFeedArticleCounts(recentArticles);
   const activeFeeds = state.feeds.filter((feed) => feed.isActive !== false).length;
-  const inactiveFeeds = state.feeds.filter((feed) => feed.isActive === false || feed.lastStatus === "error").length;
+  const errorFeeds = state.feeds.filter(isFeedError).length;
   const rssFeedCount = state.feeds.filter((feed) => feed.sourceType !== "link-only").length;
   const catalogOnlySources = getNonUsCatalogOnlySources();
   const linkOnlyCount =
     state.feeds.filter((feed) => feed.sourceType === "link-only" || isLinkOnlyDmvSource(feed)).length +
     catalogOnlySources.length;
   const feedCount = state.feeds.length + catalogOnlySources.length || 1;
+  const lowValueFeeds = getLowValueFeeds(realArticles);
+  const deadFeeds = lowValueFeeds.filter((feed) => feed.status === "dead").length;
+  const inactiveFeeds = lowValueFeeds.filter((feed) => feed.status === "inactive").length;
+  const lowValueCount = lowValueFeeds.filter((feed) => feed.status === "low-value").length;
 
   return {
-    feedRankings: getCombinedFeedRankings(articleCounts, todayCounts),
-    lowValueFeeds: getLowValueFeeds(realArticles),
+    feedRankings: getCombinedFeedRankings(articleCounts, todayCounts, recentCounts),
+    lowValueFeeds,
     averageArticlesPerFeed: (realArticles.length / feedCount).toFixed(1),
     averageArticlesTodayPerFeed: (todayArticles.length / feedCount).toFixed(1),
     activeFeeds,
     inactiveFeeds,
+    errorFeeds,
+    deadFeeds,
+    lowValueCount,
     rssFeedCount,
     linkOnlyCount,
     usaFeeds: getUsDmvCatalogEntries().length,
@@ -984,7 +1004,7 @@ function renderAnalyticsCard() {
       </div>
       <div class="analytics-panel">
         <span class="analytics-label">Feed health</span>
-        <p>${analytics.activeFeeds} active, ${analytics.inactiveFeeds} inactive/error</p>
+        <p>${analytics.activeFeeds} active, ${analytics.errorFeeds} errors, ${analytics.deadFeeds} dead, ${analytics.inactiveFeeds} inactive, ${analytics.lowValueCount} low value</p>
       </div>
       <div class="analytics-panel">
         <span class="analytics-label">Source mix</span>
