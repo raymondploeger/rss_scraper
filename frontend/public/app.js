@@ -1,6 +1,7 @@
 const PLACEHOLDER_IMAGE = "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image";
 const THEME_STORAGE_KEY = "rss-monitor-theme";
 const FEED_PANEL_COLLAPSED_STORAGE_KEY = "feedPanelCollapsed";
+const ALERT_SNAPSHOT_STORAGE_KEY = "rss-monitor-alert-snapshot";
 const POLLING_INTERVAL_MS = 30000;
 const ARTICLE_PAGE_SIZE = 400;
 const NOTIFICATION_TIMEOUT_MS = 7000;
@@ -1001,22 +1002,139 @@ function createSnapshotStats(feeds, articles) {
   const realArticles = articles.filter((article) => !isOfficialFallbackArticle(article));
   const articleIds = new Set(realArticles.map((article) => article.id).filter(Boolean));
   const feedActivity = getFeedActivityStats(feeds, realArticles);
+  const feedStates = new Map(
+    feeds.map((feed) => [
+      feed.id,
+      {
+        id: feed.id,
+        name: feed.name || "Untitled feed",
+        isActive: feed.isActive !== false,
+        lastStatus: feed.lastStatus || "idle",
+        isError: isFeedError(feed),
+      },
+    ])
+  );
   const feedsById = new Map(feeds.map((feed) => [feed.id, feed]));
 
   return {
     articleIds,
     feedActivity,
+    feedStates,
     feedErrors: new Set(feeds.filter(isFeedError).map((feed) => feed.id)),
     feedsById,
   };
 }
 
+function serializeSnapshotStats(snapshot) {
+  return {
+    articleIds: Array.from(snapshot.articleIds),
+    feedErrors: Array.from(snapshot.feedErrors),
+    feedStates: Array.from(snapshot.feedStates?.values?.() || []),
+    feedActivity: Array.from(snapshot.feedActivity.entries()).map(([feedId, stats]) => ({
+      feedId,
+      name: stats.feed.name || "Untitled feed",
+      isActive: stats.feed.isActive !== false,
+      lastStatus: stats.feed.lastStatus || "idle",
+      isDmvRssFeed: isDmvSource(stats.feed) && stats.feed.dmvMode === "rss",
+      total: stats.total,
+      recent: stats.recent,
+      status: stats.status,
+      lastArticleDate: stats.lastArticleDate ? stats.lastArticleDate.toISOString() : null,
+    })),
+  };
+}
+
+function hydrateSnapshotStats(snapshot) {
+  if (!snapshot || !Array.isArray(snapshot.articleIds) || !Array.isArray(snapshot.feedActivity)) {
+    return null;
+  }
+
+  const feedActivity = new Map(
+    snapshot.feedActivity.map((item) => [
+      item.feedId,
+      {
+        feed: {
+          id: item.feedId,
+          name: item.name,
+          isActive: item.isActive,
+          lastStatus: item.lastStatus,
+          dmvMode: item.isDmvRssFeed ? "rss" : "",
+          dmvCountry: item.isDmvRssFeed ? "stored" : "",
+        },
+        total: Number(item.total) || 0,
+        recent: Number(item.recent) || 0,
+        status: item.status || "",
+        lastArticleDate: item.lastArticleDate ? new Date(item.lastArticleDate) : null,
+        isDmvRssFeed: Boolean(item.isDmvRssFeed),
+        isActive: item.isActive !== false,
+        lastStatus: item.lastStatus || "idle",
+      },
+    ])
+  );
+  const fallbackFeedStates = snapshot.feedActivity.map((item) => ({
+    id: item.feedId,
+    name: item.name,
+    isActive: item.isActive !== false,
+    lastStatus: item.lastStatus || "idle",
+    isError: item.lastStatus === "error",
+  }));
+  const feedStates = new Map(
+    (Array.isArray(snapshot.feedStates) ? snapshot.feedStates : fallbackFeedStates).map((item) => [
+      item.id,
+      {
+        id: item.id,
+        name: item.name || "Untitled feed",
+        isActive: item.isActive !== false,
+        lastStatus: item.lastStatus || "idle",
+        isError: Boolean(item.isError),
+      },
+    ])
+  );
+
+  return {
+    articleIds: new Set(snapshot.articleIds),
+    feedErrors: new Set(Array.isArray(snapshot.feedErrors) ? snapshot.feedErrors : []),
+    feedActivity,
+    feedStates,
+    feedsById: new Map(
+      snapshot.feedActivity.map((item) => [
+        item.feedId,
+        {
+          id: item.feedId,
+          name: item.name,
+          isActive: item.isActive,
+          lastStatus: item.lastStatus,
+          dmvMode: item.isDmvRssFeed ? "rss" : "",
+          dmvCountry: item.isDmvRssFeed ? "stored" : "",
+        },
+      ])
+    ),
+  };
+}
+
+function loadStoredAlertSnapshot() {
+  try {
+    return hydrateSnapshotStats(JSON.parse(window.localStorage.getItem(ALERT_SNAPSHOT_STORAGE_KEY) || "null"));
+  } catch {
+    return null;
+  }
+}
+
+function saveAlertSnapshot(snapshot) {
+  try {
+    window.localStorage.setItem(ALERT_SNAPSHOT_STORAGE_KEY, JSON.stringify(serializeSnapshotStats(snapshot)));
+  } catch {
+    // Storage can fail in private browsing or quota-constrained environments; alerts still work in-memory.
+  }
+}
+
 function syncDashboardAlerts(feeds, articles) {
   const current = createSnapshotStats(feeds, articles);
-  const previous = runtime.previousSnapshotStats;
+  const previous = runtime.previousSnapshotStats || loadStoredAlertSnapshot();
 
   if (!previous) {
     runtime.previousSnapshotStats = current;
+    saveAlertSnapshot(current);
     return;
   }
 
@@ -1039,6 +1157,27 @@ function syncDashboardAlerts(feeds, articles) {
     });
   }
 
+  current.feedStates.forEach((feedState, feedId) => {
+    const previousFeedState = previous.feedStates?.get(feedId);
+    if (!previousFeedState) {
+      return;
+    }
+
+    if (feedState.isActive && !previousFeedState.isActive) {
+      addDashboardAlert({
+        title: `${feedState.name} became active`,
+        detail: "The feed is enabled again.",
+        type: "success",
+      });
+    } else if (!feedState.isActive && previousFeedState.isActive) {
+      addDashboardAlert({
+        title: `${feedState.name} became inactive`,
+        detail: "The feed was disabled.",
+        type: "warning",
+      });
+    }
+  });
+
   current.feedActivity.forEach((stats, feedId) => {
     const previousStats = previous.feedActivity.get(feedId);
     if (!previousStats) {
@@ -1047,6 +1186,7 @@ function syncDashboardAlerts(feeds, articles) {
 
     const feedName = stats.feed.name || "Untitled feed";
     const isDmvRssFeed = isDmvSource(stats.feed) && stats.feed.dmvMode === "rss";
+    const wasDmvRssFeed = previousStats.isDmvRssFeed || (isDmvSource(previousStats.feed) && previousStats.feed.dmvMode === "rss");
 
     if (stats.status === "dead" && previousStats.status !== "dead") {
       addDashboardAlert({
@@ -1062,7 +1202,7 @@ function syncDashboardAlerts(feeds, articles) {
       });
     }
 
-    if (isDmvRssFeed && previousStats.total === 0 && stats.total > 0) {
+    if ((isDmvRssFeed || wasDmvRssFeed) && previousStats.total === 0 && stats.total > 0) {
       addDashboardAlert({
         title: `${feedName} started producing articles`,
         detail: `${stats.total} article${stats.total === 1 ? "" : "s"} now available.`,
@@ -1070,7 +1210,7 @@ function syncDashboardAlerts(feeds, articles) {
       });
     }
 
-    if (isDmvRssFeed && stats.status === "inactive" && previousStats.status !== "inactive") {
+    if ((isDmvRssFeed || wasDmvRssFeed) && stats.status === "inactive" && previousStats.status !== "inactive") {
       addDashboardAlert({
         title: `${feedName} DMV activity stopped`,
         detail: "No DMV RSS articles in the last 30 days.",
@@ -1080,6 +1220,7 @@ function syncDashboardAlerts(feeds, articles) {
   });
 
   runtime.previousSnapshotStats = current;
+  saveAlertSnapshot(current);
 }
 
 function escapeHtml(value) {
