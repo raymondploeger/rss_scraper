@@ -1010,16 +1010,23 @@ function createSnapshotStats(feeds, articles) {
     }
     return counts;
   }, new Map());
+  const snapshotFeeds = feeds.map((feed) => ({
+    id: feed.id,
+    name: feed.name || "Untitled feed",
+    isActive: feed.isActive !== false,
+    lastStatus: feed.lastStatus || "idle",
+    articleCountToday: articlesTodayByFeed.get(feed.id) || 0,
+  }));
   const feedStates = new Map(
-    feeds.map((feed) => [
+    snapshotFeeds.map((feed) => [
       feed.id,
       {
         id: feed.id,
-        name: feed.name || "Untitled feed",
-        isActive: feed.isActive !== false,
+        name: feed.name,
+        isActive: feed.isActive,
         lastStatus: feed.lastStatus || "idle",
-        isError: isFeedError(feed),
-        articlesToday: articlesTodayByFeed.get(feed.id) || 0,
+        isError: feed.lastStatus === "error",
+        articlesToday: feed.articleCountToday,
       },
     ])
   );
@@ -1028,6 +1035,8 @@ function createSnapshotStats(feeds, articles) {
   return {
     articleIds,
     totalArticles: realArticles.length,
+    articlesToday: realArticles.filter((article) => toDate(article.pubDate) >= todayStart).length,
+    feeds: snapshotFeeds,
     feedActivity,
     feedStates,
     feedErrors: new Set(feeds.filter(isFeedError).map((feed) => feed.id)),
@@ -1039,6 +1048,14 @@ function serializeSnapshotStats(snapshot) {
   return {
     articleIds: Array.from(snapshot.articleIds),
     totalArticles: snapshot.totalArticles,
+    articlesToday: snapshot.articlesToday,
+    feeds: snapshot.feeds || Array.from(snapshot.feedStates?.values?.() || []).map((feed) => ({
+      id: feed.id,
+      name: feed.name,
+      isActive: feed.isActive,
+      lastStatus: feed.lastStatus,
+      articleCountToday: Number(feed.articleCountToday ?? feed.articlesToday) || 0,
+    })),
     feedErrors: Array.from(snapshot.feedErrors),
     feedStates: Array.from(snapshot.feedStates?.values?.() || []),
     feedActivity: Array.from(snapshot.feedActivity.entries()).map(([feedId, stats]) => ({
@@ -1090,16 +1107,25 @@ function hydrateSnapshotStats(snapshot) {
     isError: item.lastStatus === "error",
     articlesToday: 0,
   }));
+  const snapshotFeeds = Array.isArray(snapshot.feeds)
+    ? snapshot.feeds
+    : (Array.isArray(snapshot.feedStates) ? snapshot.feedStates : fallbackFeedStates).map((item) => ({
+        id: item.id,
+        name: item.name || "Untitled feed",
+        isActive: item.isActive !== false,
+        lastStatus: item.lastStatus || "idle",
+        articleCountToday: Number(item.articleCountToday ?? item.articlesToday) || 0,
+      }));
   const feedStates = new Map(
-    (Array.isArray(snapshot.feedStates) ? snapshot.feedStates : fallbackFeedStates).map((item) => [
+    snapshotFeeds.map((item) => [
       item.id,
       {
         id: item.id,
         name: item.name || "Untitled feed",
         isActive: item.isActive !== false,
         lastStatus: item.lastStatus || "idle",
-        isError: Boolean(item.isError),
-        articlesToday: Number(item.articlesToday) || 0,
+        isError: item.lastStatus === "error" || Boolean(item.isError),
+        articlesToday: Number(item.articleCountToday ?? item.articlesToday) || 0,
       },
     ])
   );
@@ -1107,6 +1133,8 @@ function hydrateSnapshotStats(snapshot) {
   return {
     articleIds: new Set(snapshot.articleIds),
     totalArticles: Number(snapshot.totalArticles) || snapshot.articleIds.length,
+    articlesToday: Number(snapshot.articlesToday) || 0,
+    feeds: snapshotFeeds,
     feedErrors: new Set(Array.isArray(snapshot.feedErrors) ? snapshot.feedErrors : []),
     feedActivity,
     feedStates,
@@ -1145,6 +1173,7 @@ function saveAlertSnapshot(snapshot) {
 function generateAlerts(previous, current) {
   console.log("[alerts][snapshot-compare]", { previous, current });
   const candidates = [];
+  const feedDiffs = [];
   const queueAlert = (priority, alert) => {
     candidates.push({ priority, alert });
   };
@@ -1167,43 +1196,63 @@ function generateAlerts(previous, current) {
     });
   }
 
-  current.feedStates.forEach((feedState, feedId) => {
-    const previousFeedState = previous.feedStates?.get(feedId);
-    if (!previousFeedState) {
+  const previousFeedsById = new Map((previous.feeds || []).map((feed) => [feed.id, feed]));
+
+  (current.feeds || []).forEach((feed) => {
+    const previousFeed = previousFeedsById.get(feed.id);
+    if (!previousFeed) {
       return;
     }
 
-    const todayDiff = feedState.articlesToday - previousFeedState.articlesToday;
+    const previousToday = Number(previousFeed.articleCountToday) || 0;
+    const currentToday = Number(feed.articleCountToday) || 0;
+    const todayDiff = currentToday - previousToday;
+    const enteredError = previousFeed.lastStatus !== "error" && feed.lastStatus === "error";
 
-    if (previousFeedState.lastStatus !== "error" && feedState.lastStatus === "error") {
+    if (todayDiff !== 0 || enteredError) {
+      feedDiffs.push({
+        id: feed.id,
+        name: feed.name,
+        previousToday,
+        currentToday,
+        todayDiff,
+        previousStatus: previousFeed.lastStatus,
+        currentStatus: feed.lastStatus,
+      });
+    }
+
+    if (enteredError) {
       queueAlert(1, {
-        title: `${feedState.name} entered error state`,
+        title: `${feed.name} entered error state`,
         detail: "The feed reported an error in the latest snapshot.",
         type: "error",
       });
     }
 
-    if (todayDiff > 0) {
+    if (previousToday === 0 && currentToday > 0) {
       queueAlert(2, {
-        title: `${feedState.name}: +${todayDiff} new today`,
-        detail: `${feedState.articlesToday} article${feedState.articlesToday === 1 ? "" : "s"} today.`,
+        title: `${feed.name} is active again`,
+        detail: `+${todayDiff} new article${todayDiff === 1 ? "" : "s"} today.`,
         type: "success",
       });
-    }
-
-    if (previousFeedState.articlesToday === 0 && feedState.articlesToday > 0) {
+    } else if (todayDiff > 0) {
       queueAlert(2, {
-        title: `${feedState.name} is active again`,
-        detail: `${feedState.articlesToday} article${feedState.articlesToday === 1 ? "" : "s"} today.`,
+        title: `${feed.name}: +${todayDiff} new articles today`,
+        detail: `${currentToday} article${currentToday === 1 ? "" : "s"} today.`,
         type: "success",
       });
-    } else if (previousFeedState.articlesToday > 0 && feedState.articlesToday === 0) {
+    } else if (previousToday > 0 && currentToday === 0) {
       queueAlert(2, {
-        title: `${feedState.name} stopped producing`,
+        title: `${feed.name} stopped producing`,
         detail: "No articles today in the latest snapshot.",
         type: "warning",
       });
     }
+  });
+
+  console.log("ALERT DIFF", {
+    totalDiff: newArticleCount,
+    feedDiffs,
   });
 
   current.feedActivity.forEach((stats, feedId) => {
