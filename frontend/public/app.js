@@ -753,14 +753,15 @@ function getFeedArticleCounts(articles) {
   }, new Map());
 }
 
-function getTopFeedCounts(counts, limit = 5) {
-  return Array.from(counts.entries())
-    .map(([feedId, count]) => ({
+function getCombinedFeedRankings(totalCounts, todayCounts, limit = 8) {
+  return Array.from(totalCounts.entries())
+    .map(([feedId, total]) => ({
       feedId,
-      count,
+      total,
+      today: todayCounts.get(feedId) || 0,
       name: getFeedName(feedId),
     }))
-    .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name))
+    .sort((left, right) => right.total - left.total || right.today - left.today || left.name.localeCompare(right.name))
     .slice(0, limit);
 }
 
@@ -841,6 +842,30 @@ function renderAnalyticsRows(items, emptyText) {
   `;
 }
 
+function renderFeedRankingRows(items) {
+  if (!items.length) {
+    return `<p class="analytics-empty">No article volume yet.</p>`;
+  }
+
+  return `
+    <ol class="analytics-list analytics-ranking-list">
+      ${items
+        .map(
+          (item) => `
+            <li>
+              <span>${escapeHtml(item.name)}</span>
+              <div class="analytics-count-pair">
+                <strong>${item.total} total</strong>
+                <strong>${item.today} today</strong>
+              </div>
+            </li>
+          `
+        )
+        .join("")}
+    </ol>
+  `;
+}
+
 function renderLowValueFeedRows(items) {
   if (!items.length) {
     return `<p class="analytics-empty">No dead or inactive feeds detected.</p>`;
@@ -893,8 +918,7 @@ function getDashboardAnalytics() {
   const feedCount = state.feeds.length + catalogOnlySources.length || 1;
 
   return {
-    topFeeds: getTopFeedCounts(articleCounts),
-    topTodayFeeds: getTopFeedCounts(todayCounts),
+    feedRankings: getCombinedFeedRankings(articleCounts, todayCounts),
     lowValueFeeds: getLowValueFeeds(realArticles),
     averageArticlesPerFeed: (realArticles.length / feedCount).toFixed(1),
     averageArticlesTodayPerFeed: (todayArticles.length / feedCount).toFixed(1),
@@ -921,12 +945,8 @@ function renderAnalyticsCard() {
     </div>
     <div class="analytics-grid">
       <div class="analytics-panel analytics-panel-wide">
-        <span class="analytics-label">Top feeds</span>
-        ${renderAnalyticsRows(analytics.topFeeds, "No article volume yet")}
-      </div>
-      <div class="analytics-panel analytics-panel-wide">
-        <span class="analytics-label">Top today</span>
-        ${renderAnalyticsRows(analytics.topTodayFeeds, "No articles today yet")}
+        <span class="analytics-label">Feed ranking</span>
+        ${renderFeedRankingRows(analytics.feedRankings)}
       </div>
       <div class="analytics-panel analytics-panel-wide">
         <span class="analytics-label">Dead / low value feeds</span>

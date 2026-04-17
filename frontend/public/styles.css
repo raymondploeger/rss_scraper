@@ -368,6 +368,17 @@ h3 {
   font-size: 0.82rem;
 }
 
+.analytics-count-pair {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.analytics-count-pair strong:last-child {
+  color: var(--text);
+}
+
 .analytics-status.is-dead {
   color: var(--danger);
 }
