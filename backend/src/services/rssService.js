@@ -27,6 +27,17 @@ const parser = new Parser({
   timeout: env.requestTimeoutMs,
   headers: {
     "User-Agent": "RSS Monitor Dashboard/2.0"
+  },
+  customFields: {
+    item: [
+      ["media:content", "media:content", { keepArray: true }],
+      ["media:thumbnail", "media:thumbnail", { keepArray: true }],
+      ["content:encoded", "content:encoded"],
+      ["itunes:image", "itunes:image"],
+      ["image", "image"],
+      ["image:url", "image:url"],
+      ["thumbnail", "thumbnail"]
+    ]
   }
 });
 
@@ -76,6 +87,13 @@ function resolveFeedImageCandidate(link, candidate) {
   }
 }
 
+function pickImageFromSrcset(value) {
+  return String(value || "")
+    .split(",")
+    .map((candidate) => candidate.trim().split(/\s+/)[0])
+    .find((candidate) => isMeaningfulImageCandidate(candidate)) || "";
+}
+
 function extractFirstMeaningfulHtmlImage(html, link) {
   const markup = normalizeText(html, "");
   if (!markup) {
@@ -96,7 +114,14 @@ function extractFirstMeaningfulHtmlImage(html, link) {
     const found = $(selector)
       .map((_, element) => {
         const node = $(element);
-        return node.attr("src") || node.attr("data-src") || node.attr("data-lazy-src") || "";
+        return (
+          node.attr("src") ||
+          node.attr("data-src") ||
+          node.attr("data-lazy-src") ||
+          node.attr("data-original") ||
+          pickImageFromSrcset(node.attr("srcset") || node.attr("data-srcset")) ||
+          ""
+        );
       })
       .get()
       .find((candidate) => isMeaningfulImageCandidate(candidate));
@@ -119,34 +144,87 @@ function isImageEnclosure(enclosure) {
   return type.startsWith("image/") || [".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif"].some((ext) => url.toLowerCase().includes(ext));
 }
 
-function extractFeedThumbnail(link, item) {
-  const mediaContent = Array.isArray(item["media:content"])
-    ? item["media:content"]
-    : item["media:content"]
-      ? [item["media:content"]]
-      : [];
-  const mediaThumbnail = Array.isArray(item["media:thumbnail"])
-    ? item["media:thumbnail"]
-    : item["media:thumbnail"]
-      ? [item["media:thumbnail"]]
-      : [];
-
-  const mediaContentCandidate = mediaContent
-    .map((entry) => (typeof entry === "object" ? entry.url || entry?.$?.url || "" : ""))
-    .find((candidate) => isMeaningfulImageCandidate(candidate));
-  if (mediaContentCandidate) {
-    return { url: resolveFeedImageCandidate(link, mediaContentCandidate), source: "rss-media-content" };
+function collectImageCandidates(value) {
+  if (!value) {
+    return [];
   }
 
-  const mediaThumbnailCandidate = mediaThumbnail
-    .map((entry) => (typeof entry === "object" ? entry.url || entry?.$?.url || "" : ""))
-    .find((candidate) => isMeaningfulImageCandidate(candidate));
+  if (typeof value === "string") {
+    return [value];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => collectImageCandidates(entry));
+  }
+
+  if (typeof value !== "object") {
+    return [];
+  }
+
+  const directCandidates = [
+    value.url,
+    value.href,
+    value.src,
+    typeof value.image === "string" ? value.image : "",
+    typeof value.imageUrl === "string" ? value.imageUrl : "",
+    typeof value.thumbnail === "string" ? value.thumbnail : "",
+    value.$?.url,
+    value.$?.href,
+    value.$?.src,
+    value["@_url"],
+    value["@_href"],
+    value["@_src"],
+    value._,
+    pickImageFromSrcset(value.srcset || value.$?.srcset || value["@_srcset"])
+  ].filter(Boolean);
+
+  return [
+    ...directCandidates,
+    ...Object.entries(value)
+      .filter(([key]) => !["$", "_"].includes(key))
+      .flatMap(([, entry]) => collectImageCandidates(entry))
+  ];
+}
+
+function findFirstImageCandidate(link, values) {
+  const candidate = values
+    .flatMap((value) => collectImageCandidates(value))
+    .find((entry) => isMeaningfulImageCandidate(entry));
+
+  return candidate ? resolveFeedImageCandidate(link, candidate) : "";
+}
+
+function extractFeedThumbnail(link, item) {
+  const mediaContentCandidate = findFirstImageCandidate(link, [item["media:content"], item.mediaContent]);
+  if (mediaContentCandidate) {
+    return { url: mediaContentCandidate, source: "rss-media-content" };
+  }
+
+  const mediaThumbnailCandidate = findFirstImageCandidate(link, [item["media:thumbnail"], item.mediaThumbnail]);
   if (mediaThumbnailCandidate) {
-    return { url: resolveFeedImageCandidate(link, mediaThumbnailCandidate), source: "rss-media-thumbnail" };
+    return { url: mediaThumbnailCandidate, source: "rss-media-thumbnail" };
   }
 
   if (isImageEnclosure(item.enclosure)) {
     return { url: resolveFeedImageCandidate(link, item.enclosure.url), source: "rss-enclosure" };
+  }
+
+  const imageEnclosure = (Array.isArray(item.enclosures) ? item.enclosures : []).find(isImageEnclosure);
+  if (imageEnclosure) {
+    return { url: resolveFeedImageCandidate(link, imageEnclosure.url), source: "rss-enclosure" };
+  }
+
+  const directImageCandidate = findFirstImageCandidate(link, [
+    item.image,
+    item.imageUrl,
+    item["image:url"],
+    item.thumbnail,
+    item["itunes:image"],
+    item["og:image"],
+    item.ogImage
+  ]);
+  if (directImageCandidate) {
+    return { url: directImageCandidate, source: "rss-image-field" };
   }
 
   const contentEncodedImage = extractFirstMeaningfulHtmlImage(item["content:encoded"] || item.content, link);
