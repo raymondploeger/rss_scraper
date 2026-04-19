@@ -3,6 +3,7 @@ const THEME_STORAGE_KEY = "rss-monitor-theme";
 const FEED_PANEL_COLLAPSED_STORAGE_KEY = "feedPanelCollapsed";
 const ALERT_SNAPSHOT_STORAGE_KEY = "prevSnapshot";
 const ALERT_DEDUPE_STORAGE_KEY = "recentAlertKeys";
+const ALERT_ARTICLE_FILTER_STORAGE_KEY = "activeAlertArticleFilter";
 const ALERT_DEDUPE_WINDOW_MS = 10 * 60 * 1000;
 const POLLING_INTERVAL_MS = 30000;
 const ARTICLE_PAGE_SIZE = 400;
@@ -34,6 +35,8 @@ const state = {
     canadaDmvAll: false,
     sourceGroup: "all",
     date: "",
+    articleIds: [],
+    alertLabel: "",
   },
 };
 
@@ -971,7 +974,15 @@ function renderLowValueFeedRows(items) {
   `;
 }
 
-function addDashboardAlert({ title, detail = "", type = "info", topic = "", todayOnly = false }) {
+function addDashboardAlert({
+  title,
+  detail = "",
+  type = "info",
+  topic = "",
+  todayOnly = false,
+  articleIds = [],
+}) {
+  const exactArticleIds = Array.from(new Set((articleIds || []).filter(Boolean))).sort();
   runtime.dashboardAlertId += 1;
   runtime.dashboardAlerts.unshift({
     id: String(runtime.dashboardAlertId),
@@ -980,6 +991,7 @@ function addDashboardAlert({ title, detail = "", type = "info", topic = "", toda
     type,
     topic,
     todayOnly,
+    articleIds: exactArticleIds,
     createdAt: new Date(),
   });
   runtime.dashboardAlerts = runtime.dashboardAlerts.slice(0, DASHBOARD_ALERT_LIMIT);
@@ -999,11 +1011,11 @@ function renderDashboardAlerts() {
     <ol class="dashboard-alert-list">
       ${runtime.dashboardAlerts
         .map((alert) => {
-          const isClickable = Boolean(alert.topic);
+          const isClickable = Array.isArray(alert.articleIds) && alert.articleIds.length > 0;
           return `
             <li
               class="dashboard-alert is-${alert.type}${isClickable ? " analytics-clickable" : ""}"
-              ${isClickable ? `data-analytics-topic="${escapeHtml(alert.topic)}" data-analytics-today-only="${alert.todayOnly ? "true" : "false"}" role="button" tabindex="0" title="Click to view related articles"` : ""}
+              ${isClickable ? `data-alert-id="${escapeHtml(alert.id)}" role="button" tabindex="0" title="Click to view exact matching articles"` : ""}
             >
               <div>
                 <strong>${escapeHtml(alert.title)}</strong>
@@ -1236,7 +1248,8 @@ function saveAlertSnapshot(snapshot) {
 }
 
 function getAlertDedupeKey(alert) {
-  return [alert.type || "info", alert.title || "", alert.detail || ""].join("|").toLowerCase();
+  const exactArticleIds = Array.isArray(alert.articleIds) ? alert.articleIds.join(",") : "";
+  return [alert.type || "info", alert.title || "", alert.detail || "", exactArticleIds].join("|").toLowerCase();
 }
 
 function loadRecentAlertKeys() {
@@ -1287,14 +1300,28 @@ function generateAlerts(previous, current) {
     return;
   }
 
-  const previousArticleCount = Array.isArray(previous.articles) ? previous.articles.length : previous.totalArticles;
-  const currentArticleCount = Array.isArray(current.articles) ? current.articles.length : current.totalArticles;
-  const newArticleCount = currentArticleCount - previousArticleCount;
+  const previousArticleIds = previous.articleIds instanceof Set
+    ? previous.articleIds
+    : new Set(Array.isArray(previous.articleIds) ? previous.articleIds : []);
+  const newArticles = (current.articles || []).filter((article) => article.id && !previousArticleIds.has(article.id));
+  const newArticleIds = newArticles.map((article) => article.id);
+  const newArticleIdsByFeed = newArticles.reduce((groups, article) => {
+    if (!article.feedId) {
+      return groups;
+    }
+
+    const feedArticleIds = groups.get(article.feedId) || [];
+    feedArticleIds.push(article.id);
+    groups.set(article.feedId, feedArticleIds);
+    return groups;
+  }, new Map());
+  const newArticleCount = newArticleIds.length;
   if (newArticleCount > 0) {
     queueAlert(3, {
       title: `+${newArticleCount} new article${newArticleCount === 1 ? "" : "s"} since last refresh`,
       detail: "Total article count increased since the previous snapshot.",
       type: "info",
+      articleIds: newArticleIds,
     });
   }
 
@@ -1320,6 +1347,7 @@ function generateAlerts(previous, current) {
     const enteredError = previousFeed.lastStatus !== "error" && feed.lastStatus === "error";
     const alertScore = currentToday * 3 + currentTotal * 0.1;
     const passesFeedThreshold = canCompareFeedStats && (totalDiff >= 2 || todayDiff >= 1);
+    const feedNewArticleIds = newArticleIdsByFeed.get(feed.id) || [];
 
     if ((canCompareFeedStats && (totalDiff !== 0 || todayDiff !== 0)) || enteredError) {
       feedDiffs.push({
@@ -1354,6 +1382,7 @@ function generateAlerts(previous, current) {
         type: "success",
         topic: feed.topic || "",
         todayOnly: false,
+        articleIds: feedNewArticleIds,
       }, alertScore);
     }
 
@@ -1364,6 +1393,7 @@ function generateAlerts(previous, current) {
         type: "success",
         topic: feed.topic || "",
         todayOnly: true,
+        articleIds: feedNewArticleIds,
       }, alertScore);
     } else if (passesFeedThreshold && todayDiff > 0) {
       queueAlert(2, {
@@ -1372,6 +1402,7 @@ function generateAlerts(previous, current) {
         type: "success",
         topic: feed.topic || "",
         todayOnly: true,
+        articleIds: feedNewArticleIds,
       }, alertScore);
     } else if (passesFeedThreshold && previousToday > 0 && currentToday === 0) {
       queueAlert(2, {
@@ -1424,6 +1455,7 @@ function generateAlerts(previous, current) {
         type: "success",
         topic: stats.feed.topic || "",
         todayOnly: false,
+        articleIds: newArticleIdsByFeed.get(feedId) || [],
       });
     }
 
@@ -1601,10 +1633,107 @@ function renderSummary() {
 function applyTodayArticleFilter() {
   const today = toDateInputValue(new Date());
   const nextDate = state.filters.date === today ? "" : today;
+  clearExactArticleFilter();
   state.filters.date = nextDate;
   elements.dateFilter.value = nextDate;
   renderSummary();
   renderArticles();
+}
+
+function loadStoredExactArticleFilter() {
+  try {
+    const stored = JSON.parse(window.sessionStorage.getItem(ALERT_ARTICLE_FILTER_STORAGE_KEY) || "null");
+    if (!stored || !Array.isArray(stored.articleIds)) {
+      return null;
+    }
+
+    return {
+      articleIds: Array.from(new Set(stored.articleIds.filter(Boolean))),
+      label: String(stored.label || "").trim(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveExactArticleFilter(articleIds, label) {
+  try {
+    window.sessionStorage.setItem(
+      ALERT_ARTICLE_FILTER_STORAGE_KEY,
+      JSON.stringify({
+        articleIds: Array.from(new Set((articleIds || []).filter(Boolean))),
+        label: String(label || "").trim(),
+      })
+    );
+  } catch {
+    // Session storage is a convenience; the in-memory alert filter still works without it.
+  }
+}
+
+function clearStoredExactArticleFilter() {
+  try {
+    window.sessionStorage.removeItem(ALERT_ARTICLE_FILTER_STORAGE_KEY);
+  } catch {
+    // Ignore storage failures; clearing the in-memory filter is the important part.
+  }
+}
+
+function clearExactArticleFilter(options = {}) {
+  const { clearStorage = true } = options;
+  state.filters.articleIds = [];
+  state.filters.alertLabel = "";
+  if (clearStorage) {
+    clearStoredExactArticleFilter();
+  }
+}
+
+function restoreExactArticleFilterFromSession() {
+  const storedFilter = loadStoredExactArticleFilter();
+  if (!storedFilter?.articleIds?.length) {
+    return;
+  }
+
+  const availableArticleIds = new Set(state.articles.map((article) => article.id).filter(Boolean));
+  const restoredArticleIds = storedFilter.articleIds.filter((articleId) => availableArticleIds.has(articleId));
+
+  if (!restoredArticleIds.length) {
+    clearExactArticleFilter();
+    return;
+  }
+
+  state.filters.articleIds = restoredArticleIds;
+  state.filters.alertLabel = storedFilter.label || `${restoredArticleIds.length} articles`;
+  saveExactArticleFilter(restoredArticleIds, state.filters.alertLabel);
+}
+
+function applyAlertArticleFilter(alert) {
+  const articleIds = Array.isArray(alert?.articleIds) ? alert.articleIds.filter(Boolean) : [];
+  if (!articleIds.length) {
+    return;
+  }
+
+  state.filters.articleIds = Array.from(new Set(articleIds));
+  state.filters.alertLabel = alert.title || `${state.filters.articleIds.length} articles`;
+  state.filters.topic = alert.topic || "";
+  state.filters.date = alert.todayOnly ? toDateInputValue(new Date()) : "";
+  state.filters.feedId = "";
+  state.filters.dmvFeedId = "";
+  state.filters.canadaDmvFeedPath = "";
+  state.filters.canadaDmvAll = false;
+  state.dashboardMode = "normal";
+
+  elements.topicFilter.value = state.filters.topic;
+  elements.dateFilter.value = state.filters.date;
+  elements.feedFilter.value = "";
+  if (elements.dmvFeedFilter) {
+    elements.dmvFeedFilter.value = "";
+  }
+  if (elements.canadaDmvFilter) {
+    elements.canadaDmvFilter.value = "";
+  }
+
+  saveExactArticleFilter(state.filters.articleIds, state.filters.alertLabel);
+  renderDashboard();
 }
 
 function applyAnalyticsFilter({ topic, todayOnly = false }) {
@@ -1613,6 +1742,7 @@ function applyAnalyticsFilter({ topic, todayOnly = false }) {
     return;
   }
 
+  clearExactArticleFilter();
   state.filters.topic = nextTopic;
   state.filters.date = todayOnly ? toDateInputValue(new Date()) : "";
   state.filters.feedId = "";
@@ -1642,6 +1772,11 @@ function getTodaySummaryCardFromEvent(event) {
 function getAnalyticsFilterTargetFromEvent(event) {
   const target = event.target instanceof Element ? event.target : event.target?.parentElement;
   return target?.closest("[data-analytics-topic]");
+}
+
+function getDashboardAlertTargetFromEvent(event) {
+  const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+  return target?.closest("[data-alert-id]");
 }
 
 function getSelectedOptionText(select) {
@@ -1686,6 +1821,14 @@ function syncFilterUx() {
 
   if (state.filters.search) {
     addActiveFilterChip(fragment, "Search", state.filters.search, "search");
+  }
+  if (Array.isArray(state.filters.articleIds) && state.filters.articleIds.length) {
+    addActiveFilterChip(
+      fragment,
+      "Alert",
+      state.filters.alertLabel || `${state.filters.articleIds.length} articles`,
+      "article-ids"
+    );
   }
   if (state.filters.topic) {
     addActiveFilterChip(fragment, "Topic", state.filters.topic, "topic");
@@ -1740,6 +1883,8 @@ function clearActiveFilter(filterKey) {
   if (filterKey === "search") {
     state.filters.search = "";
     elements.searchFilter.value = "";
+  } else if (filterKey === "article-ids") {
+    clearExactArticleFilter();
   } else if (filterKey === "topic") {
     state.filters.topic = "";
     elements.topicFilter.value = "";
@@ -2074,6 +2219,7 @@ function resetDashboardState() {
   state.filters.canadaDmvAll = false;
   state.filters.sourceGroup = "all";
   state.filters.date = "";
+  clearExactArticleFilter({ clearStorage: false });
 
   if (elements.searchFilter) {
     elements.searchFilter.value = "";
@@ -2236,6 +2382,11 @@ function renderFeedList() {
 function articleMatchesFilters(article) {
   if (isOfficialFallbackArticle(article)) {
     return false;
+  }
+
+  const exactArticleIds = Array.isArray(state.filters.articleIds) ? state.filters.articleIds : [];
+  if (exactArticleIds.length) {
+    return exactArticleIds.includes(article.id);
   }
 
   const selectedUsDmvEntry = getSelectedUsDmvCatalogEntry();
@@ -2621,6 +2772,7 @@ async function loadSnapshot() {
   state.feeds = feeds;
   state.articles = articles;
   state.dmvCatalog = Array.isArray(dmvCatalog) ? dmvCatalog : [];
+  restoreExactArticleFilterFromSession();
   syncDashboardAlerts(feeds, articles);
   renderDashboard();
   syncNewArticleNotifications(articles);
@@ -2747,16 +2899,19 @@ async function importDmvFeeds() {
 
 function bindEvents() {
   elements.searchFilter.addEventListener("input", (event) => {
+    clearExactArticleFilter();
     state.filters.search = event.target.value.trim();
     renderArticles();
   });
 
   elements.topicFilter.addEventListener("change", (event) => {
+    clearExactArticleFilter();
     state.filters.topic = event.target.value;
     renderArticles();
   });
 
   elements.feedFilter.addEventListener("change", (event) => {
+    clearExactArticleFilter();
     state.filters.feedId = event.target.value;
     state.filters.dmvFeedId = "";
     state.filters.canadaDmvFeedPath = "";
@@ -2776,6 +2931,7 @@ function bindEvents() {
 
   if (elements.dmvFeedFilter) {
     elements.dmvFeedFilter.addEventListener("change", (event) => {
+      clearExactArticleFilter();
       state.filters.dmvFeedId = event.target.value;
       state.filters.feedId = "";
       state.filters.canadaDmvFeedPath = "";
@@ -2794,6 +2950,7 @@ function bindEvents() {
 
   if (elements.canadaDmvFilter) {
     elements.canadaDmvFilter.addEventListener("change", (event) => {
+      clearExactArticleFilter();
       state.filters.canadaDmvFeedPath = event.target.value;
       state.filters.canadaDmvAll = event.target.value === "";
       state.filters.feedId = "";
@@ -2811,6 +2968,7 @@ function bindEvents() {
   }
 
   elements.dateFilter.addEventListener("change", (event) => {
+    clearExactArticleFilter();
     state.filters.date = event.target.value;
     renderSummary();
     renderArticles();
@@ -2821,6 +2979,13 @@ function bindEvents() {
     const dismissButton = target?.closest("[data-dismiss-dashboard-alert]");
     if (dismissButton) {
       dismissDashboardAlert(dismissButton.dataset.dismissDashboardAlert || "");
+      return;
+    }
+
+    const dashboardAlertTarget = getDashboardAlertTargetFromEvent(event);
+    if (dashboardAlertTarget) {
+      const alert = runtime.dashboardAlerts.find((item) => item.id === dashboardAlertTarget.dataset.alertId);
+      applyAlertArticleFilter(alert);
       return;
     }
 
@@ -2840,6 +3005,14 @@ function bindEvents() {
   });
 
   elements.summaryGrid.addEventListener("keydown", (event) => {
+    const dashboardAlertTarget = getDashboardAlertTargetFromEvent(event);
+    if (dashboardAlertTarget && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      const alert = runtime.dashboardAlerts.find((item) => item.id === dashboardAlertTarget.dataset.alertId);
+      applyAlertArticleFilter(alert);
+      return;
+    }
+
     const analyticsFilterTarget = getAnalyticsFilterTargetFromEvent(event);
     if (analyticsFilterTarget && (event.key === "Enter" || event.key === " ")) {
       event.preventDefault();
@@ -2869,7 +3042,10 @@ function bindEvents() {
       canadaDmvAll: false,
       sourceGroup: "all",
       date: "",
+      articleIds: [],
+      alertLabel: "",
     };
+    clearStoredExactArticleFilter();
     state.dashboardMode = "normal";
 
     elements.searchFilter.value = "";
@@ -2984,6 +3160,7 @@ function bindEvents() {
 
   if (elements.dmvToggleButton) {
     elements.dmvToggleButton.addEventListener("click", () => {
+      clearExactArticleFilter();
       state.dashboardMode = state.dashboardMode === "usa" ? "normal" : "usa";
       state.filters.feedId = "";
       state.filters.dmvFeedId = "";
@@ -3005,6 +3182,7 @@ function bindEvents() {
 
   if (elements.canadaToggleButton) {
     elements.canadaToggleButton.addEventListener("click", () => {
+      clearExactArticleFilter();
       state.dashboardMode = state.dashboardMode === "canada" ? "normal" : "canada";
       state.filters.feedId = "";
       state.filters.dmvFeedId = "";
