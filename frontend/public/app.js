@@ -226,6 +226,10 @@ function getFeedName(feedId) {
   return state.feeds.find((feed) => feed.id === feedId)?.name || "Unknown feed";
 }
 
+function getFeedTopic(feedId) {
+  return state.feeds.find((feed) => feed.id === feedId)?.topic || "";
+}
+
 function getNonDmvFeeds() {
   return state.feeds.filter((feed) => !isDmvWrapperFeed(feed));
 }
@@ -857,6 +861,7 @@ function getCombinedFeedRankings(totalCounts, todayCounts, recentCounts, limit =
       today: todayCounts.get(feedId) || 0,
       recent: recentCounts.get(feedId) || 0,
       name: getFeedName(feedId),
+      topic: getFeedTopic(feedId),
     }))
     .map((item) => ({
       ...item,
@@ -921,10 +926,20 @@ function renderFeedRankingRows(items) {
         .map(
           (item) => `
             <li>
-              <span>${escapeHtml(item.name)}</span>
+              <span
+                data-analytics-topic="${escapeHtml(item.topic || "")}"
+                data-analytics-today-only="false"
+                role="button"
+                tabindex="0"
+              >${escapeHtml(item.name)}</span>
               <div class="analytics-count-pair">
                 <strong>${item.total} total</strong>
-                <strong>${item.today} today</strong>
+                <strong
+                  data-analytics-topic="${escapeHtml(item.topic || "")}"
+                  data-analytics-today-only="true"
+                  role="button"
+                  tabindex="0"
+                >${item.today} today</strong>
               </div>
             </li>
           `
@@ -1568,9 +1583,41 @@ function applyTodayArticleFilter() {
   renderArticles();
 }
 
+function applyAnalyticsFilter({ topic, todayOnly = false }) {
+  const nextTopic = String(topic || "").trim();
+  if (!nextTopic) {
+    return;
+  }
+
+  state.filters.topic = nextTopic;
+  state.filters.date = todayOnly ? toDateInputValue(new Date()) : "";
+  state.filters.feedId = "";
+  state.filters.dmvFeedId = "";
+  state.filters.canadaDmvFeedPath = "";
+  state.filters.canadaDmvAll = false;
+  state.dashboardMode = "normal";
+
+  elements.topicFilter.value = nextTopic;
+  elements.dateFilter.value = state.filters.date;
+  elements.feedFilter.value = "";
+  if (elements.dmvFeedFilter) {
+    elements.dmvFeedFilter.value = "";
+  }
+  if (elements.canadaDmvFilter) {
+    elements.canadaDmvFilter.value = "";
+  }
+
+  renderDashboard();
+}
+
 function getTodaySummaryCardFromEvent(event) {
   const target = event.target instanceof Element ? event.target : event.target?.parentElement;
   return target?.closest('[data-action="filter-today"]');
+}
+
+function getAnalyticsFilterTargetFromEvent(event) {
+  const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+  return target?.closest("[data-analytics-topic]");
 }
 
 function getSelectedOptionText(select) {
@@ -2753,6 +2800,15 @@ function bindEvents() {
       return;
     }
 
+    const analyticsFilterTarget = getAnalyticsFilterTargetFromEvent(event);
+    if (analyticsFilterTarget) {
+      applyAnalyticsFilter({
+        topic: analyticsFilterTarget.dataset.analyticsTopic || "",
+        todayOnly: analyticsFilterTarget.dataset.analyticsTodayOnly === "true",
+      });
+      return;
+    }
+
     const todayCard = getTodaySummaryCardFromEvent(event);
     if (todayCard) {
       applyTodayArticleFilter();
@@ -2760,6 +2816,16 @@ function bindEvents() {
   });
 
   elements.summaryGrid.addEventListener("keydown", (event) => {
+    const analyticsFilterTarget = getAnalyticsFilterTargetFromEvent(event);
+    if (analyticsFilterTarget && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      applyAnalyticsFilter({
+        topic: analyticsFilterTarget.dataset.analyticsTopic || "",
+        todayOnly: analyticsFilterTarget.dataset.analyticsTodayOnly === "true",
+      });
+      return;
+    }
+
     const todayCard = getTodaySummaryCardFromEvent(event);
     if (!todayCard || (event.key !== "Enter" && event.key !== " ")) {
       return;
