@@ -981,6 +981,8 @@ function addDashboardAlert({
   topic = "",
   todayOnly = false,
   articleIds = [],
+  priorityLevel = "low",
+  isDmvAlert = false,
 }) {
   const exactArticleIds = Array.from(new Set((articleIds || []).filter(Boolean))).sort();
   runtime.dashboardAlertId += 1;
@@ -992,6 +994,8 @@ function addDashboardAlert({
     topic,
     todayOnly,
     articleIds: exactArticleIds,
+    priorityLevel,
+    isDmvAlert,
     createdAt: new Date(),
   });
   runtime.dashboardAlerts = runtime.dashboardAlerts.slice(0, DASHBOARD_ALERT_LIMIT);
@@ -1014,7 +1018,7 @@ function renderDashboardAlerts() {
           const isClickable = Array.isArray(alert.articleIds) && alert.articleIds.length > 0;
           return `
             <li
-              class="dashboard-alert is-${alert.type}${isClickable ? " analytics-clickable" : ""}"
+              class="dashboard-alert is-${alert.type} priority-${alert.priorityLevel || "low"}${isClickable ? " analytics-clickable" : ""}"
               ${isClickable ? `data-alert-id="${escapeHtml(alert.id)}" role="button" tabindex="0" title="Click to view exact matching articles"` : ""}
             >
               <div>
@@ -1283,12 +1287,76 @@ function shouldShowDashboardAlert(alert) {
   return true;
 }
 
+function getAlertPriorityRank(priorityLevel) {
+  if (priorityLevel === "high") {
+    return 1;
+  }
+  if (priorityLevel === "medium") {
+    return 2;
+  }
+  return 3;
+}
+
+function getAlertCandidateRank(candidate) {
+  const dmvBoost = candidate.isDmvAlert ? 0.5 : 0;
+  const summaryPenalty = candidate.dedupeScope === "global-new-articles" ? 1 : 0;
+  return getAlertPriorityRank(candidate.alert.priorityLevel) + summaryPenalty - dmvBoost;
+}
+
+function getAlertArticleIdKey(alert) {
+  const articleIds = Array.isArray(alert.articleIds) ? alert.articleIds : [];
+  return articleIds.slice().sort().join("|");
+}
+
+function alertArticleIdsOverlap(leftAlert, rightAlert) {
+  const leftIds = Array.isArray(leftAlert.articleIds) ? leftAlert.articleIds : [];
+  const rightIds = new Set(Array.isArray(rightAlert.articleIds) ? rightAlert.articleIds : []);
+  return leftIds.some((articleId) => rightIds.has(articleId));
+}
+
+function dedupeAlertCandidates(candidates) {
+  const selected = [];
+
+  candidates
+    .slice()
+    .sort((left, right) => getAlertCandidateRank(left) - getAlertCandidateRank(right) || right.score - left.score)
+    .forEach((candidate) => {
+      const articleIdKey = getAlertArticleIdKey(candidate.alert);
+      if (articleIdKey && selected.some((item) => getAlertArticleIdKey(item.alert) === articleIdKey)) {
+        return;
+      }
+
+      if (
+        candidate.dedupeScope === "global-new-articles" &&
+        selected.some((item) => getAlertArticleIdKey(item.alert) && alertArticleIdsOverlap(item.alert, candidate.alert))
+      ) {
+        return;
+      }
+
+      selected.push(candidate);
+    });
+
+  return selected;
+}
+
 function generateAlerts(previous, current) {
   console.log("[alerts][snapshot-compare]", { previous, current });
   const candidates = [];
   const feedDiffs = [];
-  const queueAlert = (priority, alert, score = 0) => {
-    candidates.push({ priority, score, alert });
+  const queueAlert = (priorityLevel, alert, score = 0, options = {}) => {
+    const articleIds = Array.from(new Set((alert.articleIds || []).filter(Boolean))).sort();
+    const isDmvAlert = Boolean(options.isDmvAlert);
+    candidates.push({
+      score,
+      dedupeScope: options.dedupeScope || "",
+      isDmvAlert,
+      alert: {
+        ...alert,
+        articleIds,
+        priorityLevel,
+        isDmvAlert,
+      },
+    });
   };
 
   if (!previous) {
@@ -1317,12 +1385,12 @@ function generateAlerts(previous, current) {
   }, new Map());
   const newArticleCount = newArticleIds.length;
   if (newArticleCount > 0) {
-    queueAlert(3, {
+    queueAlert("low", {
       title: `+${newArticleCount} new article${newArticleCount === 1 ? "" : "s"} since last refresh`,
       detail: "Total article count increased since the previous snapshot.",
       type: "info",
       articleIds: newArticleIds,
-    });
+    }, newArticleCount, { dedupeScope: "global-new-articles" });
   }
 
   const previousFeedsById = new Map((previous.feeds || []).map((feed) => [feed.id, feed]));
@@ -1348,6 +1416,10 @@ function generateAlerts(previous, current) {
     const alertScore = currentToday * 3 + currentTotal * 0.1;
     const passesFeedThreshold = canCompareFeedStats && (totalDiff >= 2 || todayDiff >= 1);
     const feedNewArticleIds = newArticleIdsByFeed.get(feed.id) || [];
+    const liveFeed = current.feedsById?.get(feed.id) || feed;
+    const isDmvFeed = isDmvSource(liveFeed);
+    const isLargeSpike = feedNewArticleIds.length >= 10;
+    const newArticlePriority = isLargeSpike ? "high" : isDmvFeed ? "medium" : "low";
 
     if ((canCompareFeedStats && (totalDiff !== 0 || todayDiff !== 0)) || enteredError) {
       feedDiffs.push({
@@ -1366,52 +1438,52 @@ function generateAlerts(previous, current) {
     }
 
     if (enteredError) {
-      queueAlert(1, {
+      queueAlert("high", {
         title: `${feed.name} entered error state`,
         detail: "The feed reported an error in the latest snapshot.",
         type: "error",
         topic: feed.topic || "",
         todayOnly: false,
-      }, alertScore);
+      }, alertScore, { isDmvAlert: isDmvFeed });
     }
 
     if (passesFeedThreshold && totalDiff > 0) {
-      queueAlert(2, {
+      queueAlert(newArticlePriority, {
         title: `${feed.name}: +${totalDiff} new articles`,
         detail: `${currentTotal} total article${currentTotal === 1 ? "" : "s"} for this feed.`,
         type: "success",
         topic: feed.topic || "",
         todayOnly: false,
         articleIds: feedNewArticleIds,
-      }, alertScore);
+      }, alertScore, { dedupeScope: "feed-new-articles", isDmvAlert: isDmvFeed });
     }
 
     if (passesFeedThreshold && previousToday === 0 && currentToday > 0) {
-      queueAlert(2, {
+      queueAlert(isDmvFeed ? "high" : "medium", {
         title: `${feed.name} is active again`,
         detail: `+${todayDiff} new article${todayDiff === 1 ? "" : "s"} today.`,
         type: "success",
         topic: feed.topic || "",
         todayOnly: true,
         articleIds: feedNewArticleIds,
-      }, alertScore);
+      }, alertScore, { dedupeScope: "feed-new-articles", isDmvAlert: isDmvFeed });
     } else if (passesFeedThreshold && todayDiff > 0) {
-      queueAlert(2, {
+      queueAlert(newArticlePriority, {
         title: `${feed.name}: +${todayDiff} new articles today`,
         detail: `${currentToday} article${currentToday === 1 ? "" : "s"} today.`,
         type: "success",
         topic: feed.topic || "",
         todayOnly: true,
         articleIds: feedNewArticleIds,
-      }, alertScore);
+      }, alertScore, { dedupeScope: "feed-new-articles", isDmvAlert: isDmvFeed });
     } else if (passesFeedThreshold && previousToday > 0 && currentToday === 0) {
-      queueAlert(2, {
+      queueAlert("medium", {
         title: `${feed.name} stopped producing`,
         detail: "No articles today in the latest snapshot.",
         type: "warning",
         topic: feed.topic || "",
         todayOnly: true,
-      }, alertScore);
+      }, alertScore, { isDmvAlert: isDmvFeed });
     }
   });
 
@@ -1427,51 +1499,53 @@ function generateAlerts(previous, current) {
     }
 
     const feedName = stats.feed.name || "Untitled feed";
-    const isDmvRssFeed = isDmvSource(stats.feed) && stats.feed.dmvMode === "rss";
+    const liveFeed = current.feedsById?.get(feedId) || stats.feed;
+    const isDmvFeed = isDmvSource(liveFeed);
+    const isDmvRssFeed = isDmvFeed && liveFeed.dmvMode === "rss";
     const wasDmvRssFeed = previousStats.isDmvRssFeed || (isDmvSource(previousStats.feed) && previousStats.feed.dmvMode === "rss");
 
     if (stats.status === "dead" && previousStats.status !== "dead") {
-      queueAlert(1, {
+      queueAlert("high", {
         title: `${feedName} is now dead`,
         detail: "No imported articles are available for this feed.",
         type: "error",
         topic: stats.feed.topic || "",
         todayOnly: false,
-      });
+      }, 0, { isDmvAlert: isDmvFeed });
     } else if (stats.status === "inactive" && previousStats.status !== "inactive") {
-      queueAlert(2, {
+      queueAlert("medium", {
         title: `${feedName} is now inactive`,
         detail: "No articles in the last 30 days.",
         type: "warning",
         topic: stats.feed.topic || "",
         todayOnly: false,
-      });
+      }, 0, { isDmvAlert: isDmvFeed });
     }
 
     if ((isDmvRssFeed || wasDmvRssFeed) && previousStats.total === 0 && stats.total > 0) {
-      queueAlert(2, {
+      queueAlert("high", {
         title: `${feedName} started producing articles`,
         detail: `${stats.total} article${stats.total === 1 ? "" : "s"} now available.`,
         type: "success",
         topic: stats.feed.topic || "",
         todayOnly: false,
         articleIds: newArticleIdsByFeed.get(feedId) || [],
-      });
+      }, stats.total, { dedupeScope: "feed-new-articles", isDmvAlert: true });
     }
 
     if ((isDmvRssFeed || wasDmvRssFeed) && stats.status === "inactive" && previousStats.status !== "inactive") {
-      queueAlert(2, {
+      queueAlert("medium", {
         title: `${feedName} DMV activity stopped`,
         detail: "No DMV RSS articles in the last 30 days.",
         type: "warning",
         topic: stats.feed.topic || "",
         todayOnly: false,
-      });
+      }, 0, { isDmvAlert: true });
     }
   });
 
   if (!candidates.length) {
-    queueAlert(4, {
+    queueAlert("low", {
       title: "Sources refreshed — no significant changes detected",
       detail: "Article counts and feed status are unchanged since the previous snapshot.",
       type: "info",
@@ -1479,8 +1553,7 @@ function generateAlerts(previous, current) {
   }
 
   const selectedAlerts = [];
-  candidates
-    .sort((left, right) => left.priority - right.priority || right.score - left.score)
+  dedupeAlertCandidates(candidates)
     .forEach((candidate) => {
       if (selectedAlerts.length < 5 && shouldShowDashboardAlert(candidate.alert)) {
         selectedAlerts.push(candidate);
