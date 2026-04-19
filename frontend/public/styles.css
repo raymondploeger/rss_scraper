@@ -379,6 +379,26 @@ h3 {
   color: var(--text);
 }
 
+.analytics-clickable {
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.analytics-list .analytics-clickable {
+  display: inline-block;
+}
+
+.analytics-clickable:hover,
+.analytics-clickable:focus-visible {
+  opacity: 0.85;
+  transform: translateY(-1px);
+}
+
+.analytics-clickable:active {
+  opacity: 0.6;
+  transform: translateY(0);
+}
+
 .analytics-status.is-dead {
   color: var(--danger);
 }
@@ -445,6 +465,12 @@ h3 {
 .dashboard-alert button:hover,
 .dashboard-alert button:focus-visible {
   color: var(--accent);
+}
+
+.dashboard-alert.analytics-clickable:hover,
+.dashboard-alert.analytics-clickable:focus-visible {
+  border-color: rgba(100, 180, 255, 0.6);
+  background: rgba(100, 180, 255, 0.05);
 }
 
 .analytics-empty {

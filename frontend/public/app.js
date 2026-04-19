@@ -923,27 +923,24 @@ function renderFeedRankingRows(items) {
   return `
     <ol class="analytics-list analytics-ranking-list">
       ${items
-        .map(
-          (item) => `
+        .map((item) => {
+          const topic = String(item.topic || "");
+          const clickableAttrs = topic
+            ? `class="analytics-clickable" data-analytics-topic="${escapeHtml(topic)}" role="button" tabindex="0" title="Click to filter articles"`
+            : "";
+          const todayClickableAttrs = topic
+            ? `class="analytics-clickable" data-analytics-topic="${escapeHtml(topic)}" data-analytics-today-only="true" role="button" tabindex="0" title="Click to filter articles from today"`
+            : "";
+          return `
             <li>
-              <span
-                data-analytics-topic="${escapeHtml(item.topic || "")}"
-                data-analytics-today-only="false"
-                role="button"
-                tabindex="0"
-              >${escapeHtml(item.name)}</span>
+              <span ${clickableAttrs}>${escapeHtml(item.name)}</span>
               <div class="analytics-count-pair">
                 <strong>${item.total} total</strong>
-                <strong
-                  data-analytics-topic="${escapeHtml(item.topic || "")}"
-                  data-analytics-today-only="true"
-                  role="button"
-                  tabindex="0"
-                >${item.today} today</strong>
+                <strong ${todayClickableAttrs}>${item.today} today</strong>
               </div>
             </li>
-          `
-        )
+          `;
+        })
         .join("")}
     </ol>
   `;
@@ -974,13 +971,15 @@ function renderLowValueFeedRows(items) {
   `;
 }
 
-function addDashboardAlert({ title, detail = "", type = "info" }) {
+function addDashboardAlert({ title, detail = "", type = "info", topic = "", todayOnly = false }) {
   runtime.dashboardAlertId += 1;
   runtime.dashboardAlerts.unshift({
     id: String(runtime.dashboardAlertId),
     title,
     detail,
     type,
+    topic,
+    todayOnly,
     createdAt: new Date(),
   });
   runtime.dashboardAlerts = runtime.dashboardAlerts.slice(0, DASHBOARD_ALERT_LIMIT);
@@ -999,17 +998,21 @@ function renderDashboardAlerts() {
   return `
     <ol class="dashboard-alert-list">
       ${runtime.dashboardAlerts
-        .map(
-          (alert) => `
-            <li class="dashboard-alert is-${alert.type}">
+        .map((alert) => {
+          const isClickable = Boolean(alert.topic);
+          return `
+            <li
+              class="dashboard-alert is-${alert.type}${isClickable ? " analytics-clickable" : ""}"
+              ${isClickable ? `data-analytics-topic="${escapeHtml(alert.topic)}" data-analytics-today-only="${alert.todayOnly ? "true" : "false"}" role="button" tabindex="0" title="Click to view related articles"` : ""}
+            >
               <div>
                 <strong>${escapeHtml(alert.title)}</strong>
                 ${alert.detail ? `<small>${escapeHtml(alert.detail)}</small>` : ""}
               </div>
               <button type="button" data-dismiss-dashboard-alert="${alert.id}" aria-label="Dismiss alert">Dismiss</button>
             </li>
-          `
-        )
+          `;
+        })
         .join("")}
     </ol>
   `;
@@ -1053,6 +1056,7 @@ function createSnapshotStats(feeds, articles) {
   const snapshotFeeds = feeds.map((feed) => ({
     id: feed.id,
     name: feed.name || "Untitled feed",
+    topic: feed.topic || "",
     isActive: feed.isActive !== false,
     lastStatus: feed.lastStatus || "idle",
   }));
@@ -1097,6 +1101,7 @@ function serializeSnapshotStats(snapshot) {
     feeds: snapshot.feeds || Array.from(snapshot.feedStates?.values?.() || []).map((feed) => ({
       id: feed.id,
       name: feed.name,
+      topic: feed.topic || "",
       isActive: feed.isActive,
       lastStatus: feed.lastStatus,
       articleCountToday: Number(feed.articleCountToday ?? feed.articlesToday) || 0,
@@ -1158,6 +1163,7 @@ function hydrateSnapshotStats(snapshot) {
     : (Array.isArray(snapshot.feedStates) ? snapshot.feedStates : fallbackFeedStates).map((item) => ({
         id: item.id,
         name: item.name || "Untitled feed",
+        topic: item.topic || "",
         isActive: item.isActive !== false,
         lastStatus: item.lastStatus || "idle",
       }));
@@ -1336,6 +1342,8 @@ function generateAlerts(previous, current) {
         title: `${feed.name} entered error state`,
         detail: "The feed reported an error in the latest snapshot.",
         type: "error",
+        topic: feed.topic || "",
+        todayOnly: false,
       }, alertScore);
     }
 
@@ -1344,6 +1352,8 @@ function generateAlerts(previous, current) {
         title: `${feed.name}: +${totalDiff} new articles`,
         detail: `${currentTotal} total article${currentTotal === 1 ? "" : "s"} for this feed.`,
         type: "success",
+        topic: feed.topic || "",
+        todayOnly: false,
       }, alertScore);
     }
 
@@ -1352,18 +1362,24 @@ function generateAlerts(previous, current) {
         title: `${feed.name} is active again`,
         detail: `+${todayDiff} new article${todayDiff === 1 ? "" : "s"} today.`,
         type: "success",
+        topic: feed.topic || "",
+        todayOnly: true,
       }, alertScore);
     } else if (passesFeedThreshold && todayDiff > 0) {
       queueAlert(2, {
         title: `${feed.name}: +${todayDiff} new articles today`,
         detail: `${currentToday} article${currentToday === 1 ? "" : "s"} today.`,
         type: "success",
+        topic: feed.topic || "",
+        todayOnly: true,
       }, alertScore);
     } else if (passesFeedThreshold && previousToday > 0 && currentToday === 0) {
       queueAlert(2, {
         title: `${feed.name} stopped producing`,
         detail: "No articles today in the latest snapshot.",
         type: "warning",
+        topic: feed.topic || "",
+        todayOnly: true,
       }, alertScore);
     }
   });
@@ -1388,12 +1404,16 @@ function generateAlerts(previous, current) {
         title: `${feedName} is now dead`,
         detail: "No imported articles are available for this feed.",
         type: "error",
+        topic: stats.feed.topic || "",
+        todayOnly: false,
       });
     } else if (stats.status === "inactive" && previousStats.status !== "inactive") {
       queueAlert(2, {
         title: `${feedName} is now inactive`,
         detail: "No articles in the last 30 days.",
         type: "warning",
+        topic: stats.feed.topic || "",
+        todayOnly: false,
       });
     }
 
@@ -1402,6 +1422,8 @@ function generateAlerts(previous, current) {
         title: `${feedName} started producing articles`,
         detail: `${stats.total} article${stats.total === 1 ? "" : "s"} now available.`,
         type: "success",
+        topic: stats.feed.topic || "",
+        todayOnly: false,
       });
     }
 
@@ -1410,6 +1432,8 @@ function generateAlerts(previous, current) {
         title: `${feedName} DMV activity stopped`,
         detail: "No DMV RSS articles in the last 30 days.",
         type: "warning",
+        topic: stats.feed.topic || "",
+        todayOnly: false,
       });
     }
   });
