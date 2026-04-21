@@ -18,7 +18,8 @@ const SUMMARY_METRICS = [
 ];
 const DEFAULT_SOURCE_GROUPS = ["USA", "Canada", "Google Alerts", "Other"];
 const TAG_FILTER_MIN_COUNT = 0;
-const ALLOWED_TAGS = [
+const TAG_LIST_STORAGE_KEY = "dashboardTagList";
+const DEFAULT_TAGS = [
   "identity",
   "identity verification",
   "id document",
@@ -58,7 +59,9 @@ const TAG_ALIASES = {
   numismatics: "coins",
   commemorative: "commemorative coins",
 };
-const ALLOWED_TAG_SET = new Set(ALLOWED_TAGS);
+let activeTags = [];
+let activeTagSet = new Set();
+let activeTagsLoaded = false;
 const PASSPORT_FALSE_POSITIVE_KEYWORDS = [
   "honda",
   "nissan",
@@ -119,6 +122,10 @@ const elements = {
   articleFilterContext: document.getElementById("article-filter-context"),
   topicFilter: document.getElementById("topic-filter"),
   tagFilter: document.getElementById("tag-filter"),
+  tagAddInput: document.getElementById("tag-add-input"),
+  tagAddButton: document.getElementById("tag-add-button"),
+  tagResetButton: document.getElementById("tag-reset-button"),
+  tagManagerList: document.getElementById("tag-manager-list"),
   feedFilter: document.getElementById("feed-filter"),
   dmvFeedFilter: document.getElementById("dmv-feed-filter"),
   canadaDmvFilter: document.getElementById("canada-dmv-filter"),
@@ -1931,6 +1938,63 @@ function normalizeFilterTag(tag) {
   return TAG_ALIASES[normalized] || normalized;
 }
 
+function normalizeTagList(tags) {
+  return Array.from(new Set((Array.isArray(tags) ? tags : []).map(normalizeFilterTag).filter(Boolean)));
+}
+
+function getActiveTags() {
+  if (!activeTagsLoaded) {
+    activeTags = normalizeTagList(DEFAULT_TAGS);
+    activeTagSet = new Set(activeTags);
+    activeTagsLoaded = true;
+  }
+  return activeTags;
+}
+
+function getActiveTagSet() {
+  getActiveTags();
+  return activeTagSet;
+}
+
+function saveActiveTags(tags) {
+  window.localStorage.setItem(TAG_LIST_STORAGE_KEY, JSON.stringify(tags));
+}
+
+function setActiveTags(tags, { persist = true } = {}) {
+  activeTags = normalizeTagList(tags);
+  activeTagSet = new Set(activeTags);
+  activeTagsLoaded = true;
+  if (persist) {
+    saveActiveTags(activeTags);
+  }
+}
+
+function loadActiveTags() {
+  const storedTags = window.localStorage.getItem(TAG_LIST_STORAGE_KEY);
+  if (!storedTags) {
+    setActiveTags(DEFAULT_TAGS, { persist: false });
+    return;
+  }
+
+  try {
+    const parsedTags = JSON.parse(storedTags);
+    if (!Array.isArray(parsedTags)) {
+      setActiveTags(DEFAULT_TAGS, { persist: false });
+      return;
+    }
+
+    setActiveTags(parsedTags, { persist: false });
+  } catch (error) {
+    console.warn("Unable to load saved tag list; using defaults.", error);
+    setActiveTags(DEFAULT_TAGS, { persist: false });
+  }
+}
+
+function resetActiveTags() {
+  window.localStorage.removeItem(TAG_LIST_STORAGE_KEY);
+  setActiveTags(DEFAULT_TAGS, { persist: false });
+}
+
 function getArticleTags(article) {
   return Array.from(
     new Set(
@@ -1948,7 +2012,7 @@ function getArticleFilterTags(article) {
     new Set(
       getArticleTags(article)
         .map(normalizeFilterTag)
-        .filter((tag) => ALLOWED_TAG_SET.has(tag))
+        .filter((tag) => getActiveTagSet().has(tag))
     )
   );
 }
@@ -2135,7 +2199,7 @@ function renderFeedOptions() {
     });
     return counts;
   }, new Map());
-  const tags = ALLOWED_TAGS.filter(
+  const tags = getActiveTags().filter(
     (tag) => TAG_FILTER_MIN_COUNT <= 0 || (tagCounts.get(tag) || 0) >= TAG_FILTER_MIN_COUNT
   );
   const nonDmvFeeds = getNonDmvFeeds()
@@ -2214,6 +2278,73 @@ function renderFeedOptions() {
       .join("");
     elements.canadaDmvFilter.value = state.filters.canadaDmvFeedPath;
   }
+}
+
+function refreshTagControls() {
+  const selectedTag = normalizeFilterTag(state.filters.tag);
+  if (selectedTag && !getActiveTagSet().has(selectedTag)) {
+    state.filters.tag = "";
+  }
+  renderFeedOptions();
+  renderTagManager();
+  renderArticles();
+}
+
+function addTagFromInput() {
+  if (!elements.tagAddInput) {
+    return;
+  }
+
+  const tag = normalizeFilterTag(elements.tagAddInput.value);
+  if (!tag) {
+    elements.tagAddInput.value = "";
+    return;
+  }
+
+  if (!getActiveTagSet().has(tag)) {
+    setActiveTags([...getActiveTags(), tag]);
+  }
+
+  elements.tagAddInput.value = "";
+  refreshTagControls();
+}
+
+function removeActiveTag(tag) {
+  const normalizedTag = normalizeFilterTag(tag);
+  if (!normalizedTag) {
+    return;
+  }
+
+  setActiveTags(getActiveTags().filter((item) => item !== normalizedTag));
+  refreshTagControls();
+}
+
+function renderTagManager() {
+  if (!elements.tagManagerList) {
+    return;
+  }
+
+  elements.tagManagerList.innerHTML = "";
+  const fragment = document.createDocumentFragment();
+
+  getActiveTags().forEach((tag) => {
+    const tagItem = document.createElement("span");
+    const label = document.createElement("span");
+    const removeButton = document.createElement("button");
+
+    tagItem.className = "tag-manager-item";
+    label.textContent = tag;
+    removeButton.type = "button";
+    removeButton.className = "tag-manager-remove";
+    removeButton.dataset.removeTag = tag;
+    removeButton.textContent = "remove";
+    removeButton.setAttribute("aria-label", `Remove ${tag}`);
+
+    tagItem.append(label, removeButton);
+    fragment.appendChild(tagItem);
+  });
+
+  elements.tagManagerList.appendChild(fragment);
 }
 
 function renderDmvOfficialLink() {
@@ -3014,6 +3145,7 @@ function renderArticles() {
 function renderDashboard() {
   renderSummary();
   renderFeedOptions();
+  renderTagManager();
   renderDmvOfficialLink();
   renderDmvModeIndicator();
   renderFeedList();
@@ -3208,6 +3340,39 @@ function bindEvents() {
       clearExactArticleFilter();
       state.filters.tag = normalizeFilterTag(event.target.value);
       renderArticles();
+    });
+  }
+
+  if (elements.tagAddButton) {
+    elements.tagAddButton.addEventListener("click", addTagFromInput);
+  }
+
+  if (elements.tagAddInput) {
+    elements.tagAddInput.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") {
+        return;
+      }
+
+      event.preventDefault();
+      addTagFromInput();
+    });
+  }
+
+  if (elements.tagResetButton) {
+    elements.tagResetButton.addEventListener("click", () => {
+      resetActiveTags();
+      refreshTagControls();
+    });
+  }
+
+  if (elements.tagManagerList) {
+    elements.tagManagerList.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target.closest("[data-remove-tag]") : null;
+      if (!target) {
+        return;
+      }
+
+      removeActiveTag(target.dataset.removeTag || "");
     });
   }
 
@@ -3592,6 +3757,7 @@ function bindEvents() {
 
 async function init() {
   loadTheme();
+  loadActiveTags();
   state.feedPanelCollapsed = isFeedPanelCollapsed();
   resetDashboardState();
   syncFeedFormMode();
