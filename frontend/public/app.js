@@ -86,6 +86,7 @@ const state = {
   editingFeedId: "",
   feedPanelCollapsed: false,
   addSourceExpanded: false,
+  tagManagerExpanded: false,
   filters: {
     search: "",
     topic: "",
@@ -125,6 +126,8 @@ const elements = {
   tagAddInput: document.getElementById("tag-add-input"),
   tagAddButton: document.getElementById("tag-add-button"),
   tagResetButton: document.getElementById("tag-reset-button"),
+  tagManagerToggle: document.getElementById("tag-manager-toggle"),
+  tagManagerContent: document.getElementById("tag-manager-content"),
   tagManagerList: document.getElementById("tag-manager-list"),
   feedFilter: document.getElementById("feed-filter"),
   dmvFeedFilter: document.getElementById("dmv-feed-filter"),
@@ -2319,6 +2322,16 @@ function removeActiveTag(tag) {
   refreshTagControls();
 }
 
+function syncTagManagerVisibility() {
+  if (!elements.tagManagerContent || !elements.tagManagerToggle) {
+    return;
+  }
+
+  elements.tagManagerContent.hidden = !state.tagManagerExpanded;
+  elements.tagManagerToggle.setAttribute("aria-expanded", String(state.tagManagerExpanded));
+  elements.tagManagerToggle.textContent = state.tagManagerExpanded ? "Hide tags" : "Manage tags";
+}
+
 function renderTagManager() {
   if (!elements.tagManagerList) {
     return;
@@ -2338,13 +2351,15 @@ function renderTagManager() {
     removeButton.className = "tag-manager-remove";
     removeButton.dataset.removeTag = tag;
     removeButton.textContent = "remove";
-    removeButton.setAttribute("aria-label", `Remove ${tag}`);
+    removeButton.title = "Click once, then confirm to remove";
+    removeButton.setAttribute("aria-label", `Prepare to remove ${tag}`);
 
     tagItem.append(label, removeButton);
     fragment.appendChild(tagItem);
   });
 
   elements.tagManagerList.appendChild(fragment);
+  syncTagManagerVisibility();
 }
 
 function renderDmvOfficialLink() {
@@ -3358,6 +3373,13 @@ function bindEvents() {
     });
   }
 
+  if (elements.tagManagerToggle) {
+    elements.tagManagerToggle.addEventListener("click", () => {
+      state.tagManagerExpanded = !state.tagManagerExpanded;
+      syncTagManagerVisibility();
+    });
+  }
+
   if (elements.tagResetButton) {
     elements.tagResetButton.addEventListener("click", () => {
       resetActiveTags();
@@ -3369,6 +3391,18 @@ function bindEvents() {
     elements.tagManagerList.addEventListener("click", (event) => {
       const target = event.target instanceof Element ? event.target.closest("[data-remove-tag]") : null;
       if (!target) {
+        return;
+      }
+
+      if (target.dataset.confirmRemove !== "true") {
+        elements.tagManagerList.querySelectorAll("[data-confirm-remove='true']").forEach((button) => {
+          button.dataset.confirmRemove = "false";
+          button.textContent = "remove";
+          button.setAttribute("aria-label", `Prepare to remove ${button.dataset.removeTag || "tag"}`);
+        });
+        target.dataset.confirmRemove = "true";
+        target.textContent = "confirm";
+        target.setAttribute("aria-label", `Confirm removing ${target.dataset.removeTag || "tag"}`);
         return;
       }
 

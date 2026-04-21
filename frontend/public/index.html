@@ -68,13 +68,20 @@
               <div class="tag-manager field-full" aria-label="Manage filter tags">
                 <div class="tag-manager-head">
                   <span>Curated tags</span>
-                  <button id="tag-reset-button" class="ghost-button tag-manager-reset" type="button">Reset tags</button>
+                  <button id="tag-manager-toggle" class="ghost-button tag-manager-toggle" type="button" aria-expanded="false">
+                    Manage tags
+                  </button>
                 </div>
-                <div class="tag-manager-add">
-                  <input id="tag-add-input" type="text" placeholder="Add tag" autocomplete="off" />
-                  <button id="tag-add-button" class="ghost-button tag-manager-add-button" type="button">Add</button>
+                <div id="tag-manager-content" class="tag-manager-content" hidden>
+                  <div class="tag-manager-actions">
+                    <div class="tag-manager-add">
+                      <input id="tag-add-input" type="text" placeholder="Add tag" autocomplete="off" />
+                      <button id="tag-add-button" class="ghost-button tag-manager-add-button" type="button">Add</button>
+                    </div>
+                    <button id="tag-reset-button" class="ghost-button tag-manager-reset" type="button">Reset tags</button>
+                  </div>
+                  <div id="tag-manager-list" class="tag-manager-list" aria-live="polite"></div>
                 </div>
-                <div id="tag-manager-list" class="tag-manager-list" aria-live="polite"></div>
               </div>
 
               <label class="field" data-filter-field="usa">
