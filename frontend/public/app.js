@@ -1149,7 +1149,7 @@ function getFeedQualityStats(feeds, articles) {
   return stats;
 }
 
-function getCombinedFeedRankings(feeds, totalCounts, todayCounts, recentCounts, qualityStats, limit = 8) {
+function getCombinedFeedRankings(feeds, totalCounts, todayCounts, recentCounts, qualityStats, limit = 50) {
   return feeds
     .filter(isAnalyticsFeed)
     .map((feed) => {
@@ -1237,12 +1237,12 @@ function renderFeedRankingRows(items) {
     <ol class="analytics-list analytics-ranking-list">
       ${items
         .map((item) => {
-          const topic = String(item.topic || "");
-          const clickableAttrs = topic
-            ? `class="analytics-clickable" data-analytics-topic="${escapeHtml(topic)}" role="button" tabindex="0" title="Click to filter articles"`
+          const feedId = String(item.feedId || "");
+          const clickableAttrs = feedId
+            ? `class="analytics-clickable" data-analytics-feed-id="${escapeHtml(feedId)}" role="button" tabindex="0" title="Click to filter this feed"`
             : "";
-          const todayClickableAttrs = topic
-            ? `class="analytics-clickable" data-analytics-topic="${escapeHtml(topic)}" data-analytics-today-only="true" role="button" tabindex="0" title="Click to filter articles from today"`
+          const todayClickableAttrs = feedId
+            ? `class="analytics-clickable" data-analytics-feed-id="${escapeHtml(feedId)}" data-analytics-today-only="true" role="button" tabindex="0" title="Click to filter this feed from today"`
             : "";
           const qualityPercent = Math.round((item.qualityScore || 0) * 100);
           const viewMatchPercent = Math.round((item.viewMatchScore || 0) * 100);
@@ -1957,7 +1957,7 @@ function renderAnalyticsCard() {
       <span class="analytics-note">articles per feed</span>
     </div>
     <div class="analytics-grid">
-      <div class="analytics-panel analytics-panel-wide">
+      <div class="analytics-panel analytics-panel-wide analytics-panel-ranking">
         <span class="analytics-label">Feed ranking</span>
         ${renderFeedRankingRows(analytics.feedRankings)}
       </div>
@@ -2164,9 +2164,70 @@ function applyAnalyticsFilter({ topic, todayOnly = false }) {
   renderDashboard();
 }
 
+function getUsDmvCatalogEntryForFeed(feed) {
+  if (!feed) {
+    return null;
+  }
+
+  return getUsDmvCatalogEntries().find((entry) => getFeedForCatalogEntry(entry)?.id === feed.id) || null;
+}
+
+function applyAnalyticsFeedFilter({ feedId, todayOnly = false }) {
+  const selectedFeed = state.feeds.find((feed) => feed.id === feedId);
+  if (!selectedFeed) {
+    return;
+  }
+
+  clearExactArticleFilter();
+  state.filters.search = "";
+  state.filters.topic = "";
+  state.filters.tag = "";
+  state.filters.date = todayOnly ? toDateInputValue(new Date()) : "";
+  state.filters.feedId = "";
+  state.filters.dmvFeedId = "";
+  state.filters.canadaDmvFeedPath = "";
+  state.filters.canadaDmvAll = false;
+  state.dashboardMode = "normal";
+
+  const feedCountry = getFeedCountry(selectedFeed);
+  const isDmvLikeFeed =
+    isDmvWrapperFeed(selectedFeed) || Boolean(selectedFeed.dmvAbbr) || feedCountry === "us" || feedCountry === "canada";
+  const usDmvEntry = isDmvLikeFeed ? getUsDmvCatalogEntryForFeed(selectedFeed) : null;
+  const canadaDmvEntry = isDmvLikeFeed ? getCanadaCatalogEntryForFeed(selectedFeed) : null;
+
+  if (usDmvEntry?.abbr) {
+    state.filters.dmvFeedId = usDmvEntry.abbr;
+  } else if (canadaDmvEntry?.feedPath) {
+    state.filters.canadaDmvFeedPath = canadaDmvEntry.feedPath;
+  } else {
+    state.filters.feedId = selectedFeed.id;
+  }
+
+  elements.searchFilter.value = "";
+  elements.topicFilter.value = "";
+  if (elements.tagFilter) {
+    elements.tagFilter.value = "";
+  }
+  elements.dateFilter.value = state.filters.date;
+  elements.feedFilter.value = state.filters.feedId;
+  if (elements.dmvFeedFilter) {
+    elements.dmvFeedFilter.value = state.filters.dmvFeedId;
+  }
+  if (elements.canadaDmvFilter) {
+    elements.canadaDmvFilter.value = state.filters.canadaDmvFeedPath;
+  }
+
+  renderDashboard();
+}
+
 function getTodaySummaryCardFromEvent(event) {
   const target = event.target instanceof Element ? event.target : event.target?.parentElement;
   return target?.closest('[data-action="filter-today"]');
+}
+
+function getAnalyticsFeedTargetFromEvent(event) {
+  const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+  return target?.closest("[data-analytics-feed-id]");
 }
 
 function getAnalyticsFilterTargetFromEvent(event) {
@@ -3977,6 +4038,15 @@ function bindEvents() {
       return;
     }
 
+    const analyticsFeedTarget = getAnalyticsFeedTargetFromEvent(event);
+    if (analyticsFeedTarget) {
+      applyAnalyticsFeedFilter({
+        feedId: analyticsFeedTarget.dataset.analyticsFeedId || "",
+        todayOnly: analyticsFeedTarget.dataset.analyticsTodayOnly === "true",
+      });
+      return;
+    }
+
     const analyticsFilterTarget = getAnalyticsFilterTargetFromEvent(event);
     if (analyticsFilterTarget) {
       applyAnalyticsFilter({
@@ -3998,6 +4068,16 @@ function bindEvents() {
       event.preventDefault();
       const alert = runtime.dashboardAlerts.find((item) => item.id === dashboardAlertTarget.dataset.alertId);
       applyAlertArticleFilter(alert);
+      return;
+    }
+
+    const analyticsFeedTarget = getAnalyticsFeedTargetFromEvent(event);
+    if (analyticsFeedTarget && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      applyAnalyticsFeedFilter({
+        feedId: analyticsFeedTarget.dataset.analyticsFeedId || "",
+        todayOnly: analyticsFeedTarget.dataset.analyticsTodayOnly === "true",
+      });
       return;
     }
 
