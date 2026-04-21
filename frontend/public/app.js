@@ -1040,8 +1040,8 @@ function getAnalyticsFeedsForScope(feeds, articleCounts) {
   return analyticsFeeds;
 }
 
-function getAnalyticsFeedsForQualityFilter(feeds, articleCounts, recentCounts, qualityStats) {
-  switch (state.analyticsQualityFilter) {
+function getAnalyticsFeedsForQualityFilter(feeds, articleCounts, recentCounts, qualityStats, filter = state.analyticsQualityFilter) {
+  switch (filter) {
     case "high":
       return feeds.filter((feed) => (articleCounts.get(feed.id) || 0) > 0 && (qualityStats.get(feed.id)?.qualityScore || 0) >= 0.75);
     case "inactive":
@@ -1051,6 +1051,15 @@ function getAnalyticsFeedsForQualityFilter(feeds, articleCounts, recentCounts, q
     default:
       return feeds;
   }
+}
+
+function getAnalyticsQualityFilterCounts(feeds, articleCounts, recentCounts, qualityStats) {
+  return {
+    all: feeds.length,
+    high: getAnalyticsFeedsForQualityFilter(feeds, articleCounts, recentCounts, qualityStats, "high").length,
+    inactive: getAnalyticsFeedsForQualityFilter(feeds, articleCounts, recentCounts, qualityStats, "inactive").length,
+    zero: getAnalyticsFeedsForQualityFilter(feeds, articleCounts, recentCounts, qualityStats, "zero").length,
+  };
 }
 
 function getFeedActivityStats(feeds, articles) {
@@ -1294,7 +1303,7 @@ function renderFeedRankingRows(items) {
   `;
 }
 
-function renderAnalyticsQualityTabs(activeFilter) {
+function renderAnalyticsQualityTabs(activeFilter, counts = {}) {
   const tabs = [
     ["all", "All"],
     ["high", "High quality"],
@@ -1309,7 +1318,8 @@ function renderAnalyticsQualityTabs(activeFilter) {
           const isActive = activeFilter === value;
           return `
             <button class="${isActive ? "is-active" : ""}" type="button" data-analytics-quality-filter="${value}" aria-pressed="${isActive}">
-              ${label}
+              <span>${label}</span>
+              <strong>${counts[value] || 0}</strong>
             </button>
           `;
         })
@@ -1975,6 +1985,12 @@ function getDashboardAnalytics() {
     recentCounts,
     qualityStats
   );
+  const qualityFilterCounts = getAnalyticsQualityFilterCounts(
+    scopedAnalyticsFeeds,
+    articleCounts,
+    recentCounts,
+    qualityStats
+  );
   const includedFeedCount = scopedAnalyticsFeeds.length;
   const zeroArticleFeeds = scopedAnalyticsFeeds.filter((feed) => (articleCounts.get(feed.id) || 0) === 0).length;
   const highQualityFeeds = scopedAnalyticsFeeds.filter((feed) => {
@@ -2006,6 +2022,7 @@ function getDashboardAnalytics() {
     averageArticlesTodayPerFeed: (todayArticles.length / feedCount).toFixed(1),
     analyticsScope: state.analyticsScope,
     analyticsQualityFilter: state.analyticsQualityFilter,
+    qualityFilterCounts,
     rankingFeedCount: rankingFeeds.length,
     analyticsScopeLabel:
       state.analyticsScope === "active"
@@ -2057,7 +2074,7 @@ function renderAnalyticsCard() {
       <div class="analytics-panel analytics-panel-wide analytics-panel-ranking">
         <span class="analytics-label">Feed ranking</span>
         <p class="analytics-panel-note">${escapeHtml(analytics.analyticsScopeLabel)}</p>
-        ${renderAnalyticsQualityTabs(analytics.analyticsQualityFilter)}
+        ${renderAnalyticsQualityTabs(analytics.analyticsQualityFilter, analytics.qualityFilterCounts)}
         <p class="analytics-panel-note">${analytics.rankingFeedCount} feeds match this quick filter</p>
         ${renderFeedRankingRows(analytics.feedRankings)}
       </div>
