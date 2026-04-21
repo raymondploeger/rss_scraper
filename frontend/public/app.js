@@ -17,34 +17,41 @@ const SUMMARY_METRICS = [
   { label: "Latest articles", key: "totalArticles" },
 ];
 const DEFAULT_SOURCE_GROUPS = ["USA", "Canada", "Google Alerts", "Other"];
-const TAG_FILTER_MIN_COUNT = 1;
+const TAG_FILTER_MIN_COUNT = 0;
 const ALLOWED_TAGS = [
+  "identity",
+  "identity verification",
+  "id document",
   "passport",
+  "id card",
   "visa",
-  "identity document",
-  "immigration",
+  "epassport",
   "driver license",
-  "residence permit",
-  "citizenship",
+  "banknotes",
+  "coins",
+  "currency",
+  "security",
+  "fraud",
+  "counterfeit",
+  "cyber security",
+  "identity theft",
+  "biometrics",
+  "authentication",
+  "artificial intelligence",
+  "regulation",
+  "travel",
+  "privacy",
+  "immigration",
   "travel document",
   "document security",
   "border control",
-  "fraud",
   "forgery",
-  "counterfeit",
-  "identity theft",
   "verification",
-  "digital identity",
-  "dmv",
-  "vehicle registration",
-  "banknotes",
-  "coins",
-  "commemorative coins",
-  "currency",
   "central bank",
   "monetary policy",
   "sanctions",
   "border security",
+  "digital identity",
 ];
 const TAG_ALIASES = {
   passports: "passport",
@@ -52,7 +59,20 @@ const TAG_ALIASES = {
   commemorative: "commemorative coins",
 };
 const ALLOWED_TAG_SET = new Set(ALLOWED_TAGS);
-const PASSPORT_FALSE_POSITIVE_KEYWORDS = ["honda", "nissan", "toyota", "car", "suv", "vehicle", "engine", "specs"];
+const PASSPORT_FALSE_POSITIVE_KEYWORDS = [
+  "honda",
+  "nissan",
+  "toyota",
+  "car",
+  "cars",
+  "suv",
+  "vehicle",
+  "engine",
+  "specs",
+  "crossover",
+  "auto",
+  "automotive",
+];
 const PASSPORT_CONTEXT_KEYWORDS = ["visa", "immigration", "border", "document", "identity"];
 
 const state = {
@@ -1951,7 +1971,7 @@ function getArticleSearchText(article) {
 
 function isPassportFalsePositive(article) {
   const haystack = getArticleSearchText(article);
-  if (!haystack.includes("passport")) {
+  if (!/\bpassports?\b/.test(haystack)) {
     return false;
   }
 
@@ -2115,7 +2135,9 @@ function renderFeedOptions() {
     });
     return counts;
   }, new Map());
-  const tags = ALLOWED_TAGS.filter((tag) => (tagCounts.get(tag) || 0) >= TAG_FILTER_MIN_COUNT);
+  const tags = ALLOWED_TAGS.filter(
+    (tag) => TAG_FILTER_MIN_COUNT <= 0 || (tagCounts.get(tag) || 0) >= TAG_FILTER_MIN_COUNT
+  );
   const nonDmvFeeds = getNonDmvFeeds()
     .slice()
     .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")));
