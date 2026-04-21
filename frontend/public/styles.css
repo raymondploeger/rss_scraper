@@ -339,6 +339,13 @@ h3 {
   list-style: none;
 }
 
+.analytics-ranking-list {
+  max-height: 244px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+
 .analytics-list li {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
