@@ -639,10 +639,13 @@ h3 {
 .tag-manager {
   display: grid;
   gap: 8px;
+  width: 100%;
+  max-width: 100%;
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.4);
+  overflow: hidden;
 }
 
 :root[data-theme="dark"] .tag-manager {
@@ -662,6 +665,7 @@ h3 {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  width: 100%;
   min-width: 0;
 }
 
@@ -676,9 +680,12 @@ h3 {
 
 .tag-manager-head span {
   color: var(--muted);
+  flex: 1 1 auto;
   font-size: 0.8rem;
   font-weight: 700;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tag-manager-actions {
@@ -715,9 +722,12 @@ h3 {
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.01em;
+  line-height: 1.2;
+  max-width: 50%;
   opacity: 0.82;
   padding: 2px 4px;
   transition: color 140ms ease, opacity 140ms ease, text-decoration-color 140ms ease;
+  white-space: nowrap;
 }
 
 .tag-manager-toggle:hover {
