@@ -19,6 +19,7 @@ const SUMMARY_METRICS = [
 const DEFAULT_SOURCE_GROUPS = ["USA", "Canada", "Google Alerts", "Other"];
 const TAG_FILTER_MIN_COUNT = 0;
 const TAG_LIST_STORAGE_KEY = "dashboardTagList";
+const KEYWORD_FILTER_STORAGE_KEY = "dashboardKeywordFilters";
 const DEFAULT_TAGS = [
   "identity",
   "identity verification",
@@ -62,7 +63,7 @@ const TAG_ALIASES = {
 let activeTags = [];
 let activeTagSet = new Set();
 let activeTagsLoaded = false;
-const PASSPORT_FALSE_POSITIVE_KEYWORDS = [
+const DEFAULT_KEYWORD_EXCLUDES = [
   "honda",
   "nissan",
   "toyota",
@@ -70,13 +71,25 @@ const PASSPORT_FALSE_POSITIVE_KEYWORDS = [
   "cars",
   "suv",
   "vehicle",
+  "vehicles",
   "engine",
   "specs",
   "crossover",
-  "auto",
   "automotive",
+  "auto",
+  "review",
+  "pricing",
+  "horsepower",
 ];
-const PASSPORT_CONTEXT_KEYWORDS = ["visa", "immigration", "border", "document", "identity"];
+const DEFAULT_KEYWORD_INCLUDES = [
+  "visa",
+  "immigration",
+  "border",
+  "document",
+  "identity",
+  "verification",
+  "travel document",
+];
 
 const state = {
   feeds: [],
@@ -87,6 +100,10 @@ const state = {
   feedPanelCollapsed: false,
   addSourceExpanded: false,
   tagManagerExpanded: false,
+  keywordFilters: {
+    include: [],
+    exclude: [],
+  },
   filters: {
     search: "",
     topic: "",
@@ -139,6 +156,9 @@ const elements = {
   searchFilter: document.getElementById("search-filter"),
   clearFilters: document.getElementById("clear-filters"),
   activeFilterList: document.getElementById("active-filter-list"),
+  includeKeywordsInput: document.getElementById("include-keywords-input"),
+  excludeKeywordsInput: document.getElementById("exclude-keywords-input"),
+  keywordResetButton: document.getElementById("keyword-reset-button"),
   refreshButton: document.getElementById("refresh-button"),
   connectionStatus: document.getElementById("connection-status"),
   resultsCount: document.getElementById("results-count"),
@@ -1945,6 +1965,98 @@ function normalizeTagList(tags) {
   return Array.from(new Set((Array.isArray(tags) ? tags : []).map(normalizeFilterTag).filter(Boolean)));
 }
 
+function normalizeKeyword(keyword) {
+  return String(keyword || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function normalizeKeywordList(keywords, fallback = []) {
+  const normalized = Array.from(
+    new Set((Array.isArray(keywords) ? keywords : []).map(normalizeKeyword).filter(Boolean))
+  );
+  if (normalized.length) {
+    return normalized;
+  }
+  return Array.from(new Set((Array.isArray(fallback) ? fallback : []).map(normalizeKeyword).filter(Boolean)));
+}
+
+function parseKeywordInput(value, fallback = []) {
+  return normalizeKeywordList(String(value || "").split(","), fallback);
+}
+
+function updateKeywordFilterInputs() {
+  if (elements.includeKeywordsInput) {
+    elements.includeKeywordsInput.value = state.keywordFilters.include.join(", ");
+  }
+  if (elements.excludeKeywordsInput) {
+    elements.excludeKeywordsInput.value = state.keywordFilters.exclude.join(", ");
+  }
+}
+
+function saveKeywordFilters() {
+  window.localStorage.setItem(KEYWORD_FILTER_STORAGE_KEY, JSON.stringify(state.keywordFilters));
+}
+
+function setKeywordFilters({ include = state.keywordFilters.include, exclude = state.keywordFilters.exclude }, persist = true) {
+  state.keywordFilters.include = normalizeKeywordList(include, DEFAULT_KEYWORD_INCLUDES);
+  state.keywordFilters.exclude = normalizeKeywordList(exclude, DEFAULT_KEYWORD_EXCLUDES);
+  if (persist) {
+    saveKeywordFilters();
+  }
+  updateKeywordFilterInputs();
+}
+
+function loadKeywordFilters() {
+  const storedFilters = window.localStorage.getItem(KEYWORD_FILTER_STORAGE_KEY);
+  if (!storedFilters) {
+    setKeywordFilters({ include: DEFAULT_KEYWORD_INCLUDES, exclude: DEFAULT_KEYWORD_EXCLUDES }, false);
+    return;
+  }
+
+  try {
+    const parsedFilters = JSON.parse(storedFilters);
+    setKeywordFilters(
+      {
+        include: parsedFilters?.include,
+        exclude: parsedFilters?.exclude,
+      },
+      false
+    );
+  } catch (error) {
+    console.warn("Unable to load keyword filters; using defaults.", error);
+    setKeywordFilters({ include: DEFAULT_KEYWORD_INCLUDES, exclude: DEFAULT_KEYWORD_EXCLUDES }, false);
+  }
+}
+
+function resetKeywordFilters() {
+  window.localStorage.removeItem(KEYWORD_FILTER_STORAGE_KEY);
+  setKeywordFilters({ include: DEFAULT_KEYWORD_INCLUDES, exclude: DEFAULT_KEYWORD_EXCLUDES }, false);
+}
+
+function applyKeywordInputs() {
+  setKeywordFilters({
+    include: parseKeywordInput(elements.includeKeywordsInput?.value, DEFAULT_KEYWORD_INCLUDES),
+    exclude: parseKeywordInput(elements.excludeKeywordsInput?.value, DEFAULT_KEYWORD_EXCLUDES),
+  });
+  renderArticles();
+}
+
+function keywordListsMatch(left, right) {
+  const normalizedLeft = normalizeKeywordList(left);
+  const normalizedRight = normalizeKeywordList(right);
+  return (
+    normalizedLeft.length === normalizedRight.length &&
+    normalizedLeft.every((keyword, index) => keyword === normalizedRight[index])
+  );
+}
+
+function hasCustomIncludeKeywords() {
+  return !keywordListsMatch(state.keywordFilters.include, DEFAULT_KEYWORD_INCLUDES);
+}
+
+function hasCustomExcludeKeywords() {
+  return !keywordListsMatch(state.keywordFilters.exclude, DEFAULT_KEYWORD_EXCLUDES);
+}
+
 function getActiveTags() {
   if (!activeTagsLoaded) {
     activeTags = normalizeTagList(DEFAULT_TAGS);
@@ -2036,18 +2148,48 @@ function getArticleSearchText(article) {
     .toLowerCase();
 }
 
-function isPassportFalsePositive(article) {
-  const haystack = getArticleSearchText(article);
-  if (!/\bpassports?\b/.test(haystack)) {
+function getArticleKeywordText(article) {
+  return [
+    article.title,
+    article.description,
+    article.summary,
+    article.summaryShort,
+    article.contentSnippet,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function textMatchesKeyword(text, keyword) {
+  const normalizedKeyword = normalizeKeyword(keyword);
+  if (!normalizedKeyword) {
     return false;
   }
 
-  const hasExclusion = PASSPORT_FALSE_POSITIVE_KEYWORDS.some((keyword) => haystack.includes(keyword));
+  const escapedKeyword = escapeRegExp(normalizedKeyword);
+  const pattern = /^[a-z0-9\s-]+$/i.test(normalizedKeyword)
+    ? new RegExp(`(^|[^a-z0-9])${escapedKeyword}([^a-z0-9]|$)`, "i")
+    : new RegExp(escapedKeyword, "i");
+  return pattern.test(text);
+}
+
+function isPassportFalsePositive(article) {
+  const haystack = getArticleKeywordText(article);
+  if (!textMatchesKeyword(haystack, "passport") && !textMatchesKeyword(haystack, "passports")) {
+    return false;
+  }
+
+  const hasExclusion = state.keywordFilters.exclude.some((keyword) => textMatchesKeyword(haystack, keyword));
   if (!hasExclusion) {
     return false;
   }
 
-  return !PASSPORT_CONTEXT_KEYWORDS.some((keyword) => haystack.includes(keyword));
+  return !state.keywordFilters.include.some((keyword) => textMatchesKeyword(haystack, keyword));
 }
 
 function setFieldActive(control, isActive) {
@@ -2077,6 +2219,8 @@ function syncFilterUx() {
   setFieldActive(elements.searchFilter, Boolean(state.filters.search));
   setFieldActive(elements.topicFilter, Boolean(state.filters.topic));
   setFieldActive(elements.tagFilter, Boolean(state.filters.tag));
+  setFieldActive(elements.includeKeywordsInput, hasCustomIncludeKeywords());
+  setFieldActive(elements.excludeKeywordsInput, hasCustomExcludeKeywords());
   setFieldActive(elements.feedFilter, Boolean(state.filters.feedId));
   setFieldActive(elements.dmvFeedFilter, Boolean(state.filters.dmvFeedId || state.dashboardMode === "usa"));
   setFieldActive(
@@ -2103,6 +2247,12 @@ function syncFilterUx() {
   }
   if (state.filters.tag) {
     addActiveFilterChip(fragment, "Tag", state.filters.tag, "tag");
+  }
+  if (hasCustomIncludeKeywords()) {
+    addActiveFilterChip(fragment, "Include keywords", `${state.keywordFilters.include.length} terms`, "include-keywords");
+  }
+  if (hasCustomExcludeKeywords()) {
+    addActiveFilterChip(fragment, "Exclude keywords", `${state.keywordFilters.exclude.length} terms`, "exclude-keywords");
   }
   if (state.filters.feedId) {
     addActiveFilterChip(fragment, "Feed", getSelectedOptionText(elements.feedFilter) || "Selected feed", "feed");
@@ -2162,6 +2312,10 @@ function clearActiveFilter(filterKey) {
   } else if (filterKey === "tag") {
     state.filters.tag = "";
     elements.tagFilter.value = "";
+  } else if (filterKey === "include-keywords") {
+    setKeywordFilters({ include: DEFAULT_KEYWORD_INCLUDES });
+  } else if (filterKey === "exclude-keywords") {
+    setKeywordFilters({ exclude: DEFAULT_KEYWORD_EXCLUDES });
   } else if (filterKey === "feed") {
     state.filters.feedId = "";
     elements.feedFilter.value = "";
@@ -3410,6 +3564,25 @@ function bindEvents() {
     });
   }
 
+  [elements.includeKeywordsInput, elements.excludeKeywordsInput].forEach((input) => {
+    input?.addEventListener("change", applyKeywordInputs);
+    input?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") {
+        return;
+      }
+
+      event.preventDefault();
+      applyKeywordInputs();
+    });
+  });
+
+  if (elements.keywordResetButton) {
+    elements.keywordResetButton.addEventListener("click", () => {
+      resetKeywordFilters();
+      renderArticles();
+    });
+  }
+
   elements.feedFilter.addEventListener("change", (event) => {
     clearExactArticleFilter();
     state.filters.feedId = event.target.value;
@@ -3547,6 +3720,7 @@ function bindEvents() {
       alertLabel: "",
     };
     clearStoredExactArticleFilter();
+    resetKeywordFilters();
     state.dashboardMode = "normal";
 
     elements.searchFilter.value = "";
@@ -3792,6 +3966,7 @@ function bindEvents() {
 async function init() {
   loadTheme();
   loadActiveTags();
+  loadKeywordFilters();
   state.feedPanelCollapsed = isFeedPanelCollapsed();
   resetDashboardState();
   syncFeedFormMode();

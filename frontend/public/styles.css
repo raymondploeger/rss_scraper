@@ -636,7 +636,8 @@ h3 {
   margin: -2px 0 0;
 }
 
-.tag-manager {
+.tag-manager,
+.keyword-filter {
   display: grid;
   gap: 8px;
   width: 100%;
@@ -648,8 +649,36 @@ h3 {
   overflow: hidden;
 }
 
-:root[data-theme="dark"] .tag-manager {
+:root[data-theme="dark"] .tag-manager,
+:root[data-theme="dark"] .keyword-filter {
   background: rgba(255, 255, 255, 0.03);
+}
+
+.keyword-filter {
+  margin-top: -2px;
+}
+
+.keyword-filter-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.keyword-filter-head span {
+  color: var(--muted);
+  flex: 1 1 auto;
+  font-size: 0.8rem;
+  font-weight: 700;
+  min-width: 0;
+}
+
+.keyword-filter-note {
+  margin: -1px 0 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.35;
 }
 
 .tag-manager-actions,
