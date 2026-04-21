@@ -892,6 +892,16 @@ h3 {
   gap: 20px;
 }
 
+.article-filter-context {
+  margin: -8px 0 16px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.article-filter-context[hidden] {
+  display: none !important;
+}
+
 .articles-grid.is-grouped-feed-view {
   grid-template-columns: 1fr;
 }

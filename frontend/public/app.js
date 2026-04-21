@@ -58,6 +58,7 @@ const elements = {
   notificationRegion: document.getElementById("notification-region"),
   summaryGrid: document.getElementById("summary-grid"),
   articlesGrid: document.getElementById("articles-grid"),
+  articleFilterContext: document.getElementById("article-filter-context"),
   topicFilter: document.getElementById("topic-filter"),
   feedFilter: document.getElementById("feed-filter"),
   dmvFeedFilter: document.getElementById("dmv-feed-filter"),
@@ -1787,14 +1788,16 @@ function applyAlertArticleFilter(alert) {
 
   state.filters.articleIds = Array.from(new Set(articleIds));
   state.filters.alertLabel = alert.title || `${state.filters.articleIds.length} articles`;
-  state.filters.topic = alert.topic || "";
-  state.filters.date = alert.todayOnly ? toDateInputValue(new Date()) : "";
+  state.filters.search = "";
+  state.filters.topic = "";
+  state.filters.date = "";
   state.filters.feedId = "";
   state.filters.dmvFeedId = "";
   state.filters.canadaDmvFeedPath = "";
   state.filters.canadaDmvAll = false;
   state.dashboardMode = "normal";
 
+  elements.searchFilter.value = "";
   elements.topicFilter.value = state.filters.topic;
   elements.dateFilter.value = state.filters.date;
   elements.feedFilter.value = "";
@@ -2522,6 +2525,57 @@ function getVisibleArticles() {
     .sort((left, right) => toDate(right.pubDate).getTime() - toDate(left.pubDate).getTime());
 }
 
+function getArticleCountLabel(count) {
+  return `${count} article${count === 1 ? "" : "s"}`;
+}
+
+function updateArticleFilterContext(articles) {
+  if (!elements.articleFilterContext) {
+    return;
+  }
+
+  const countLabel = getArticleCountLabel(articles.length);
+  const exactArticleIds = Array.isArray(state.filters.articleIds) ? state.filters.articleIds : [];
+
+  if (exactArticleIds.length) {
+    const alertLabel = state.filters.alertLabel || `${exactArticleIds.length} selected articles`;
+    elements.articleFilterContext.textContent = `Showing ${countLabel} from alert: ${alertLabel}`;
+    elements.articleFilterContext.hidden = false;
+    return;
+  }
+
+  const contextParts = [];
+  if (state.filters.feedId) {
+    contextParts.push(`feed: ${getSelectedOptionText(elements.feedFilter) || "Selected feed"}`);
+  }
+  if (state.filters.dmvFeedId) {
+    contextParts.push(`USA feed: ${getSelectedOptionText(elements.dmvFeedFilter) || "Selected state"}`);
+  } else if (state.dashboardMode === "usa") {
+    contextParts.push("USA feeds");
+  }
+  if (state.filters.canadaDmvFeedPath) {
+    contextParts.push(`Canada feed: ${getSelectedOptionText(elements.canadaDmvFilter) || "Selected province"}`);
+  } else if (state.filters.canadaDmvAll) {
+    contextParts.push("all Canada DMV");
+  } else if (state.dashboardMode === "canada") {
+    contextParts.push("Canada feeds");
+  }
+  if (state.filters.topic) {
+    contextParts.push(`topic: ${state.filters.topic}`);
+  }
+  if (state.filters.date) {
+    contextParts.push(`date: ${state.filters.date}`);
+  }
+  if (state.filters.search) {
+    contextParts.push(`search: ${state.filters.search}`);
+  }
+
+  elements.articleFilterContext.hidden = !contextParts.length;
+  elements.articleFilterContext.textContent = contextParts.length
+    ? `Showing ${countLabel} for ${contextParts.join(" + ")}`
+    : "";
+}
+
 function renderArticleCard(article) {
   const node = elements.articleCardTemplate.content.cloneNode(true);
   const link = node.querySelector(".article-link");
@@ -2637,6 +2691,7 @@ function renderArticles() {
   ).trim();
 
   syncFilterUx();
+  updateArticleFilterContext(articles);
 
   if (state.filters.feedId) {
     elements.articlesGrid.classList.remove("is-grouped-feed-view");
