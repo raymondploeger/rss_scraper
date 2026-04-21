@@ -227,6 +227,7 @@ const state = {
   feedPanelCollapsed: false,
   addSourceExpanded: false,
   analyticsScope: "all",
+  analyticsQualityFilter: "all",
   tagManagerExpanded: false,
   noiseKeywordsExpanded: false,
   keywordFilters: {
@@ -1039,6 +1040,19 @@ function getAnalyticsFeedsForScope(feeds, articleCounts) {
   return analyticsFeeds;
 }
 
+function getAnalyticsFeedsForQualityFilter(feeds, articleCounts, recentCounts, qualityStats) {
+  switch (state.analyticsQualityFilter) {
+    case "high":
+      return feeds.filter((feed) => (articleCounts.get(feed.id) || 0) > 0 && (qualityStats.get(feed.id)?.qualityScore || 0) >= 0.75);
+    case "inactive":
+      return feeds.filter((feed) => (articleCounts.get(feed.id) || 0) > 0 && (recentCounts.get(feed.id) || 0) === 0);
+    case "zero":
+      return feeds.filter((feed) => (articleCounts.get(feed.id) || 0) === 0);
+    default:
+      return feeds;
+  }
+}
+
 function getFeedActivityStats(feeds, articles) {
   const recentWindowStart = getRecentWindowStart();
   const stats = new Map(
@@ -1240,7 +1254,7 @@ function renderAnalyticsRows(items, emptyText) {
 
 function renderFeedRankingRows(items) {
   if (!items.length) {
-    return `<p class="analytics-empty">No article volume yet.</p>`;
+    return `<p class="analytics-empty">No feeds match this analytics filter.</p>`;
   }
 
   return `
@@ -1277,6 +1291,30 @@ function renderFeedRankingRows(items) {
         })
         .join("")}
     </ol>
+  `;
+}
+
+function renderAnalyticsQualityTabs(activeFilter) {
+  const tabs = [
+    ["all", "All"],
+    ["high", "High quality"],
+    ["inactive", "Inactive"],
+    ["zero", "Zero articles"],
+  ];
+
+  return `
+    <div class="analytics-quality-tabs" aria-label="Feed ranking quick filters">
+      ${tabs
+        .map(([value, label]) => {
+          const isActive = activeFilter === value;
+          return `
+            <button class="${isActive ? "is-active" : ""}" type="button" data-analytics-quality-filter="${value}" aria-pressed="${isActive}">
+              ${label}
+            </button>
+          `;
+        })
+        .join("")}
+    </div>
   `;
 }
 
@@ -1931,6 +1969,12 @@ function getDashboardAnalytics() {
   const qualityStats = getFeedQualityStats(state.feeds, realArticles);
   const analyticsFeeds = state.feeds.filter(isAnalyticsFeed);
   const scopedAnalyticsFeeds = getAnalyticsFeedsForScope(state.feeds, articleCounts);
+  const rankingFeeds = getAnalyticsFeedsForQualityFilter(
+    scopedAnalyticsFeeds,
+    articleCounts,
+    recentCounts,
+    qualityStats
+  );
   const includedFeedCount = scopedAnalyticsFeeds.length;
   const zeroArticleFeeds = scopedAnalyticsFeeds.filter((feed) => (articleCounts.get(feed.id) || 0) === 0).length;
   const highQualityFeeds = scopedAnalyticsFeeds.filter((feed) => {
@@ -1956,11 +2000,13 @@ function getDashboardAnalytics() {
   const lowValueCount = lowValueFeeds.filter((feed) => feed.status === "low-value").length;
 
   return {
-    feedRankings: getCombinedFeedRankings(scopedAnalyticsFeeds, articleCounts, todayCounts, recentCounts, qualityStats),
+    feedRankings: getCombinedFeedRankings(rankingFeeds, articleCounts, todayCounts, recentCounts, qualityStats),
     lowValueFeeds,
     averageArticlesPerFeed: (realArticles.length / feedCount).toFixed(1),
     averageArticlesTodayPerFeed: (todayArticles.length / feedCount).toFixed(1),
     analyticsScope: state.analyticsScope,
+    analyticsQualityFilter: state.analyticsQualityFilter,
+    rankingFeedCount: rankingFeeds.length,
     analyticsScopeLabel:
       state.analyticsScope === "active"
         ? "Active RSS feeds with article history"
@@ -2011,6 +2057,8 @@ function renderAnalyticsCard() {
       <div class="analytics-panel analytics-panel-wide analytics-panel-ranking">
         <span class="analytics-label">Feed ranking</span>
         <p class="analytics-panel-note">${escapeHtml(analytics.analyticsScopeLabel)}</p>
+        ${renderAnalyticsQualityTabs(analytics.analyticsQualityFilter)}
+        <p class="analytics-panel-note">${analytics.rankingFeedCount} feeds match this quick filter</p>
         ${renderFeedRankingRows(analytics.feedRankings)}
       </div>
       <div class="analytics-panel analytics-panel-wide">
@@ -2299,6 +2347,11 @@ function getDashboardAlertTargetFromEvent(event) {
 function getAnalyticsScopeTargetFromEvent(event) {
   const target = event.target instanceof Element ? event.target : event.target?.parentElement;
   return target?.closest("[data-analytics-scope]");
+}
+
+function getAnalyticsQualityFilterTargetFromEvent(event) {
+  const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+  return target?.closest("[data-analytics-quality-filter]");
 }
 
 function getSelectedOptionText(select) {
@@ -4095,6 +4148,14 @@ function bindEvents() {
     const analyticsScopeTarget = getAnalyticsScopeTargetFromEvent(event);
     if (analyticsScopeTarget) {
       state.analyticsScope = analyticsScopeTarget.dataset.analyticsScope === "active" ? "active" : "all";
+      renderSummary();
+      return;
+    }
+
+    const analyticsQualityFilterTarget = getAnalyticsQualityFilterTargetFromEvent(event);
+    if (analyticsQualityFilterTarget) {
+      const nextFilter = analyticsQualityFilterTarget.dataset.analyticsQualityFilter || "all";
+      state.analyticsQualityFilter = ["high", "inactive", "zero"].includes(nextFilter) ? nextFilter : "all";
       renderSummary();
       return;
     }

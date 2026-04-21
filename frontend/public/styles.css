@@ -286,14 +286,23 @@ h3 {
   margin-top: 0;
 }
 
-.analytics-scope-tabs {
+.analytics-scope-tabs,
+.analytics-quality-tabs {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.analytics-scope-tabs {
   margin-left: auto;
 }
 
-.analytics-scope-tabs button {
+.analytics-quality-tabs {
+  margin: 0 0 8px;
+}
+
+.analytics-scope-tabs button,
+.analytics-quality-tabs button {
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 5px 10px;
@@ -306,7 +315,9 @@ h3 {
 }
 
 .analytics-scope-tabs button:hover,
-.analytics-scope-tabs button.is-active {
+.analytics-scope-tabs button.is-active,
+.analytics-quality-tabs button:hover,
+.analytics-quality-tabs button.is-active {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent);
