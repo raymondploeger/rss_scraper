@@ -52,6 +52,8 @@ const TAG_ALIASES = {
   commemorative: "commemorative coins",
 };
 const ALLOWED_TAG_SET = new Set(ALLOWED_TAGS);
+const PASSPORT_FALSE_POSITIVE_KEYWORDS = ["honda", "nissan", "toyota", "car", "suv", "vehicle", "engine", "specs"];
+const PASSPORT_CONTEXT_KEYWORDS = ["visa", "immigration", "border", "document", "identity"];
 
 const state = {
   feeds: [],
@@ -1931,6 +1933,36 @@ function getArticleFilterTags(article) {
   );
 }
 
+function getArticleSearchText(article) {
+  return [
+    article.title,
+    article.source,
+    article.topic,
+    getFeedName(article.feedId),
+    getArticleTags(article).join(" "),
+    getArticleFilterTags(article).join(" "),
+    article.summary,
+    article.summaryShort,
+    article.contentSnippet,
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+function isPassportFalsePositive(article) {
+  const haystack = getArticleSearchText(article);
+  if (!haystack.includes("passport")) {
+    return false;
+  }
+
+  const hasExclusion = PASSPORT_FALSE_POSITIVE_KEYWORDS.some((keyword) => haystack.includes(keyword));
+  if (!hasExclusion) {
+    return false;
+  }
+
+  return !PASSPORT_CONTEXT_KEYWORDS.some((keyword) => haystack.includes(keyword));
+}
+
 function setFieldActive(control, isActive) {
   control?.closest(".field")?.classList.toggle("is-active-filter", Boolean(isActive));
 }
@@ -2562,6 +2594,10 @@ function articleMatchesFilters(article) {
     return false;
   }
 
+  if (isPassportFalsePositive(article)) {
+    return false;
+  }
+
   const exactArticleIds = Array.isArray(state.filters.articleIds) ? state.filters.articleIds : [];
   if (exactArticleIds.length) {
     return exactArticleIds.includes(article.id);
@@ -2613,16 +2649,7 @@ function articleMatchesFilters(article) {
   }
 
   if (state.filters.search) {
-    const haystack = [
-      article.title,
-      article.source,
-      article.topic,
-      getFeedName(article.feedId),
-      getArticleTags(article).join(" "),
-      getArticleFilterTags(article).join(" "),
-    ]
-      .join(" ")
-      .toLowerCase();
+    const haystack = getArticleSearchText(article);
 
     if (!haystack.includes(state.filters.search.toLowerCase())) {
       return false;
