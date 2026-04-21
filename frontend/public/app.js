@@ -1106,6 +1106,8 @@ function getFeedQualityStats(feeds, articles) {
           filteredArticles: 0,
           relevanceRatio: 0,
           normalizedActivity: 0,
+          viewMatchedArticles: 0,
+          viewMatchScore: 0,
           qualityScore: 0,
           qualityTone: "low",
         },
@@ -1123,6 +1125,9 @@ function getFeedQualityStats(feeds, articles) {
       feedStats.filteredArticles += 1;
     } else {
       feedStats.relevantArticles += 1;
+      if (articleMatchesFilters(article)) {
+        feedStats.viewMatchedArticles += 1;
+      }
     }
   });
 
@@ -1133,7 +1138,10 @@ function getFeedQualityStats(feeds, articles) {
       ? feedStats.relevantArticles / feedStats.totalArticles
       : 0;
     feedStats.normalizedActivity = clampNumber(feedStats.totalArticles / maxArticles, 0, 1);
-    feedStats.qualityScore = feedStats.relevanceRatio * 0.7 + feedStats.normalizedActivity * 0.3;
+    feedStats.qualityScore = feedStats.relevanceRatio;
+    feedStats.viewMatchScore = feedStats.relevantArticles
+      ? feedStats.viewMatchedArticles / feedStats.relevantArticles
+      : 0;
     feedStats.qualityTone =
       feedStats.qualityScore > 0.75 ? "high" : feedStats.qualityScore >= 0.4 ? "medium" : "low";
   });
@@ -1155,6 +1163,9 @@ function getCombinedFeedRankings(totalCounts, todayCounts, recentCounts, quality
         relevantArticles: quality.relevantArticles || 0,
         filteredArticles: quality.filteredArticles || 0,
         relevanceRatio: quality.relevanceRatio || 0,
+        normalizedActivity: quality.normalizedActivity || 0,
+        viewMatchedArticles: quality.viewMatchedArticles || 0,
+        viewMatchScore: quality.viewMatchScore || 0,
         qualityScore: quality.qualityScore || 0,
         qualityTone: quality.qualityTone || "low",
       };
@@ -1162,6 +1173,7 @@ function getCombinedFeedRankings(totalCounts, todayCounts, recentCounts, quality
     .sort(
       (left, right) =>
         right.qualityScore - left.qualityScore ||
+        right.normalizedActivity - left.normalizedActivity ||
         right.today - left.today ||
         right.recent - left.recent ||
         right.total - left.total ||
@@ -1230,16 +1242,16 @@ function renderFeedRankingRows(items) {
           const todayClickableAttrs = topic
             ? `class="analytics-clickable" data-analytics-topic="${escapeHtml(topic)}" data-analytics-today-only="true" role="button" tabindex="0" title="Click to filter articles from today"`
             : "";
-          const scorePercent = Math.round((item.qualityScore || 0) * 100);
-          const relevancePercent = Math.round((item.relevanceRatio || 0) * 100);
+          const qualityPercent = Math.round((item.qualityScore || 0) * 100);
+          const viewMatchPercent = Math.round((item.viewMatchScore || 0) * 100);
           return `
             <li>
               <span ${clickableAttrs}>${escapeHtml(item.name)}</span>
               <div class="analytics-count-pair">
-                <strong class="analytics-quality is-${item.qualityTone}" title="${item.relevantArticles} relevant, ${item.filteredArticles} filtered">
-                  ${scorePercent}% score
+                <strong class="analytics-quality is-${item.qualityTone}" title="${item.relevantArticles} clean, ${item.filteredArticles} filtered">
+                  ${qualityPercent}% quality
                 </strong>
-                <strong title="Relevance ratio">${relevancePercent}% relevant</strong>
+                <strong title="${item.viewMatchedArticles} clean articles match the current view">${viewMatchPercent}% in view</strong>
                 <strong>${item.total} total</strong>
                 <strong ${todayClickableAttrs}>${item.today} today</strong>
               </div>
