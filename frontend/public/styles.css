@@ -649,13 +649,20 @@ h3 {
   background: rgba(255, 255, 255, 0.03);
 }
 
-.tag-manager-head,
 .tag-manager-actions,
 .tag-manager-add {
   display: flex;
   align-items: center;
   gap: 8px;
   justify-content: space-between;
+}
+
+.tag-manager-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
 }
 
 .tag-manager-content[hidden] {
@@ -671,6 +678,7 @@ h3 {
   color: var(--muted);
   font-size: 0.8rem;
   font-weight: 700;
+  min-width: 0;
 }
 
 .tag-manager-actions {
@@ -701,18 +709,22 @@ h3 {
   border: 1px solid transparent;
   border-radius: 999px;
   background: transparent;
-  color: var(--accent);
+  color: var(--muted);
   cursor: pointer;
-  font-size: 0.74rem;
-  font-weight: 800;
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
   letter-spacing: 0.01em;
-  padding: 4px 7px;
-  transition: background 140ms ease, color 140ms ease, transform 140ms ease;
+  opacity: 0.82;
+  padding: 2px 4px;
+  transition: color 140ms ease, opacity 140ms ease, text-decoration-color 140ms ease;
 }
 
 .tag-manager-toggle:hover {
-  background: var(--accent-soft);
-  transform: translateY(-1px);
+  color: var(--accent);
+  opacity: 1;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .tag-manager-toggle:focus-visible {
