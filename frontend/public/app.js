@@ -226,6 +226,7 @@ const state = {
   editingFeedId: "",
   feedPanelCollapsed: false,
   addSourceExpanded: false,
+  analyticsScope: "all",
   tagManagerExpanded: false,
   noiseKeywordsExpanded: false,
   keywordFilters: {
@@ -1029,6 +1030,15 @@ function isAnalyticsFeed(feed) {
   return Boolean(feed?.sourceType !== "link-only" && !isLinkOnlyDmvSource(feed));
 }
 
+function getAnalyticsFeedsForScope(feeds, articleCounts) {
+  const analyticsFeeds = feeds.filter(isAnalyticsFeed);
+  if (state.analyticsScope === "active") {
+    return analyticsFeeds.filter((feed) => feed.isActive !== false && (articleCounts.get(feed.id) || 0) > 0);
+  }
+
+  return analyticsFeeds;
+}
+
 function getFeedActivityStats(feeds, articles) {
   const recentWindowStart = getRecentWindowStart();
   const stats = new Map(
@@ -1246,9 +1256,14 @@ function renderFeedRankingRows(items) {
             : "";
           const qualityPercent = Math.round((item.qualityScore || 0) * 100);
           const viewMatchPercent = Math.round((item.viewMatchScore || 0) * 100);
+          const feedStatus =
+            item.total === 0 ? "zero articles" : item.recent === 0 ? "inactive" : "active";
           return `
             <li>
-              <span ${clickableAttrs}>${escapeHtml(item.name)}</span>
+              <span ${clickableAttrs}>
+                ${escapeHtml(item.name)}
+                <small class="analytics-row-detail">${escapeHtml(feedStatus)}</small>
+              </span>
               <div class="analytics-count-pair">
                 <strong class="analytics-quality is-${item.qualityTone}" title="${item.relevantArticles} clean, ${item.filteredArticles} filtered">
                   ${qualityPercent}% quality
@@ -1914,6 +1929,19 @@ function getDashboardAnalytics() {
   const todayCounts = getFeedArticleCounts(todayArticles);
   const recentCounts = getFeedArticleCounts(recentArticles);
   const qualityStats = getFeedQualityStats(state.feeds, realArticles);
+  const analyticsFeeds = state.feeds.filter(isAnalyticsFeed);
+  const scopedAnalyticsFeeds = getAnalyticsFeedsForScope(state.feeds, articleCounts);
+  const includedFeedCount = scopedAnalyticsFeeds.length;
+  const zeroArticleFeeds = scopedAnalyticsFeeds.filter((feed) => (articleCounts.get(feed.id) || 0) === 0).length;
+  const highQualityFeeds = scopedAnalyticsFeeds.filter((feed) => {
+    const quality = qualityStats.get(feed.id);
+    return (articleCounts.get(feed.id) || 0) > 0 && (quality?.qualityScore || 0) > 0.75;
+  }).length;
+  const qualityTotal = scopedAnalyticsFeeds.reduce(
+    (sum, feed) => sum + (qualityStats.get(feed.id)?.qualityScore || 0),
+    0
+  );
+  const averageQualityScore = includedFeedCount ? Math.round((qualityTotal / includedFeedCount) * 100) : 0;
   const activeFeeds = state.feeds.filter((feed) => feed.isActive !== false).length;
   const errorFeeds = state.feeds.filter(isFeedError).length;
   const rssFeedCount = state.feeds.filter((feed) => feed.sourceType !== "link-only").length;
@@ -1928,10 +1956,24 @@ function getDashboardAnalytics() {
   const lowValueCount = lowValueFeeds.filter((feed) => feed.status === "low-value").length;
 
   return {
-    feedRankings: getCombinedFeedRankings(state.feeds, articleCounts, todayCounts, recentCounts, qualityStats),
+    feedRankings: getCombinedFeedRankings(scopedAnalyticsFeeds, articleCounts, todayCounts, recentCounts, qualityStats),
     lowValueFeeds,
     averageArticlesPerFeed: (realArticles.length / feedCount).toFixed(1),
     averageArticlesTodayPerFeed: (todayArticles.length / feedCount).toFixed(1),
+    analyticsScope: state.analyticsScope,
+    analyticsScopeLabel:
+      state.analyticsScope === "active"
+        ? "Active RSS feeds with article history"
+        : "All imported RSS feeds",
+    analyticsScopeNote:
+      state.analyticsScope === "active"
+        ? "Excludes link-only/catalog-only sources, inactive feeds, and zero-article feeds."
+        : "Includes active, inactive, and zero-article imported RSS feeds; excludes link-only/catalog-only sources.",
+    totalAnalyticsFeeds: analyticsFeeds.length,
+    includedFeedCount,
+    zeroArticleFeeds,
+    highQualityFeeds,
+    averageQualityScore,
     activeFeeds,
     inactiveFeeds,
     errorFeeds,
@@ -1955,10 +1997,20 @@ function renderAnalyticsCard() {
       <span class="summary-label">Feed analytics</span>
       <strong class="summary-value">${analytics.averageArticlesPerFeed}</strong>
       <span class="analytics-note">articles per feed</span>
+      <div class="analytics-scope-tabs" aria-label="Feed analytics scope">
+        <button class="${analytics.analyticsScope === "all" ? "is-active" : ""}" type="button" data-analytics-scope="all" aria-pressed="${analytics.analyticsScope === "all"}">
+          All RSS feeds
+        </button>
+        <button class="${analytics.analyticsScope === "active" ? "is-active" : ""}" type="button" data-analytics-scope="active" aria-pressed="${analytics.analyticsScope === "active"}">
+          Active feeds only
+        </button>
+      </div>
+      <span class="analytics-scope-note">${escapeHtml(analytics.analyticsScopeNote)}</span>
     </div>
     <div class="analytics-grid">
       <div class="analytics-panel analytics-panel-wide analytics-panel-ranking">
         <span class="analytics-label">Feed ranking</span>
+        <p class="analytics-panel-note">${escapeHtml(analytics.analyticsScopeLabel)}</p>
         ${renderFeedRankingRows(analytics.feedRankings)}
       </div>
       <div class="analytics-panel analytics-panel-wide">
@@ -1968,6 +2020,10 @@ function renderAnalyticsCard() {
       <div class="analytics-panel analytics-panel-wide analytics-panel-alerts">
         <span class="analytics-label">Recent alerts</span>
         ${renderDashboardAlerts()}
+      </div>
+      <div class="analytics-panel">
+        <span class="analytics-label">Analytics scope</span>
+        <p>${analytics.includedFeedCount} included of ${analytics.totalAnalyticsFeeds} RSS feeds, ${analytics.zeroArticleFeeds} zero-article, ${analytics.highQualityFeeds} high quality, ${analytics.averageQualityScore}% avg quality</p>
       </div>
       <div class="analytics-panel">
         <span class="analytics-label">Feed health</span>
@@ -2238,6 +2294,11 @@ function getAnalyticsFilterTargetFromEvent(event) {
 function getDashboardAlertTargetFromEvent(event) {
   const target = event.target instanceof Element ? event.target : event.target?.parentElement;
   return target?.closest("[data-alert-id]");
+}
+
+function getAnalyticsScopeTargetFromEvent(event) {
+  const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+  return target?.closest("[data-analytics-scope]");
 }
 
 function getSelectedOptionText(select) {
@@ -4028,6 +4089,13 @@ function bindEvents() {
     const dismissButton = target?.closest("[data-dismiss-dashboard-alert]");
     if (dismissButton) {
       dismissDashboardAlert(dismissButton.dataset.dismissDashboardAlert || "");
+      return;
+    }
+
+    const analyticsScopeTarget = getAnalyticsScopeTargetFromEvent(event);
+    if (analyticsScopeTarget) {
+      state.analyticsScope = analyticsScopeTarget.dataset.analyticsScope === "active" ? "active" : "all";
+      renderSummary();
       return;
     }
 

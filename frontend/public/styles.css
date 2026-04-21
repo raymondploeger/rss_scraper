@@ -286,9 +286,50 @@ h3 {
   margin-top: 0;
 }
 
+.analytics-scope-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.analytics-scope-tabs button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.analytics-scope-tabs button:hover,
+.analytics-scope-tabs button.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 .analytics-note {
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.analytics-scope-note,
+.analytics-panel-note,
+.analytics-row-detail {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.analytics-scope-note {
+  flex-basis: 100%;
+}
+
+.analytics-panel-note {
+  margin: -2px 0 8px;
 }
 
 .analytics-grid {
@@ -350,6 +391,16 @@ h3 {
   overflow-y: auto;
   padding-right: 4px;
   scrollbar-width: thin;
+}
+
+.analytics-ranking-list > li > span {
+  white-space: normal;
+}
+
+.analytics-row-detail {
+  display: block;
+  margin-top: 2px;
+  white-space: nowrap;
 }
 
 .analytics-list li {
