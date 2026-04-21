@@ -167,6 +167,56 @@ const COIN_CONTEXT_KEYWORDS = [
   "reverse",
   "bullion",
 ];
+const TOPIC_KEYWORD_RULES = {
+  passport: {
+    include: ["visa", "immigration", "border", "document", "identity", "travel document"],
+    exclude: DEFAULT_KEYWORD_EXCLUDES,
+  },
+  "driver license": {
+    include: ["dmv", "driver", "document", "identity", "permit", "registration"],
+    exclude: MUSIC_FALSE_POSITIVE_KEYWORDS,
+  },
+  coins: {
+    include: COIN_CONTEXT_KEYWORDS,
+    exclude: GAMING_COIN_FALSE_POSITIVE_KEYWORDS,
+  },
+  banknotes: {
+    include: ["central bank", "note", "banknote", "issued", "circulation", "currency", "security printing"],
+    exclude: ["game currency", "gaming", "token pack", "virtual currency"],
+  },
+  visa: {
+    include: ["immigration", "border", "permit", "travel", "passport", "embassy"],
+    exclude: ["payment card", "visa card", "credit card", "debit card", "mastercard", "banking"],
+  },
+  "identity document": {
+    include: ["id", "document", "verification", "biometrics", "authentication", "security"],
+    exclude: ["celebrity gossip", "music", "song", "songs", "lyrics", "album", "concert", "entertainment"],
+  },
+};
+const TOPIC_KEYWORD_RULE_ALIASES = {
+  passport: "passport",
+  passports: "passport",
+  epassport: "passport",
+  "e-passport": "passport",
+  "driver licenses": "driver license",
+  "drivers license": "driver license",
+  "driver's license": "driver license",
+  "driving license": "driver license",
+  coin: "coins",
+  coins: "coins",
+  numismatic: "coins",
+  numismatics: "coins",
+  banknote: "banknotes",
+  banknotes: "banknotes",
+  visa: "visa",
+  visas: "visa",
+  identity: "identity document",
+  "identity documents": "identity document",
+  "identity document": "identity document",
+  "id document": "identity document",
+  "id documents": "identity document",
+  "id card": "identity document",
+};
 
 const state = {
   feeds: [],
@@ -1026,21 +1076,97 @@ function getFeedActivityStats(feeds, articles) {
   return stats;
 }
 
-function getCombinedFeedRankings(totalCounts, todayCounts, recentCounts, limit = 8) {
+function clampNumber(value, min, max) {
+  return Math.min(max, Math.max(min, Number(value) || 0));
+}
+
+function isArticleNoiseForFeedQuality(article, feed) {
+  const feedRule = getTopicKeywordRule(feed?.topic) || getTopicKeywordRule(article?.topic);
+  if (feedRule) {
+    return isKeywordRuleFalsePositive(article, feedRule);
+  }
+
+  return (
+    isPassportFalsePositive(article) ||
+    isDriverLicenseMusicFalsePositive(article) ||
+    isCoinGamingFalsePositive(article)
+  );
+}
+
+function getFeedQualityStats(feeds, articles) {
+  const stats = new Map(
+    feeds
+      .filter(isAnalyticsFeed)
+      .map((feed) => [
+        feed.id,
+        {
+          feed,
+          totalArticles: 0,
+          relevantArticles: 0,
+          filteredArticles: 0,
+          relevanceRatio: 0,
+          normalizedActivity: 0,
+          qualityScore: 0,
+          qualityTone: "low",
+        },
+      ])
+  );
+
+  articles.forEach((article) => {
+    const feedStats = stats.get(article.feedId);
+    if (!feedStats) {
+      return;
+    }
+
+    feedStats.totalArticles += 1;
+    if (isArticleNoiseForFeedQuality(article, feedStats.feed)) {
+      feedStats.filteredArticles += 1;
+    } else {
+      feedStats.relevantArticles += 1;
+    }
+  });
+
+  const maxArticles = Math.max(1, ...Array.from(stats.values()).map((item) => item.totalArticles));
+
+  stats.forEach((feedStats) => {
+    feedStats.relevanceRatio = feedStats.totalArticles
+      ? feedStats.relevantArticles / feedStats.totalArticles
+      : 0;
+    feedStats.normalizedActivity = clampNumber(feedStats.totalArticles / maxArticles, 0, 1);
+    feedStats.qualityScore = feedStats.relevanceRatio * 0.7 + feedStats.normalizedActivity * 0.3;
+    feedStats.qualityTone =
+      feedStats.qualityScore > 0.75 ? "high" : feedStats.qualityScore >= 0.4 ? "medium" : "low";
+  });
+
+  return stats;
+}
+
+function getCombinedFeedRankings(totalCounts, todayCounts, recentCounts, qualityStats, limit = 8) {
   return Array.from(totalCounts.entries())
-    .map(([feedId, total]) => ({
-      feedId,
-      total,
-      today: todayCounts.get(feedId) || 0,
-      recent: recentCounts.get(feedId) || 0,
-      name: getFeedName(feedId),
-      topic: getFeedTopic(feedId),
-    }))
-    .map((item) => ({
-      ...item,
-      score: item.today * 12 + item.recent * 2 + Math.log10(item.total + 1) * 10,
-    }))
-    .sort((left, right) => right.score - left.score || right.today - left.today || right.total - left.total || left.name.localeCompare(right.name))
+    .map(([feedId, total]) => {
+      const quality = qualityStats.get(feedId) || {};
+      return {
+        feedId,
+        total,
+        today: todayCounts.get(feedId) || 0,
+        recent: recentCounts.get(feedId) || 0,
+        name: getFeedName(feedId),
+        topic: getFeedTopic(feedId),
+        relevantArticles: quality.relevantArticles || 0,
+        filteredArticles: quality.filteredArticles || 0,
+        relevanceRatio: quality.relevanceRatio || 0,
+        qualityScore: quality.qualityScore || 0,
+        qualityTone: quality.qualityTone || "low",
+      };
+    })
+    .sort(
+      (left, right) =>
+        right.qualityScore - left.qualityScore ||
+        right.today - left.today ||
+        right.recent - left.recent ||
+        right.total - left.total ||
+        left.name.localeCompare(right.name)
+    )
     .slice(0, limit);
 }
 
@@ -1104,10 +1230,16 @@ function renderFeedRankingRows(items) {
           const todayClickableAttrs = topic
             ? `class="analytics-clickable" data-analytics-topic="${escapeHtml(topic)}" data-analytics-today-only="true" role="button" tabindex="0" title="Click to filter articles from today"`
             : "";
+          const scorePercent = Math.round((item.qualityScore || 0) * 100);
+          const relevancePercent = Math.round((item.relevanceRatio || 0) * 100);
           return `
             <li>
               <span ${clickableAttrs}>${escapeHtml(item.name)}</span>
               <div class="analytics-count-pair">
+                <strong class="analytics-quality is-${item.qualityTone}" title="${item.relevantArticles} relevant, ${item.filteredArticles} filtered">
+                  ${scorePercent}% score
+                </strong>
+                <strong title="Relevance ratio">${relevancePercent}% relevant</strong>
                 <strong>${item.total} total</strong>
                 <strong ${todayClickableAttrs}>${item.today} today</strong>
               </div>
@@ -1767,6 +1899,7 @@ function getDashboardAnalytics() {
   const articleCounts = getFeedArticleCounts(realArticles);
   const todayCounts = getFeedArticleCounts(todayArticles);
   const recentCounts = getFeedArticleCounts(recentArticles);
+  const qualityStats = getFeedQualityStats(state.feeds, realArticles);
   const activeFeeds = state.feeds.filter((feed) => feed.isActive !== false).length;
   const errorFeeds = state.feeds.filter(isFeedError).length;
   const rssFeedCount = state.feeds.filter((feed) => feed.sourceType !== "link-only").length;
@@ -1781,7 +1914,7 @@ function getDashboardAnalytics() {
   const lowValueCount = lowValueFeeds.filter((feed) => feed.status === "low-value").length;
 
   return {
-    feedRankings: getCombinedFeedRankings(articleCounts, todayCounts, recentCounts),
+    feedRankings: getCombinedFeedRankings(articleCounts, todayCounts, recentCounts, qualityStats),
     lowValueFeeds,
     averageArticlesPerFeed: (realArticles.length / feedCount).toFixed(1),
     averageArticlesTodayPerFeed: (todayArticles.length / feedCount).toFixed(1),
@@ -2270,6 +2403,33 @@ function textMatchesKeyword(text, keyword) {
     ? new RegExp(`(^|[^a-z0-9])${escapedKeyword}([^a-z0-9]|$)`, "i")
     : new RegExp(escapedKeyword, "i");
   return pattern.test(text);
+}
+
+function getTopicKeywordRuleKey(value) {
+  const normalizedValue = normalizeFilterTag(value);
+  return TOPIC_KEYWORD_RULE_ALIASES[normalizedValue] || normalizedValue;
+}
+
+function getTopicKeywordRule(value) {
+  return TOPIC_KEYWORD_RULES[getTopicKeywordRuleKey(value)] || null;
+}
+
+function getActiveTopicKeywordRule() {
+  return getTopicKeywordRule(state.filters.tag) || getTopicKeywordRule(state.filters.topic);
+}
+
+function isKeywordRuleFalsePositive(article, rule) {
+  if (!rule) {
+    return false;
+  }
+
+  const haystack = getArticleKeywordText(article);
+  const hasExclusion = normalizeKeywordList(rule.exclude).some((keyword) => textMatchesKeyword(haystack, keyword));
+  if (!hasExclusion) {
+    return false;
+  }
+
+  return !normalizeKeywordList(rule.include).some((keyword) => textMatchesKeyword(haystack, keyword));
 }
 
 function isPassportFalsePositive(article) {
@@ -3039,15 +3199,17 @@ function articleMatchesFilters(article) {
     return false;
   }
 
-  if (isPassportFalsePositive(article)) {
+  const activeKeywordRule = getActiveTopicKeywordRule();
+  if (activeKeywordRule && isKeywordRuleFalsePositive(article, activeKeywordRule)) {
     return false;
   }
 
-  if (isDriverLicenseMusicFalsePositive(article)) {
-    return false;
-  }
-
-  if (isCoinGamingFalsePositive(article)) {
+  if (
+    !activeKeywordRule &&
+    (isPassportFalsePositive(article) ||
+      isDriverLicenseMusicFalsePositive(article) ||
+      isCoinGamingFalsePositive(article))
+  ) {
     return false;
   }
 

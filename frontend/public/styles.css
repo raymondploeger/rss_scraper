@@ -385,6 +385,26 @@ h3 {
   color: var(--text);
 }
 
+.analytics-list strong.analytics-quality.is-high {
+  color: #18794e;
+}
+
+.analytics-list strong.analytics-quality.is-medium {
+  color: #b7791f;
+}
+
+.analytics-list strong.analytics-quality.is-low {
+  color: var(--danger);
+}
+
+:root[data-theme="dark"] .analytics-list strong.analytics-quality.is-high {
+  color: #6ee7a8;
+}
+
+:root[data-theme="dark"] .analytics-list strong.analytics-quality.is-medium {
+  color: #f6c76a;
+}
+
 .analytics-clickable {
   cursor: pointer;
   transition: opacity 0.15s ease, transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
