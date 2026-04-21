@@ -1649,7 +1649,7 @@ function renderAnalyticsCard() {
         <span class="analytics-label">Dead / low value feeds</span>
         ${renderLowValueFeedRows(analytics.lowValueFeeds)}
       </div>
-      <div class="analytics-panel analytics-panel-wide">
+      <div class="analytics-panel analytics-panel-wide analytics-panel-alerts">
         <span class="analytics-label">Recent alerts</span>
         ${renderDashboardAlerts()}
       </div>

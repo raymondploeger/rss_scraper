@@ -309,6 +309,12 @@ h3 {
   grid-column: span 1;
 }
 
+.analytics-panel-alerts {
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+}
+
 .analytics-label {
   display: block;
   margin-bottom: 7px;
@@ -417,6 +423,13 @@ h3 {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.analytics-panel-alerts .dashboard-alert-list {
+  max-height: 244px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
 }
 
 .dashboard-alert {
