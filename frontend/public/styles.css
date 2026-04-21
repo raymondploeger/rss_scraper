@@ -658,6 +658,7 @@ h3 {
   align-items: center;
   gap: 8px;
   justify-content: space-between;
+  min-width: 0;
 }
 
 .tag-manager-head {
@@ -690,10 +691,11 @@ h3 {
 
 .tag-manager-actions {
   align-items: stretch;
+  flex-wrap: wrap;
 }
 
 .tag-manager-add {
-  flex: 1;
+  flex: 1 1 220px;
   min-width: 0;
 }
 
@@ -710,6 +712,16 @@ h3 {
 .tag-manager-add-button,
 .tag-manager-reset {
   padding: 9px 11px;
+}
+
+.tag-manager-add-button,
+.tag-manager-reset {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.tag-manager-reset {
+  margin-left: auto;
 }
 
 .tag-manager-toggle {
