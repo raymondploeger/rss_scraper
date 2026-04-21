@@ -117,6 +117,55 @@ const MUSIC_FALSE_POSITIVE_KEYWORDS = [
   "concert",
   "track",
 ];
+const COIN_FALSE_POSITIVE_TERMS = ["coin", "coins"];
+const GAMING_COIN_FALSE_POSITIVE_KEYWORDS = [
+  "game",
+  "games",
+  "gaming",
+  "in-game",
+  "ingame",
+  "virtual currency",
+  "virtual coins",
+  "coin pack",
+  "coins pack",
+  "reward",
+  "rewards",
+  "battle pass",
+  "loot",
+  "skins",
+  "token",
+  "tokens",
+  "xp",
+  "level up",
+  "mobile game",
+  "steam",
+  "xbox",
+  "playstation",
+  "nintendo",
+  "fortnite",
+  "roblox",
+  "minecraft",
+  "app store",
+  "google play",
+];
+const COIN_CONTEXT_KEYWORDS = [
+  "mint",
+  "commemorative",
+  "circulation",
+  "collector",
+  "collectible",
+  "numismatic",
+  "numismatics",
+  "euro coin",
+  "coin design",
+  "central bank",
+  "issue",
+  "issued",
+  "mintage",
+  "obverse",
+  "reverse",
+  "bullion",
+];
 
 const state = {
   feeds: [],
@@ -2231,6 +2280,23 @@ function isDriverLicenseMusicFalsePositive(article) {
   return MUSIC_FALSE_POSITIVE_KEYWORDS.some((keyword) => textMatchesKeyword(haystack, keyword));
 }
 
+function isCoinGamingFalsePositive(article) {
+  const haystack = getArticleKeywordText(article);
+  const hasCoinTerm = COIN_FALSE_POSITIVE_TERMS.some((keyword) => textMatchesKeyword(haystack, keyword));
+  if (!hasCoinTerm) {
+    return false;
+  }
+
+  const hasGamingContext = GAMING_COIN_FALSE_POSITIVE_KEYWORDS.some((keyword) =>
+    textMatchesKeyword(haystack, keyword)
+  );
+  if (!hasGamingContext) {
+    return false;
+  }
+
+  return !COIN_CONTEXT_KEYWORDS.some((keyword) => textMatchesKeyword(haystack, keyword));
+}
+
 function setFieldActive(control, isActive) {
   control?.closest(".field")?.classList.toggle("is-active-filter", Boolean(isActive));
 }
@@ -2960,6 +3026,10 @@ function articleMatchesFilters(article) {
   }
 
   if (isDriverLicenseMusicFalsePositive(article)) {
+    return false;
+  }
+
+  if (isCoinGamingFalsePositive(article)) {
     return false;
   }
 
