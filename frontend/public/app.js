@@ -90,6 +90,33 @@ const DEFAULT_KEYWORD_INCLUDES = [
   "verification",
   "travel document",
 ];
+const DRIVER_LICENSE_FALSE_POSITIVE_TERMS = [
+  "driver license",
+  "drivers license",
+  "driver's license",
+];
+const MUSIC_FALSE_POSITIVE_KEYWORDS = [
+  "olivia rodrigo",
+  "song",
+  "songs",
+  "music",
+  "lyrics",
+  "lyric",
+  "album",
+  "single",
+  "spotify",
+  "apple music",
+  "youtube music",
+  "billboard",
+  "chart",
+  "charts",
+  "streaming",
+  "pop star",
+  "singer",
+  "artist",
+  "concert",
+  "track",
+];
 
 const state = {
   feeds: [],
@@ -2192,6 +2219,18 @@ function isPassportFalsePositive(article) {
   return !state.keywordFilters.include.some((keyword) => textMatchesKeyword(haystack, keyword));
 }
 
+function isDriverLicenseMusicFalsePositive(article) {
+  const haystack = getArticleKeywordText(article);
+  const hasDriverLicenseTerm = DRIVER_LICENSE_FALSE_POSITIVE_TERMS.some((keyword) =>
+    textMatchesKeyword(haystack, keyword)
+  );
+  if (!hasDriverLicenseTerm) {
+    return false;
+  }
+
+  return MUSIC_FALSE_POSITIVE_KEYWORDS.some((keyword) => textMatchesKeyword(haystack, keyword));
+}
+
 function setFieldActive(control, isActive) {
   control?.closest(".field")?.classList.toggle("is-active-filter", Boolean(isActive));
 }
@@ -2917,6 +2956,10 @@ function articleMatchesFilters(article) {
   }
 
   if (isPassportFalsePositive(article)) {
+    return false;
+  }
+
+  if (isDriverLicenseMusicFalsePositive(article)) {
     return false;
   }
 
