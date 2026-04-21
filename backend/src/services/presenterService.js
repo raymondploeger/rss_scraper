@@ -78,6 +78,11 @@ export function toArticleDto(article) {
     summary: article.summary || "",
     summaryShort: article.summaryShort || "",
     keywords: Array.isArray(article.keywords) ? article.keywords : [],
+    tags: Array.isArray(article.tags)
+      ? article.tags
+      : Array.isArray(article.keywords)
+        ? article.keywords
+        : [],
     createdAt: article.createdAt,
     updatedAt: article.updatedAt,
     contentSnippet: article.contentSnippet || "",

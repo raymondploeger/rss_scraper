@@ -29,6 +29,7 @@ const state = {
   filters: {
     search: "",
     topic: "",
+    tag: "",
     feedId: "",
     dmvFeedId: "",
     canadaDmvFeedPath: "",
@@ -60,6 +61,7 @@ const elements = {
   articlesGrid: document.getElementById("articles-grid"),
   articleFilterContext: document.getElementById("article-filter-context"),
   topicFilter: document.getElementById("topic-filter"),
+  tagFilter: document.getElementById("tag-filter"),
   feedFilter: document.getElementById("feed-filter"),
   dmvFeedFilter: document.getElementById("dmv-feed-filter"),
   canadaDmvFilter: document.getElementById("canada-dmv-filter"),
@@ -1790,6 +1792,7 @@ function applyAlertArticleFilter(alert) {
   state.filters.alertLabel = alert.title || `${state.filters.articleIds.length} articles`;
   state.filters.search = "";
   state.filters.topic = "";
+  state.filters.tag = "";
   state.filters.date = "";
   state.filters.feedId = "";
   state.filters.dmvFeedId = "";
@@ -1799,6 +1802,9 @@ function applyAlertArticleFilter(alert) {
 
   elements.searchFilter.value = "";
   elements.topicFilter.value = state.filters.topic;
+  if (elements.tagFilter) {
+    elements.tagFilter.value = "";
+  }
   elements.dateFilter.value = state.filters.date;
   elements.feedFilter.value = "";
   if (elements.dmvFeedFilter) {
@@ -1820,6 +1826,7 @@ function applyAnalyticsFilter({ topic, todayOnly = false }) {
 
   clearExactArticleFilter();
   state.filters.topic = nextTopic;
+  state.filters.tag = "";
   state.filters.date = todayOnly ? toDateInputValue(new Date()) : "";
   state.filters.feedId = "";
   state.filters.dmvFeedId = "";
@@ -1828,6 +1835,9 @@ function applyAnalyticsFilter({ topic, todayOnly = false }) {
   state.dashboardMode = "normal";
 
   elements.topicFilter.value = nextTopic;
+  if (elements.tagFilter) {
+    elements.tagFilter.value = "";
+  }
   elements.dateFilter.value = state.filters.date;
   elements.feedFilter.value = "";
   if (elements.dmvFeedFilter) {
@@ -1859,6 +1869,18 @@ function getSelectedOptionText(select) {
   return select?.selectedOptions?.[0]?.textContent?.trim() || "";
 }
 
+function getArticleTags(article) {
+  return Array.from(
+    new Set(
+      []
+        .concat(Array.isArray(article.tags) ? article.tags : [])
+        .concat(Array.isArray(article.keywords) ? article.keywords : [])
+        .map((tag) => String(tag || "").trim())
+        .filter(Boolean)
+    )
+  );
+}
+
 function setFieldActive(control, isActive) {
   control?.closest(".field")?.classList.toggle("is-active-filter", Boolean(isActive));
 }
@@ -1885,6 +1907,7 @@ function syncFilterUx() {
 
   setFieldActive(elements.searchFilter, Boolean(state.filters.search));
   setFieldActive(elements.topicFilter, Boolean(state.filters.topic));
+  setFieldActive(elements.tagFilter, Boolean(state.filters.tag));
   setFieldActive(elements.feedFilter, Boolean(state.filters.feedId));
   setFieldActive(elements.dmvFeedFilter, Boolean(state.filters.dmvFeedId || state.dashboardMode === "usa"));
   setFieldActive(
@@ -1908,6 +1931,9 @@ function syncFilterUx() {
   }
   if (state.filters.topic) {
     addActiveFilterChip(fragment, "Topic", state.filters.topic, "topic");
+  }
+  if (state.filters.tag) {
+    addActiveFilterChip(fragment, "Tag", state.filters.tag, "tag");
   }
   if (state.filters.feedId) {
     addActiveFilterChip(fragment, "Feed", getSelectedOptionText(elements.feedFilter) || "Selected feed", "feed");
@@ -1964,6 +1990,9 @@ function clearActiveFilter(filterKey) {
   } else if (filterKey === "topic") {
     state.filters.topic = "";
     elements.topicFilter.value = "";
+  } else if (filterKey === "tag") {
+    state.filters.tag = "";
+    elements.tagFilter.value = "";
   } else if (filterKey === "feed") {
     state.filters.feedId = "";
     elements.feedFilter.value = "";
@@ -1998,6 +2027,9 @@ function renderFeedOptions() {
   const topics = Array.from(
     new Set(state.feeds.map((feed) => String(feed.topic || "").trim()).filter(Boolean))
   ).sort();
+  const tags = Array.from(
+    new Set(state.articles.flatMap(getArticleTags))
+  ).sort((left, right) => left.localeCompare(right));
   const nonDmvFeeds = getNonDmvFeeds()
     .slice()
     .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")));
@@ -2033,6 +2065,17 @@ function renderFeedOptions() {
     .concat(topics.map((topic) => `<option value="${topic}">${topic}</option>`))
     .join("");
   elements.topicFilter.value = state.filters.topic;
+
+  if (state.filters.tag && !tags.includes(state.filters.tag)) {
+    state.filters.tag = "";
+  }
+
+  if (elements.tagFilter) {
+    elements.tagFilter.innerHTML = [`<option value="">All tags</option>`]
+      .concat(tags.map((tag) => `<option value="${escapeHtml(tag)}">${escapeHtml(tag)}</option>`))
+      .join("");
+    elements.tagFilter.value = state.filters.tag;
+  }
 
   elements.feedFilter.innerHTML = [`<option value="">All feeds</option>`]
     .concat(
@@ -2289,6 +2332,7 @@ function resetDashboardState() {
   state.dashboardMode = "normal";
   state.filters.search = "";
   state.filters.topic = "";
+  state.filters.tag = "";
   state.filters.feedId = "";
   state.filters.dmvFeedId = "";
   state.filters.canadaDmvFeedPath = "";
@@ -2302,6 +2346,9 @@ function resetDashboardState() {
   }
   if (elements.topicFilter) {
     elements.topicFilter.value = "";
+  }
+  if (elements.tagFilter) {
+    elements.tagFilter.value = "";
   }
   if (elements.feedFilter) {
     elements.feedFilter.value = "";
@@ -2481,6 +2528,10 @@ function articleMatchesFilters(article) {
     return false;
   }
 
+  if (state.filters.tag && !getArticleTags(article).includes(state.filters.tag)) {
+    return false;
+  }
+
   if (state.filters.canadaDmvFeedPath) {
     const selectedCanadaFeed = getSelectedCanadaFeed();
     if (!selectedCanadaFeed || article.feedId !== selectedCanadaFeed.id) {
@@ -2507,7 +2558,7 @@ function articleMatchesFilters(article) {
   }
 
   if (state.filters.search) {
-    const haystack = [article.title, article.source, article.topic, getFeedName(article.feedId)]
+    const haystack = [article.title, article.source, article.topic, getFeedName(article.feedId), getArticleTags(article).join(" ")]
       .join(" ")
       .toLowerCase();
 
@@ -2562,6 +2613,9 @@ function updateArticleFilterContext(articles) {
   }
   if (state.filters.topic) {
     contextParts.push(`topic: ${state.filters.topic}`);
+  }
+  if (state.filters.tag) {
+    contextParts.push(`tag: ${state.filters.tag}`);
   }
   if (state.filters.date) {
     contextParts.push(`date: ${state.filters.date}`);
@@ -3038,6 +3092,14 @@ function bindEvents() {
     renderArticles();
   });
 
+  if (elements.tagFilter) {
+    elements.tagFilter.addEventListener("change", (event) => {
+      clearExactArticleFilter();
+      state.filters.tag = event.target.value;
+      renderArticles();
+    });
+  }
+
   elements.feedFilter.addEventListener("change", (event) => {
     clearExactArticleFilter();
     state.filters.feedId = event.target.value;
@@ -3164,6 +3226,7 @@ function bindEvents() {
     state.filters = {
       search: "",
       topic: "",
+      tag: "",
       feedId: "",
       dmvFeedId: "",
       canadaDmvFeedPath: "",
@@ -3178,6 +3241,9 @@ function bindEvents() {
 
     elements.searchFilter.value = "";
     elements.topicFilter.value = "";
+    if (elements.tagFilter) {
+      elements.tagFilter.value = "";
+    }
     elements.feedFilter.value = "";
     if (elements.dmvFeedFilter) {
       elements.dmvFeedFilter.value = "";

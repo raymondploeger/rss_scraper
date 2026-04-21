@@ -33,6 +33,8 @@ const parser = new Parser({
       ["media:content", "media:content", { keepArray: true }],
       ["media:thumbnail", "media:thumbnail", { keepArray: true }],
       ["content:encoded", "content:encoded"],
+      ["dc:subject", "dc:subject", { keepArray: true }],
+      ["wp:term", "wp:term", { keepArray: true }],
       ["itunes:image", "itunes:image"],
       ["image", "image"],
       ["image:url", "image:url"],
@@ -256,6 +258,58 @@ function summaryShortFromArticle(article) {
   return sentence.trim().slice(0, 220);
 }
 
+function collectTagCandidates(value) {
+  if (!value) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap(collectTagCandidates);
+  }
+
+  if (typeof value === "string") {
+    return [value];
+  }
+
+  if (typeof value === "object") {
+    return [
+      value._,
+      value.name,
+      value.term,
+      value.label,
+      value.$?.term,
+      value.$?.label,
+      value.$?.nicename,
+      value["@_term"],
+      value["@_label"],
+      value["@_nicename"]
+    ].flatMap(collectTagCandidates);
+  }
+
+  return [];
+}
+
+function normalizeArticleTags(item) {
+  const candidates = [
+    item.category,
+    item.categories,
+    item["dc:subject"],
+    item.dcSubject,
+    item.subject,
+    item["wp:term"],
+    item.wpTerm
+  ].flatMap(collectTagCandidates);
+
+  return Array.from(
+    new Set(
+      candidates
+        .map((tag) => sanitizeFeedText(tag, ""))
+        .map((tag) => tag.replace(/^#/, "").trim())
+        .filter((tag) => tag.length >= 2 && tag.length <= 80)
+    )
+  );
+}
+
 function parseWebsiteDate(value) {
   if (!value) {
     return null;
@@ -463,6 +517,8 @@ function normalizeItem(feed, item) {
   const thumbnail = normalizeText(extractedThumbnail.url, env.placeholderImage);
   const canonicalLink = canonicalizeUrl(link);
   const source = sanitizeFeedText(item.creator || item.author || getSourceName(link), "Unknown");
+  const tags = normalizeArticleTags(item);
+  const keywords = Array.from(new Set([...tags, ...inferKeywords([title, contentSnippet, feed.topic], 6)]));
   const isNotafiliaArticle = isNotafiliaUrl(link) || isNotafiliaUrl(canonicalLink);
 
   if (isNotafiliaArticle) {
@@ -485,7 +541,8 @@ function normalizeItem(feed, item) {
     thumbnail,
     summary: contentSnippet,
     summaryShort: summaryShortFromArticle({ title, contentSnippet }),
-    keywords: inferKeywords([title, contentSnippet, feed.topic], 6),
+    keywords,
+    tags,
     contentSnippet,
     author: sanitizeFeedText(item.creator || item.author, ""),
     clusterId: null,
