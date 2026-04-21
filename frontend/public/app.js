@@ -2329,7 +2329,7 @@ function syncTagManagerVisibility() {
 
   elements.tagManagerContent.hidden = !state.tagManagerExpanded;
   elements.tagManagerToggle.setAttribute("aria-expanded", String(state.tagManagerExpanded));
-  elements.tagManagerToggle.textContent = state.tagManagerExpanded ? "Hide tags" : "Manage tags";
+  elements.tagManagerToggle.textContent = state.tagManagerExpanded ? "Hide ▴" : "Manage ▾";
 }
 
 function renderTagManager() {

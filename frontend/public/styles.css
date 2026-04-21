@@ -693,9 +693,31 @@ h3 {
 }
 
 .tag-manager-add-button,
-.tag-manager-toggle,
 .tag-manager-reset {
   padding: 9px 11px;
+}
+
+.tag-manager-toggle {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  padding: 4px 7px;
+  transition: background 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.tag-manager-toggle:hover {
+  background: var(--accent-soft);
+  transform: translateY(-1px);
+}
+
+.tag-manager-toggle:focus-visible {
+  outline: 2px solid rgba(22, 96, 255, 0.24);
+  outline-offset: 2px;
 }
 
 .tag-manager-list {
