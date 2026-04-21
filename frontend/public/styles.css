@@ -658,12 +658,26 @@ h3 {
   margin-top: -2px;
 }
 
-.keyword-filter-head {
+.keyword-filter-head,
+.keyword-filter-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   min-width: 0;
+}
+
+.keyword-filter-content[hidden] {
+  display: none !important;
+}
+
+.keyword-filter-content {
+  display: grid;
+  gap: 9px;
+}
+
+.keyword-filter-actions {
+  justify-content: flex-end;
 }
 
 .keyword-filter-head span {

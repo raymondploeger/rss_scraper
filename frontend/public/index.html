@@ -87,19 +87,26 @@
               <div class="keyword-filter field-full" aria-label="Keyword noise filters">
                 <div class="keyword-filter-head">
                   <span>Noise keywords</span>
-                  <button id="keyword-reset-button" class="tag-manager-toggle" type="button">Reset</button>
+                  <button id="keyword-toggle" class="tag-manager-toggle" type="button" aria-expanded="false">
+                    Manage ▾
+                  </button>
                 </div>
-                <label class="field" data-filter-field="include-keywords">
-                  <span>Include context</span>
-                  <input id="include-keywords-input" type="text" placeholder="visa, immigration, document" />
-                </label>
-                <label class="field" data-filter-field="exclude-keywords">
-                  <span>Exclude false positives</span>
-                  <input id="exclude-keywords-input" type="text" placeholder="honda, suv, vehicle" />
-                </label>
-                <p class="keyword-filter-note">
-                  Used to hide obvious passport keyword noise, such as vehicle articles.
-                </p>
+                <div id="keyword-filter-content" class="keyword-filter-content" hidden>
+                  <label class="field" data-filter-field="include-keywords">
+                    <span>Include context</span>
+                    <input id="include-keywords-input" type="text" placeholder="visa, immigration, document" />
+                  </label>
+                  <label class="field" data-filter-field="exclude-keywords">
+                    <span>Exclude false positives</span>
+                    <input id="exclude-keywords-input" type="text" placeholder="honda, suv, vehicle" />
+                  </label>
+                  <div class="keyword-filter-actions">
+                    <button id="keyword-reset-button" class="ghost-button tag-manager-reset" type="button">Reset keywords</button>
+                  </div>
+                  <p class="keyword-filter-note">
+                    Used to hide obvious passport keyword noise, such as vehicle articles.
+                  </p>
+                </div>
               </div>
 
               <label class="field" data-filter-field="usa">

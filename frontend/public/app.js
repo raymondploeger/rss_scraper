@@ -20,6 +20,7 @@ const DEFAULT_SOURCE_GROUPS = ["USA", "Canada", "Google Alerts", "Other"];
 const TAG_FILTER_MIN_COUNT = 0;
 const TAG_LIST_STORAGE_KEY = "dashboardTagList";
 const KEYWORD_FILTER_STORAGE_KEY = "dashboardKeywordFilters";
+const NOISE_KEYWORDS_EXPANDED_STORAGE_KEY = "noiseKeywordsExpanded";
 const DEFAULT_TAGS = [
   "identity",
   "identity verification",
@@ -176,6 +177,7 @@ const state = {
   feedPanelCollapsed: false,
   addSourceExpanded: false,
   tagManagerExpanded: false,
+  noiseKeywordsExpanded: false,
   keywordFilters: {
     include: [],
     exclude: [],
@@ -235,6 +237,8 @@ const elements = {
   includeKeywordsInput: document.getElementById("include-keywords-input"),
   excludeKeywordsInput: document.getElementById("exclude-keywords-input"),
   keywordResetButton: document.getElementById("keyword-reset-button"),
+  keywordToggle: document.getElementById("keyword-toggle"),
+  keywordContent: document.getElementById("keyword-filter-content"),
   refreshButton: document.getElementById("refresh-button"),
   connectionStatus: document.getElementById("connection-status"),
   resultsCount: document.getElementById("results-count"),
@@ -2108,6 +2112,20 @@ function resetKeywordFilters() {
   setKeywordFilters({ include: DEFAULT_KEYWORD_INCLUDES, exclude: DEFAULT_KEYWORD_EXCLUDES }, false);
 }
 
+function isNoiseKeywordsExpanded() {
+  return window.localStorage.getItem(NOISE_KEYWORDS_EXPANDED_STORAGE_KEY) === "true";
+}
+
+function syncNoiseKeywordVisibility() {
+  if (!elements.keywordContent || !elements.keywordToggle) {
+    return;
+  }
+
+  elements.keywordContent.hidden = !state.noiseKeywordsExpanded;
+  elements.keywordToggle.setAttribute("aria-expanded", String(state.noiseKeywordsExpanded));
+  elements.keywordToggle.textContent = state.noiseKeywordsExpanded ? "Hide ▴" : "Manage ▾";
+}
+
 function applyKeywordInputs() {
   setKeywordFilters({
     include: parseKeywordInput(elements.includeKeywordsInput?.value, DEFAULT_KEYWORD_INCLUDES),
@@ -3677,6 +3695,14 @@ function bindEvents() {
     });
   }
 
+  if (elements.keywordToggle) {
+    elements.keywordToggle.addEventListener("click", () => {
+      state.noiseKeywordsExpanded = !state.noiseKeywordsExpanded;
+      window.localStorage.setItem(NOISE_KEYWORDS_EXPANDED_STORAGE_KEY, String(state.noiseKeywordsExpanded));
+      syncNoiseKeywordVisibility();
+    });
+  }
+
   [elements.includeKeywordsInput, elements.excludeKeywordsInput].forEach((input) => {
     input?.addEventListener("change", applyKeywordInputs);
     input?.addEventListener("keydown", (event) => {
@@ -4080,12 +4106,15 @@ async function init() {
   loadTheme();
   loadActiveTags();
   loadKeywordFilters();
+  state.noiseKeywordsExpanded = isNoiseKeywordsExpanded();
   state.feedPanelCollapsed = isFeedPanelCollapsed();
   resetDashboardState();
   syncFeedFormMode();
   bindEvents();
   renderSkeletons();
+  syncNoiseKeywordVisibility();
   await loadSnapshot();
+  syncNoiseKeywordVisibility();
   syncFeedPanelVisibility();
   initRealtime();
 }
