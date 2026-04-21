@@ -17,6 +17,31 @@ const SUMMARY_METRICS = [
   { label: "Latest articles", key: "totalArticles" },
 ];
 const DEFAULT_SOURCE_GROUPS = ["USA", "Canada", "Google Alerts", "Other"];
+const TAG_FILTER_MIN_COUNT = 1;
+const ALLOWED_TAGS = [
+  "passport",
+  "visa",
+  "identity document",
+  "driver license",
+  "residence permit",
+  "citizenship",
+  "border control",
+  "fraud",
+  "counterfeit",
+  "identity theft",
+  "dmv",
+  "vehicle registration",
+  "banknotes",
+  "coins",
+  "commemorative coins",
+  "currency",
+];
+const TAG_ALIASES = {
+  passports: "passport",
+  numismatics: "coins",
+  commemorative: "commemorative coins",
+};
+const ALLOWED_TAG_SET = new Set(ALLOWED_TAGS);
 
 const state = {
   feeds: [],
@@ -1869,6 +1894,11 @@ function getSelectedOptionText(select) {
   return select?.selectedOptions?.[0]?.textContent?.trim() || "";
 }
 
+function normalizeFilterTag(tag) {
+  const normalized = String(tag || "").trim().toLowerCase().replace(/\s+/g, " ");
+  return TAG_ALIASES[normalized] || normalized;
+}
+
 function getArticleTags(article) {
   return Array.from(
     new Set(
@@ -1877,6 +1907,16 @@ function getArticleTags(article) {
         .concat(Array.isArray(article.keywords) ? article.keywords : [])
         .map((tag) => String(tag || "").trim())
         .filter(Boolean)
+    )
+  );
+}
+
+function getArticleFilterTags(article) {
+  return Array.from(
+    new Set(
+      getArticleTags(article)
+        .map(normalizeFilterTag)
+        .filter((tag) => ALLOWED_TAG_SET.has(tag))
     )
   );
 }
@@ -2027,9 +2067,13 @@ function renderFeedOptions() {
   const topics = Array.from(
     new Set(state.feeds.map((feed) => String(feed.topic || "").trim()).filter(Boolean))
   ).sort();
-  const tags = Array.from(
-    new Set(state.articles.flatMap(getArticleTags))
-  ).sort((left, right) => left.localeCompare(right));
+  const tagCounts = state.articles.reduce((counts, article) => {
+    getArticleFilterTags(article).forEach((tag) => {
+      counts.set(tag, (counts.get(tag) || 0) + 1);
+    });
+    return counts;
+  }, new Map());
+  const tags = ALLOWED_TAGS.filter((tag) => (tagCounts.get(tag) || 0) >= TAG_FILTER_MIN_COUNT);
   const nonDmvFeeds = getNonDmvFeeds()
     .slice()
     .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")));
@@ -2066,6 +2110,7 @@ function renderFeedOptions() {
     .join("");
   elements.topicFilter.value = state.filters.topic;
 
+  state.filters.tag = normalizeFilterTag(state.filters.tag);
   if (state.filters.tag && !tags.includes(state.filters.tag)) {
     state.filters.tag = "";
   }
@@ -2528,7 +2573,7 @@ function articleMatchesFilters(article) {
     return false;
   }
 
-  if (state.filters.tag && !getArticleTags(article).includes(state.filters.tag)) {
+  if (state.filters.tag && !getArticleFilterTags(article).includes(normalizeFilterTag(state.filters.tag))) {
     return false;
   }
 
@@ -2558,7 +2603,14 @@ function articleMatchesFilters(article) {
   }
 
   if (state.filters.search) {
-    const haystack = [article.title, article.source, article.topic, getFeedName(article.feedId), getArticleTags(article).join(" ")]
+    const haystack = [
+      article.title,
+      article.source,
+      article.topic,
+      getFeedName(article.feedId),
+      getArticleTags(article).join(" "),
+      getArticleFilterTags(article).join(" "),
+    ]
       .join(" ")
       .toLowerCase();
 
@@ -3095,7 +3147,7 @@ function bindEvents() {
   if (elements.tagFilter) {
     elements.tagFilter.addEventListener("change", (event) => {
       clearExactArticleFilter();
-      state.filters.tag = event.target.value;
+      state.filters.tag = normalizeFilterTag(event.target.value);
       renderArticles();
     });
   }
