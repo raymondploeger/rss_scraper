@@ -1149,17 +1149,19 @@ function getFeedQualityStats(feeds, articles) {
   return stats;
 }
 
-function getCombinedFeedRankings(totalCounts, todayCounts, recentCounts, qualityStats, limit = 8) {
-  return Array.from(totalCounts.entries())
-    .map(([feedId, total]) => {
+function getCombinedFeedRankings(feeds, totalCounts, todayCounts, recentCounts, qualityStats, limit = 8) {
+  return feeds
+    .filter(isAnalyticsFeed)
+    .map((feed) => {
+      const feedId = feed.id;
       const quality = qualityStats.get(feedId) || {};
       return {
         feedId,
-        total,
+        total: totalCounts.get(feedId) || 0,
         today: todayCounts.get(feedId) || 0,
         recent: recentCounts.get(feedId) || 0,
-        name: getFeedName(feedId),
-        topic: getFeedTopic(feedId),
+        name: feed.name || getFeedName(feedId),
+        topic: feed.topic || getFeedTopic(feedId),
         relevantArticles: quality.relevantArticles || 0,
         filteredArticles: quality.filteredArticles || 0,
         relevanceRatio: quality.relevanceRatio || 0,
@@ -1926,7 +1928,7 @@ function getDashboardAnalytics() {
   const lowValueCount = lowValueFeeds.filter((feed) => feed.status === "low-value").length;
 
   return {
-    feedRankings: getCombinedFeedRankings(articleCounts, todayCounts, recentCounts, qualityStats),
+    feedRankings: getCombinedFeedRankings(state.feeds, articleCounts, todayCounts, recentCounts, qualityStats),
     lowValueFeeds,
     averageArticlesPerFeed: (realArticles.length / feedCount).toFixed(1),
     averageArticlesTodayPerFeed: (todayArticles.length / feedCount).toFixed(1),
