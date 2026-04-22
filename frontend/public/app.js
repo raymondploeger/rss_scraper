@@ -1300,35 +1300,37 @@ function getFeedInsightRows(feeds, totalCounts, todayCounts, recentCounts, quali
   return getCombinedFeedRankings(feeds, totalCounts, todayCounts, recentCounts, qualityStats, 100);
 }
 
-function getNewlyActiveFeedInsights(rows, limit = 4) {
+function getNewlyActiveFeedInsights(rows, limit = 3) {
   const previousStats = runtime.previousSnapshotStats?.feedStats || {};
   return rows
     .map((row) => {
       const previousTotal = Number(previousStats[row.feedId]?.total) || 0;
       const previousToday = Number(previousStats[row.feedId]?.today) || 0;
+      const hasPreviousStats = Boolean(previousStats[row.feedId]);
       return {
         ...row,
-        newTotal: Math.max(0, row.total - previousTotal),
-        newToday: Math.max(0, row.today - previousToday),
+        newTotal: hasPreviousStats ? Math.max(0, row.total - previousTotal) : 0,
+        newToday: hasPreviousStats ? Math.max(0, row.today - previousToday) : row.today,
       };
     })
-    .filter((row) => row.newTotal > 0 || row.newToday > 0)
+    .filter((row) => row.newTotal > 0 || row.newToday > 0 || row.today > 0)
     .sort((left, right) => right.newToday - left.newToday || right.newTotal - left.newTotal || left.name.localeCompare(right.name))
     .slice(0, limit);
 }
 
 function getFeedInsights(rows) {
+  const isLowActivity = (row) => row.total > 0 && row.recent > 0 && row.recent < 3 && row.today === 0;
   const bestPerformers = rows
-    .filter((row) => row.total > 0 && row.qualityScore >= 0.75 && row.recent > 0)
-    .slice(0, 4);
+    .filter((row) => row.total > 0 && row.qualityScore >= 0.75 && row.recent >= 3)
+    .slice(0, 3);
   const needsAttention = rows
-    .filter((row) => row.total === 0 || row.recent === 0 || row.qualityScore < 0.4 || row.filteredOut > 0)
+    .filter((row) => row.total === 0 || row.recent === 0 || row.qualityScore < 0.75 || isLowActivity(row))
     .sort((left, right) => {
       const priority = (row) =>
-        row.total === 0 ? 0 : row.recent === 0 ? 1 : row.qualityScore < 0.4 ? 2 : 3;
+        row.total === 0 ? 0 : row.recent === 0 ? 1 : row.qualityScore < 0.75 ? 2 : isLowActivity(row) ? 3 : 4;
       return priority(left) - priority(right) || left.qualityScore - right.qualityScore || left.name.localeCompare(right.name);
     })
-    .slice(0, 4);
+    .slice(0, 3);
 
   return {
     bestPerformers,
@@ -1411,6 +1413,12 @@ function getFeedInsightLabel(item, section) {
   }
   if (item.recent === 0) {
     return "Inactive";
+  }
+  if (item.qualityScore >= 0.4 && item.qualityScore < 0.75) {
+    return `Review - ${qualityPercent}% clean`;
+  }
+  if (item.qualityScore >= 0.75 && !item.filteredOut) {
+    return "Low activity";
   }
   if (item.qualityScore < 0.4) {
     return `Low quality · ${qualityPercent}% clean`;
