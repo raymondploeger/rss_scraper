@@ -1126,6 +1126,35 @@ function isArticleNoiseForFeedQuality(article, feed) {
   );
 }
 
+function getFeedQualityExclusionReason(article, feed) {
+  const activeKeywordRule = getActiveTopicKeywordRule();
+  if (activeKeywordRule && isKeywordRuleFalsePositive(article, activeKeywordRule)) {
+    return "keywordNoise";
+  }
+
+  if (!activeKeywordRule && isArticleNoiseForFeedQuality(article, feed)) {
+    return "keywordNoise";
+  }
+
+  if (state.filters.tag && !getArticleFilterTags(article).includes(normalizeFilterTag(state.filters.tag))) {
+    return "tagMismatch";
+  }
+
+  if (state.filters.topic && article.topic !== state.filters.topic) {
+    return "topicMismatch";
+  }
+
+  if (state.filters.date && toDateInputValue(article.pubDate) !== state.filters.date) {
+    return "dateMismatch";
+  }
+
+  if (state.filters.search && !getArticleSearchText(article).includes(state.filters.search.toLowerCase())) {
+    return "searchMismatch";
+  }
+
+  return "";
+}
+
 function getFeedQualityStats(feeds, articles) {
   const stats = new Map(
     feeds
@@ -1135,8 +1164,18 @@ function getFeedQualityStats(feeds, articles) {
         {
           feed,
           totalArticles: 0,
+          totalFetched: 0,
           relevantArticles: 0,
+          shownArticles: 0,
           filteredArticles: 0,
+          filteredOut: 0,
+          filterReasons: {
+            keywordNoise: 0,
+            tagMismatch: 0,
+            topicMismatch: 0,
+            dateMismatch: 0,
+            searchMismatch: 0,
+          },
           relevanceRatio: 0,
           normalizedActivity: 0,
           viewMatchedArticles: 0,
@@ -1154,10 +1193,15 @@ function getFeedQualityStats(feeds, articles) {
     }
 
     feedStats.totalArticles += 1;
-    if (isArticleNoiseForFeedQuality(article, feedStats.feed)) {
+    feedStats.totalFetched += 1;
+    const exclusionReason = getFeedQualityExclusionReason(article, feedStats.feed);
+    if (exclusionReason) {
       feedStats.filteredArticles += 1;
+      feedStats.filteredOut += 1;
+      feedStats.filterReasons[exclusionReason] = (feedStats.filterReasons[exclusionReason] || 0) + 1;
     } else {
       feedStats.relevantArticles += 1;
+      feedStats.shownArticles += 1;
       if (articleMatchesFilters(article)) {
         feedStats.viewMatchedArticles += 1;
       }
@@ -1167,16 +1211,16 @@ function getFeedQualityStats(feeds, articles) {
   const maxArticles = Math.max(1, ...Array.from(stats.values()).map((item) => item.totalArticles));
 
   stats.forEach((feedStats) => {
-    feedStats.relevanceRatio = feedStats.totalArticles
-      ? feedStats.relevantArticles / feedStats.totalArticles
+    feedStats.relevanceRatio = feedStats.totalFetched
+      ? feedStats.shownArticles / feedStats.totalFetched
       : 0;
     feedStats.normalizedActivity = clampNumber(feedStats.totalArticles / maxArticles, 0, 1);
     feedStats.qualityScore = feedStats.relevanceRatio;
-    feedStats.viewMatchScore = feedStats.relevantArticles
-      ? feedStats.viewMatchedArticles / feedStats.relevantArticles
+    feedStats.viewMatchScore = feedStats.shownArticles
+      ? feedStats.viewMatchedArticles / feedStats.shownArticles
       : 0;
     feedStats.qualityTone =
-      feedStats.qualityScore > 0.75 ? "high" : feedStats.qualityScore >= 0.4 ? "medium" : "low";
+      feedStats.qualityScore >= 0.75 ? "high" : feedStats.qualityScore >= 0.4 ? "medium" : "low";
   });
 
   return stats;
@@ -1195,6 +1239,10 @@ function getCombinedFeedRankings(feeds, totalCounts, todayCounts, recentCounts, 
         recent: recentCounts.get(feedId) || 0,
         name: feed.name || getFeedName(feedId),
         topic: feed.topic || getFeedTopic(feedId),
+        totalFetched: quality.totalFetched || 0,
+        shownArticles: quality.shownArticles || 0,
+        filteredOut: quality.filteredOut || 0,
+        filterReasons: quality.filterReasons || {},
         relevantArticles: quality.relevantArticles || 0,
         filteredArticles: quality.filteredArticles || 0,
         relevanceRatio: quality.relevanceRatio || 0,
@@ -1261,6 +1309,22 @@ function renderAnalyticsRows(items, emptyText) {
   `;
 }
 
+function formatFeedQualityReasons(reasons = {}) {
+  const labels = {
+    keywordNoise: "keyword noise",
+    tagMismatch: "tag mismatch",
+    topicMismatch: "topic mismatch",
+    dateMismatch: "date mismatch",
+    searchMismatch: "search mismatch",
+  };
+  const parts = Object.entries(labels)
+    .map(([key, label]) => [label, reasons[key] || 0])
+    .filter(([, count]) => count > 0)
+    .map(([label, count]) => `${count} ${label}`);
+
+  return parts.length ? parts.join(", ") : "no filtered articles";
+}
+
 function renderFeedRankingRows(items) {
   if (!items.length) {
     return `<p class="analytics-empty">No feeds match this analytics filter.</p>`;
@@ -1279,6 +1343,8 @@ function renderFeedRankingRows(items) {
             : "";
           const qualityPercent = Math.round((item.qualityScore || 0) * 100);
           const viewMatchPercent = Math.round((item.viewMatchScore || 0) * 100);
+          const filteredPercent = Math.max(0, 100 - qualityPercent);
+          const qualityBreakdown = `${item.totalFetched} fetched, ${item.shownArticles} shown, ${item.filteredOut} filtered. Reasons: ${formatFeedQualityReasons(item.filterReasons)}`;
           const feedStatus =
             item.total === 0 ? "zero articles" : item.recent === 0 ? "inactive" : "active";
           return `
@@ -1288,8 +1354,8 @@ function renderFeedRankingRows(items) {
                 <small class="analytics-row-detail">${escapeHtml(feedStatus)}</small>
               </span>
               <div class="analytics-count-pair">
-                <strong class="analytics-quality is-${item.qualityTone}" title="${item.relevantArticles} clean, ${item.filteredArticles} filtered">
-                  ${qualityPercent}% quality
+                <strong class="analytics-quality is-${item.qualityTone}" title="${escapeHtml(qualityBreakdown)}">
+                  ${qualityPercent}% clean (${filteredPercent}% filtered)
                 </strong>
                 <strong title="${item.viewMatchedArticles} clean articles match the current view">${viewMatchPercent}% in view</strong>
                 <strong>${item.total} total</strong>
@@ -1995,7 +2061,7 @@ function getDashboardAnalytics() {
   const zeroArticleFeeds = scopedAnalyticsFeeds.filter((feed) => (articleCounts.get(feed.id) || 0) === 0).length;
   const highQualityFeeds = scopedAnalyticsFeeds.filter((feed) => {
     const quality = qualityStats.get(feed.id);
-    return (articleCounts.get(feed.id) || 0) > 0 && (quality?.qualityScore || 0) > 0.75;
+    return (articleCounts.get(feed.id) || 0) > 0 && (quality?.qualityScore || 0) >= 0.75;
   }).length;
   const qualityTotal = scopedAnalyticsFeeds.reduce(
     (sum, feed) => sum + (qualityStats.get(feed.id)?.qualityScore || 0),
