@@ -1548,7 +1548,7 @@ function renderFeedInsights(insights) {
       "Good feeds",
       "good",
       insights.goodFeeds,
-      renderFeedInsightList(insights.goodFeeds, "good", "No quiet high-quality feeds right now"),
+      renderFeedInsightList(insights.goodFeeds, "good", "All high-quality feeds are currently active"),
     ],
     ["Needs attention", "attention", insights.needsAttention, renderFeedInsightList(insights.needsAttention, "attention", "")],
   ].filter(([, sectionKey, sectionItems, content]) => {
