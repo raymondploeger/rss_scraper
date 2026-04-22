@@ -1336,7 +1336,7 @@ function getFeedInsights(rows) {
   return {
     bestPerformers,
     needsAttention,
-    newlyActive: getNewlyActiveFeedInsights(rows, new Set()),
+    newlyActive: getNewlyActiveFeedInsights(rows, new Set(bestPerformers.map((row) => row.feedId))),
   };
 }
 
