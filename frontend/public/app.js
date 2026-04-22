@@ -1544,10 +1544,15 @@ function renderFeedInsightList(items, section, emptyText) {
 function renderFeedInsights(insights) {
   const sections = [
     ["Best performers", "best", insights.bestPerformers, renderFeedInsightList(insights.bestPerformers, "best", "")],
-    ["Good feeds", "good", insights.goodFeeds, renderFeedInsightList(insights.goodFeeds, "good", "")],
+    [
+      "Good feeds",
+      "good",
+      insights.goodFeeds,
+      renderFeedInsightList(insights.goodFeeds, "good", "No quiet high-quality feeds right now"),
+    ],
     ["Needs attention", "attention", insights.needsAttention, renderFeedInsightList(insights.needsAttention, "attention", "")],
-  ].filter(([, , sectionItems, content]) => {
-    return sectionItems.length > 0 && content;
+  ].filter(([, sectionKey, sectionItems, content]) => {
+    return (sectionKey === "good" || sectionItems.length > 0) && content;
   });
 
   if (!sections.length) {
