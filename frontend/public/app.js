@@ -1304,6 +1304,7 @@ function getCombinedFeedRankings(feeds, totalCounts, todayCounts, recentCounts, 
         shownArticles: quality.shownArticles || 0,
         filteredOut: quality.filteredOut || 0,
         filteredRatio: quality.filteredRatio || 0,
+        dominantNoiseCount: quality.dominantNoiseCount || 0,
         isNoisyFeed: quality.isNoisyFeed === true,
         filterReasons: quality.filterReasons || {},
         relevantArticles: quality.relevantArticles || 0,
@@ -1340,34 +1341,76 @@ function getNewlyActiveFeedInsights(rows, excludedFeedIds = new Set(), limit = 5
 }
 
 function getFeedInsights(rows) {
-  const getReviewReason = (row) => {
+  const getReviewSignal = (row) => {
     const filteredPercent = Math.round((row.filteredRatio || 0) * 100);
     const primaryReason = getPrimaryFeedQualityReason(row.filterReasons);
     const repeatedFalsePositives = Object.values(row.filterReasons || {}).some((count) => count >= 3);
+    const dominantFalsePositiveRatio = row.totalFetched ? (row.dominantNoiseCount || 0) / row.totalFetched : 0;
 
+    if (row.isInactive) {
+      return {
+        label: "Inactive too long",
+        priority: "high",
+        reason: "No recent activity detected.",
+      };
+    }
+    if (row.total === 0) {
+      return {
+        label: "Zero article feed",
+        priority: "high",
+        reason: "Zero articles since import.",
+      };
+    }
+    if (row.filteredRatio > 0.25 || dominantFalsePositiveRatio > 0.25) {
+      return {
+        label: "Noisy feed",
+        priority: "high",
+        reason: primaryReason ? `${filteredPercent}% filtered, mostly ${primaryReason}` : `${filteredPercent}% filtered`,
+      };
+    }
     if (row.qualityScore < 0.9) {
-      return `Review recommended - ${Math.round((row.qualityScore || 0) * 100)}% clean`;
+      return {
+        label: "Review recommended",
+        priority: row.qualityScore < 0.75 ? "high" : "medium",
+        reason: `${Math.round((row.qualityScore || 0) * 100)}% clean`,
+      };
     }
     if (row.filteredRatio > 0.1) {
-      return primaryReason ? `Review recommended - ${filteredPercent}% filtered (${primaryReason})` : `Review recommended - ${filteredPercent}% filtered`;
+      return {
+        label: "Noisy feed",
+        priority: "medium",
+        reason: primaryReason ? `${filteredPercent}% filtered, mostly ${primaryReason}` : `${filteredPercent}% filtered`,
+      };
     }
     if (repeatedFalsePositives) {
-      return primaryReason ? `Noisy feed - ${primaryReason}` : "Noisy feed";
+      return {
+        label: "Noisy feed",
+        priority: "medium",
+        reason: primaryReason || "Recurring false positives",
+      };
     }
     if (row.isActive && row.total > 0 && row.total < 5) {
-      return "Low value - low signal";
+      return {
+        label: "Low value",
+        priority: "low",
+        reason: "Low useful output so far.",
+      };
     }
-    return "";
+    return null;
+  };
+
+  const getReviewPriorityRank = (priority) => {
+    if (priority === "high") {
+      return 0;
+    }
+    if (priority === "medium") {
+      return 1;
+    }
+    return 2;
   };
 
   const getAttentionReason = (row) => {
-    if (row.isInactive) {
-      return "Inactive";
-    }
-    if (row.total === 0) {
-      return "No articles";
-    }
-    return getReviewReason(row);
+    return getReviewSignal(row)?.label || "";
   };
   const needsAttention = rows
     .map((row) => ({ ...row, attentionReason: getAttentionReason(row) }))
@@ -1377,6 +1420,26 @@ function getFeedInsights(rows) {
         row.isInactive ? 0 : row.total === 0 ? 1 : row.qualityScore < 0.9 ? 2 : 3;
       return priority(left) - priority(right) || right.qualityScore - left.qualityScore || left.name.localeCompare(right.name);
     })
+    .slice(0, 5);
+  const reviewCandidates = rows
+    .map((row) => {
+      const reviewSignal = getReviewSignal(row);
+      return reviewSignal
+        ? {
+            ...row,
+            reviewLabel: reviewSignal.label,
+            reviewPriority: reviewSignal.priority,
+            reviewReason: reviewSignal.reason,
+          }
+        : null;
+    })
+    .filter(Boolean)
+    .sort(
+      (left, right) =>
+        getReviewPriorityRank(left.reviewPriority) - getReviewPriorityRank(right.reviewPriority) ||
+        right.filteredRatio - left.filteredRatio ||
+        left.name.localeCompare(right.name)
+    )
     .slice(0, 5);
   const needsAttentionIds = new Set(needsAttention.map((row) => row.feedId));
   const isBestPerformer = (row) => row.qualityScore >= 0.98 && row.today > 0 && row.total >= 20;
@@ -1401,6 +1464,7 @@ function getFeedInsights(rows) {
     bestPerformers,
     goodFeeds,
     needsAttention,
+    reviewCandidates,
     newlyActive: getNewlyActiveFeedInsights(rows, new Set(bestPerformers.map((row) => row.feedId))),
   };
 }
@@ -1493,6 +1557,9 @@ function getFeedInsightLabel(item, section) {
   if (section === "attention" && item.attentionReason) {
     return item.attentionReason;
   }
+  if (section === "review" && item.reviewLabel) {
+    return item.reviewLabel;
+  }
   if (item.total === 0) {
     return "Low volume";
   }
@@ -1542,8 +1609,14 @@ function renderFeedInsightList(items, section, emptyText) {
                     : ""
                 }
                 ${item.isNoisyFeed ? `<small class="analytics-row-detail is-warning">Noisy feed</small>` : ""}
+                ${section === "review" && item.reviewReason ? `<small class="analytics-row-detail">${escapeHtml(item.reviewReason)}</small>` : ""}
               </span>
               <div class="analytics-count-pair">
+                ${
+                  section === "review" && item.reviewPriority
+                    ? `<strong class="analytics-review-priority is-${escapeHtml(item.reviewPriority)}">${escapeHtml(item.reviewPriority)}</strong>`
+                    : ""
+                }
                 <strong class="analytics-quality is-${item.qualityTone}" title="${escapeHtml(qualityBreakdown)}">
                   ${qualityPercent}% clean
                 </strong>
@@ -1568,6 +1641,12 @@ function renderFeedInsights(insights) {
       renderFeedInsightList(insights.goodFeeds, "good", "All high-quality feeds are currently active"),
     ],
     ["Needs attention", "attention", insights.needsAttention, renderFeedInsightList(insights.needsAttention, "attention", "")],
+    [
+      "Review candidates",
+      "review",
+      insights.reviewCandidates,
+      renderFeedInsightList(insights.reviewCandidates, "review", ""),
+    ],
   ].filter(([, sectionKey, sectionItems, content]) => {
     return (sectionKey === "good" || sectionItems.length > 0) && content;
   });
