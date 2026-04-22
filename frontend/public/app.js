@@ -1485,7 +1485,7 @@ function getFeedInsightLabel(item, section) {
     return `Best - ${qualityPercent}% clean`;
   }
   if (section === "good") {
-    return `Good - ${qualityPercent}% clean`;
+    return `Quiet - ${qualityPercent}% clean`;
   }
   if (section === "new") {
     return `+${item.today} today`;
