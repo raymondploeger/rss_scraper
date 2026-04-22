@@ -409,12 +409,43 @@ function isNotafiliaUrl(value) {
   }
 }
 
+function isKnownBrokenImageUrl(url) {
+  const host = url.hostname.replace(/^www\./, "");
+  const path = `${url.pathname} ${url.search}`.toLowerCase();
+  return (
+    host === "imgbb.com" ||
+    host.endsWith(".imgbb.com") ||
+    path.includes("image-not-found") ||
+    path.includes("image_not_found") ||
+    path.includes("not-found") ||
+    path.includes("placeholder") ||
+    path.includes("default-image")
+  );
+}
+
+function normalizeArticleImageUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw || raw === "null" || raw === "undefined" || raw.startsWith("data:")) {
+    return "";
+  }
+
+  try {
+    const url = new URL(raw, window.location.origin);
+    if (!["http:", "https:"].includes(url.protocol) || isKnownBrokenImageUrl(url)) {
+      return "";
+    }
+    return url.href;
+  } catch {
+    return "";
+  }
+}
+
 function isDmvWrapperFeed(feed) {
   return isDmvSource(feed);
 }
 
 function getArticleImageSrc(article) {
-  const thumbnail = String(article.thumbnail || "").trim();
+  const thumbnail = normalizeArticleImageUrl(article.thumbnail);
   if (!thumbnail) {
     return "";
   }
@@ -3617,21 +3648,12 @@ function renderArticleCard(article) {
   const feed = node.querySelector(".article-feed");
   const finalImageSrc = getArticleImageSrc(article);
 
-  if (
-    isNotafiliaUrl(article.link) ||
-    isNotafiliaUrl(article.canonicalLink) ||
-    isNotafiliaUrl(article.thumbnail)
-  ) {
-    console.log(
-      `[notafilia][frontend] articleUrl=${article.canonicalLink || article.link} apiThumbnail=${article.thumbnail || ""} finalImageSrc=${finalImageSrc || ""}`
-    );
-  }
-
   link.href = article.canonicalLink || article.link;
   image.src = finalImageSrc || PLACEHOLDER_IMAGE;
   image.alt = article.title || "Article thumbnail";
   image.onerror = () => {
     image.onerror = null;
+    image.alt = "No image available";
     image.src = PLACEHOLDER_IMAGE;
   };
 
