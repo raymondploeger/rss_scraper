@@ -443,6 +443,23 @@ h3 {
   white-space: normal;
 }
 
+.analytics-insight-list li {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 7px;
+}
+
+.analytics-insight-list .analytics-count-pair {
+  justify-content: flex-start;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.analytics-insight-list .analytics-count-pair strong {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .analytics-row-detail {
   display: block;
   margin-top: 2px;
