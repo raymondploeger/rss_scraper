@@ -1271,6 +1271,7 @@ function getCombinedFeedRankings(feeds, totalCounts, todayCounts, recentCounts, 
         name: feed.name || getFeedName(feedId),
         topic: feed.topic || getFeedTopic(feedId),
         isActive: feed.isActive !== false,
+        isInactive: feed.isInactive === true || feed.isActive === false,
         totalFetched: quality.totalFetched || 0,
         shownArticles: quality.shownArticles || 0,
         filteredOut: quality.filteredOut || 0,
@@ -1301,68 +1302,40 @@ function getFeedInsightRows(feeds, totalCounts, todayCounts, recentCounts, quali
   return getCombinedFeedRankings(feeds, totalCounts, todayCounts, recentCounts, qualityStats, 100);
 }
 
-function getNewlyActiveFeedInsights(rows, excludedFeedIds = new Set(), limit = 4) {
-  const previousStats = runtime.previousSnapshotStats?.feedStats || {};
-  const candidates = rows
-    .map((row) => {
-      const previousTotal = Number(previousStats[row.feedId]?.total) || 0;
-      const previousToday = Number(previousStats[row.feedId]?.today) || 0;
-      const hasPreviousStats = Boolean(previousStats[row.feedId]);
-      return {
-        ...row,
-        newTotal: hasPreviousStats ? Math.max(0, row.total - previousTotal) : 0,
-        newToday: hasPreviousStats ? Math.max(0, row.today - previousToday) : row.today,
-      };
-    })
-    .filter((row) => !excludedFeedIds.has(row.feedId) && (row.newTotal > 0 || row.newToday > 0 || row.today > 0))
-    .sort((left, right) => right.newToday - left.newToday || right.today - left.today || right.newTotal - left.newTotal || left.name.localeCompare(right.name));
-
-  if (candidates.length) {
-    return candidates.slice(0, limit);
-  }
-
+function getNewlyActiveFeedInsights(rows, excludedFeedIds = new Set(), limit = 5) {
   return rows
-    .filter((row) => row.today > 0)
+    .filter((row) => !excludedFeedIds.has(row.feedId) && row.today > 0)
     .sort((left, right) => right.today - left.today || left.name.localeCompare(right.name))
     .slice(0, limit);
 }
 
 function getFeedInsights(rows) {
-  const isLowActivity = (row) => row.total > 0 && row.recent > 0 && row.recent < 3 && row.today === 0;
   const getAttentionReason = (row) => {
-    if (!row.isActive) {
+    if (row.isInactive) {
       return "Inactive";
     }
     if (row.total === 0) {
       return "Zero articles";
     }
-    if (row.recent === 0) {
+    if (row.today === 0 && row.total > 0) {
       return "No recent activity";
-    }
-    if (row.qualityScore < 0.4) {
-      return "Low quality";
-    }
-    if (row.qualityScore < 0.75) {
-      return "Review quality";
-    }
-    if (isLowActivity(row)) {
-      return "Low activity";
     }
     return "";
   };
-  const bestPerformers = rows
-    .filter((row) => row.total > 0 && row.qualityScore >= 0.75 && row.recent >= 3)
-    .slice(0, 4);
-  const bestPerformerIds = new Set(bestPerformers.map((row) => row.feedId));
   const needsAttention = rows
     .map((row) => ({ ...row, attentionReason: getAttentionReason(row) }))
     .filter((row) => row.attentionReason)
     .sort((left, right) => {
       const priority = (row) =>
-        !row.isActive ? 0 : row.total === 0 ? 1 : row.recent === 0 ? 2 : row.qualityScore < 0.75 ? 3 : isLowActivity(row) ? 4 : 5;
+        row.isInactive ? 0 : row.total === 0 ? 1 : row.today === 0 && row.total > 0 ? 2 : 3;
       return priority(left) - priority(right) || left.qualityScore - right.qualityScore || left.name.localeCompare(right.name);
     })
-    .slice(0, 4);
+    .slice(0, 5);
+  const needsAttentionIds = new Set(needsAttention.map((row) => row.feedId));
+  const bestPerformers = rows
+    .filter((row) => !needsAttentionIds.has(row.feedId) && row.total > 0 && row.qualityScore >= 0.75 && row.recent >= 3)
+    .slice(0, 5);
+  const bestPerformerIds = new Set(bestPerformers.map((row) => row.feedId));
 
   return {
     bestPerformers,
@@ -1437,11 +1410,7 @@ function getFeedInsightLabel(item, section) {
     return item.today > 0 ? `Active · ${qualityPercent}% clean` : `Reliable · ${qualityPercent}% clean`;
   }
   if (section === "new") {
-    if (item.today > 0) {
-      return `+${item.today} today`;
-    }
-    const count = item.newTotal || 0;
-    return `+${count} new`;
+    return `+${item.today} today`;
   }
   if (section === "attention" && item.attentionReason) {
     return item.attentionReason;
@@ -1506,20 +1475,31 @@ function renderFeedInsightList(items, section, emptyText) {
 }
 
 function renderFeedInsights(insights) {
+  const sections = [
+    ["Best performers", renderFeedInsightList(insights.bestPerformers, "best", "")],
+    ["Needs attention", renderFeedInsightList(insights.needsAttention, "attention", "")],
+    ["Newly active", renderFeedInsightList(insights.newlyActive, "new", "")],
+  ].filter(([, content], index) => {
+    const sectionItems = [insights.bestPerformers, insights.needsAttention, insights.newlyActive][index];
+    return sectionItems.length > 0 && content;
+  });
+
+  if (!sections.length) {
+    return `<p class="analytics-empty">No feed insights available for this scope.</p>`;
+  }
+
   return `
     <div class="feed-insights-grid">
-      <section class="feed-insight-section">
-        <span class="feed-insight-title">Best performers</span>
-        ${renderFeedInsightList(insights.bestPerformers, "best", "No strong active performers yet.")}
-      </section>
-      <section class="feed-insight-section">
-        <span class="feed-insight-title">Needs attention</span>
-        ${renderFeedInsightList(insights.needsAttention, "attention", "No feeds need attention in this scope.")}
-      </section>
-      <section class="feed-insight-section">
-        <span class="feed-insight-title">Newly active</span>
-        ${renderFeedInsightList(insights.newlyActive, "new", "No newly active feeds since the last snapshot.")}
-      </section>
+      ${sections
+        .map(
+          ([title, content]) => `
+            <section class="feed-insight-section">
+              <span class="feed-insight-title">${title}</span>
+              ${content}
+            </section>
+          `
+        )
+        .join("")}
     </div>
   `;
 }
