@@ -1314,11 +1314,8 @@ function getFeedInsights(rows) {
     if (row.isInactive) {
       return "Inactive";
     }
-    if (row.today === 0 && row.total > 0) {
-      return "No recent activity";
-    }
-    if (row.total < 10) {
-      return "Low volume";
+    if (row.total === 0) {
+      return "No articles";
     }
     return "";
   };
@@ -1327,7 +1324,7 @@ function getFeedInsights(rows) {
     .filter((row) => row.attentionReason)
     .sort((left, right) => {
       const priority = (row) =>
-        row.isInactive ? 0 : row.total === 0 ? 1 : row.today === 0 && row.total > 0 ? 2 : 3;
+        row.isInactive ? 0 : row.total === 0 ? 1 : 2;
       return priority(left) - priority(right) || left.qualityScore - right.qualityScore || left.name.localeCompare(right.name);
     })
     .slice(0, 5);
