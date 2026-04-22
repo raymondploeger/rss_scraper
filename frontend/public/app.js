@@ -1347,6 +1347,12 @@ function getFeedInsights(rows) {
     if (row.total === 0) {
       return "No articles";
     }
+    if (row.qualityScore < 0.9) {
+      return "Quality below 90%";
+    }
+    if (row.isNoisyFeed) {
+      return "Noisy feed";
+    }
     return "";
   };
   const needsAttention = rows
@@ -1354,17 +1360,24 @@ function getFeedInsights(rows) {
     .filter((row) => row.attentionReason)
     .sort((left, right) => {
       const priority = (row) =>
-        row.isInactive ? 0 : row.total === 0 ? 1 : 2;
-      return priority(left) - priority(right) || left.qualityScore - right.qualityScore || left.name.localeCompare(right.name);
+        row.isInactive ? 0 : row.total === 0 ? 1 : row.qualityScore < 0.9 ? 2 : row.isNoisyFeed ? 3 : 4;
+      return priority(left) - priority(right) || right.qualityScore - left.qualityScore || left.name.localeCompare(right.name);
     })
     .slice(0, 5);
   const needsAttentionIds = new Set(needsAttention.map((row) => row.feedId));
   const bestPerformers = rows
-    .filter((row) => !needsAttentionIds.has(row.feedId) && row.today > 0 && row.total >= 20 && !row.isInactive)
+    .filter((row) => !needsAttentionIds.has(row.feedId) && row.qualityScore >= 0.98)
+    .sort((left, right) => right.qualityScore - left.qualityScore || right.today - left.today || left.name.localeCompare(right.name))
+    .slice(0, 5);
+  const bestPerformerIds = new Set(bestPerformers.map((row) => row.feedId));
+  const goodFeeds = rows
+    .filter((row) => !needsAttentionIds.has(row.feedId) && !bestPerformerIds.has(row.feedId) && row.qualityScore >= 0.9 && row.qualityScore < 0.98)
+    .sort((left, right) => right.qualityScore - left.qualityScore || right.today - left.today || left.name.localeCompare(right.name))
     .slice(0, 5);
 
   return {
     bestPerformers,
+    goodFeeds,
     needsAttention,
     newlyActive: getNewlyActiveFeedInsights(rows, new Set(bestPerformers.map((row) => row.feedId))),
   };
@@ -1447,7 +1460,10 @@ function getPrimaryFeedQualityReason(reasons = {}) {
 function getFeedInsightLabel(item, section) {
   const qualityPercent = Math.round((item.qualityScore || 0) * 100);
   if (section === "best") {
-    return item.today > 0 ? `Active · ${qualityPercent}% clean` : `Reliable · ${qualityPercent}% clean`;
+    return `Best - ${qualityPercent}% clean`;
+  }
+  if (section === "good") {
+    return `Good - ${qualityPercent}% clean`;
   }
   if (section === "new") {
     return `+${item.today} today`;
@@ -1522,11 +1538,10 @@ function renderFeedInsightList(items, section, emptyText) {
 
 function renderFeedInsights(insights) {
   const sections = [
-    ["Best performers", renderFeedInsightList(insights.bestPerformers, "best", "")],
-    ["Needs attention", renderFeedInsightList(insights.needsAttention, "attention", "")],
-    ["Newly active", renderFeedInsightList(insights.newlyActive, "new", "")],
-  ].filter(([, content], index) => {
-    const sectionItems = [insights.bestPerformers, insights.needsAttention, insights.newlyActive][index];
+    ["Best performers", "best", insights.bestPerformers, renderFeedInsightList(insights.bestPerformers, "best", "")],
+    ["Good feeds", "good", insights.goodFeeds, renderFeedInsightList(insights.goodFeeds, "good", "")],
+    ["Needs attention", "attention", insights.needsAttention, renderFeedInsightList(insights.needsAttention, "attention", "")],
+  ].filter(([, , sectionItems, content]) => {
     return sectionItems.length > 0 && content;
   });
 
@@ -1538,8 +1553,8 @@ function renderFeedInsights(insights) {
     <div class="feed-insights-grid">
       ${sections
         .map(
-          ([title, content]) => `
-            <section class="feed-insight-section">
+          ([title, sectionKey, , content]) => `
+            <section class="feed-insight-section is-${sectionKey}">
               <span class="feed-insight-title">${title}</span>
               ${content}
             </section>
