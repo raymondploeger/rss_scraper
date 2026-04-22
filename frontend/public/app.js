@@ -1296,6 +1296,47 @@ function getCombinedFeedRankings(feeds, totalCounts, todayCounts, recentCounts, 
     .slice(0, limit);
 }
 
+function getFeedInsightRows(feeds, totalCounts, todayCounts, recentCounts, qualityStats) {
+  return getCombinedFeedRankings(feeds, totalCounts, todayCounts, recentCounts, qualityStats, 100);
+}
+
+function getNewlyActiveFeedInsights(rows, limit = 4) {
+  const previousStats = runtime.previousSnapshotStats?.feedStats || {};
+  return rows
+    .map((row) => {
+      const previousTotal = Number(previousStats[row.feedId]?.total) || 0;
+      const previousToday = Number(previousStats[row.feedId]?.today) || 0;
+      return {
+        ...row,
+        newTotal: Math.max(0, row.total - previousTotal),
+        newToday: Math.max(0, row.today - previousToday),
+      };
+    })
+    .filter((row) => row.newTotal > 0 || row.newToday > 0)
+    .sort((left, right) => right.newToday - left.newToday || right.newTotal - left.newTotal || left.name.localeCompare(right.name))
+    .slice(0, limit);
+}
+
+function getFeedInsights(rows) {
+  const bestPerformers = rows
+    .filter((row) => row.total > 0 && row.qualityScore >= 0.75 && row.recent > 0)
+    .slice(0, 4);
+  const needsAttention = rows
+    .filter((row) => row.total === 0 || row.recent === 0 || row.qualityScore < 0.4 || row.filteredOut > 0)
+    .sort((left, right) => {
+      const priority = (row) =>
+        row.total === 0 ? 0 : row.recent === 0 ? 1 : row.qualityScore < 0.4 ? 2 : 3;
+      return priority(left) - priority(right) || left.qualityScore - right.qualityScore || left.name.localeCompare(right.name);
+    })
+    .slice(0, 4);
+
+  return {
+    bestPerformers,
+    needsAttention,
+    newlyActive: getNewlyActiveFeedInsights(rows),
+  };
+}
+
 function getLowValueFeeds(articles, limit = 8) {
   return Array.from(getFeedActivityStats(state.feeds, articles).values())
     .filter((stats) => stats.status !== "healthy")
@@ -1356,13 +1397,34 @@ function formatFeedQualityReasons(reasons = {}) {
   return parts.length ? parts.join(", ") : "no filtered articles";
 }
 
-function renderFeedRankingRows(items) {
+function getFeedInsightLabel(item, section) {
+  const qualityPercent = Math.round((item.qualityScore || 0) * 100);
+  if (section === "best") {
+    return item.today > 0 ? `Active · ${qualityPercent}% clean` : `Reliable · ${qualityPercent}% clean`;
+  }
+  if (section === "new") {
+    const count = item.newToday || item.newTotal || 0;
+    return `${count} new article${count === 1 ? "" : "s"}`;
+  }
+  if (item.total === 0) {
+    return "Zero articles";
+  }
+  if (item.recent === 0) {
+    return "Inactive";
+  }
+  if (item.qualityScore < 0.4) {
+    return `Low quality · ${qualityPercent}% clean`;
+  }
+  return `${item.filteredOut} filtered · review`;
+}
+
+function renderFeedInsightList(items, section, emptyText) {
   if (!items.length) {
-    return `<p class="analytics-empty">No feeds match this analytics filter.</p>`;
+    return `<p class="analytics-empty">${escapeHtml(emptyText)}</p>`;
   }
 
   return `
-    <ol class="analytics-list analytics-ranking-list">
+    <ol class="analytics-list analytics-insight-list">
       ${items
         .map((item) => {
           const feedId = String(item.feedId || "");
@@ -1373,22 +1435,19 @@ function renderFeedRankingRows(items) {
             ? `class="analytics-clickable" data-analytics-feed-id="${escapeHtml(feedId)}" data-analytics-today-only="true" role="button" tabindex="0" title="Click to filter this feed from today"`
             : "";
           const qualityPercent = Math.round((item.qualityScore || 0) * 100);
-          const viewMatchPercent = Math.round((item.viewMatchScore || 0) * 100);
           const filteredPercent = Math.max(0, 100 - qualityPercent);
           const qualityBreakdown = `${item.totalFetched} fetched, ${item.shownArticles} shown, ${item.filteredOut} filtered. Reasons: ${formatFeedQualityReasons(item.filterReasons)}`;
-          const feedStatus =
-            item.total === 0 ? "zero articles" : item.recent === 0 ? "inactive" : "active";
+          const label = getFeedInsightLabel(item, section);
           return `
             <li>
               <span ${clickableAttrs}>
                 ${escapeHtml(item.name)}
-                <small class="analytics-row-detail">${escapeHtml(feedStatus)}</small>
+                <small class="analytics-row-detail">${escapeHtml(label)}</small>
               </span>
               <div class="analytics-count-pair">
                 <strong class="analytics-quality is-${item.qualityTone}" title="${escapeHtml(qualityBreakdown)}">
                   ${qualityPercent}% clean (${filteredPercent}% filtered)
                 </strong>
-                <strong title="${item.viewMatchedArticles} clean articles match the current view">${viewMatchPercent}% in view</strong>
                 <strong>${item.total} total</strong>
                 <strong ${todayClickableAttrs}>${item.today} today</strong>
               </div>
@@ -1397,6 +1456,25 @@ function renderFeedRankingRows(items) {
         })
         .join("")}
     </ol>
+  `;
+}
+
+function renderFeedInsights(insights) {
+  return `
+    <div class="feed-insights-grid">
+      <section class="feed-insight-section">
+        <span class="feed-insight-title">Best performers</span>
+        ${renderFeedInsightList(insights.bestPerformers, "best", "No strong active performers yet.")}
+      </section>
+      <section class="feed-insight-section">
+        <span class="feed-insight-title">Needs attention</span>
+        ${renderFeedInsightList(insights.needsAttention, "attention", "No feeds need attention in this scope.")}
+      </section>
+      <section class="feed-insight-section">
+        <span class="feed-insight-title">Newly active</span>
+        ${renderFeedInsightList(insights.newlyActive, "new", "No newly active feeds since the last snapshot.")}
+      </section>
+    </div>
   `;
 }
 
@@ -2082,6 +2160,7 @@ function getDashboardAnalytics() {
     recentCounts,
     qualityStats
   );
+  const feedInsightRows = getFeedInsightRows(rankingFeeds, articleCounts, todayCounts, recentCounts, qualityStats);
   const qualityFilterCounts = getAnalyticsQualityFilterCounts(
     scopedAnalyticsFeeds,
     articleCounts,
@@ -2113,14 +2192,14 @@ function getDashboardAnalytics() {
   const lowValueCount = lowValueFeeds.filter((feed) => feed.status === "low-value").length;
 
   return {
-    feedRankings: getCombinedFeedRankings(rankingFeeds, articleCounts, todayCounts, recentCounts, qualityStats),
+    feedInsights: getFeedInsights(feedInsightRows),
     lowValueFeeds,
     averageArticlesPerFeed: (realArticles.length / feedCount).toFixed(1),
     averageArticlesTodayPerFeed: (todayArticles.length / feedCount).toFixed(1),
     analyticsScope: state.analyticsScope,
     analyticsQualityFilter: state.analyticsQualityFilter,
     qualityFilterCounts,
-    rankingFeedCount: rankingFeeds.length,
+    rankingFeedCount: feedInsightRows.length,
     analyticsScopeLabel:
       state.analyticsScope === "active"
         ? "Active RSS feeds with article history"
@@ -2169,11 +2248,11 @@ function renderAnalyticsCard() {
     </div>
     <div class="analytics-grid">
       <div class="analytics-panel analytics-panel-wide analytics-panel-ranking">
-        <span class="analytics-label">Feed ranking</span>
+        <span class="analytics-label">Feed insights</span>
         <p class="analytics-panel-note">${escapeHtml(analytics.analyticsScopeLabel)}</p>
         ${renderAnalyticsQualityTabs(analytics.analyticsQualityFilter, analytics.qualityFilterCounts)}
         <p class="analytics-panel-note">${analytics.rankingFeedCount} feeds match this quick filter</p>
-        ${renderFeedRankingRows(analytics.feedRankings)}
+        ${renderFeedInsights(analytics.feedInsights)}
       </div>
       <div class="analytics-panel analytics-panel-wide">
         <span class="analytics-label">Dead / low value feeds</span>

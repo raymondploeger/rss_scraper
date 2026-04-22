@@ -408,14 +408,32 @@ h3 {
   list-style: none;
 }
 
-.analytics-ranking-list {
+.analytics-ranking-list,
+.feed-insights-grid {
   max-height: 244px;
   overflow-y: auto;
   padding-right: 4px;
   scrollbar-width: thin;
 }
 
-.analytics-ranking-list > li > span {
+.feed-insights-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.feed-insight-section {
+  display: grid;
+  gap: 7px;
+}
+
+.feed-insight-title {
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.analytics-ranking-list > li > span,
+.analytics-insight-list > li > span {
   white-space: normal;
 }
 
