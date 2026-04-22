@@ -2400,9 +2400,16 @@ function getDashboardAnalytics() {
   const deadFeeds = lowValueFeeds.filter((feed) => feed.status === "dead").length;
   const inactiveFeeds = lowValueFeeds.filter((feed) => feed.status === "inactive").length;
   const lowValueCount = lowValueFeeds.filter((feed) => feed.status === "low-value").length;
+  const feedInsights = getFeedInsights(feedInsightRows);
+  const hasHighPriorityReviewSignal = feedInsights.reviewCandidates.some((feed) => feed.reviewPriority === "high");
+  const systemHealthMessage =
+    averageQualityScore > 95 && inactiveFeeds === 0 && deadFeeds === 0 && !hasHighPriorityReviewSignal
+      ? "All feeds are performing well"
+      : "";
 
   return {
-    feedInsights: getFeedInsights(feedInsightRows),
+    feedInsights,
+    systemHealthMessage,
     averageArticlesPerFeed: (realArticles.length / feedCount).toFixed(1),
     averageArticlesTodayPerFeed: (todayArticles.length / feedCount).toFixed(1),
     analyticsScope: state.analyticsScope,
@@ -2460,6 +2467,7 @@ function renderAnalyticsCard() {
         <span class="analytics-label">Feed insights</span>
         <p class="analytics-panel-note">${escapeHtml(analytics.analyticsScopeLabel)}</p>
         <p class="analytics-panel-note">Signals combine quality, recent activity, and article history.</p>
+        ${analytics.systemHealthMessage ? `<p class="analytics-empty">${escapeHtml(analytics.systemHealthMessage)}</p>` : ""}
         ${renderFeedInsights(analytics.feedInsights)}
       </div>
       <div class="analytics-panel analytics-panel-wide analytics-panel-alerts">
