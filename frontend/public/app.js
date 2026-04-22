@@ -1344,8 +1344,6 @@ function getFeedInsights(rows) {
   const getReviewSignal = (row) => {
     const filteredPercent = Math.round((row.filteredRatio || 0) * 100);
     const primaryReason = getPrimaryFeedQualityReason(row.filterReasons);
-    const repeatedFalsePositives = Object.values(row.filterReasons || {}).some((count) => count >= 3);
-    const dominantFalsePositiveRatio = row.totalFetched ? (row.dominantNoiseCount || 0) / row.totalFetched : 0;
 
     if (row.isInactive) {
       return {
@@ -1361,32 +1359,25 @@ function getFeedInsights(rows) {
         reason: "Zero articles since import.",
       };
     }
-    if (row.filteredRatio > 0.25 || dominantFalsePositiveRatio > 0.25) {
+    if (row.qualityScore < 0.95) {
       return {
-        label: "Noisy feed",
-        priority: "high",
-        reason: primaryReason ? `${filteredPercent}% filtered, mostly ${primaryReason}` : `${filteredPercent}% filtered`,
-      };
-    }
-    if (row.qualityScore < 0.9) {
-      return {
-        label: "Review recommended",
-        priority: row.qualityScore < 0.75 ? "high" : "medium",
+        label: "Review",
+        priority: "medium",
         reason: `${Math.round((row.qualityScore || 0) * 100)}% clean`,
       };
     }
     if (row.filteredRatio > 0.1) {
       return {
-        label: "Noisy feed",
+        label: "Noisy",
         priority: "medium",
         reason: primaryReason ? `${filteredPercent}% filtered, mostly ${primaryReason}` : `${filteredPercent}% filtered`,
       };
     }
-    if (repeatedFalsePositives) {
+    if (row.filteredRatio > 0.03) {
       return {
-        label: "Noisy feed",
-        priority: "medium",
-        reason: primaryReason || "Recurring false positives",
+        label: "Noisy",
+        priority: "low",
+        reason: primaryReason ? `${filteredPercent}% filtered, mostly ${primaryReason}` : "minor noise detected",
       };
     }
     if (row.isActive && row.total > 0 && row.total < 5) {
@@ -1645,10 +1636,10 @@ function renderFeedInsights(insights) {
       "Review candidates",
       "review",
       insights.reviewCandidates,
-      renderFeedInsightList(insights.reviewCandidates, "review", ""),
+      renderFeedInsightList(insights.reviewCandidates, "review", "No feeds need review right now"),
     ],
   ].filter(([, sectionKey, sectionItems, content]) => {
-    return (sectionKey === "good" || sectionItems.length > 0) && content;
+    return (sectionKey === "good" || sectionKey === "review" || sectionItems.length > 0) && content;
   });
 
   if (!sections.length) {
