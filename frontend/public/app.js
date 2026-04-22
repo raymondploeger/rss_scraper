@@ -1270,6 +1270,7 @@ function getCombinedFeedRankings(feeds, totalCounts, todayCounts, recentCounts, 
         recent: recentCounts.get(feedId) || 0,
         name: feed.name || getFeedName(feedId),
         topic: feed.topic || getFeedTopic(feedId),
+        isActive: feed.isActive !== false,
         totalFetched: quality.totalFetched || 0,
         shownArticles: quality.shownArticles || 0,
         filteredOut: quality.filteredOut || 0,
@@ -1300,9 +1301,9 @@ function getFeedInsightRows(feeds, totalCounts, todayCounts, recentCounts, quali
   return getCombinedFeedRankings(feeds, totalCounts, todayCounts, recentCounts, qualityStats, 100);
 }
 
-function getNewlyActiveFeedInsights(rows, excludedFeedIds = new Set(), limit = 3) {
+function getNewlyActiveFeedInsights(rows, excludedFeedIds = new Set(), limit = 4) {
   const previousStats = runtime.previousSnapshotStats?.feedStats || {};
-  return rows
+  const candidates = rows
     .map((row) => {
       const previousTotal = Number(previousStats[row.feedId]?.total) || 0;
       const previousToday = Number(previousStats[row.feedId]?.today) || 0;
@@ -1314,13 +1315,24 @@ function getNewlyActiveFeedInsights(rows, excludedFeedIds = new Set(), limit = 3
       };
     })
     .filter((row) => !excludedFeedIds.has(row.feedId) && (row.newTotal > 0 || row.newToday > 0 || row.today > 0))
-    .sort((left, right) => right.newToday - left.newToday || right.newTotal - left.newTotal || left.name.localeCompare(right.name))
+    .sort((left, right) => right.newToday - left.newToday || right.today - left.today || right.newTotal - left.newTotal || left.name.localeCompare(right.name));
+
+  if (candidates.length) {
+    return candidates.slice(0, limit);
+  }
+
+  return rows
+    .filter((row) => row.today > 0)
+    .sort((left, right) => right.today - left.today || left.name.localeCompare(right.name))
     .slice(0, limit);
 }
 
 function getFeedInsights(rows) {
   const isLowActivity = (row) => row.total > 0 && row.recent > 0 && row.recent < 3 && row.today === 0;
   const getAttentionReason = (row) => {
+    if (!row.isActive) {
+      return "Inactive";
+    }
     if (row.total === 0) {
       return "Zero articles";
     }
@@ -1340,17 +1352,17 @@ function getFeedInsights(rows) {
   };
   const bestPerformers = rows
     .filter((row) => row.total > 0 && row.qualityScore >= 0.75 && row.recent >= 3)
-    .slice(0, 3);
+    .slice(0, 4);
   const bestPerformerIds = new Set(bestPerformers.map((row) => row.feedId));
   const needsAttention = rows
     .map((row) => ({ ...row, attentionReason: getAttentionReason(row) }))
     .filter((row) => row.attentionReason)
     .sort((left, right) => {
       const priority = (row) =>
-        row.total === 0 ? 0 : row.recent === 0 ? 1 : row.qualityScore < 0.75 ? 2 : isLowActivity(row) ? 3 : 4;
+        !row.isActive ? 0 : row.total === 0 ? 1 : row.recent === 0 ? 2 : row.qualityScore < 0.75 ? 3 : isLowActivity(row) ? 4 : 5;
       return priority(left) - priority(right) || left.qualityScore - right.qualityScore || left.name.localeCompare(right.name);
     })
-    .slice(0, 3);
+    .slice(0, 4);
 
   return {
     bestPerformers,

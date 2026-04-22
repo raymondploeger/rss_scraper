@@ -426,10 +426,16 @@ h3 {
   gap: 7px;
 }
 
+.feed-insight-section + .feed-insight-section {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
 .feed-insight-title {
   color: var(--text);
   font-size: 0.82rem;
   font-weight: 850;
+  letter-spacing: 0.01em;
 }
 
 .analytics-ranking-list > li > span,
