@@ -1300,7 +1300,7 @@ function getFeedInsightRows(feeds, totalCounts, todayCounts, recentCounts, quali
   return getCombinedFeedRankings(feeds, totalCounts, todayCounts, recentCounts, qualityStats, 100);
 }
 
-function getNewlyActiveFeedInsights(rows, limit = 3) {
+function getNewlyActiveFeedInsights(rows, excludedFeedIds = new Set(), limit = 3) {
   const previousStats = runtime.previousSnapshotStats?.feedStats || {};
   return rows
     .map((row) => {
@@ -1313,18 +1313,38 @@ function getNewlyActiveFeedInsights(rows, limit = 3) {
         newToday: hasPreviousStats ? Math.max(0, row.today - previousToday) : row.today,
       };
     })
-    .filter((row) => row.newTotal > 0 || row.newToday > 0 || row.today > 0)
+    .filter((row) => !excludedFeedIds.has(row.feedId) && (row.newTotal > 0 || row.newToday > 0 || row.today > 0))
     .sort((left, right) => right.newToday - left.newToday || right.newTotal - left.newTotal || left.name.localeCompare(right.name))
     .slice(0, limit);
 }
 
 function getFeedInsights(rows) {
   const isLowActivity = (row) => row.total > 0 && row.recent > 0 && row.recent < 3 && row.today === 0;
+  const getAttentionReason = (row) => {
+    if (row.total === 0) {
+      return "Zero articles";
+    }
+    if (row.recent === 0) {
+      return "No recent activity";
+    }
+    if (row.qualityScore < 0.4) {
+      return "Low quality";
+    }
+    if (row.qualityScore < 0.75) {
+      return "Review quality";
+    }
+    if (isLowActivity(row)) {
+      return "Low activity";
+    }
+    return "";
+  };
   const bestPerformers = rows
     .filter((row) => row.total > 0 && row.qualityScore >= 0.75 && row.recent >= 3)
     .slice(0, 3);
+  const bestPerformerIds = new Set(bestPerformers.map((row) => row.feedId));
   const needsAttention = rows
-    .filter((row) => row.total === 0 || row.recent === 0 || row.qualityScore < 0.75 || isLowActivity(row))
+    .map((row) => ({ ...row, attentionReason: getAttentionReason(row) }))
+    .filter((row) => row.attentionReason)
     .sort((left, right) => {
       const priority = (row) =>
         row.total === 0 ? 0 : row.recent === 0 ? 1 : row.qualityScore < 0.75 ? 2 : isLowActivity(row) ? 3 : 4;
@@ -1335,7 +1355,7 @@ function getFeedInsights(rows) {
   return {
     bestPerformers,
     needsAttention,
-    newlyActive: getNewlyActiveFeedInsights(rows),
+    newlyActive: getNewlyActiveFeedInsights(rows, bestPerformerIds),
   };
 }
 
@@ -1405,8 +1425,14 @@ function getFeedInsightLabel(item, section) {
     return item.today > 0 ? `Active · ${qualityPercent}% clean` : `Reliable · ${qualityPercent}% clean`;
   }
   if (section === "new") {
-    const count = item.newToday || item.newTotal || 0;
-    return `${count} new article${count === 1 ? "" : "s"}`;
+    if (item.today > 0) {
+      return `+${item.today} today`;
+    }
+    const count = item.newTotal || 0;
+    return `+${count} new`;
+  }
+  if (section === "attention" && item.attentionReason) {
+    return item.attentionReason;
   }
   if (item.total === 0) {
     return "No articles";
