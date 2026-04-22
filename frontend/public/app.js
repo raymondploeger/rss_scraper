@@ -1350,9 +1350,6 @@ function getFeedInsights(rows) {
     if (row.qualityScore < 0.9) {
       return "Quality below 90%";
     }
-    if (row.isNoisyFeed) {
-      return "Noisy feed";
-    }
     return "";
   };
   const needsAttention = rows
@@ -1360,7 +1357,7 @@ function getFeedInsights(rows) {
     .filter((row) => row.attentionReason)
     .sort((left, right) => {
       const priority = (row) =>
-        row.isInactive ? 0 : row.total === 0 ? 1 : row.qualityScore < 0.9 ? 2 : row.isNoisyFeed ? 3 : 4;
+        row.isInactive ? 0 : row.total === 0 ? 1 : row.qualityScore < 0.9 ? 2 : 3;
       return priority(left) - priority(right) || right.qualityScore - left.qualityScore || left.name.localeCompare(right.name);
     })
     .slice(0, 5);
@@ -1372,8 +1369,15 @@ function getFeedInsights(rows) {
     .slice(0, 5);
   const bestPerformerIds = new Set(bestPerformers.map((row) => row.feedId));
   const goodFeeds = rows
-    .filter((row) => !needsAttentionIds.has(row.feedId) && !bestPerformerIds.has(row.feedId) && row.qualityScore >= 0.9)
-    .sort((left, right) => right.qualityScore - left.qualityScore || right.today - left.today || left.name.localeCompare(right.name))
+    .filter(
+      (row) =>
+        !needsAttentionIds.has(row.feedId) &&
+        !bestPerformerIds.has(row.feedId) &&
+        row.qualityScore >= 0.9 &&
+        row.today === 0 &&
+        !row.isInactive
+    )
+    .sort((left, right) => right.total - left.total || right.qualityScore - left.qualityScore || left.name.localeCompare(right.name))
     .slice(0, 5);
 
   return {
