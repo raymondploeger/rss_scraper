@@ -1340,6 +1340,26 @@ function getNewlyActiveFeedInsights(rows, excludedFeedIds = new Set(), limit = 5
 }
 
 function getFeedInsights(rows) {
+  const getReviewReason = (row) => {
+    const filteredPercent = Math.round((row.filteredRatio || 0) * 100);
+    const primaryReason = getPrimaryFeedQualityReason(row.filterReasons);
+    const repeatedFalsePositives = Object.values(row.filterReasons || {}).some((count) => count >= 3);
+
+    if (row.qualityScore < 0.9) {
+      return `Review recommended - ${Math.round((row.qualityScore || 0) * 100)}% clean`;
+    }
+    if (row.filteredRatio > 0.1) {
+      return primaryReason ? `Review recommended - ${filteredPercent}% filtered (${primaryReason})` : `Review recommended - ${filteredPercent}% filtered`;
+    }
+    if (repeatedFalsePositives) {
+      return primaryReason ? `Noisy feed - ${primaryReason}` : "Noisy feed";
+    }
+    if (row.isActive && row.total > 0 && row.total < 5) {
+      return "Low value - low signal";
+    }
+    return "";
+  };
+
   const getAttentionReason = (row) => {
     if (row.isInactive) {
       return "Inactive";
@@ -1347,10 +1367,7 @@ function getFeedInsights(rows) {
     if (row.total === 0) {
       return "No articles";
     }
-    if (row.qualityScore < 0.9) {
-      return "Quality below 90%";
-    }
-    return "";
+    return getReviewReason(row);
   };
   const needsAttention = rows
     .map((row) => ({ ...row, attentionReason: getAttentionReason(row) }))
