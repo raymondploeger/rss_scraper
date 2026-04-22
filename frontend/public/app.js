@@ -1158,7 +1158,18 @@ function isArticleNoiseForFeedQuality(article, feed) {
 }
 
 function getFeedQualityExclusionReason(article, feed) {
-  if (isArticleNoiseForFeedQuality(article, feed)) {
+  if (isPassportFalsePositive(article)) {
+    return "carFalsePositive";
+  }
+  if (isDriverLicenseMusicFalsePositive(article)) {
+    return "musicFalsePositive";
+  }
+  if (isCoinGamingFalsePositive(article)) {
+    return "gamingFalsePositive";
+  }
+
+  const feedRule = getTopicKeywordRule(feed?.topic) || getTopicKeywordRule(article?.topic);
+  if (feedRule && isKeywordRuleFalsePositive(article, feedRule)) {
     return "keywordNoise";
   }
 
@@ -1211,6 +1222,9 @@ function getFeedQualityStats(feeds, articles) {
           filteredOut: 0,
           filterReasons: {
             keywordNoise: 0,
+            carFalsePositive: 0,
+            musicFalsePositive: 0,
+            gamingFalsePositive: 0,
           },
           relevanceRatio: 0,
           normalizedActivity: 0,
@@ -1392,6 +1406,9 @@ function renderAnalyticsRows(items, emptyText) {
 function formatFeedQualityReasons(reasons = {}) {
   const labels = {
     keywordNoise: "keyword noise",
+    carFalsePositive: "car-related",
+    musicFalsePositive: "music-related",
+    gamingFalsePositive: "gaming-related",
   };
   const parts = Object.entries(labels)
     .map(([key, label]) => [label, reasons[key] || 0])
@@ -1399,6 +1416,21 @@ function formatFeedQualityReasons(reasons = {}) {
     .map(([label, count]) => `${count} ${label}`);
 
   return parts.length ? parts.join(", ") : "no filtered articles";
+}
+
+function getPrimaryFeedQualityReason(reasons = {}) {
+  const entries = Object.entries(reasons).filter(([, count]) => count > 0);
+  if (!entries.length) {
+    return "";
+  }
+  const [reasonKey, count] = entries.sort((left, right) => right[1] - left[1])[0];
+  const labels = {
+    keywordNoise: "keyword noise",
+    carFalsePositive: "car false positives",
+    musicFalsePositive: "music false positives",
+    gamingFalsePositive: "gaming false positives",
+  };
+  return `${count} ${labels[reasonKey] || "filtered"}`;
 }
 
 function getFeedInsightLabel(item, section) {
@@ -1455,6 +1487,11 @@ function renderFeedInsightList(items, section, emptyText) {
               <span ${clickableAttrs}>
                 ${escapeHtml(item.name)}
                 <small class="analytics-row-detail">${escapeHtml(label)}</small>
+                ${
+                  item.filteredOut
+                    ? `<small class="analytics-row-detail">${escapeHtml(getPrimaryFeedQualityReason(item.filterReasons))}</small>`
+                    : ""
+                }
               </span>
               <div class="analytics-count-pair">
                 <strong class="analytics-quality is-${item.qualityTone}" title="${escapeHtml(qualityBreakdown)}">
