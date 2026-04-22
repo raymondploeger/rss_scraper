@@ -1721,8 +1721,14 @@ function addDashboardAlert({
   articleIds = [],
   priorityLevel = "low",
   isDmvAlert = false,
+  isSystemMessage = false,
 }) {
   const exactArticleIds = Array.from(new Set((articleIds || []).filter(Boolean))).sort();
+  if (isSystemMessage) {
+    runtime.dashboardAlerts = runtime.dashboardAlerts.filter(
+      (alert) => !(alert.isSystemMessage && alert.title === title && alert.detail === detail)
+    );
+  }
   runtime.dashboardAlertId += 1;
   runtime.dashboardAlerts.unshift({
     id: String(runtime.dashboardAlertId),
@@ -1734,6 +1740,7 @@ function addDashboardAlert({
     articleIds: exactArticleIds,
     priorityLevel,
     isDmvAlert,
+    isSystemMessage,
     createdAt: new Date(),
   });
   runtime.dashboardAlerts = runtime.dashboardAlerts.slice(0, DASHBOARD_ALERT_LIMIT);
@@ -1745,13 +1752,20 @@ function dismissDashboardAlert(alertId) {
 }
 
 function renderDashboardAlerts() {
-  if (!runtime.dashboardAlerts.length) {
-    return `<p class="analytics-empty">No recent feed alerts this session.</p>`;
+  const meaningfulAlerts = runtime.dashboardAlerts.filter((alert) => !alert.isSystemMessage);
+  const latestSystemMessage = runtime.dashboardAlerts.find((alert) => alert.isSystemMessage);
+  const systemMessage = latestSystemMessage
+    ? `<p class="analytics-empty">System: ${escapeHtml(latestSystemMessage.title)}</p>`
+    : "";
+
+  if (!meaningfulAlerts.length) {
+    return systemMessage || `<p class="analytics-empty">No recent feed alerts this session.</p>`;
   }
 
   return `
+    ${systemMessage}
     <ol class="dashboard-alert-list">
-      ${runtime.dashboardAlerts
+      ${meaningfulAlerts
         .map((alert) => {
           const isClickable = Array.isArray(alert.articleIds) && alert.articleIds.length > 0;
           return `
@@ -1760,7 +1774,10 @@ function renderDashboardAlerts() {
               ${isClickable ? `data-alert-id="${escapeHtml(alert.id)}" role="button" tabindex="0" title="Click to view exact matching articles"` : ""}
             >
               <div>
-                <strong>${escapeHtml(alert.title)}</strong>
+                <strong>
+                  <span class="dashboard-alert-priority is-${escapeHtml(alert.priorityLevel || "low")}">${escapeHtml(alert.priorityLevel || "low")}</span>
+                  ${escapeHtml(alert.title)}
+                </strong>
                 ${alert.detail ? `<small>${escapeHtml(alert.detail)}</small>` : ""}
               </div>
               <button type="button" data-dismiss-dashboard-alert="${alert.id}" aria-label="Dismiss alert">Dismiss</button>
@@ -2118,6 +2135,7 @@ function generateAlerts(previous, current) {
   const queueAlert = (priorityLevel, alert, score = 0, options = {}) => {
     const articleIds = Array.from(new Set((alert.articleIds || []).filter(Boolean))).sort();
     const isDmvAlert = Boolean(options.isDmvAlert);
+    const isSystemMessage = Boolean(options.isSystemMessage);
     candidates.push({
       score,
       dedupeScope: options.dedupeScope || "",
@@ -2127,6 +2145,7 @@ function generateAlerts(previous, current) {
         articleIds,
         priorityLevel,
         isDmvAlert,
+        isSystemMessage,
       },
     });
   };
@@ -2318,7 +2337,7 @@ function generateAlerts(previous, current) {
       title: "Sources refreshed — no significant changes detected",
       detail: "Article counts and feed status are unchanged since the previous snapshot.",
       type: "info",
-    });
+    }, 0, { dedupeScope: "system-no-change", isSystemMessage: true });
   }
 
   const selectedAlerts = [];

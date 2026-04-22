@@ -638,6 +638,28 @@ h3 {
   display: block;
 }
 
+.dashboard-alert-priority {
+  display: inline-block;
+  margin-right: 6px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dashboard-alert-priority.is-high {
+  color: var(--danger);
+}
+
+.dashboard-alert-priority.is-medium {
+  color: #b7791f;
+}
+
+.dashboard-alert-priority.is-low {
+  color: var(--muted);
+}
+
 .dashboard-alert small {
   margin-top: 2px;
   color: var(--muted);
