@@ -2007,6 +2007,37 @@ function dedupeAlertCandidates(candidates) {
   return selected;
 }
 
+function getSnapshotFeedStats(snapshot, feedId) {
+  const snapshotArticles = Array.isArray(snapshot?.articles) ? snapshot.articles : [];
+  const articlesHaveFeedIds = snapshotArticles.some((article) => article.feedId);
+  if (articlesHaveFeedIds) {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const feedArticles = snapshotArticles.filter((article) => article.feedId === feedId);
+    return {
+      total: feedArticles.length,
+      today: feedArticles.filter((article) => toDate(article.pubDate) >= todayStart).length,
+    };
+  }
+
+  if (snapshot?.feedStats?.[feedId]) {
+    return {
+      total: Number(snapshot.feedStats[feedId].total) || 0,
+      today: Number(snapshot.feedStats[feedId].today) || 0,
+    };
+  }
+
+  const activityStats = snapshot?.feedActivity?.get?.(feedId);
+  if (activityStats) {
+    return {
+      total: Number(activityStats.total) || 0,
+      today: 0,
+    };
+  }
+
+  return null;
+}
+
 function generateAlerts(previous, current) {
   console.log("[alerts][snapshot-compare]", { previous, current });
   const candidates = [];
@@ -2062,27 +2093,24 @@ function generateAlerts(previous, current) {
   }
 
   const previousFeedsById = new Map((previous.feeds || []).map((feed) => [feed.id, feed]));
-  const previousFeedStats = previous.feedStats || {};
-  const currentFeedStats = current.feedStats || {};
-  const canCompareFeedStats = previous.hasFeedStats === true;
 
   (current.feeds || []).forEach((feed) => {
     const previousFeed = previousFeedsById.get(feed.id);
-    const previousStats = previousFeedStats[feed.id];
-    const currentStats = currentFeedStats[feed.id];
+    const previousStats = getSnapshotFeedStats(previous, feed.id);
+    const currentStats = getSnapshotFeedStats(current, feed.id);
     if (!previousFeed || !currentStats) {
       return;
     }
 
-    const previousTotal = canCompareFeedStats && previousStats ? Number(previousStats.total) || 0 : null;
+    const previousTotal = previousStats ? Number(previousStats.total) || 0 : null;
     const currentTotal = Number(currentStats.total) || 0;
     const totalDiff = previousTotal === null ? 0 : currentTotal - previousTotal;
-    const previousToday = canCompareFeedStats && previousStats ? Number(previousStats.today) || 0 : null;
+    const previousToday = previousStats ? Number(previousStats.today) || 0 : null;
     const currentToday = Number(currentStats.today) || 0;
     const todayDiff = previousToday === null ? 0 : currentToday - previousToday;
     const enteredError = previousFeed.lastStatus !== "error" && feed.lastStatus === "error";
     const alertScore = currentToday * 3 + currentTotal * 0.1;
-    const passesFeedThreshold = canCompareFeedStats && (totalDiff >= 2 || todayDiff >= 1);
+    const canCompareFeedStats = previousTotal !== null;
     const feedNewArticleIds = newArticleIdsByFeed.get(feed.id) || [];
     const liveFeed = current.feedsById?.get(feed.id) || feed;
     const isDmvFeed = isDmvSource(liveFeed);
@@ -2115,7 +2143,16 @@ function generateAlerts(previous, current) {
       }, alertScore, { isDmvAlert: isDmvFeed });
     }
 
-    if (passesFeedThreshold && totalDiff > 0) {
+    if (canCompareFeedStats && previousTotal === 0 && currentTotal > 0 && totalDiff > 0) {
+      queueAlert(isDmvFeed ? "high" : "medium", {
+        title: `${feed.name} started producing articles`,
+        detail: `${totalDiff} new article${totalDiff === 1 ? "" : "s"} since the previous snapshot.`,
+        type: "success",
+        topic: feed.topic || "",
+        todayOnly: false,
+        articleIds: feedNewArticleIds,
+      }, alertScore, { dedupeScope: "feed-new-articles", isDmvAlert: isDmvFeed });
+    } else if (canCompareFeedStats && totalDiff > 0) {
       queueAlert(newArticlePriority, {
         title: `${feed.name}: +${totalDiff} new articles`,
         detail: `${currentTotal} total article${currentTotal === 1 ? "" : "s"} for this feed.`,
@@ -2126,7 +2163,7 @@ function generateAlerts(previous, current) {
       }, alertScore, { dedupeScope: "feed-new-articles", isDmvAlert: isDmvFeed });
     }
 
-    if (passesFeedThreshold && previousToday === 0 && currentToday > 0) {
+    if (canCompareFeedStats && previousToday === 0 && currentToday > 0 && todayDiff > 0) {
       queueAlert(isDmvFeed ? "high" : "medium", {
         title: `${feed.name} is active again`,
         detail: `+${todayDiff} new article${todayDiff === 1 ? "" : "s"} today.`,
@@ -2135,7 +2172,7 @@ function generateAlerts(previous, current) {
         todayOnly: true,
         articleIds: feedNewArticleIds,
       }, alertScore, { dedupeScope: "feed-new-articles", isDmvAlert: isDmvFeed });
-    } else if (passesFeedThreshold && todayDiff > 0) {
+    } else if (canCompareFeedStats && todayDiff > 0) {
       queueAlert(newArticlePriority, {
         title: `${feed.name}: +${todayDiff} new articles today`,
         detail: `${currentToday} article${currentToday === 1 ? "" : "s"} today.`,
@@ -2144,7 +2181,7 @@ function generateAlerts(previous, current) {
         todayOnly: true,
         articleIds: feedNewArticleIds,
       }, alertScore, { dedupeScope: "feed-new-articles", isDmvAlert: isDmvFeed });
-    } else if (passesFeedThreshold && previousToday > 0 && currentToday === 0) {
+    } else if (canCompareFeedStats && previousToday > 0 && currentToday === 0) {
       queueAlert("medium", {
         title: `${feed.name} stopped producing`,
         detail: "No articles today in the latest snapshot.",
@@ -2188,17 +2225,6 @@ function generateAlerts(previous, current) {
         topic: stats.feed.topic || "",
         todayOnly: false,
       }, 0, { isDmvAlert: isDmvFeed });
-    }
-
-    if ((isDmvRssFeed || wasDmvRssFeed) && previousStats.total === 0 && stats.total > 0) {
-      queueAlert("high", {
-        title: `${feedName} started producing articles`,
-        detail: `${stats.total} article${stats.total === 1 ? "" : "s"} now available.`,
-        type: "success",
-        topic: stats.feed.topic || "",
-        todayOnly: false,
-        articleIds: newArticleIdsByFeed.get(feedId) || [],
-      }, stats.total, { dedupeScope: "feed-new-articles", isDmvAlert: true });
     }
 
     if ((isDmvRssFeed || wasDmvRssFeed) && stats.status === "inactive" && previousStats.status !== "inactive") {
