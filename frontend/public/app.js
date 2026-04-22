@@ -1409,10 +1409,10 @@ function getFeedInsightLabel(item, section) {
     return `${count} new article${count === 1 ? "" : "s"}`;
   }
   if (item.total === 0) {
-    return "Zero articles";
+    return "No articles";
   }
   if (item.recent === 0) {
-    return "Inactive";
+    return "No recent activity";
   }
   if (item.qualityScore >= 0.4 && item.qualityScore < 0.75) {
     return `Review - ${qualityPercent}% clean`;
@@ -2168,7 +2168,7 @@ function getDashboardAnalytics() {
     recentCounts,
     qualityStats
   );
-  const feedInsightRows = getFeedInsightRows(rankingFeeds, articleCounts, todayCounts, recentCounts, qualityStats);
+  const feedInsightRows = getFeedInsightRows(scopedAnalyticsFeeds, articleCounts, todayCounts, recentCounts, qualityStats);
   const qualityFilterCounts = getAnalyticsQualityFilterCounts(
     scopedAnalyticsFeeds,
     articleCounts,
@@ -2201,13 +2201,12 @@ function getDashboardAnalytics() {
 
   return {
     feedInsights: getFeedInsights(feedInsightRows),
-    lowValueFeeds,
     averageArticlesPerFeed: (realArticles.length / feedCount).toFixed(1),
     averageArticlesTodayPerFeed: (todayArticles.length / feedCount).toFixed(1),
     analyticsScope: state.analyticsScope,
     analyticsQualityFilter: state.analyticsQualityFilter,
     qualityFilterCounts,
-    rankingFeedCount: feedInsightRows.length,
+    rankingFeedCount: rankingFeeds.length,
     analyticsScopeLabel:
       state.analyticsScope === "active"
         ? "Active RSS feeds with article history"
@@ -2258,13 +2257,8 @@ function renderAnalyticsCard() {
       <div class="analytics-panel analytics-panel-wide analytics-panel-ranking">
         <span class="analytics-label">Feed insights</span>
         <p class="analytics-panel-note">${escapeHtml(analytics.analyticsScopeLabel)}</p>
-        ${renderAnalyticsQualityTabs(analytics.analyticsQualityFilter, analytics.qualityFilterCounts)}
-        <p class="analytics-panel-note">${analytics.rankingFeedCount} feeds match this quick filter</p>
+        <p class="analytics-panel-note">Signals combine quality, recent activity, and article history.</p>
         ${renderFeedInsights(analytics.feedInsights)}
-      </div>
-      <div class="analytics-panel analytics-panel-wide">
-        <span class="analytics-label">Dead / low value feeds</span>
-        ${renderLowValueFeedRows(analytics.lowValueFeeds)}
       </div>
       <div class="analytics-panel analytics-panel-wide analytics-panel-alerts">
         <span class="analytics-label">Recent alerts</span>
