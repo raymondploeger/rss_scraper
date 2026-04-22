@@ -1460,7 +1460,7 @@ function renderFeedInsightList(items, section, emptyText) {
               </span>
               <div class="analytics-count-pair">
                 <strong class="analytics-quality is-${item.qualityTone}" title="${escapeHtml(qualityBreakdown)}">
-                  ${qualityPercent}% clean (${filteredPercent}% filtered)
+                  ${qualityPercent}% clean
                 </strong>
                 <strong>${item.total} total</strong>
                 <strong ${todayClickableAttrs}>${item.today} today</strong>
