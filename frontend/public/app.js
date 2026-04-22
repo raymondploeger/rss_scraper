@@ -1365,13 +1365,14 @@ function getFeedInsights(rows) {
     })
     .slice(0, 5);
   const needsAttentionIds = new Set(needsAttention.map((row) => row.feedId));
+  const isBestPerformer = (row) => row.qualityScore >= 0.98 && row.today > 0 && row.total >= 20;
   const bestPerformers = rows
-    .filter((row) => !needsAttentionIds.has(row.feedId) && row.qualityScore >= 0.98)
+    .filter((row) => !needsAttentionIds.has(row.feedId) && isBestPerformer(row))
     .sort((left, right) => right.qualityScore - left.qualityScore || right.today - left.today || left.name.localeCompare(right.name))
     .slice(0, 5);
   const bestPerformerIds = new Set(bestPerformers.map((row) => row.feedId));
   const goodFeeds = rows
-    .filter((row) => !needsAttentionIds.has(row.feedId) && !bestPerformerIds.has(row.feedId) && row.qualityScore >= 0.9 && row.qualityScore < 0.98)
+    .filter((row) => !needsAttentionIds.has(row.feedId) && !bestPerformerIds.has(row.feedId) && row.qualityScore >= 0.9)
     .sort((left, right) => right.qualityScore - left.qualityScore || right.today - left.today || left.name.localeCompare(right.name))
     .slice(0, 5);
 
