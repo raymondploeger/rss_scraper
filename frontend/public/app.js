@@ -1931,7 +1931,7 @@ function hydrateSnapshotStats(snapshot) {
           };
           return stats;
         }, {});
-  const hasFeedStats = snapshot.hasFeedStats === true || Boolean(snapshot.feedStats && typeof snapshot.feedStats === "object");
+  const hasFeedStats = snapshot.hasFeedStats === true;
   const feedStates = new Map(
     snapshotFeeds.map((item) => [
       item.id,
@@ -2087,13 +2087,15 @@ function getSnapshotFeedStats(snapshot, feedId) {
     return {
       total: feedArticles.length,
       today: feedArticles.filter((article) => toDate(article.pubDate) >= todayStart).length,
+      source: "articles",
     };
   }
 
-  if (snapshot?.feedStats?.[feedId]) {
+  if (snapshot?.hasFeedStats === true && snapshot?.feedStats?.[feedId]) {
     return {
       total: Number(snapshot.feedStats[feedId].total) || 0,
       today: Number(snapshot.feedStats[feedId].today) || 0,
+      source: "feedStats",
     };
   }
 
@@ -2102,6 +2104,7 @@ function getSnapshotFeedStats(snapshot, feedId) {
     return {
       total: Number(activityStats.total) || 0,
       today: 0,
+      source: "feedActivity",
     };
   }
 
@@ -2197,6 +2200,8 @@ function generateAlerts(previous, current) {
         previousToday,
         currentToday,
         todayDiff,
+        previousSource: previousStats?.source || "",
+        currentSource: currentStats?.source || "",
         score: alertScore,
         previousStatus: previousFeed.lastStatus,
         currentStatus: feed.lastStatus,
