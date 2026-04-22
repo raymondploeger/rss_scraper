@@ -1269,6 +1269,15 @@ function getFeedQualityStats(feeds, articles) {
     feedStats.viewMatchScore = feedStats.shownArticles
       ? feedStats.viewMatchedArticles / feedStats.shownArticles
       : 0;
+    feedStats.filteredRatio = feedStats.totalFetched ? feedStats.filteredOut / feedStats.totalFetched : 0;
+    feedStats.dominantNoiseCount = Math.max(
+      feedStats.filterReasons.carFalsePositive || 0,
+      feedStats.filterReasons.musicFalsePositive || 0,
+      feedStats.filterReasons.gamingFalsePositive || 0
+    );
+    feedStats.isNoisyFeed =
+      feedStats.filteredRatio > 0.15 ||
+      (feedStats.totalFetched > 0 && feedStats.dominantNoiseCount / feedStats.totalFetched > 0.15);
     feedStats.qualityTone =
       feedStats.qualityScore >= 0.75 ? "high" : feedStats.qualityScore >= 0.4 ? "medium" : "low";
   });
@@ -1294,6 +1303,8 @@ function getCombinedFeedRankings(feeds, totalCounts, todayCounts, recentCounts, 
         totalFetched: quality.totalFetched || 0,
         shownArticles: quality.shownArticles || 0,
         filteredOut: quality.filteredOut || 0,
+        filteredRatio: quality.filteredRatio || 0,
+        isNoisyFeed: quality.isNoisyFeed === true,
         filterReasons: quality.filterReasons || {},
         relevantArticles: quality.relevantArticles || 0,
         filteredArticles: quality.filteredArticles || 0,
@@ -1492,6 +1503,7 @@ function renderFeedInsightList(items, section, emptyText) {
                     ? `<small class="analytics-row-detail">${escapeHtml(getPrimaryFeedQualityReason(item.filterReasons))}</small>`
                     : ""
                 }
+                ${item.isNoisyFeed ? `<small class="analytics-row-detail is-warning">Noisy feed</small>` : ""}
               </span>
               <div class="analytics-count-pair">
                 <strong class="analytics-quality is-${item.qualityTone}" title="${escapeHtml(qualityBreakdown)}">

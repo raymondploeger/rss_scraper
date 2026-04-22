@@ -469,6 +469,15 @@ h3 {
   white-space: nowrap;
 }
 
+.analytics-row-detail.is-warning {
+  color: #b7791f;
+  font-weight: 800;
+}
+
+:root[data-theme="dark"] .analytics-row-detail.is-warning {
+  color: #f6c76a;
+}
+
 .analytics-list li {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
