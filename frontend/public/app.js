@@ -1158,32 +1158,41 @@ function isArticleNoiseForFeedQuality(article, feed) {
 }
 
 function getFeedQualityExclusionReason(article, feed) {
-  const activeKeywordRule = getActiveTopicKeywordRule();
-  if (activeKeywordRule && isKeywordRuleFalsePositive(article, activeKeywordRule)) {
+  if (isArticleNoiseForFeedQuality(article, feed)) {
     return "keywordNoise";
-  }
-
-  if (!activeKeywordRule && isArticleNoiseForFeedQuality(article, feed)) {
-    return "keywordNoise";
-  }
-
-  if (state.filters.tag && !getArticleFilterTags(article).includes(normalizeFilterTag(state.filters.tag))) {
-    return "tagMismatch";
-  }
-
-  if (state.filters.topic && article.topic !== state.filters.topic) {
-    return "topicMismatch";
-  }
-
-  if (state.filters.date && toDateInputValue(article.pubDate) !== state.filters.date) {
-    return "dateMismatch";
-  }
-
-  if (state.filters.search && !getArticleSearchText(article).includes(state.filters.search.toLowerCase())) {
-    return "searchMismatch";
   }
 
   return "";
+}
+
+function articleMatchesCurrentViewFilters(article) {
+  if (state.filters.tag && !getArticleFilterTags(article).includes(normalizeFilterTag(state.filters.tag))) {
+    return false;
+  }
+
+  if (state.filters.topic && article.topic !== state.filters.topic) {
+    return false;
+  }
+
+  if (state.filters.date && toDateInputValue(article.pubDate) !== state.filters.date) {
+    return false;
+  }
+
+  if (state.filters.search && !getArticleSearchText(article).includes(state.filters.search.toLowerCase())) {
+    return false;
+  }
+
+  const exactArticleIds = Array.isArray(state.filters.articleIds) ? state.filters.articleIds : [];
+  if (exactArticleIds.length && !exactArticleIds.includes(article.id)) {
+    return false;
+  }
+
+  const activeFeedId = getActiveArticleFeedId();
+  if (activeFeedId && article.feedId !== activeFeedId) {
+    return false;
+  }
+
+  return true;
 }
 
 function getFeedQualityStats(feeds, articles) {
@@ -1202,10 +1211,6 @@ function getFeedQualityStats(feeds, articles) {
           filteredOut: 0,
           filterReasons: {
             keywordNoise: 0,
-            tagMismatch: 0,
-            topicMismatch: 0,
-            dateMismatch: 0,
-            searchMismatch: 0,
           },
           relevanceRatio: 0,
           normalizedActivity: 0,
@@ -1233,7 +1238,7 @@ function getFeedQualityStats(feeds, articles) {
     } else {
       feedStats.relevantArticles += 1;
       feedStats.shownArticles += 1;
-      if (articleMatchesFilters(article)) {
+      if (articleMatchesCurrentViewFilters(article)) {
         feedStats.viewMatchedArticles += 1;
       }
     }
@@ -1387,10 +1392,6 @@ function renderAnalyticsRows(items, emptyText) {
 function formatFeedQualityReasons(reasons = {}) {
   const labels = {
     keywordNoise: "keyword noise",
-    tagMismatch: "tag mismatch",
-    topicMismatch: "topic mismatch",
-    dateMismatch: "date mismatch",
-    searchMismatch: "search mismatch",
   };
   const parts = Object.entries(labels)
     .map(([key, label]) => [label, reasons[key] || 0])
