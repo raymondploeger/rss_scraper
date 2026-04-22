@@ -1314,11 +1314,11 @@ function getFeedInsights(rows) {
     if (row.isInactive) {
       return "Inactive";
     }
-    if (row.total === 0) {
-      return "Zero articles";
-    }
     if (row.today === 0 && row.total > 0) {
       return "No recent activity";
+    }
+    if (row.total < 10) {
+      return "Low volume";
     }
     return "";
   };
@@ -1333,14 +1333,13 @@ function getFeedInsights(rows) {
     .slice(0, 5);
   const needsAttentionIds = new Set(needsAttention.map((row) => row.feedId));
   const bestPerformers = rows
-    .filter((row) => !needsAttentionIds.has(row.feedId) && row.total > 0 && row.qualityScore >= 0.75 && row.recent >= 3)
+    .filter((row) => !needsAttentionIds.has(row.feedId) && row.today > 0 && row.total >= 20 && !row.isInactive)
     .slice(0, 5);
-  const bestPerformerIds = new Set(bestPerformers.map((row) => row.feedId));
 
   return {
     bestPerformers,
     needsAttention,
-    newlyActive: getNewlyActiveFeedInsights(rows, bestPerformerIds),
+    newlyActive: getNewlyActiveFeedInsights(rows, new Set()),
   };
 }
 
@@ -1416,7 +1415,7 @@ function getFeedInsightLabel(item, section) {
     return item.attentionReason;
   }
   if (item.total === 0) {
-    return "No articles";
+    return "Low volume";
   }
   if (item.recent === 0) {
     return "No recent activity";
