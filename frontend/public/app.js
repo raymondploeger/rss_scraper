@@ -2213,6 +2213,7 @@ function generateAlerts(previous, current) {
     const enteredError = previousFeed.lastStatus !== "error" && feed.lastStatus === "error";
     const alertScore = currentToday * 3 + currentTotal * 0.1;
     const canCompareFeedStats = previousTotal !== null;
+    const isInitialLoadSpike = canCompareFeedStats && previousTotal < 100 && totalDiff > 100;
     const feedNewArticleIds = newArticleIdsByFeed.get(feed.id) || [];
     const liveFeed = current.feedsById?.get(feed.id) || feed;
     const isDmvFeed = isDmvSource(liveFeed);
@@ -2259,7 +2260,7 @@ function generateAlerts(previous, current) {
       }, alertScore, { dedupeScope: "feed-new-articles", isDmvAlert: isDmvFeed });
     } else if (canCompareFeedStats && totalDiff > 0) {
       queueAlert(totalDiffPriority, {
-        title: `${feed.name}: +${totalDiff} new articles`,
+        title: `${feed.name}: +${totalDiff} article${totalDiff === 1 ? "" : "s"}${isInitialLoadSpike ? " (initial load)" : ""}`,
         detail: `${currentTotal} total article${currentTotal === 1 ? "" : "s"} for this feed.`,
         type: "success",
         topic: feed.topic || "",
