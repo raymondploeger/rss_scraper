@@ -2062,7 +2062,7 @@ function getVolumeAlertPriority(delta) {
   if (delta > 25) {
     return "high";
   }
-  if (delta > 3) {
+  if (delta > 5) {
     return "medium";
   }
   return "low";
