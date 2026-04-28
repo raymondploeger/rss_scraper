@@ -3703,6 +3703,15 @@ function getArticleSignalCategories(article) {
   return getArticleSignalMatches(article).map((match) => match.id);
 }
 
+function isUiRelevantIntelligenceArticle(article) {
+  const signalMatches = getArticleSignalMatches(article);
+  if (signalMatches.length) {
+    return true;
+  }
+
+  return isRelevantSignalText(getArticleSignalText(article));
+}
+
 function getPrimaryArticleSignalCategory(article) {
   const [primarySignalMatch] = getArticleSignalMatches(article);
   if (!primarySignalMatch) {
@@ -4622,6 +4631,7 @@ function articleMatchesFilters(article) {
 
 function getVisibleArticles() {
   return state.articles
+    .filter(isUiRelevantIntelligenceArticle)
     .filter(articleMatchesFilters)
     .sort((left, right) => toDate(right.pubDate).getTime() - toDate(left.pubDate).getTime());
 }
