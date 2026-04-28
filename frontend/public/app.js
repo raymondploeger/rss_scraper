@@ -378,6 +378,47 @@ const ID_SIGNAL_NOISE_CONTEXT_KEYWORDS = [
   "concept device",
   "prototype device",
 ];
+const ID_SIGNAL_SYSTEM_EVENT_KEYWORDS = [
+  "rollout",
+  "launched",
+  "introduced",
+  "deployed",
+  "implemented",
+  "law",
+  "regulation",
+  "mandate",
+  "policy change",
+  "compliance",
+  "breach",
+  "biometric system",
+  "fraud network",
+  "identity theft system-level",
+  "passport system",
+  "id system",
+  "identity platform",
+  "verification system",
+];
+const ID_SIGNAL_NON_SYSTEM_NOISE_KEYWORDS = [
+  "man",
+  "woman",
+  "person",
+  "individual",
+  "case of",
+  "arrested",
+  "encountered",
+  "denied passport",
+  "issued wrong",
+  "leader says",
+  "backs",
+  "criticizes",
+  "debate",
+  "calls for",
+  "urges",
+  "court case",
+  "lawsuit",
+  "sues",
+  "supreme court",
+];
 const ID_SIGNAL_RELEASE_STRONG_KEYWORDS = [
   "issued",
   "released",
@@ -3841,6 +3882,18 @@ function isNoiseContext(text) {
   );
 }
 
+function isIdentitySystemEvent(text) {
+  return normalizeKeywordList(ID_SIGNAL_SYSTEM_EVENT_KEYWORDS).some((keyword) =>
+    textMatchesKeyword(text, keyword)
+  );
+}
+
+function isNonSystemIdentityNoise(text) {
+  return normalizeKeywordList(ID_SIGNAL_NON_SYSTEM_NOISE_KEYWORDS).some((keyword) =>
+    textMatchesKeyword(text, keyword)
+  );
+}
+
 function isStrongIdentityIntent(text) {
   return normalizeKeywordList(ID_SIGNAL_HIGH_INTENT_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
 }
@@ -3868,6 +3921,14 @@ function getIdDocumentSignalMatches(text) {
   }
 
   if (!isValidIdentityContext(text)) {
+    return [];
+  }
+
+  if (isNonSystemIdentityNoise(text)) {
+    return [];
+  }
+
+  if (!isIdentitySystemEvent(text)) {
     return [];
   }
 
