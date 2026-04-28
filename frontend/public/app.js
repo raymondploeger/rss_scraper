@@ -227,16 +227,14 @@ const SIGNAL_CATEGORIES = [
     badgeLabel: "Release",
     strong: ["issued", "released", "launched", "introduced", "unveiled"],
     weak: ["new", "series", "design"],
-    mode: "strong-or-weak-context",
     exclude: [],
   },
   {
     id: "regulations",
     label: "Regulations",
     badgeLabel: "Regulation",
-    strong: ["regulation", "law", "requirement", "compliance"],
-    requiredContext: ["passport", "identity", "banknote"],
-    mode: "strong-and-context",
+    strong: ["regulation", "regulations", "law", "requirement", "requirements", "compliance"],
+    weak: ["rule", "rules", "guidance", "policy", "directive", "standard", "standards"],
     exclude: [],
   },
   {
@@ -254,7 +252,6 @@ const SIGNAL_CATEGORIES = [
       "id card design",
     ],
     weak: ["new series", "motif", "portrait", "symbol", "theme", "visual identity", "polymer design"],
-    mode: "strong-or-weak-context",
     exclude: [],
   },
   {
@@ -263,21 +260,39 @@ const SIGNAL_CATEGORIES = [
     badgeLabel: "Security",
     strong: ["hologram", "watermark", "security feature", "uv ink", "ovi", "microprint", "intaglio"],
     weak: ["new", "enhanced", "advanced"],
-    mode: "strong-and-weak",
     exclude: [],
   },
   {
     id: "technology",
     label: "Technology",
     badgeLabel: "Technology",
-    strong: ["biometric", "chip", "nfc", "digital id", "verification"],
-    requiredContext: ["passport", "identity"],
-    mode: "strong-and-context",
+    strong: ["biometric", "biometrics", "chip", "nfc", "digital id", "verification", "identity verification"],
+    weak: ["authentication", "machine readable", "mrz", "mobile id", "eid"],
     exclude: [],
   },
 ];
 const SIGNAL_CATEGORY_BY_ID = new Map(SIGNAL_CATEGORIES.map((category) => [category.id, category]));
-const SIGNAL_RELEVANT_CONTEXT_KEYWORDS = ["banknote", "banknotes", "passport", "identity", "id", "document"];
+const SIGNAL_CORE_OBJECT_KEYWORDS = [
+  "banknote",
+  "banknotes",
+  "currency",
+  "passport",
+  "identity",
+  "id",
+  "document",
+  "driver license",
+];
+const SIGNAL_NOISE_CONTEXT_KEYWORDS = [
+  "central bank",
+  "inflation",
+  "interest rate",
+  "economy",
+  "finance",
+  "market",
+  "loan",
+  "borrowing",
+  "investment",
+];
 
 const state = {
   feeds: [],
@@ -3488,46 +3503,93 @@ function countMatchedKeywords(text, keywords = []) {
   return normalizeKeywordList(keywords).filter((keyword) => textMatchesKeyword(text, keyword)).length;
 }
 
-function hasSignalRelevantContext(text) {
-  return normalizeKeywordList(SIGNAL_RELEVANT_CONTEXT_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
+function hasSignalCoreObject(text) {
+  return normalizeKeywordList(SIGNAL_CORE_OBJECT_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
 }
 
-function getArticleSignalCategories(article) {
+function hasSignalNoiseContext(text) {
+  return normalizeKeywordList(SIGNAL_NOISE_CONTEXT_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
+}
+
+function getSignalConfidenceLabel(confidence) {
+  if (confidence === "high") {
+    return "high";
+  }
+
+  if (confidence === "low") {
+    return "low";
+  }
+
+  return "";
+}
+
+function getPrimaryArticleSignalLabel(primarySignalCategory) {
+  if (!primarySignalCategory) {
+    return "";
+  }
+
+  const confidenceLabel = getSignalConfidenceLabel(primarySignalCategory.confidence);
+  return confidenceLabel
+    ? `${primarySignalCategory.badgeLabel || primarySignalCategory.label} (${confidenceLabel})`
+    : primarySignalCategory.badgeLabel || primarySignalCategory.label;
+}
+
+function getArticleSignalMatches(article) {
   const haystack = getArticleSignalText(article);
   if (!haystack) {
     return [];
   }
 
-  return SIGNAL_CATEGORIES.filter((category) => {
+  if (!hasSignalCoreObject(haystack) || hasSignalNoiseContext(haystack)) {
+    return [];
+  }
+
+  return SIGNAL_CATEGORIES.flatMap((category) => {
     const strongMatches = countMatchedKeywords(haystack, category.strong);
     const weakMatches = countMatchedKeywords(haystack, category.weak);
     const excludeKeywords = normalizeKeywordList(category.exclude);
-    const requiredContextMatches = countMatchedKeywords(haystack, category.requiredContext);
-    const relevantContextMatch = hasSignalRelevantContext(haystack);
     const hasExcludeMatch = excludeKeywords.some((keyword) => textMatchesKeyword(haystack, keyword));
     if (hasExcludeMatch) {
-      return false;
+      return [];
     }
 
-    if (category.mode === "strong-and-weak") {
-      return strongMatches >= 1 && weakMatches >= 1;
+    if (strongMatches >= 1) {
+      return [{
+        id: category.id,
+        confidence: "high",
+      }];
     }
 
-    if (category.mode === "strong-and-context") {
-      return strongMatches >= 1 && requiredContextMatches >= 1;
+    if (weakMatches >= 1) {
+      return [{
+        id: category.id,
+        confidence: "low",
+      }];
     }
 
-    if (category.mode === "strong-or-weak-context") {
-      return strongMatches >= 1 || (weakMatches >= 2 && relevantContextMatch);
-    }
+    return [];
+  });
+}
 
-    return strongMatches >= 1;
-  }).map((category) => category.id);
+function getArticleSignalCategories(article) {
+  return getArticleSignalMatches(article).map((match) => match.id);
 }
 
 function getPrimaryArticleSignalCategory(article) {
-  const [primarySignalCategoryId] = getArticleSignalCategories(article);
-  return getSignalCategoryById(primarySignalCategoryId);
+  const [primarySignalMatch] = getArticleSignalMatches(article);
+  if (!primarySignalMatch) {
+    return null;
+  }
+
+  const category = getSignalCategoryById(primarySignalMatch.id);
+  if (!category) {
+    return null;
+  }
+
+  return {
+    ...category,
+    confidence: primarySignalMatch.confidence,
+  };
 }
 
 function isKeywordRuleFalsePositive(article, rule) {
@@ -4526,7 +4588,7 @@ function renderArticleCard(article) {
   if (meta && primarySignalCategory) {
     const signalBadge = document.createElement("span");
     signalBadge.className = "article-signal-badge";
-    signalBadge.textContent = primarySignalCategory.badgeLabel || primarySignalCategory.label;
+    signalBadge.textContent = getPrimaryArticleSignalLabel(primarySignalCategory);
     meta.appendChild(signalBadge);
   }
 
