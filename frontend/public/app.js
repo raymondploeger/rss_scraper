@@ -293,6 +293,19 @@ const SIGNAL_CORE_OBJECT_KEYWORDS = [
   "document",
   "driver license",
 ];
+const SIGNAL_RELEVANCE_TOPICS = [
+  "banknote",
+  "banknotes",
+  "passport",
+  "id card",
+  "identity document",
+  "driver license",
+  "hologram",
+  "security feature",
+  "polymer note",
+  "anti-counterfeit",
+  "printing technology",
+];
 const SIGNAL_NOISE_CONTEXT_KEYWORDS = [
   "central bank",
   "inflation",
@@ -3522,6 +3535,10 @@ function hasSignalNoiseContext(text) {
   return normalizeKeywordList(SIGNAL_NOISE_CONTEXT_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
 }
 
+function isRelevantSignalText(text) {
+  return normalizeKeywordList(SIGNAL_RELEVANCE_TOPICS).some((keyword) => textMatchesKeyword(text, keyword));
+}
+
 function getSignalConfidenceLabel(confidence) {
   if (confidence === "high") {
     return "high";
@@ -3548,6 +3565,10 @@ function getPrimaryArticleSignalLabel(primarySignalCategory) {
 function getArticleSignalMatches(article) {
   const haystack = getArticleSignalText(article);
   if (!haystack) {
+    return [];
+  }
+
+  if (!isRelevantSignalText(haystack)) {
     return [];
   }
 
