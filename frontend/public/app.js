@@ -335,6 +335,109 @@ const SIGNAL_RELEASE_OBJECT_KEYWORDS = [
   "euro",
   "currency",
 ];
+const ID_SIGNAL_OBJECT_KEYWORDS = [
+  "passport",
+  "passports",
+  "id card",
+  "identity card",
+  "identity document",
+  "national id",
+  "driver license",
+  "driving licence",
+  "residence permit",
+  "visa",
+  "e-passport",
+  "epassport",
+  "biometric passport",
+];
+const ID_SIGNAL_RELEASE_STRONG_KEYWORDS = [
+  "issued",
+  "released",
+  "launched",
+  "introduced",
+  "unveiled",
+  "rollout",
+  "roll out",
+  "next generation",
+];
+const ID_SIGNAL_RELEASE_SUPPORT_KEYWORDS = [
+  "new passport",
+  "new id card",
+  "new identity card",
+  "new version",
+  "new format",
+  "electronic passport",
+  "digital identity document",
+];
+const ID_SIGNAL_DESIGN_STRONG_KEYWORDS = [
+  "redesigned passport",
+  "redesigned id card",
+  "updated passport design",
+  "updated id card design",
+];
+const ID_SIGNAL_DESIGN_WEAK_KEYWORDS = [
+  "new design",
+  "redesign",
+  "redesigned",
+  "updated design",
+];
+const ID_SIGNAL_SECURITY_STRONG_KEYWORDS = [
+  "hologram",
+  "watermark",
+  "security feature",
+  "uv ink",
+  "biometric",
+];
+const ID_SIGNAL_TECHNOLOGY_STRONG_KEYWORDS = [
+  "chip",
+  "nfc",
+  "machine readable",
+  "mrz",
+  "digital id",
+  "mobile id",
+  "document verification",
+  "identity verification",
+  "liveness",
+  "authentication",
+];
+const ID_SIGNAL_REGULATION_KEYWORDS = [
+  "regulation",
+  "law",
+  "requirement",
+  "compliance",
+  "mandate",
+  "policy",
+  "directive",
+  "new rules",
+  "document requirements",
+  "identity verification rules",
+];
+const ID_SIGNAL_NOISE_KEYWORDS = [
+  "film",
+  "casting",
+  "actor",
+  "actress",
+  "episode",
+  "transcript",
+  "celebrity",
+  "music",
+  "song",
+  "lyrics",
+  "election",
+  "voting",
+  "voter",
+  "crime story",
+  "found passport",
+  "lost passport",
+  "fake passport tracked",
+  "travel chaos",
+  "airport delays",
+  "passport mistake",
+  "passport renewal tips",
+  "passport photo",
+  "car",
+  "honda passport",
+];
 const SIGNAL_RELEVANCE_NOISE_KEYWORDS = [
   "economy",
   "inflation",
@@ -3586,6 +3689,28 @@ function isRelevantSignalText(text) {
     return false;
   }
 
+  const hasIdObject = normalizeKeywordList(ID_SIGNAL_OBJECT_KEYWORDS).some((keyword) =>
+    textMatchesKeyword(text, keyword)
+  );
+  if (hasIdObject) {
+    const hasIdNoise = normalizeKeywordList(ID_SIGNAL_NOISE_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
+    if (hasIdNoise) {
+      return false;
+    }
+
+    const hasIdIntent = [
+      ID_SIGNAL_RELEASE_STRONG_KEYWORDS,
+      ID_SIGNAL_RELEASE_SUPPORT_KEYWORDS,
+      ID_SIGNAL_DESIGN_STRONG_KEYWORDS,
+      ID_SIGNAL_DESIGN_WEAK_KEYWORDS,
+      ID_SIGNAL_SECURITY_STRONG_KEYWORDS,
+      ID_SIGNAL_TECHNOLOGY_STRONG_KEYWORDS,
+      ID_SIGNAL_REGULATION_KEYWORDS,
+    ].some((keywords) => normalizeKeywordList(keywords).some((keyword) => textMatchesKeyword(text, keyword)));
+
+    return hasIdIntent;
+  }
+
   const hasStrictIncludeKeyword = normalizeKeywordList(SIGNAL_STRICT_INCLUDE_KEYWORDS).some((keyword) =>
     textMatchesKeyword(text, keyword)
   );
@@ -3601,6 +3726,52 @@ function isRelevantSignalText(text) {
   }
 
   return normalizeKeywordList(SIGNAL_RELEASE_OBJECT_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
+}
+
+function getIdDocumentSignalMatches(text) {
+  const hasIdObject = normalizeKeywordList(ID_SIGNAL_OBJECT_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
+  if (!hasIdObject) {
+    return [];
+  }
+
+  const hasIdNoise = normalizeKeywordList(ID_SIGNAL_NOISE_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
+  if (hasIdNoise) {
+    return [];
+  }
+
+  const hasAny = (keywords) => normalizeKeywordList(keywords).some((keyword) => textMatchesKeyword(text, keyword));
+  const matches = [];
+  const pushMatch = (id, confidence) => {
+    if (!matches.some((match) => match.id === id)) {
+      matches.push({ id, confidence });
+    }
+  };
+
+  if (hasAny(ID_SIGNAL_REGULATION_KEYWORDS)) {
+    pushMatch("regulations", "high");
+  }
+
+  if (hasAny(ID_SIGNAL_SECURITY_STRONG_KEYWORDS)) {
+    pushMatch("security-features", "high");
+  }
+
+  if (hasAny(ID_SIGNAL_TECHNOLOGY_STRONG_KEYWORDS)) {
+    pushMatch("technology", "high");
+  }
+
+  if (hasAny(ID_SIGNAL_DESIGN_STRONG_KEYWORDS)) {
+    pushMatch("design-changes", "high");
+  } else if (hasAny(ID_SIGNAL_DESIGN_WEAK_KEYWORDS)) {
+    pushMatch("design-changes", "low");
+  }
+
+  if (hasAny(ID_SIGNAL_RELEASE_STRONG_KEYWORDS)) {
+    pushMatch("new-releases", "high");
+  } else if (hasAny(ID_SIGNAL_RELEASE_SUPPORT_KEYWORDS)) {
+    pushMatch("new-releases", "low");
+  }
+
+  return matches;
 }
 
 function getSignalConfidenceLabel(confidence) {
@@ -3644,8 +3815,13 @@ function getArticleSignalMatches(article) {
   const hasDesignChangeSignal = Boolean(
     designChangeCategory && countMatchedKeywords(haystack, designChangeCategory.strong) >= 1
   );
+  const idDocumentMatches = getIdDocumentSignalMatches(haystack);
 
-  return SIGNAL_CATEGORIES.flatMap((category) => {
+  return idDocumentMatches.concat(SIGNAL_CATEGORIES.flatMap((category) => {
+    if (idDocumentMatches.some((match) => match.id === category.id)) {
+      return [];
+    }
+
     const strongMatches = countMatchedKeywords(haystack, category.strong);
     const weakMatches = countMatchedKeywords(haystack, category.weak);
     const excludeKeywords = normalizeKeywordList(category.exclude);
@@ -3696,7 +3872,7 @@ function getArticleSignalMatches(article) {
     }
 
     return [];
-  });
+  }));
 }
 
 function getArticleSignalCategories(article) {
