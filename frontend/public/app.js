@@ -412,6 +412,44 @@ const ID_SIGNAL_REGULATION_KEYWORDS = [
   "document requirements",
   "identity verification rules",
 ];
+const ID_SIGNAL_HIGH_INTENT_KEYWORDS = [
+  "issued",
+  "launched",
+  "introduced",
+  "rolled out",
+  "rollout",
+  "unveiled",
+  "deployed",
+  "implemented",
+  "now in use",
+  "law",
+  "regulation",
+  "mandate",
+  "requirement",
+  "policy change",
+  "directive",
+  "compliance rule",
+  "enforced",
+  "biometric system",
+  "chip-enabled",
+  "nfc passport",
+  "digital id system launched",
+  "identity verification system deployed",
+];
+const ID_SIGNAL_WEAK_INTENT_KEYWORDS = [
+  "how to",
+  "guide",
+  "tips",
+  "explained",
+  "what you need",
+  "why you need",
+  "advice",
+  "overview",
+  "comparison",
+  "opinion",
+  "analysis only",
+  "discussion",
+];
 const ID_SIGNAL_NOISE_KEYWORDS = [
   "film",
   "casting",
@@ -3728,6 +3766,17 @@ function isRelevantSignalText(text) {
   return normalizeKeywordList(SIGNAL_RELEASE_OBJECT_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
 }
 
+function isHighIntentIdentitySignal(text) {
+  const hasWeakIntent = normalizeKeywordList(ID_SIGNAL_WEAK_INTENT_KEYWORDS).some((keyword) =>
+    textMatchesKeyword(text, keyword)
+  );
+  if (hasWeakIntent) {
+    return false;
+  }
+
+  return normalizeKeywordList(ID_SIGNAL_HIGH_INTENT_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
+}
+
 function getIdDocumentSignalMatches(text) {
   const hasIdObject = normalizeKeywordList(ID_SIGNAL_OBJECT_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
   if (!hasIdObject) {
@@ -3736,6 +3785,10 @@ function getIdDocumentSignalMatches(text) {
 
   const hasIdNoise = normalizeKeywordList(ID_SIGNAL_NOISE_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
   if (hasIdNoise) {
+    return [];
+  }
+
+  if (!isHighIntentIdentitySignal(text)) {
     return [];
   }
 
