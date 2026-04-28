@@ -226,7 +226,18 @@ const SIGNAL_CATEGORIES = [
     label: "New releases",
     badgeLabel: "Release",
     strong: ["issued", "released", "launched", "introduced", "unveiled"],
-    weak: ["new", "series", "design"],
+    requiredObjects: ["banknote", "passport", "id card", "identity document", "driver license"],
+    noise: [
+      "central bank",
+      "inflation",
+      "interest rate",
+      "borrowing",
+      "loan",
+      "market",
+      "economy",
+      "investment",
+      "monetary policy",
+    ],
     exclude: [],
   },
   {
@@ -3544,12 +3555,36 @@ function getArticleSignalMatches(article) {
     return [];
   }
 
+  const designChangeCategory = getSignalCategoryById("design-changes");
+  const hasDesignChangeSignal = Boolean(
+    designChangeCategory && countMatchedKeywords(haystack, designChangeCategory.strong) >= 1
+  );
+
   return SIGNAL_CATEGORIES.flatMap((category) => {
     const strongMatches = countMatchedKeywords(haystack, category.strong);
     const weakMatches = countMatchedKeywords(haystack, category.weak);
     const excludeKeywords = normalizeKeywordList(category.exclude);
+    const requiredObjects = normalizeKeywordList(category.requiredObjects);
+    const categoryNoise = normalizeKeywordList(category.noise);
     const hasExcludeMatch = excludeKeywords.some((keyword) => textMatchesKeyword(haystack, keyword));
     if (hasExcludeMatch) {
+      return [];
+    }
+
+    if (category.id === "new-releases") {
+      const hasRequiredObjectMatch = requiredObjects.some((keyword) => textMatchesKeyword(haystack, keyword));
+      const hasCategoryNoise = categoryNoise.some((keyword) => textMatchesKeyword(haystack, keyword));
+      if (!hasRequiredObjectMatch || hasCategoryNoise || hasDesignChangeSignal) {
+        return [];
+      }
+
+      if (strongMatches >= 1) {
+        return [{
+          id: category.id,
+          confidence: "high",
+        }];
+      }
+
       return [];
     }
 
