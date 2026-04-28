@@ -220,6 +220,136 @@ const TOPIC_KEYWORD_RULE_ALIASES = {
   "id documents": "identity document",
   "id card": "identity document",
 };
+const SIGNAL_CATEGORIES = [
+  {
+    id: "new-releases",
+    label: "New releases",
+    include: [
+      "release",
+      "released",
+      "issue",
+      "issued",
+      "launch",
+      "launched",
+      "introduce",
+      "introduced",
+      "new series",
+      "new banknote",
+      "new note",
+      "new coin",
+      "commemorative",
+      "circulation",
+      "rollout",
+      "unveiled",
+      "presented",
+      "announced",
+    ],
+    exclude: [],
+  },
+  {
+    id: "regulations",
+    label: "Regulations",
+    include: [
+      "regulation",
+      "regulations",
+      "rule",
+      "rules",
+      "law",
+      "legislation",
+      "requirement",
+      "requirements",
+      "compliance",
+      "standard",
+      "standards",
+      "mandate",
+      "policy",
+      "directive",
+      "guidance",
+      "official requirement",
+      "identity verification rules",
+      "document requirements",
+    ],
+    exclude: [],
+  },
+  {
+    id: "design-changes",
+    label: "Design changes",
+    include: [
+      "new design",
+      "redesigned",
+      "redesign",
+      "updated design",
+      "design change",
+      "new look",
+      "new series",
+      "motif",
+      "portrait",
+      "symbol",
+      "theme",
+      "visual identity",
+      "polymer design",
+      "banknote design",
+      "passport design",
+      "id card design",
+    ],
+    exclude: [],
+  },
+  {
+    id: "security-features",
+    label: "Security features",
+    include: [
+      "security feature",
+      "security features",
+      "hologram",
+      "watermark",
+      "security thread",
+      "uv ink",
+      "ultraviolet",
+      "optically variable ink",
+      "ovi",
+      "microprint",
+      "microprinting",
+      "intaglio",
+      "guilloche",
+      "tactile feature",
+      "transparent window",
+      "kinegram",
+      "latent image",
+      "color shifting",
+      "anti-counterfeit",
+      "counterfeit prevention",
+      "security printing",
+    ],
+    exclude: [],
+  },
+  {
+    id: "technology",
+    label: "Technology",
+    include: [
+      "biometrics",
+      "biometric",
+      "digital identity",
+      "epassport",
+      "passport chip",
+      "chip",
+      "nfc",
+      "icao",
+      "mobile id",
+      "digital id",
+      "document verification",
+      "identity verification",
+      "ai verification",
+      "liveness detection",
+      "authentication",
+      "machine readable",
+      "mrz",
+      "eid",
+      "electronic id",
+    ],
+    exclude: [],
+  },
+];
+const SIGNAL_CATEGORY_BY_ID = new Map(SIGNAL_CATEGORIES.map((category) => [category.id, category]));
 
 const state = {
   feeds: [],
@@ -241,6 +371,7 @@ const state = {
     search: "",
     topic: "",
     tag: "",
+    signalCategory: "",
     feedId: "",
     dmvFeedId: "",
     canadaDmvFeedPath: "",
@@ -275,6 +406,7 @@ const elements = {
   articleFilterContext: document.getElementById("article-filter-context"),
   topicFilter: document.getElementById("topic-filter"),
   tagFilter: document.getElementById("tag-filter"),
+  signalFilter: document.getElementById("signal-filter"),
   tagAddInput: document.getElementById("tag-add-input"),
   tagAddButton: document.getElementById("tag-add-button"),
   tagResetButton: document.getElementById("tag-reset-button"),
@@ -1183,6 +1315,10 @@ function getFeedQualityExclusionReason(article, feed) {
 
 function articleMatchesCurrentViewFilters(article) {
   if (state.filters.tag && !getArticleFilterTags(article).includes(normalizeFilterTag(state.filters.tag))) {
+    return false;
+  }
+
+  if (state.filters.signalCategory && !getArticleSignalCategories(article).includes(state.filters.signalCategory)) {
     return false;
   }
 
@@ -3369,6 +3505,23 @@ function getArticleKeywordText(article) {
     .toLowerCase();
 }
 
+function getArticleSignalText(article) {
+  return [
+    article.title,
+    article.description,
+    article.summary,
+    article.summaryShort,
+    article.contentSnippet,
+    article.source,
+    article.topic,
+    getArticleTags(article).join(" "),
+    getArticleFilterTags(article).join(" "),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -3397,6 +3550,30 @@ function getTopicKeywordRule(value) {
 
 function getActiveTopicKeywordRule() {
   return getTopicKeywordRule(state.filters.tag) || getTopicKeywordRule(state.filters.topic);
+}
+
+function getSignalCategoryById(signalCategoryId) {
+  return SIGNAL_CATEGORY_BY_ID.get(String(signalCategoryId || "").trim()) || null;
+}
+
+function getArticleSignalCategories(article) {
+  const haystack = getArticleSignalText(article);
+  if (!haystack) {
+    return [];
+  }
+
+  return SIGNAL_CATEGORIES.filter((category) => {
+    const includeKeywords = normalizeKeywordList(category.include);
+    const excludeKeywords = normalizeKeywordList(category.exclude);
+    const hasIncludeMatch = includeKeywords.some((keyword) => textMatchesKeyword(haystack, keyword));
+    if (!hasIncludeMatch) {
+      return false;
+    }
+    if (!excludeKeywords.length) {
+      return true;
+    }
+    return !excludeKeywords.some((keyword) => textMatchesKeyword(haystack, keyword));
+  }).map((category) => category.id);
 }
 
 function isKeywordRuleFalsePositive(article, rule) {
@@ -3483,6 +3660,7 @@ function syncFilterUx() {
   setFieldActive(elements.searchFilter, Boolean(state.filters.search));
   setFieldActive(elements.topicFilter, Boolean(state.filters.topic));
   setFieldActive(elements.tagFilter, Boolean(state.filters.tag));
+  setFieldActive(elements.signalFilter, Boolean(state.filters.signalCategory));
   setFieldActive(elements.includeKeywordsInput, hasCustomIncludeKeywords());
   setFieldActive(elements.excludeKeywordsInput, hasCustomExcludeKeywords());
   setFieldActive(elements.feedFilter, Boolean(state.filters.feedId));
@@ -3511,6 +3689,14 @@ function syncFilterUx() {
   }
   if (state.filters.tag) {
     addActiveFilterChip(fragment, "Tag", state.filters.tag, "tag");
+  }
+  if (state.filters.signalCategory) {
+    addActiveFilterChip(
+      fragment,
+      "Signal",
+      getSignalCategoryById(state.filters.signalCategory)?.label || state.filters.signalCategory,
+      "signal-category"
+    );
   }
   if (hasCustomIncludeKeywords()) {
     addActiveFilterChip(fragment, "Include keywords", `${state.keywordFilters.include.length} terms`, "include-keywords");
@@ -3576,6 +3762,11 @@ function clearActiveFilter(filterKey) {
   } else if (filterKey === "tag") {
     state.filters.tag = "";
     elements.tagFilter.value = "";
+  } else if (filterKey === "signal-category") {
+    state.filters.signalCategory = "";
+    if (elements.signalFilter) {
+      elements.signalFilter.value = "";
+    }
   } else if (filterKey === "include-keywords") {
     setKeywordFilters({ include: DEFAULT_KEYWORD_INCLUDES });
   } else if (filterKey === "exclude-keywords") {
@@ -3614,9 +3805,16 @@ function renderFeedOptions() {
   const topics = Array.from(
     new Set(state.feeds.map((feed) => String(feed.topic || "").trim()).filter(Boolean))
   ).sort();
+  const realArticles = state.articles.filter((article) => !isOfficialFallbackArticle(article));
   const tagCounts = state.articles.reduce((counts, article) => {
     getArticleFilterTags(article).forEach((tag) => {
       counts.set(tag, (counts.get(tag) || 0) + 1);
+    });
+    return counts;
+  }, new Map());
+  const signalCounts = realArticles.reduce((counts, article) => {
+    getArticleSignalCategories(article).forEach((signalCategoryId) => {
+      counts.set(signalCategoryId, (counts.get(signalCategoryId) || 0) + 1);
     });
     return counts;
   }, new Map());
@@ -3663,12 +3861,27 @@ function renderFeedOptions() {
   if (state.filters.tag && !tags.includes(state.filters.tag)) {
     state.filters.tag = "";
   }
+  if (state.filters.signalCategory && !SIGNAL_CATEGORY_BY_ID.has(state.filters.signalCategory)) {
+    state.filters.signalCategory = "";
+  }
 
   if (elements.tagFilter) {
     elements.tagFilter.innerHTML = [`<option value="">All tags</option>`]
       .concat(tags.map((tag) => `<option value="${escapeHtml(tag)}">${escapeHtml(tag)}</option>`))
       .join("");
     elements.tagFilter.value = state.filters.tag;
+  }
+
+  if (elements.signalFilter) {
+    elements.signalFilter.innerHTML = [`<option value="">All signals</option>`]
+      .concat(
+        SIGNAL_CATEGORIES.map((category) => {
+          const count = signalCounts.get(category.id) || 0;
+          return `<option value="${escapeHtml(category.id)}">${escapeHtml(category.label)} (${count})</option>`;
+        })
+      )
+      .join("");
+    elements.signalFilter.value = state.filters.signalCategory;
   }
 
   elements.feedFilter.innerHTML = [`<option value="">All feeds</option>`]
@@ -4006,6 +4219,7 @@ function resetDashboardState() {
   state.filters.search = "";
   state.filters.topic = "";
   state.filters.tag = "";
+  state.filters.signalCategory = "";
   state.filters.feedId = "";
   state.filters.dmvFeedId = "";
   state.filters.canadaDmvFeedPath = "";
@@ -4022,6 +4236,9 @@ function resetDashboardState() {
   }
   if (elements.tagFilter) {
     elements.tagFilter.value = "";
+  }
+  if (elements.signalFilter) {
+    elements.signalFilter.value = "";
   }
   if (elements.feedFilter) {
     elements.feedFilter.value = "";
@@ -4199,6 +4416,10 @@ function articleMatchesFilters(article) {
     return exactArticleIds.includes(article.id);
   }
 
+  if (state.filters.signalCategory && !getArticleSignalCategories(article).includes(state.filters.signalCategory)) {
+    return false;
+  }
+
   const selectedUsDmvEntry = getSelectedUsDmvCatalogEntry();
   if (selectedUsDmvEntry) {
     if (isUsLinkOnlyEntry(selectedUsDmvEntry)) {
@@ -4301,6 +4522,11 @@ function updateArticleFilterContext(articles) {
   }
   if (state.filters.tag) {
     contextParts.push(`tag: ${state.filters.tag}`);
+  }
+  if (state.filters.signalCategory) {
+    contextParts.push(
+      `signal: ${getSignalCategoryById(state.filters.signalCategory)?.label || state.filters.signalCategory}`
+    );
   }
   if (state.filters.date) {
     contextParts.push(`date: ${state.filters.date}`);
@@ -4778,6 +5004,14 @@ function bindEvents() {
     });
   }
 
+  if (elements.signalFilter) {
+    elements.signalFilter.addEventListener("change", (event) => {
+      clearExactArticleFilter();
+      state.filters.signalCategory = String(event.target.value || "").trim();
+      renderArticles();
+    });
+  }
+
   if (elements.tagAddButton) {
     elements.tagAddButton.addEventListener("click", addTagFromInput);
   }
@@ -5045,6 +5279,7 @@ function bindEvents() {
       search: "",
       topic: "",
       tag: "",
+      signalCategory: "",
       feedId: "",
       dmvFeedId: "",
       canadaDmvFeedPath: "",
@@ -5062,6 +5297,9 @@ function bindEvents() {
     elements.topicFilter.value = "";
     if (elements.tagFilter) {
       elements.tagFilter.value = "";
+    }
+    if (elements.signalFilter) {
+      elements.signalFilter.value = "";
     }
     elements.feedFilter.value = "";
     if (elements.dmvFeedFilter) {
