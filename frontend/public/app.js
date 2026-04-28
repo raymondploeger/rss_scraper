@@ -2058,18 +2058,8 @@ function getAlertCandidateRank(candidate) {
   return getAlertPriorityRank(candidate.alert.priorityLevel) + summaryPenalty - dmvBoost;
 }
 
-function getDeltaAlertPriority(delta, isDmvFeed = false) {
-  if (isDmvFeed) {
-    if (delta > 10) {
-      return "high";
-    }
-    if (delta > 2) {
-      return "medium";
-    }
-    return "low";
-  }
-
-  if (delta > 20) {
+function getVolumeAlertPriority(delta) {
+  if (delta > 25) {
     return "high";
   }
   if (delta > 3) {
@@ -2226,8 +2216,9 @@ function generateAlerts(previous, current) {
     const feedNewArticleIds = newArticleIdsByFeed.get(feed.id) || [];
     const liveFeed = current.feedsById?.get(feed.id) || feed;
     const isDmvFeed = isDmvSource(liveFeed);
-    const totalDiffPriority = getDeltaAlertPriority(totalDiff, isDmvFeed);
-    const todayDiffPriority = getDeltaAlertPriority(todayDiff, isDmvFeed);
+    const totalDiffPriority = getVolumeAlertPriority(totalDiff);
+    const todayDiffPriority = getVolumeAlertPriority(todayDiff);
+    const statusAlertPriority = "medium";
 
     if ((canCompareFeedStats && (totalDiff !== 0 || todayDiff !== 0)) || enteredError) {
       feedDiffs.push({
@@ -2258,7 +2249,7 @@ function generateAlerts(previous, current) {
     }
 
     if (canCompareFeedStats && previousTotal === 0 && currentTotal > 0 && totalDiff > 0) {
-      queueAlert(totalDiffPriority, {
+      queueAlert(statusAlertPriority, {
         title: `${feed.name} started producing articles`,
         detail: `${totalDiff} new article${totalDiff === 1 ? "" : "s"} since the previous snapshot.`,
         type: "success",
@@ -2278,7 +2269,7 @@ function generateAlerts(previous, current) {
     }
 
     if (canCompareFeedStats && previousToday === 0 && currentToday > 0 && todayDiff > 0) {
-      queueAlert(todayDiffPriority, {
+      queueAlert(statusAlertPriority, {
         title: `${feed.name} is active again`,
         detail: `+${todayDiff} new article${todayDiff === 1 ? "" : "s"} today.`,
         type: "success",
