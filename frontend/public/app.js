@@ -294,8 +294,6 @@ const SIGNAL_CORE_OBJECT_KEYWORDS = [
   "driver license",
 ];
 const SIGNAL_RELEVANCE_TOPICS = [
-  "banknote",
-  "banknotes",
   "passport",
   "id card",
   "identity document",
@@ -305,6 +303,22 @@ const SIGNAL_RELEVANCE_TOPICS = [
   "polymer note",
   "anti-counterfeit",
   "printing technology",
+];
+const SIGNAL_RELEVANCE_NOISE_KEYWORDS = [
+  "economy",
+  "inflation",
+  "interest rate",
+  "central bank",
+  "monetary policy",
+  "gdp",
+  "forex",
+  "borrowing",
+  "bond",
+  "stock market",
+  "currency rate",
+  "dollar",
+  "euro",
+  "yen",
 ];
 const SIGNAL_NOISE_CONTEXT_KEYWORDS = [
   "central bank",
@@ -3536,6 +3550,13 @@ function hasSignalNoiseContext(text) {
 }
 
 function isRelevantSignalText(text) {
+  const hasNoiseKeyword = normalizeKeywordList(SIGNAL_RELEVANCE_NOISE_KEYWORDS).some((keyword) =>
+    textMatchesKeyword(text, keyword)
+  );
+  if (hasNoiseKeyword) {
+    return false;
+  }
+
   return normalizeKeywordList(SIGNAL_RELEVANCE_TOPICS).some((keyword) => textMatchesKeyword(text, keyword));
 }
 
