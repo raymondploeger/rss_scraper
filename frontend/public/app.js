@@ -308,6 +308,33 @@ const SIGNAL_STRICT_INCLUDE_KEYWORDS = [
   "currency redesign",
   "printing technology",
 ];
+const SIGNAL_RELEASE_VARIANT_KEYWORDS = [
+  "confirmed",
+  "new sig/date",
+  "new signature",
+  "new date",
+  "signature date",
+  "sig/date",
+  "new variety",
+  "new variant",
+  "replacement note",
+  "new note",
+  "issued note",
+  "banknote confirmed",
+];
+const SIGNAL_RELEASE_OBJECT_KEYWORDS = [
+  "banknote",
+  "note",
+  "notes",
+  "quetzal",
+  "dollar",
+  "dinar",
+  "peso",
+  "rupee",
+  "leu",
+  "euro",
+  "currency",
+];
 const SIGNAL_RELEVANCE_NOISE_KEYWORDS = [
   "economy",
   "inflation",
@@ -320,8 +347,6 @@ const SIGNAL_RELEVANCE_NOISE_KEYWORDS = [
   "bond",
   "stock market",
   "currency rate",
-  "dollar",
-  "euro",
   "yen",
 ];
 const SIGNAL_NOISE_CONTEXT_KEYWORDS = [
@@ -3561,7 +3586,21 @@ function isRelevantSignalText(text) {
     return false;
   }
 
-  return normalizeKeywordList(SIGNAL_STRICT_INCLUDE_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
+  const hasStrictIncludeKeyword = normalizeKeywordList(SIGNAL_STRICT_INCLUDE_KEYWORDS).some((keyword) =>
+    textMatchesKeyword(text, keyword)
+  );
+  if (hasStrictIncludeKeyword) {
+    return true;
+  }
+
+  const hasReleaseVariantKeyword = normalizeKeywordList(SIGNAL_RELEASE_VARIANT_KEYWORDS).some((keyword) =>
+    textMatchesKeyword(text, keyword)
+  );
+  if (!hasReleaseVariantKeyword) {
+    return false;
+  }
+
+  return normalizeKeywordList(SIGNAL_RELEASE_OBJECT_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
 }
 
 function getSignalConfidenceLabel(confidence) {
@@ -3620,11 +3659,19 @@ function getArticleSignalMatches(article) {
     if (category.id === "new-releases") {
       const hasRequiredObjectMatch = requiredObjects.some((keyword) => textMatchesKeyword(haystack, keyword));
       const hasCategoryNoise = categoryNoise.some((keyword) => textMatchesKeyword(haystack, keyword));
+      const hasReleaseVariantKeyword = normalizeKeywordList(SIGNAL_RELEASE_VARIANT_KEYWORDS).some((keyword) =>
+        textMatchesKeyword(haystack, keyword)
+      );
+      const hasReleaseObjectKeyword = normalizeKeywordList(SIGNAL_RELEASE_OBJECT_KEYWORDS).some((keyword) =>
+        textMatchesKeyword(haystack, keyword)
+      );
       if (!hasRequiredObjectMatch || hasCategoryNoise || hasDesignChangeSignal) {
-        return [];
+        if (!(hasReleaseVariantKeyword && hasReleaseObjectKeyword) || hasCategoryNoise || hasDesignChangeSignal) {
+          return [];
+        }
       }
 
-      if (strongMatches >= 1) {
+      if (strongMatches >= 1 || (hasReleaseVariantKeyword && hasReleaseObjectKeyword)) {
         return [{
           id: category.id,
           confidence: "high",
