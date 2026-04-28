@@ -4,11 +4,14 @@ const FEED_PANEL_COLLAPSED_STORAGE_KEY = "feedPanelCollapsed";
 const ALERT_SNAPSHOT_STORAGE_KEY = "prevSnapshot";
 const ALERT_DEDUPE_STORAGE_KEY = "recentAlertKeys";
 const ALERT_ARTICLE_FILTER_STORAGE_KEY = "activeAlertArticleFilter";
+const ACTIVITY_LOG_STORAGE_KEY = "dashboardActivityLog";
 const ALERT_DEDUPE_WINDOW_MS = 10 * 60 * 1000;
+const ACTIVITY_LOG_TTL_MS = 24 * 60 * 60 * 1000;
 const POLLING_INTERVAL_MS = 30000;
 const ARTICLE_PAGE_SIZE = 400;
 const NOTIFICATION_TIMEOUT_MS = 7000;
 const DASHBOARD_ALERT_LIMIT = 8;
+const ACTIVITY_LOG_LIMIT = 24;
 const LOW_VALUE_ARTICLE_THRESHOLD = 5;
 const SUMMARY_METRICS = [
   { label: "Active feeds", key: "activeFeeds" },
@@ -259,6 +262,8 @@ const runtime = {
   knownArticleIds: new Set(),
   dashboardAlerts: [],
   dashboardAlertId: 0,
+  activityLog: [],
+  activityLogId: 0,
   previousSnapshotStats: null,
   snapshotLoaded: false,
 };
@@ -1751,6 +1756,45 @@ function dismissDashboardAlert(alertId) {
   renderSummary();
 }
 
+function renderActivityLog() {
+  const activityItems = runtime.activityLog;
+  if (!activityItems.length) {
+    return `<p class="analytics-empty">No recent activity yet.</p>`;
+  }
+
+  return `
+    <div class="activity-log-actions">
+      <button type="button" data-clear-activity-log="true">Clear activity</button>
+    </div>
+    <ol class="dashboard-alert-list activity-log-list">
+      ${activityItems
+        .map((item) => {
+          const isClickable =
+            (Array.isArray(item.articleIds) && item.articleIds.length > 0) || Boolean(item.feedId);
+          const relativeTime = formatRelativeTime(item.createdAt);
+          return `
+            <li
+              class="dashboard-alert activity-log-item is-${item.tone || "info"} priority-${item.priorityLevel || "low"}${isClickable ? " analytics-clickable" : ""}"
+              ${isClickable ? `data-activity-id="${escapeHtml(item.id)}" role="button" tabindex="0" title="Click to view related items"` : ""}
+            >
+              <div>
+                <strong>
+                  <span class="dashboard-alert-priority is-${escapeHtml(item.priorityLevel || "low")}">${escapeHtml(item.priorityLevel || "low")}</span>
+                  ${escapeHtml(item.title)}
+                </strong>
+                ${item.detail ? `<small>${escapeHtml(item.detail)}</small>` : ""}
+                ${item.recommendation ? `<small class="activity-log-recommendation">Next: ${escapeHtml(item.recommendation)}</small>` : ""}
+                ${relativeTime ? `<small class="activity-log-meta">${escapeHtml(relativeTime)}</small>` : ""}
+              </div>
+              <button type="button" data-dismiss-activity-item="${item.id}" aria-label="Dismiss activity item">Dismiss</button>
+            </li>
+          `;
+        })
+        .join("")}
+    </ol>
+  `;
+}
+
 function renderDashboardAlerts() {
   const meaningfulAlerts = runtime.dashboardAlerts.filter((alert) => !alert.isSystemMessage);
   const latestSystemMessage = runtime.dashboardAlerts.find((alert) => alert.isSystemMessage);
@@ -2009,6 +2053,150 @@ function saveAlertSnapshot(snapshot) {
 function getAlertDedupeKey(alert) {
   const exactArticleIds = Array.isArray(alert.articleIds) ? alert.articleIds.join(",") : "";
   return [alert.type || "info", alert.title || "", alert.detail || "", exactArticleIds].join("|").toLowerCase();
+}
+
+function pruneActivityLogEntries(entries, now = Date.now()) {
+  return (Array.isArray(entries) ? entries : [])
+    .filter((entry) => {
+      const createdAt = Number(new Date(entry?.createdAt).getTime());
+      return entry?.key && Number.isFinite(createdAt) && now - createdAt <= ACTIVITY_LOG_TTL_MS;
+    })
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, ACTIVITY_LOG_LIMIT);
+}
+
+function loadStoredActivityLog() {
+  try {
+    return pruneActivityLogEntries(JSON.parse(window.localStorage.getItem(ACTIVITY_LOG_STORAGE_KEY) || "[]"));
+  } catch {
+    return [];
+  }
+}
+
+function saveActivityLog(entries) {
+  const nextEntries = pruneActivityLogEntries(entries);
+  runtime.activityLog = nextEntries;
+  try {
+    window.localStorage.setItem(ACTIVITY_LOG_STORAGE_KEY, JSON.stringify(nextEntries));
+  } catch {
+    // Activity history is a convenience layer; the dashboard still works without storage access.
+  }
+}
+
+function buildActivityRecommendation(activity) {
+  const title = String(activity?.title || "").toLowerCase();
+  const detail = String(activity?.detail || "").toLowerCase();
+
+  if (title.includes("initial load")) {
+    return "Review source history; likely backfill";
+  }
+  if (title.includes("active again") || title.includes("started producing")) {
+    return "Check new articles";
+  }
+  if (title.includes("noisy") || detail.includes("filtered")) {
+    return "Consider adding exclusion keywords";
+  }
+  if (activity?.priorityLevel === "high" && title.includes("article")) {
+    return "Review latest articles";
+  }
+  if ((activity?.tone || activity?.type) === "error") {
+    return "Check feed health and recent source changes";
+  }
+  return "";
+}
+
+function buildActivityKey(activity) {
+  const articleIds = Array.isArray(activity?.articleIds) ? activity.articleIds.join(",") : "";
+  return [
+    activity?.type || "status",
+    activity?.title || "",
+    activity?.detail || "",
+    activity?.feedId || "",
+    activity?.priorityLevel || "low",
+    articleIds,
+  ]
+    .join("|")
+    .toLowerCase();
+}
+
+function createActivityEntry(activity) {
+  runtime.activityLogId += 1;
+  const articleIds = Array.from(new Set((activity.articleIds || []).filter(Boolean))).sort();
+  const priority = activity.priority || activity.priorityLevel || "low";
+  const createdAt = activity.createdAt || new Date().toISOString();
+  return {
+    id: String(runtime.activityLogId),
+    key: activity.key || buildActivityKey(activity),
+    title: activity.title || "",
+    detail: activity.detail || "",
+    recommendation: activity.recommendation || buildActivityRecommendation(activity),
+    priority,
+    priorityLevel: priority,
+    type: activity.type || "status",
+    tone: activity.tone || activity.visualTone || "info",
+    topic: activity.topic || "",
+    todayOnly: Boolean(activity.todayOnly),
+    articleIds,
+    feedId: activity.feedId || "",
+    timestamp: createdAt,
+    createdAt,
+  };
+}
+
+function formatRelativeTime(value) {
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) {
+    return "";
+  }
+
+  const diffMs = Date.now() - timestamp;
+  const diffMinutes = Math.max(0, Math.round(diffMs / 60000));
+  if (diffMinutes < 1) {
+    return "just now";
+  }
+  if (diffMinutes < 60) {
+    return `${diffMinutes} min ago`;
+  }
+
+  const diffHours = Math.round(diffMinutes / 60);
+  if (diffHours < 24) {
+    return `${diffHours} hr ago`;
+  }
+
+  const diffDays = Math.round(diffHours / 24);
+  return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+}
+
+function persistActivityEntries(entries) {
+  const nextEntries = (Array.isArray(entries) ? entries : []).map(createActivityEntry);
+  if (!nextEntries.length) {
+    saveActivityLog(runtime.activityLog);
+    return;
+  }
+
+  const existing = loadStoredActivityLog();
+  const seenKeys = new Set(existing.map((entry) => entry.key));
+  const merged = [...existing];
+
+  nextEntries.forEach((entry) => {
+    if (seenKeys.has(entry.key)) {
+      return;
+    }
+    merged.unshift(entry);
+    seenKeys.add(entry.key);
+  });
+
+  saveActivityLog(merged);
+}
+
+function dismissActivityItem(activityId) {
+  saveActivityLog(runtime.activityLog.filter((item) => item.id !== activityId));
+  renderSummary();
+}
+
+function clearActivityLog() {
+  saveActivityLog([]);
+  renderSummary();
 }
 
 function loadRecentAlertKeys() {
@@ -2375,6 +2563,46 @@ function syncDashboardAlerts(feeds, articles) {
   saveAlertSnapshot(current);
 }
 
+function buildReviewActivityEntries() {
+  const reviewCandidates = getDashboardAnalytics().feedInsights.reviewCandidates || [];
+
+  return reviewCandidates.map((item) => ({
+    key: `review|${item.feedId}|${item.reviewLabel}|${item.reviewPriority}|${item.reviewReason}`.toLowerCase(),
+    title: `${item.name} — ${item.reviewLabel}`,
+    detail: item.reviewReason || "",
+    recommendation:
+      item.reviewLabel === "Noisy" ? "Consider adding exclusion keywords" : "Review feed quality and recent output",
+    priorityLevel: item.reviewPriority || "low",
+    type: "recommendation",
+    tone: item.reviewPriority === "high" ? "error" : item.reviewPriority === "medium" ? "warning" : "info",
+    feedId: item.feedId,
+    topic: item.topic || "",
+    createdAt: new Date().toISOString(),
+  }));
+}
+
+function syncActivityLog() {
+  const alertActivityEntries = runtime.dashboardAlerts
+    .filter((alert) => !alert.isSystemMessage)
+    .map((alert) => ({
+      key: `alert|${getAlertDedupeKey(alert)}`,
+      title: alert.title,
+      detail: alert.detail,
+      priorityLevel: alert.priorityLevel || "low",
+      type:
+        alert.title.includes("active again") || alert.title.includes("started producing")
+          ? "status"
+          : "alert",
+      tone: alert.type || "info",
+      topic: alert.topic || "",
+      todayOnly: alert.todayOnly === true,
+      articleIds: Array.isArray(alert.articleIds) ? alert.articleIds : [],
+      createdAt: new Date().toISOString(),
+    }));
+
+  persistActivityEntries([...alertActivityEntries, ...buildReviewActivityEntries()]);
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -2509,6 +2737,11 @@ function renderAnalyticsCard() {
       <div class="analytics-panel analytics-panel-wide analytics-panel-alerts">
         <span class="analytics-label">Recent alerts</span>
         ${renderDashboardAlerts()}
+      </div>
+      <div class="analytics-panel analytics-panel-wide analytics-panel-activity">
+        <span class="analytics-label">Activity log</span>
+        <p class="analytics-panel-note">Recent meaningful events and recommended next steps from the last 24 hours.</p>
+        ${renderActivityLog()}
       </div>
       <div class="analytics-panel">
         <span class="analytics-label">Analytics scope</span>
@@ -2677,6 +2910,24 @@ function applyAlertArticleFilter(alert) {
   renderDashboard();
 }
 
+function applyActivityItemFilter(activityItem) {
+  if (!activityItem) {
+    return;
+  }
+
+  if (Array.isArray(activityItem.articleIds) && activityItem.articleIds.length) {
+    applyAlertArticleFilter(activityItem);
+    return;
+  }
+
+  if (activityItem.feedId) {
+    applyAnalyticsFeedFilter({
+      feedId: activityItem.feedId,
+      todayOnly: activityItem.todayOnly === true,
+    });
+  }
+}
+
 function applyAnalyticsFilter({ topic, todayOnly = false }) {
   const nextTopic = String(topic || "").trim();
   if (!nextTopic) {
@@ -2783,6 +3034,11 @@ function getAnalyticsFilterTargetFromEvent(event) {
 function getDashboardAlertTargetFromEvent(event) {
   const target = event.target instanceof Element ? event.target : event.target?.parentElement;
   return target?.closest("[data-alert-id]");
+}
+
+function getActivityLogTargetFromEvent(event) {
+  const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+  return target?.closest("[data-activity-id]");
 }
 
 function getAnalyticsScopeTargetFromEvent(event) {
@@ -4282,6 +4538,7 @@ async function loadSnapshot() {
   state.dmvCatalog = Array.isArray(dmvCatalog) ? dmvCatalog : [];
   restoreExactArticleFilterFromSession();
   syncDashboardAlerts(feeds, articles);
+  syncActivityLog();
   renderDashboard();
   syncNewArticleNotifications(articles);
   syncFeedErrorNotifications();
@@ -4577,6 +4834,18 @@ function bindEvents() {
       return;
     }
 
+    const dismissActivityButton = target?.closest("[data-dismiss-activity-item]");
+    if (dismissActivityButton) {
+      dismissActivityItem(dismissActivityButton.dataset.dismissActivityItem || "");
+      return;
+    }
+
+    const clearActivityButton = target?.closest("[data-clear-activity-log]");
+    if (clearActivityButton) {
+      clearActivityLog();
+      return;
+    }
+
     const analyticsScopeTarget = getAnalyticsScopeTargetFromEvent(event);
     if (analyticsScopeTarget) {
       state.analyticsScope = analyticsScopeTarget.dataset.analyticsScope === "active" ? "active" : "all";
@@ -4596,6 +4865,13 @@ function bindEvents() {
     if (dashboardAlertTarget) {
       const alert = runtime.dashboardAlerts.find((item) => item.id === dashboardAlertTarget.dataset.alertId);
       applyAlertArticleFilter(alert);
+      return;
+    }
+
+    const activityTarget = getActivityLogTargetFromEvent(event);
+    if (activityTarget) {
+      const activityItem = runtime.activityLog.find((item) => item.id === activityTarget.dataset.activityId);
+      applyActivityItemFilter(activityItem);
       return;
     }
 
@@ -4629,6 +4905,14 @@ function bindEvents() {
       event.preventDefault();
       const alert = runtime.dashboardAlerts.find((item) => item.id === dashboardAlertTarget.dataset.alertId);
       applyAlertArticleFilter(alert);
+      return;
+    }
+
+    const activityTarget = getActivityLogTargetFromEvent(event);
+    if (activityTarget && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      const activityItem = runtime.activityLog.find((item) => item.id === activityTarget.dataset.activityId);
+      applyActivityItemFilter(activityItem);
       return;
     }
 
@@ -4923,6 +5207,8 @@ async function init() {
   loadTheme();
   loadActiveTags();
   loadKeywordFilters();
+  runtime.activityLog = loadStoredActivityLog();
+  runtime.activityLogId = runtime.activityLog.reduce((maxId, entry) => Math.max(maxId, Number(entry.id) || 0), 0);
   state.noiseKeywordsExpanded = isNoiseKeywordsExpanded();
   state.feedPanelCollapsed = isFeedPanelCollapsed();
   resetDashboardState();

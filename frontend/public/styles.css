@@ -378,6 +378,12 @@ h3 {
   max-height: 320px;
 }
 
+.analytics-panel-activity {
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+}
+
 .analytics-panel-ranking {
   display: flex;
   flex-direction: column;
@@ -612,6 +618,13 @@ h3 {
   scrollbar-width: thin;
 }
 
+.analytics-panel-activity .activity-log-list {
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+
 .dashboard-alert {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -686,6 +699,47 @@ h3 {
 .dashboard-alert.analytics-clickable:focus-visible {
   border-color: rgba(100, 180, 255, 0.6);
   background: rgba(100, 180, 255, 0.05);
+}
+
+.activity-log-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 8px;
+}
+
+.activity-log-actions button,
+.activity-log-item button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 1px;
+}
+
+.activity-log-actions button:hover,
+.activity-log-actions button:focus-visible,
+.activity-log-item button:hover,
+.activity-log-item button:focus-visible {
+  color: var(--accent);
+}
+
+.activity-log-recommendation,
+.activity-log-meta {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.activity-log-recommendation {
+  opacity: 0.9;
+}
+
+.activity-log-meta {
+  opacity: 0.72;
 }
 
 .analytics-empty {
