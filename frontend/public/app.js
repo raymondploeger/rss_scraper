@@ -2058,6 +2058,26 @@ function getAlertCandidateRank(candidate) {
   return getAlertPriorityRank(candidate.alert.priorityLevel) + summaryPenalty - dmvBoost;
 }
 
+function getDeltaAlertPriority(delta, isDmvFeed = false) {
+  if (isDmvFeed) {
+    if (delta > 10) {
+      return "high";
+    }
+    if (delta > 2) {
+      return "medium";
+    }
+    return "low";
+  }
+
+  if (delta > 20) {
+    return "high";
+  }
+  if (delta > 3) {
+    return "medium";
+  }
+  return "low";
+}
+
 function getAlertArticleIdKey(alert) {
   const articleIds = Array.isArray(alert.articleIds) ? alert.articleIds : [];
   return articleIds.slice().sort().join("|");
@@ -2206,8 +2226,8 @@ function generateAlerts(previous, current) {
     const feedNewArticleIds = newArticleIdsByFeed.get(feed.id) || [];
     const liveFeed = current.feedsById?.get(feed.id) || feed;
     const isDmvFeed = isDmvSource(liveFeed);
-    const isLargeSpike = feedNewArticleIds.length >= 10;
-    const newArticlePriority = isLargeSpike ? "high" : isDmvFeed ? "medium" : "low";
+    const totalDiffPriority = getDeltaAlertPriority(totalDiff, isDmvFeed);
+    const todayDiffPriority = getDeltaAlertPriority(todayDiff, isDmvFeed);
 
     if ((canCompareFeedStats && (totalDiff !== 0 || todayDiff !== 0)) || enteredError) {
       feedDiffs.push({
@@ -2238,7 +2258,7 @@ function generateAlerts(previous, current) {
     }
 
     if (canCompareFeedStats && previousTotal === 0 && currentTotal > 0 && totalDiff > 0) {
-      queueAlert(isDmvFeed ? "high" : "medium", {
+      queueAlert(totalDiffPriority, {
         title: `${feed.name} started producing articles`,
         detail: `${totalDiff} new article${totalDiff === 1 ? "" : "s"} since the previous snapshot.`,
         type: "success",
@@ -2247,7 +2267,7 @@ function generateAlerts(previous, current) {
         articleIds: feedNewArticleIds,
       }, alertScore, { dedupeScope: "feed-new-articles", isDmvAlert: isDmvFeed });
     } else if (canCompareFeedStats && totalDiff > 0) {
-      queueAlert(newArticlePriority, {
+      queueAlert(totalDiffPriority, {
         title: `${feed.name}: +${totalDiff} new articles`,
         detail: `${currentTotal} total article${currentTotal === 1 ? "" : "s"} for this feed.`,
         type: "success",
@@ -2258,7 +2278,7 @@ function generateAlerts(previous, current) {
     }
 
     if (canCompareFeedStats && previousToday === 0 && currentToday > 0 && todayDiff > 0) {
-      queueAlert(isDmvFeed ? "high" : "medium", {
+      queueAlert(todayDiffPriority, {
         title: `${feed.name} is active again`,
         detail: `+${todayDiff} new article${todayDiff === 1 ? "" : "s"} today.`,
         type: "success",
@@ -2267,7 +2287,7 @@ function generateAlerts(previous, current) {
         articleIds: feedNewArticleIds,
       }, alertScore, { dedupeScope: "feed-new-articles", isDmvAlert: isDmvFeed });
     } else if (canCompareFeedStats && todayDiff > 0) {
-      queueAlert(newArticlePriority, {
+      queueAlert(todayDiffPriority, {
         title: `${feed.name}: +${todayDiff} new articles today`,
         detail: `${currentToday} article${currentToday === 1 ? "" : "s"} today.`,
         type: "success",
