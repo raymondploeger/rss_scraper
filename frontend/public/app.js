@@ -414,6 +414,7 @@ const ID_SIGNAL_REGULATION_KEYWORDS = [
 ];
 const ID_SIGNAL_HIGH_INTENT_KEYWORDS = [
   "issued",
+  "released",
   "launched",
   "introduced",
   "rolled out",
@@ -422,6 +423,12 @@ const ID_SIGNAL_HIGH_INTENT_KEYWORDS = [
   "deployed",
   "implemented",
   "now in use",
+  "suspended",
+  "blocked",
+  "approved",
+  "rejected",
+  "passed",
+  "adopted",
   "law",
   "regulation",
   "mandate",
@@ -431,10 +438,19 @@ const ID_SIGNAL_HIGH_INTENT_KEYWORDS = [
   "compliance rule",
   "enforced",
   "biometric system",
+  "passport system",
+  "id system",
+  "identity verification system",
+  "border checks",
+  "biometric checks",
   "chip-enabled",
   "nfc passport",
   "digital id system launched",
   "identity verification system deployed",
+  "data breach",
+  "passport data",
+  "identity data",
+  "document fraud network",
 ];
 const ID_SIGNAL_WEAK_INTENT_KEYWORDS = [
   "how to",
@@ -446,9 +462,32 @@ const ID_SIGNAL_WEAK_INTENT_KEYWORDS = [
   "advice",
   "overview",
   "comparison",
+  "step by step",
+  "simple guide",
+  "everything you need to know",
+  "things to know",
+  "faq",
+  "tutorial",
   "opinion",
   "analysis only",
   "discussion",
+];
+const ID_SIGNAL_OVERRIDE_KEYWORDS = [
+  "data breach",
+  "passport data",
+  "identity data",
+  "document fraud network",
+  "biometric system",
+  "identity verification system",
+  "identity verification system deployed",
+  "digital id system launched",
+  "border checks",
+  "biometric checks",
+  "law",
+  "regulation",
+  "mandate",
+  "directive",
+  "enforced",
 ];
 const ID_SIGNAL_NOISE_KEYWORDS = [
   "film",
@@ -3736,17 +3775,7 @@ function isRelevantSignalText(text) {
       return false;
     }
 
-    const hasIdIntent = [
-      ID_SIGNAL_RELEASE_STRONG_KEYWORDS,
-      ID_SIGNAL_RELEASE_SUPPORT_KEYWORDS,
-      ID_SIGNAL_DESIGN_STRONG_KEYWORDS,
-      ID_SIGNAL_DESIGN_WEAK_KEYWORDS,
-      ID_SIGNAL_SECURITY_STRONG_KEYWORDS,
-      ID_SIGNAL_TECHNOLOGY_STRONG_KEYWORDS,
-      ID_SIGNAL_REGULATION_KEYWORDS,
-    ].some((keywords) => normalizeKeywordList(keywords).some((keyword) => textMatchesKeyword(text, keyword)));
-
-    return hasIdIntent;
+    return isAllowedIdentityIntent(text);
   }
 
   const hasStrictIncludeKeyword = normalizeKeywordList(SIGNAL_STRICT_INCLUDE_KEYWORDS).some((keyword) =>
@@ -3766,15 +3795,26 @@ function isRelevantSignalText(text) {
   return normalizeKeywordList(SIGNAL_RELEASE_OBJECT_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
 }
 
-function isHighIntentIdentitySignal(text) {
-  const hasWeakIntent = normalizeKeywordList(ID_SIGNAL_WEAK_INTENT_KEYWORDS).some((keyword) =>
+function isWeakIdentityIntent(text) {
+  return normalizeKeywordList(ID_SIGNAL_WEAK_INTENT_KEYWORDS).some((keyword) =>
     textMatchesKeyword(text, keyword)
   );
-  if (hasWeakIntent) {
+}
+
+function isStrongIdentityIntent(text) {
+  return normalizeKeywordList(ID_SIGNAL_HIGH_INTENT_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
+}
+
+function hasIdentityOverrideSignal(text) {
+  return normalizeKeywordList(ID_SIGNAL_OVERRIDE_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
+}
+
+function isAllowedIdentityIntent(text) {
+  if (isWeakIdentityIntent(text) && !hasIdentityOverrideSignal(text)) {
     return false;
   }
 
-  return normalizeKeywordList(ID_SIGNAL_HIGH_INTENT_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
+  return isStrongIdentityIntent(text);
 }
 
 function getIdDocumentSignalMatches(text) {
@@ -3788,7 +3828,7 @@ function getIdDocumentSignalMatches(text) {
     return [];
   }
 
-  if (!isHighIntentIdentitySignal(text)) {
+  if (!isAllowedIdentityIntent(text)) {
     return [];
   }
 
