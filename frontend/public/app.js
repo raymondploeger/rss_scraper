@@ -224,132 +224,60 @@ const SIGNAL_CATEGORIES = [
   {
     id: "new-releases",
     label: "New releases",
-    include: [
-      "release",
-      "released",
-      "issue",
-      "issued",
-      "launch",
-      "launched",
-      "introduce",
-      "introduced",
-      "new series",
-      "new banknote",
-      "new note",
-      "new coin",
-      "commemorative",
-      "circulation",
-      "rollout",
-      "unveiled",
-      "presented",
-      "announced",
-    ],
+    badgeLabel: "Release",
+    strong: ["issued", "released", "launched", "introduced", "unveiled"],
+    weak: ["new", "series", "design"],
+    mode: "strong-or-weak-context",
     exclude: [],
   },
   {
     id: "regulations",
     label: "Regulations",
-    include: [
-      "regulation",
-      "regulations",
-      "rule",
-      "rules",
-      "law",
-      "legislation",
-      "requirement",
-      "requirements",
-      "compliance",
-      "standard",
-      "standards",
-      "mandate",
-      "policy",
-      "directive",
-      "guidance",
-      "official requirement",
-      "identity verification rules",
-      "document requirements",
-    ],
+    badgeLabel: "Regulation",
+    strong: ["regulation", "law", "requirement", "compliance"],
+    requiredContext: ["passport", "identity", "banknote"],
+    mode: "strong-and-context",
     exclude: [],
   },
   {
     id: "design-changes",
     label: "Design changes",
-    include: [
+    badgeLabel: "Design",
+    strong: [
       "new design",
       "redesigned",
       "redesign",
       "updated design",
       "design change",
-      "new look",
-      "new series",
-      "motif",
-      "portrait",
-      "symbol",
-      "theme",
-      "visual identity",
-      "polymer design",
       "banknote design",
       "passport design",
       "id card design",
     ],
+    weak: ["new series", "motif", "portrait", "symbol", "theme", "visual identity", "polymer design"],
+    mode: "strong-or-weak-context",
     exclude: [],
   },
   {
     id: "security-features",
     label: "Security features",
-    include: [
-      "security feature",
-      "security features",
-      "hologram",
-      "watermark",
-      "security thread",
-      "uv ink",
-      "ultraviolet",
-      "optically variable ink",
-      "ovi",
-      "microprint",
-      "microprinting",
-      "intaglio",
-      "guilloche",
-      "tactile feature",
-      "transparent window",
-      "kinegram",
-      "latent image",
-      "color shifting",
-      "anti-counterfeit",
-      "counterfeit prevention",
-      "security printing",
-    ],
+    badgeLabel: "Security",
+    strong: ["hologram", "watermark", "security feature", "uv ink", "ovi", "microprint", "intaglio"],
+    weak: ["new", "enhanced", "advanced"],
+    mode: "strong-and-weak",
     exclude: [],
   },
   {
     id: "technology",
     label: "Technology",
-    include: [
-      "biometrics",
-      "biometric",
-      "digital identity",
-      "epassport",
-      "passport chip",
-      "chip",
-      "nfc",
-      "icao",
-      "mobile id",
-      "digital id",
-      "document verification",
-      "identity verification",
-      "ai verification",
-      "liveness detection",
-      "authentication",
-      "machine readable",
-      "mrz",
-      "eid",
-      "electronic id",
-    ],
+    badgeLabel: "Technology",
+    strong: ["biometric", "chip", "nfc", "digital id", "verification"],
+    requiredContext: ["passport", "identity"],
+    mode: "strong-and-context",
     exclude: [],
   },
 ];
 const SIGNAL_CATEGORY_BY_ID = new Map(SIGNAL_CATEGORIES.map((category) => [category.id, category]));
+const SIGNAL_RELEVANT_CONTEXT_KEYWORDS = ["banknote", "banknotes", "passport", "identity", "id", "document"];
 
 const state = {
   feeds: [],
@@ -3556,6 +3484,14 @@ function getSignalCategoryById(signalCategoryId) {
   return SIGNAL_CATEGORY_BY_ID.get(String(signalCategoryId || "").trim()) || null;
 }
 
+function countMatchedKeywords(text, keywords = []) {
+  return normalizeKeywordList(keywords).filter((keyword) => textMatchesKeyword(text, keyword)).length;
+}
+
+function hasSignalRelevantContext(text) {
+  return normalizeKeywordList(SIGNAL_RELEVANT_CONTEXT_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
+}
+
 function getArticleSignalCategories(article) {
   const haystack = getArticleSignalText(article);
   if (!haystack) {
@@ -3563,17 +3499,35 @@ function getArticleSignalCategories(article) {
   }
 
   return SIGNAL_CATEGORIES.filter((category) => {
-    const includeKeywords = normalizeKeywordList(category.include);
+    const strongMatches = countMatchedKeywords(haystack, category.strong);
+    const weakMatches = countMatchedKeywords(haystack, category.weak);
     const excludeKeywords = normalizeKeywordList(category.exclude);
-    const hasIncludeMatch = includeKeywords.some((keyword) => textMatchesKeyword(haystack, keyword));
-    if (!hasIncludeMatch) {
+    const requiredContextMatches = countMatchedKeywords(haystack, category.requiredContext);
+    const relevantContextMatch = hasSignalRelevantContext(haystack);
+    const hasExcludeMatch = excludeKeywords.some((keyword) => textMatchesKeyword(haystack, keyword));
+    if (hasExcludeMatch) {
       return false;
     }
-    if (!excludeKeywords.length) {
-      return true;
+
+    if (category.mode === "strong-and-weak") {
+      return strongMatches >= 1 && weakMatches >= 1;
     }
-    return !excludeKeywords.some((keyword) => textMatchesKeyword(haystack, keyword));
+
+    if (category.mode === "strong-and-context") {
+      return strongMatches >= 1 && requiredContextMatches >= 1;
+    }
+
+    if (category.mode === "strong-or-weak-context") {
+      return strongMatches >= 1 || (weakMatches >= 2 && relevantContextMatch);
+    }
+
+    return strongMatches >= 1;
   }).map((category) => category.id);
+}
+
+function getPrimaryArticleSignalCategory(article) {
+  const [primarySignalCategoryId] = getArticleSignalCategories(article);
+  return getSignalCategoryById(primarySignalCategoryId);
 }
 
 function isKeywordRuleFalsePositive(article, rule) {
@@ -4550,7 +4504,9 @@ function renderArticleCard(article) {
   const date = node.querySelector(".article-date");
   const title = node.querySelector(".article-title");
   const feed = node.querySelector(".article-feed");
+  const meta = node.querySelector(".article-meta");
   const finalImageSrc = getArticleImageSrc(article);
+  const primarySignalCategory = getPrimaryArticleSignalCategory(article);
 
   link.href = article.canonicalLink || article.link;
   image.src = finalImageSrc || PLACEHOLDER_IMAGE;
@@ -4566,6 +4522,13 @@ function renderArticleCard(article) {
   date.textContent = formatDate(article.pubDate);
   title.textContent = article.title || "Untitled article";
   feed.textContent = getFeedName(article.feedId);
+
+  if (meta && primarySignalCategory) {
+    const signalBadge = document.createElement("span");
+    signalBadge.className = "article-signal-badge";
+    signalBadge.textContent = primarySignalCategory.badgeLabel || primarySignalCategory.label;
+    meta.appendChild(signalBadge);
+  }
 
   return node;
 }
