@@ -1720,6 +1720,8 @@ function renderLowValueFeedRows(items) {
 function addDashboardAlert({
   title,
   detail = "",
+  contextLine = "",
+  totalLine = "",
   type = "info",
   topic = "",
   todayOnly = false,
@@ -1727,6 +1729,9 @@ function addDashboardAlert({
   priorityLevel = "low",
   isDmvAlert = false,
   isSystemMessage = false,
+  delta = 0,
+  baselineAverage = 0,
+  interpretation = "",
 }) {
   const exactArticleIds = Array.from(new Set((articleIds || []).filter(Boolean))).sort();
   if (isSystemMessage) {
@@ -1739,6 +1744,8 @@ function addDashboardAlert({
     id: String(runtime.dashboardAlertId),
     title,
     detail,
+    contextLine,
+    totalLine,
     type,
     topic,
     todayOnly,
@@ -1746,6 +1753,9 @@ function addDashboardAlert({
     priorityLevel,
     isDmvAlert,
     isSystemMessage,
+    delta,
+    baselineAverage,
+    interpretation,
     createdAt: new Date(),
   });
   runtime.dashboardAlerts = runtime.dashboardAlerts.slice(0, DASHBOARD_ALERT_LIMIT);
@@ -1798,7 +1808,7 @@ function renderActivityLog() {
 function renderDashboardAlerts() {
   const meaningfulAlerts = runtime.dashboardAlerts.filter((alert) => !alert.isSystemMessage);
   const latestSystemMessage = runtime.dashboardAlerts.find((alert) => alert.isSystemMessage);
-  const systemMessage = latestSystemMessage
+  const systemMessage = !meaningfulAlerts.length && latestSystemMessage
     ? `<p class="analytics-empty">System: ${escapeHtml(latestSystemMessage.title)}</p>`
     : "";
 
@@ -1819,10 +1829,11 @@ function renderDashboardAlerts() {
             >
               <div>
                 <strong>
-                  <span class="dashboard-alert-priority is-${escapeHtml(alert.priorityLevel || "low")}">${escapeHtml(alert.priorityLevel || "low")}</span>
+                  <span class="dashboard-alert-priority is-${escapeHtml(alert.priorityLevel || "low")}">${escapeHtml(getAlertPriorityLabel(alert.priorityLevel || "low"))}</span>
                   ${escapeHtml(alert.title)}
                 </strong>
-                ${alert.detail ? `<small>${escapeHtml(alert.detail)}</small>` : ""}
+                ${alert.contextLine ? `<small>${escapeHtml(alert.contextLine)}</small>` : alert.detail ? `<small>${escapeHtml(alert.detail)}</small>` : ""}
+                ${alert.totalLine ? `<small>${escapeHtml(alert.totalLine)}</small>` : ""}
               </div>
               <button type="button" data-dismiss-dashboard-alert="${alert.id}" aria-label="Dismiss alert">Dismiss</button>
             </li>
@@ -2256,6 +2267,48 @@ function getVolumeAlertPriority(delta) {
   return "low";
 }
 
+function getAlertPriorityLabel(priorityLevel) {
+  if (priorityLevel === "high") {
+    return "Spike";
+  }
+  if (priorityLevel === "medium") {
+    return "Elevated";
+  }
+  return "Normal";
+}
+
+function getFeedBaselineAverage(stats) {
+  const recent = Number(stats?.recent) || 0;
+  if (recent <= 0) {
+    return 0;
+  }
+  return recent / 30;
+}
+
+function formatBaselineAverage(value) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "";
+  }
+  const rounded = value >= 10 ? Math.round(value) : Math.round(value * 10) / 10;
+  return `${rounded}/day`;
+}
+
+function getAlertInterpretation(delta, baselineAverage, priorityLevel, isInitialLoadSpike = false) {
+  if (isInitialLoadSpike) {
+    return "Initial load spike detected";
+  }
+  if (!Number.isFinite(delta) || delta <= 0) {
+    return "Normal activity";
+  }
+  if (priorityLevel === "high" || (baselineAverage > 0 && delta >= baselineAverage * 3)) {
+    return "Spike detected";
+  }
+  if (baselineAverage > 0 && delta > baselineAverage) {
+    return "Above normal activity";
+  }
+  return "Normal activity";
+}
+
 function getAlertArticleIdKey(alert) {
   const articleIds = Array.isArray(alert.articleIds) ? alert.articleIds : [];
   return articleIds.slice().sort().join("|");
@@ -2374,11 +2427,17 @@ function generateAlerts(previous, current) {
   }, new Map());
   const newArticleCount = newArticleIds.length;
   if (newArticleCount > 0) {
-    queueAlert("low", {
-      title: `+${newArticleCount} new article${newArticleCount === 1 ? "" : "s"} since last refresh`,
+    const globalPriority = getVolumeAlertPriority(newArticleCount);
+    queueAlert(globalPriority, {
+      title: `All feeds: +${newArticleCount} article${newArticleCount === 1 ? "" : "s"}`,
+      contextLine: `${getAlertInterpretation(newArticleCount, 0, globalPriority)} since the previous snapshot.`,
+      totalLine: `${current.totalArticles} total articles`,
       detail: "Total article count increased since the previous snapshot.",
       type: "info",
       articleIds: newArticleIds,
+      delta: newArticleCount,
+      baselineAverage: 0,
+      interpretation: getAlertInterpretation(newArticleCount, 0, globalPriority),
     }, newArticleCount, { dedupeScope: "global-new-articles" });
   }
 
@@ -2408,6 +2467,18 @@ function generateAlerts(previous, current) {
     const totalDiffPriority = getVolumeAlertPriority(totalDiff);
     const todayDiffPriority = getVolumeAlertPriority(todayDiff);
     const statusAlertPriority = "medium";
+    const baselineAverage = getFeedBaselineAverage(current.feedActivity.get(feed.id));
+    const baselineLabel = formatBaselineAverage(baselineAverage);
+    const totalInterpretation = getAlertInterpretation(totalDiff, baselineAverage, totalDiffPriority, isInitialLoadSpike);
+    const todayInterpretation = getAlertInterpretation(todayDiff, baselineAverage, todayDiffPriority, false);
+    const totalContextLine = baselineLabel
+      ? `${totalInterpretation} (avg: ${baselineLabel})`
+      : totalInterpretation;
+    const todayContextLine = baselineLabel
+      ? `${todayInterpretation} (avg: ${baselineLabel})`
+      : todayInterpretation;
+    const totalLine = `${currentTotal} total article${currentTotal === 1 ? "" : "s"}`;
+    const todayTotalLine = `${currentToday} article${currentToday === 1 ? "" : "s"} today`;
 
     if ((canCompareFeedStats && (totalDiff !== 0 || todayDiff !== 0)) || enteredError) {
       feedDiffs.push({
@@ -2439,41 +2510,65 @@ function generateAlerts(previous, current) {
 
     if (canCompareFeedStats && previousTotal === 0 && currentTotal > 0 && totalDiff > 0) {
       queueAlert(statusAlertPriority, {
-        title: `${feed.name} started producing articles`,
+        title: `${feed.name}: +${totalDiff} article${totalDiff === 1 ? "" : "s"}`,
+        contextLine: baselineLabel
+          ? `${totalContextLine}; started producing articles`
+          : "Started producing articles",
+        totalLine,
         detail: `${totalDiff} new article${totalDiff === 1 ? "" : "s"} since the previous snapshot.`,
         type: "success",
         topic: feed.topic || "",
         todayOnly: false,
         articleIds: feedNewArticleIds,
+        delta: totalDiff,
+        baselineAverage,
+        interpretation: totalInterpretation,
       }, alertScore, { dedupeScope: "feed-new-articles", isDmvAlert: isDmvFeed });
     } else if (canCompareFeedStats && totalDiff > 0) {
       queueAlert(totalDiffPriority, {
         title: `${feed.name}: +${totalDiff} article${totalDiff === 1 ? "" : "s"}${isInitialLoadSpike ? " (initial load)" : ""}`,
+        contextLine: totalContextLine,
+        totalLine,
         detail: `${currentTotal} total article${currentTotal === 1 ? "" : "s"} for this feed.`,
         type: "success",
         topic: feed.topic || "",
         todayOnly: false,
         articleIds: feedNewArticleIds,
+        delta: totalDiff,
+        baselineAverage,
+        interpretation: totalInterpretation,
       }, alertScore, { dedupeScope: "feed-new-articles", isDmvAlert: isDmvFeed });
     }
 
     if (canCompareFeedStats && previousToday === 0 && currentToday > 0 && todayDiff > 0) {
       queueAlert(statusAlertPriority, {
-        title: `${feed.name} is active again`,
+        title: `${feed.name}: +${todayDiff} article${todayDiff === 1 ? "" : "s"}`,
+        contextLine: baselineLabel
+          ? `${todayContextLine}; active again today`
+          : "Active again today",
+        totalLine: todayTotalLine,
         detail: `+${todayDiff} new article${todayDiff === 1 ? "" : "s"} today.`,
         type: "success",
         topic: feed.topic || "",
         todayOnly: true,
         articleIds: feedNewArticleIds,
+        delta: todayDiff,
+        baselineAverage,
+        interpretation: todayInterpretation,
       }, alertScore, { dedupeScope: "feed-new-articles", isDmvAlert: isDmvFeed });
     } else if (canCompareFeedStats && todayDiff > 0) {
       queueAlert(todayDiffPriority, {
-        title: `${feed.name}: +${todayDiff} new articles today`,
+        title: `${feed.name}: +${todayDiff} article${todayDiff === 1 ? "" : "s"}`,
+        contextLine: todayContextLine,
+        totalLine: todayTotalLine,
         detail: `${currentToday} article${currentToday === 1 ? "" : "s"} today.`,
         type: "success",
         topic: feed.topic || "",
         todayOnly: true,
         articleIds: feedNewArticleIds,
+        delta: todayDiff,
+        baselineAverage,
+        interpretation: todayInterpretation,
       }, alertScore, { dedupeScope: "feed-new-articles", isDmvAlert: isDmvFeed });
     } else if (canCompareFeedStats && previousToday > 0 && currentToday === 0) {
       queueAlert("medium", {
