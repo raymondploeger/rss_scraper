@@ -350,6 +350,34 @@ const ID_SIGNAL_OBJECT_KEYWORDS = [
   "epassport",
   "biometric passport",
 ];
+const ID_SIGNAL_VALID_CONTEXT_KEYWORDS = [
+  "passport",
+  "id card",
+  "identity document",
+  "driver license",
+  "residence permit",
+  "national id",
+  "biometric",
+  "border control",
+  "immigration",
+  "identity verification",
+  "digital id",
+  "aadhaar",
+  "e-ktp",
+];
+const ID_SIGNAL_NOISE_CONTEXT_KEYWORDS = [
+  "smartphone",
+  "foldable",
+  "rumor",
+  "rumored",
+  "leak",
+  "speculation",
+  "preview",
+  "hands-on",
+  "review",
+  "concept device",
+  "prototype device",
+];
 const ID_SIGNAL_RELEASE_STRONG_KEYWORDS = [
   "issued",
   "released",
@@ -3801,6 +3829,18 @@ function isWeakIdentityIntent(text) {
   );
 }
 
+function isValidIdentityContext(text) {
+  return normalizeKeywordList(ID_SIGNAL_VALID_CONTEXT_KEYWORDS).some((keyword) =>
+    textMatchesKeyword(text, keyword)
+  );
+}
+
+function isNoiseContext(text) {
+  return normalizeKeywordList(ID_SIGNAL_NOISE_CONTEXT_KEYWORDS).some((keyword) =>
+    textMatchesKeyword(text, keyword)
+  );
+}
+
 function isStrongIdentityIntent(text) {
   return normalizeKeywordList(ID_SIGNAL_HIGH_INTENT_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
 }
@@ -3820,6 +3860,14 @@ function isAllowedIdentityIntent(text) {
 function getIdDocumentSignalMatches(text) {
   const hasIdObject = normalizeKeywordList(ID_SIGNAL_OBJECT_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
   if (!hasIdObject) {
+    return [];
+  }
+
+  if (isNoiseContext(text)) {
+    return [];
+  }
+
+  if (!isValidIdentityContext(text)) {
     return [];
   }
 
