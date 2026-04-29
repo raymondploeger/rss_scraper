@@ -5129,44 +5129,38 @@ function getArticleEntitySignature(article) {
   return entityKeywords.filter((keyword) => textMatchesKeyword(haystack, keyword)).sort().join("|");
 }
 
-function isSimilarArticle(left, right) {
-  const leftTokens = getArticleFingerprintTokens(left);
-  const rightTokens = getArticleFingerprintTokens(right);
-  if (!leftTokens.length || !rightTokens.length) {
-    return false;
+function getIdentityEventKey(article) {
+  const fingerprint = getArticleFingerprint(article);
+  if (!fingerprint) {
+    return "";
   }
 
-  const leftSet = new Set(leftTokens);
-  const rightSet = new Set(rightTokens);
-  const overlapCount = leftTokens.filter((token) => rightSet.has(token)).length;
-  const unionCount = new Set([...leftTokens, ...rightTokens]).size || 1;
-  const overlapRatio = overlapCount / unionCount;
-  if (overlapRatio >= 0.6) {
-    return true;
-  }
-
-  const leftEntitySignature = getArticleEntitySignature(left);
-  const rightEntitySignature = getArticleEntitySignature(right);
-  return Boolean(leftEntitySignature && rightEntitySignature && leftEntitySignature === rightEntitySignature);
+  const fingerprintTokens = getArticleFingerprintTokens(article);
+  const entitySignature = getArticleEntitySignature(article);
+  const coreTokens = fingerprintTokens.slice(0, 6).join(" ");
+  return entitySignature || coreTokens || fingerprint;
 }
 
-function groupSimilarArticlesForDisplay(articles) {
-  const groups = [];
+function groupArticlesByEvent(articles) {
+  const grouped = {};
 
-  articles.forEach((article) => {
-    const existingGroup = groups.find((group) => isSimilarArticle(group[0], article));
-    if (existingGroup) {
-      existingGroup.push(article);
-      return;
+  articles.forEach((article, index) => {
+    const eventKey = getIdentityEventKey(article);
+    const key = eventKey || `single_${index}`;
+
+    if (!grouped[key]) {
+      grouped[key] = [];
     }
 
-    groups.push([article]);
+    grouped[key].push(article);
   });
 
-  return groups.map((group) => {
-    const primaryArticle = group[0];
+  return Object.values(grouped).map((group) => {
+    const primary = group[0];
     return {
-      ...primaryArticle,
+      ...primary,
+      sources: group,
+      sourceCount: group.length,
       groupedArticlesCount: Math.max(0, group.length - 1),
     };
   });
@@ -5262,10 +5256,10 @@ function renderArticleCard(article) {
     meta.appendChild(signalBadge);
   }
 
-  if (meta && Number(article?.groupedArticlesCount || 0) > 0) {
+  if (meta && Number(article?.sourceCount || 0) > 1) {
     const duplicateBadge = document.createElement("span");
     duplicateBadge.className = "article-duplicate-badge";
-    duplicateBadge.textContent = `+${article.groupedArticlesCount} similar reports`;
+    duplicateBadge.textContent = `+ ${article.sourceCount} sources`;
     meta.appendChild(duplicateBadge);
   }
 
@@ -5337,7 +5331,7 @@ function renderSkeletons() {
 }
 
 function renderArticles() {
-  const articles = groupSimilarArticlesForDisplay(getVisibleArticles());
+  const articles = groupArticlesByEvent(getVisibleArticles());
   const selectedUsDmvEntry = getSelectedUsDmvCatalogEntry();
   const selectedUsDmvFeed = getSelectedDmvFeed();
   const selectedCanadaEntry = getSelectedCanadaCatalogEntry();
