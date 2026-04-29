@@ -5130,15 +5130,16 @@ function getArticleEntitySignature(article) {
 }
 
 function getIdentityEventKey(article) {
-  const fingerprint = getArticleFingerprint(article);
-  if (!fingerprint) {
-    return "";
-  }
-
-  const fingerprintTokens = getArticleFingerprintTokens(article);
-  const entitySignature = getArticleEntitySignature(article);
-  const coreTokens = fingerprintTokens.slice(0, 6).join(" ");
-  return entitySignature || coreTokens || fingerprint;
+  const text = `${article?.title || ""} ${article?.description || ""}`
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ");
+  const ignoredWords = new Set(["passport", "identity", "document", "id", "news", "update"]);
+  const keywords = text
+    .split(/\s+/)
+    .map((word) => word.trim())
+    .filter((word) => word.length > 3 && !ignoredWords.has(word));
+  const uniqueKeywords = Array.from(new Set(keywords)).slice(0, 2);
+  return uniqueKeywords.length ? uniqueKeywords.join("-") : null;
 }
 
 function groupArticlesByEvent(articles) {
