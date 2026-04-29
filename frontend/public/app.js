@@ -5216,11 +5216,12 @@ function groupArticlesByEvent(articles) {
 
   return grouped.map((group) => {
     const primary = group[0];
+    const groupedSources = group.slice(1);
     return {
       ...primary,
-      sources: group,
-      sourceCount: group.length,
-      groupedArticlesCount: Math.max(0, group.length - 1),
+      sources: groupedSources,
+      sourceCount: groupedSources.length,
+      groupedArticlesCount: groupedSources.length,
     };
   });
 }
