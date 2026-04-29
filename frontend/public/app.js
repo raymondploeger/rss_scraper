@@ -5393,7 +5393,9 @@ function renderSkeletons() {
 }
 
 function renderArticles() {
-  const articles = groupArticlesByEvent(getVisibleArticles());
+  const grouped = groupArticlesByEvent(getVisibleArticles());
+  console.log("RENDERING COUNT:", grouped.length);
+  const articles = grouped;
   const selectedUsDmvEntry = getSelectedUsDmvCatalogEntry();
   const selectedUsDmvFeed = getSelectedDmvFeed();
   const selectedCanadaEntry = getSelectedCanadaCatalogEntry();
