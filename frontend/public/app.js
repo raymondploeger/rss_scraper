@@ -5078,6 +5078,100 @@ function getArticleCountLabel(count) {
   return `${count} article${count === 1 ? "" : "s"}`;
 }
 
+const ARTICLE_FINGERPRINT_STOP_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "by",
+  "for",
+  "from",
+  "in",
+  "into",
+  "is",
+  "it",
+  "of",
+  "on",
+  "or",
+  "that",
+  "the",
+  "their",
+  "this",
+  "to",
+  "was",
+  "will",
+  "with",
+]);
+
+function getArticleFingerprint(article) {
+  const normalizedTitle = String(article?.title || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ");
+  const tokens = normalizedTitle
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token && !ARTICLE_FINGERPRINT_STOP_WORDS.has(token) && token.length > 2);
+
+  return Array.from(new Set(tokens)).sort().join(" ");
+}
+
+function getArticleFingerprintTokens(article) {
+  const fingerprint = getArticleFingerprint(article);
+  return fingerprint ? fingerprint.split(/\s+/).filter(Boolean) : [];
+}
+
+function getArticleEntitySignature(article) {
+  const haystack = getArticleSignalText(article);
+  const entityKeywords = ["trump", "passport", "design", "id", "identity", "license", "licence", "visa"];
+  return entityKeywords.filter((keyword) => textMatchesKeyword(haystack, keyword)).sort().join("|");
+}
+
+function isSimilarArticle(left, right) {
+  const leftTokens = getArticleFingerprintTokens(left);
+  const rightTokens = getArticleFingerprintTokens(right);
+  if (!leftTokens.length || !rightTokens.length) {
+    return false;
+  }
+
+  const leftSet = new Set(leftTokens);
+  const rightSet = new Set(rightTokens);
+  const overlapCount = leftTokens.filter((token) => rightSet.has(token)).length;
+  const unionCount = new Set([...leftTokens, ...rightTokens]).size || 1;
+  const overlapRatio = overlapCount / unionCount;
+  if (overlapRatio >= 0.6) {
+    return true;
+  }
+
+  const leftEntitySignature = getArticleEntitySignature(left);
+  const rightEntitySignature = getArticleEntitySignature(right);
+  return Boolean(leftEntitySignature && rightEntitySignature && leftEntitySignature === rightEntitySignature);
+}
+
+function groupSimilarArticlesForDisplay(articles) {
+  const groups = [];
+
+  articles.forEach((article) => {
+    const existingGroup = groups.find((group) => isSimilarArticle(group[0], article));
+    if (existingGroup) {
+      existingGroup.push(article);
+      return;
+    }
+
+    groups.push([article]);
+  });
+
+  return groups.map((group) => {
+    const primaryArticle = group[0];
+    return {
+      ...primaryArticle,
+      groupedArticlesCount: Math.max(0, group.length - 1),
+    };
+  });
+}
+
 function updateArticleFilterContext(articles) {
   if (!elements.articleFilterContext) {
     return;
@@ -5168,6 +5262,13 @@ function renderArticleCard(article) {
     meta.appendChild(signalBadge);
   }
 
+  if (meta && Number(article?.groupedArticlesCount || 0) > 0) {
+    const duplicateBadge = document.createElement("span");
+    duplicateBadge.className = "article-duplicate-badge";
+    duplicateBadge.textContent = `+${article.groupedArticlesCount} similar reports`;
+    meta.appendChild(duplicateBadge);
+  }
+
   return node;
 }
 
@@ -5236,7 +5337,7 @@ function renderSkeletons() {
 }
 
 function renderArticles() {
-  const articles = getVisibleArticles();
+  const articles = groupSimilarArticlesForDisplay(getVisibleArticles());
   const selectedUsDmvEntry = getSelectedUsDmvCatalogEntry();
   const selectedUsDmvFeed = getSelectedDmvFeed();
   const selectedCanadaEntry = getSelectedCanadaCatalogEntry();
