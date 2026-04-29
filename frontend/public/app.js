@@ -398,6 +398,26 @@ const ID_SIGNAL_SYSTEM_EVENT_KEYWORDS = [
   "identity platform",
   "verification system",
 ];
+const ID_SIGNAL_SYSTEM_IMPACT_KEYWORDS = [
+  "rollout",
+  "launched",
+  "introduced",
+  "implemented",
+  "deployed",
+  "system upgrade",
+  "mandatory",
+  "enforced",
+  "requirement",
+  "compliance rule",
+  "new law applied",
+  "biometric system change",
+  "passport system change",
+  "id verification change",
+  "border control change",
+  "breach",
+  "fraud network",
+  "system vulnerability",
+];
 const ID_SIGNAL_NON_SYSTEM_NOISE_KEYWORDS = [
   "man",
   "woman",
@@ -417,6 +437,26 @@ const ID_SIGNAL_NON_SYSTEM_NOISE_KEYWORDS = [
   "court case",
   "lawsuit",
   "sues",
+  "supreme court",
+];
+const ID_SIGNAL_NON_IMPACT_KEYWORDS = [
+  "why",
+  "what is",
+  "how to",
+  "guide",
+  "explained",
+  "man",
+  "woman",
+  "individual",
+  "encountered",
+  "unable to",
+  "denied",
+  "says",
+  "backs",
+  "calls for",
+  "criticizes",
+  "court",
+  "lawsuit",
   "supreme court",
 ];
 const ID_SIGNAL_RELEASE_STRONG_KEYWORDS = [
@@ -3894,6 +3934,18 @@ function isNonSystemIdentityNoise(text) {
   );
 }
 
+function hasIdentitySystemImpact(text) {
+  return normalizeKeywordList(ID_SIGNAL_SYSTEM_IMPACT_KEYWORDS).some((keyword) =>
+    textMatchesKeyword(text, keyword)
+  );
+}
+
+function isNonImpactIdentityContent(text) {
+  return normalizeKeywordList(ID_SIGNAL_NON_IMPACT_KEYWORDS).some((keyword) =>
+    textMatchesKeyword(text, keyword)
+  );
+}
+
 function isStrongIdentityIntent(text) {
   return normalizeKeywordList(ID_SIGNAL_HIGH_INTENT_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
 }
@@ -3921,6 +3973,14 @@ function getIdDocumentSignalMatches(text) {
   }
 
   if (!isValidIdentityContext(text)) {
+    return [];
+  }
+
+  if (isNonImpactIdentityContent(text)) {
+    return [];
+  }
+
+  if (!hasIdentitySystemImpact(text)) {
     return [];
   }
 
