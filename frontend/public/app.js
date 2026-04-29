@@ -5142,21 +5142,79 @@ function getIdentityEventKey(article) {
   return uniqueKeywords.length ? uniqueKeywords.join("-") : null;
 }
 
+function getType(article) {
+  const text = getArticleSignalText(article);
+  const hasIdentityKeyword = [
+    "passport",
+    "id card",
+    "identity document",
+    "driver license",
+    "driving licence",
+    "visa",
+    "residence permit",
+  ].some((keyword) => textMatchesKeyword(text, keyword));
+  if (hasIdentityKeyword) {
+    return "identity";
+  }
+
+  const hasBanknoteKeyword = [
+    "banknote",
+    "note",
+    "currency",
+    "quetzal",
+    "dinar",
+    "peso",
+    "rupee",
+    "leu",
+    "euro",
+    "dollar",
+  ].some((keyword) => textMatchesKeyword(text, keyword));
+  if (hasBanknoteKeyword) {
+    return "banknote";
+  }
+
+  return "other";
+}
+
+function isSameEvent(left, right) {
+  const leftType = getType(left);
+  const rightType = getType(right);
+  const sameType = leftType === rightType;
+  if (!sameType) {
+    return false;
+  }
+
+  const leftKeywords = (getIdentityEventKey(left) || "").split("-").filter(Boolean);
+  const rightKeywords = (getIdentityEventKey(right) || "").split("-").filter(Boolean);
+  const rightKeywordSet = new Set(rightKeywords);
+  const overlap = leftKeywords.filter((keyword) => rightKeywordSet.has(keyword)).length;
+  const type = leftType;
+
+  if (type === "identity") {
+    return overlap >= 1;
+  }
+
+  if (type === "banknote") {
+    return overlap >= 2;
+  }
+
+  return overlap >= 2;
+}
+
 function groupArticlesByEvent(articles) {
-  const grouped = {};
+  const grouped = [];
 
-  articles.forEach((article, index) => {
-    const eventKey = getIdentityEventKey(article);
-    const key = eventKey || `single_${index}`;
-
-    if (!grouped[key]) {
-      grouped[key] = [];
+  articles.forEach((article) => {
+    const existingGroup = grouped.find((group) => isSameEvent(group[0], article));
+    if (existingGroup) {
+      existingGroup.push(article);
+      return;
     }
 
-    grouped[key].push(article);
+    grouped.push([article]);
   });
 
-  return Object.values(grouped).map((group) => {
+  return grouped.map((group) => {
     const primary = group[0];
     return {
       ...primary,
