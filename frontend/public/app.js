@@ -5133,6 +5133,9 @@ function getIdentityEventKey(article) {
   const text = `${article?.title || ""} ${article?.description || ""}`
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, " ");
+  if (textMatchesKeyword(text, "trump") && textMatchesKeyword(text, "passport")) {
+    return "identity_trump_passport";
+  }
   const ignoredWords = new Set(["passport", "identity", "document", "id", "news", "update"]);
   const keywords = text
     .split(/\s+/)
