@@ -5276,6 +5276,102 @@ function getArticleEntitySignature(article) {
   return entityKeywords.filter((keyword) => textMatchesKeyword(haystack, keyword)).sort().join("|");
 }
 
+function getBanknoteEventType(article) {
+  const text = getArticleSignalText(article);
+  if (!text) {
+    return "";
+  }
+
+  if (
+    [
+      "new sig/date",
+      "new signature",
+      "new date",
+      "confirmed",
+      "catalog",
+      "reddit",
+      "tiktok",
+      "instagram",
+    ].some((keyword) => textMatchesKeyword(text, keyword))
+  ) {
+    return "noise";
+  }
+
+  if (
+    [
+      "withdraw",
+      "withdrawn",
+      "withdrawal",
+      "demonetised",
+      "demonetized",
+      "out of circulation",
+      "legal tender",
+      "cease legal tender",
+      "exchange deadline",
+    ].some((keyword) => textMatchesKeyword(text, keyword))
+  ) {
+    return "regulation";
+  }
+
+  if (
+    [
+      "new series",
+      "redesign",
+      "redesigned",
+      "new banknote",
+      "new family",
+      "design unveiled",
+    ].some((keyword) => textMatchesKeyword(text, keyword))
+  ) {
+    return "design";
+  }
+
+  if (
+    [
+      "security feature",
+      "polymer",
+      "counterfeit",
+      "anti-counterfeit",
+    ].some((keyword) => textMatchesKeyword(text, keyword))
+  ) {
+    return "security";
+  }
+
+  return "";
+}
+
+function getBanknoteEventCountry(article) {
+  const feed = state.feeds.find((item) => item.id === article?.feedId);
+  const feedCountry = normalizeCountry(article?.country || article?.region || getFeedCountry(feed));
+  if (feedCountry) {
+    return feedCountry;
+  }
+
+  const text = getArticleSignalText(article);
+  if (!text) {
+    return "";
+  }
+
+  const countryKeywords = [
+    ["uk", ["united kingdom", "uk", "britain", "british"]],
+    ["us", ["united states", "usa", "us", "american"]],
+    ["kazakhstan", ["kazakhstan", "kazakh"]],
+    ["bangladesh", ["bangladesh", "bangladeshi", "taka"]],
+    ["guatemala", ["guatemala", "quetzal"]],
+    ["india", ["india", "indian", "rupee"]],
+    ["pakistan", ["pakistan", "pakistani", "rupee"]],
+    ["philippines", ["philippines", "philippine", "peso"]],
+    ["romania", ["romania", "romanian", "leu"]],
+    ["eurozone", ["eurozone", "euro area"]],
+  ];
+
+  const matchedCountry = countryKeywords.find(([, keywords]) =>
+    keywords.some((keyword) => textMatchesKeyword(text, keyword))
+  );
+
+  return matchedCountry ? matchedCountry[0] : "";
+}
+
 function getIdentityEventKey(article) {
   const normalizedText = [
     article?.title || "",
@@ -5324,6 +5420,19 @@ function getIdentityEventKey(article) {
 
   if (isTrumpPassportReleaseStory && !hasTrumpPassportReleaseNoise) {
     return "identity_trump_passport_release";
+  }
+
+  const normalizedTopic = normalizeFilterTag(article?.topic || getFeedTopic(article?.feedId) || "");
+  if (normalizedTopic === "banknotes") {
+    const banknoteEventType = getBanknoteEventType(article);
+    if (banknoteEventType) {
+      if (banknoteEventType === "noise") {
+        return getArticleFingerprint(article) || "";
+      }
+
+      const banknoteCountry = getBanknoteEventCountry(article) || "generic";
+      return `${normalizedTopic}-${banknoteEventType}-${banknoteCountry}`;
+    }
   }
 
   const fingerprint = getArticleFingerprint(article);

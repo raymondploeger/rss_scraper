@@ -1572,6 +1572,14 @@ button.article-duplicate-badge {
   grid-column: 1 / -1;
 }
 
+button.grouped-sources-more {
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
 @media (max-width: 720px) {
   .grouped-sources-inline {
     grid-template-columns: 1fr;
