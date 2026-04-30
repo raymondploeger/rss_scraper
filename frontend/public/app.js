@@ -5132,6 +5132,55 @@ function getArticleEntitySignature(article) {
 }
 
 function getIdentityEventKey(article) {
+  const normalizedText = [
+    article?.title || "",
+    article?.summary || "",
+    article?.description || "",
+    article?.source || "",
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  const hasTrumpPassportReleaseNoise = [
+    "caitlyn",
+    "jenner",
+    "gender",
+    "trans",
+    "transgender",
+    "immigration",
+    "shutdown",
+    "tsa",
+    "study abroad",
+    "cuba",
+    "oil blockade",
+    "population growth",
+  ].some((keyword) => normalizedText.includes(keyword));
+
+  const isTrumpPassportReleaseStory =
+    normalizedText.includes("trump") &&
+    (normalizedText.includes("passport") || normalizedText.includes("passports")) &&
+    [
+      "design",
+      "release",
+      "released",
+      "unveiled",
+      "state department",
+      "america250",
+      "america 250",
+      "250th",
+      "commemorative",
+      "anniversary",
+      "portrait",
+      "face",
+      "image",
+      "signature",
+      "patriot passport",
+    ].some((keyword) => normalizedText.includes(keyword));
+
+  if (isTrumpPassportReleaseStory && !hasTrumpPassportReleaseNoise) {
+    return "identity_trump_passport_release";
+  }
+
   const fingerprint = getArticleFingerprint(article);
   if (!fingerprint) {
     return "";
