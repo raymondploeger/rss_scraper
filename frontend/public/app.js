@@ -5331,7 +5331,17 @@ function renderSkeletons() {
 }
 
 function renderArticles() {
-  const articles = groupArticlesByEvent(getVisibleArticles());
+  let articles;
+
+  if (state.filters.date) {
+    articles = state.articles
+      .filter(articleMatchesFilters)
+      .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+  } else {
+    const visibleArticles = getVisibleArticles();
+    articles = groupArticlesByEvent(visibleArticles);
+  }
+
   const selectedUsDmvEntry = getSelectedUsDmvCatalogEntry();
   const selectedUsDmvFeed = getSelectedDmvFeed();
   const selectedCanadaEntry = getSelectedCanadaCatalogEntry();
