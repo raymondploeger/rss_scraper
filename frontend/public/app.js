@@ -696,6 +696,7 @@ const runtime = {
   activityLogId: 0,
   previousSnapshotStats: null,
   snapshotLoaded: false,
+  expandedGroupedSourceKeys: new Set(),
 };
 
 const elements = {
@@ -5221,8 +5222,54 @@ function updateArticleFilterContext(articles) {
     : "";
 }
 
+function getGroupedArticleStateKey(article) {
+  return String(
+    article?.id ||
+      article?.canonicalLink ||
+      article?.link ||
+      article?.title ||
+      `${article?.feedId || "feed"}-${article?.pubDate || "date"}`
+  );
+}
+
+function getGroupedArticleSources(article) {
+  if (!Array.isArray(article?.sources) || article.sources.length < 2) {
+    return [];
+  }
+
+  const primaryKey = getGroupedArticleStateKey(article);
+  return article.sources.filter((sourceArticle, index) => {
+    if (!sourceArticle) {
+      return false;
+    }
+
+    if (index === 0 && getGroupedArticleStateKey(sourceArticle) === primaryKey) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
+function toggleGroupedArticleSources(article) {
+  const groupedSources = getGroupedArticleSources(article);
+  if (!groupedSources.length) {
+    return;
+  }
+
+  const stateKey = getGroupedArticleStateKey(article);
+  if (runtime.expandedGroupedSourceKeys.has(stateKey)) {
+    runtime.expandedGroupedSourceKeys.delete(stateKey);
+  } else {
+    runtime.expandedGroupedSourceKeys.add(stateKey);
+  }
+
+  renderArticles();
+}
+
 function renderArticleCard(article) {
   const node = elements.articleCardTemplate.content.cloneNode(true);
+  const card = node.querySelector(".article-card");
   const link = node.querySelector(".article-link");
   const image = node.querySelector(".article-image");
   const topic = node.querySelector(".article-topic");
@@ -5233,6 +5280,9 @@ function renderArticleCard(article) {
   const meta = node.querySelector(".article-meta");
   const finalImageSrc = getArticleImageSrc(article);
   const primarySignalCategory = getPrimaryArticleSignalCategory(article);
+  const groupedSources = getGroupedArticleSources(article);
+  const articleStateKey = getGroupedArticleStateKey(article);
+  const isGroupedSourcesExpanded = runtime.expandedGroupedSourceKeys.has(articleStateKey);
 
   link.href = article.canonicalLink || article.link;
   image.src = finalImageSrc || PLACEHOLDER_IMAGE;
@@ -5257,10 +5307,63 @@ function renderArticleCard(article) {
   }
 
   if (meta && Number(article?.sourceCount || 0) > 1) {
-    const duplicateBadge = document.createElement("span");
+    const duplicateBadge = groupedSources.length ? document.createElement("button") : document.createElement("span");
     duplicateBadge.className = "article-duplicate-badge";
     duplicateBadge.textContent = `+ ${article.sourceCount} sources`;
+
+    if (groupedSources.length) {
+      duplicateBadge.type = "button";
+      duplicateBadge.title = isGroupedSourcesExpanded ? "Hide grouped sources" : "Show grouped sources";
+      duplicateBadge.setAttribute("aria-expanded", String(isGroupedSourcesExpanded));
+      duplicateBadge.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleGroupedArticleSources(article);
+      });
+    }
+
     meta.appendChild(duplicateBadge);
+  }
+
+  if (card && groupedSources.length && isGroupedSourcesExpanded) {
+    const sourcePanel = document.createElement("div");
+    sourcePanel.className = "article-inline-sources";
+
+    groupedSources.slice(0, 5).forEach((sourceArticle) => {
+      const row = document.createElement("div");
+      row.className = "article-inline-source-row";
+
+      const header = document.createElement("div");
+      header.className = "article-inline-source-meta";
+      header.textContent = [sourceArticle.source || "Unknown source", formatDate(sourceArticle.pubDate)]
+        .filter(Boolean)
+        .join(" • ");
+
+      const sourceTitle = document.createElement(sourceArticle.canonicalLink || sourceArticle.link ? "a" : "div");
+      sourceTitle.className = "article-inline-source-link";
+      sourceTitle.textContent = sourceArticle.title || "Untitled article";
+
+      if (sourceTitle.tagName === "A") {
+        sourceTitle.href = sourceArticle.canonicalLink || sourceArticle.link;
+        sourceTitle.target = "_blank";
+        sourceTitle.rel = "noopener noreferrer";
+        sourceTitle.addEventListener("click", (event) => {
+          event.stopPropagation();
+        });
+      }
+
+      row.append(header, sourceTitle);
+      sourcePanel.appendChild(row);
+    });
+
+    if (groupedSources.length > 5) {
+      const more = document.createElement("div");
+      more.className = "article-inline-sources-more";
+      more.textContent = `+ ${groupedSources.length - 5} more sources`;
+      sourcePanel.appendChild(more);
+    }
+
+    card.appendChild(sourcePanel);
   }
 
   return node;

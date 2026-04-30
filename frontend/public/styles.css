@@ -1516,6 +1516,49 @@ h3 {
   white-space: nowrap;
 }
 
+button.article-duplicate-badge {
+  cursor: pointer;
+}
+
+.article-inline-sources {
+  margin: 0 18px 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+}
+
+.article-inline-source-row {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.article-inline-source-meta {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.article-inline-source-link {
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.4;
+  text-decoration: none;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+a.article-inline-source-link:hover {
+  text-decoration: underline;
+}
+
+.article-inline-sources-more {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
 .empty-state,
 .error-state {
   padding: 30px;
