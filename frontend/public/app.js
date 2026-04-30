@@ -335,6 +335,57 @@ const SIGNAL_RELEASE_OBJECT_KEYWORDS = [
   "euro",
   "currency",
 ];
+const BANKNOTE_SIGNAL_OBJECT_KEYWORDS = [
+  "banknote",
+  "banknotes",
+  "note",
+  "notes",
+  "currency",
+  "legal tender",
+  "polymer",
+  "security thread",
+];
+const BANKNOTE_HIGH_PRIORITY_KEYWORDS = [
+  "withdraw",
+  "withdrawn",
+  "withdrawal",
+  "demonetised",
+  "demonetized",
+  "demonetisation",
+  "demonetization",
+  "out of circulation",
+  "cease legal tender",
+  "no longer legal tender",
+  "legal tender until",
+  "exchange deadline",
+  "banknote series",
+  "new series",
+  "redesigned",
+  "redesign",
+  "new design",
+  "new banknote design",
+  "new banknote family",
+  "security feature",
+  "security features",
+  "hologram",
+  "windowed thread",
+  "security thread",
+  "polymer",
+  "upgraded banknote",
+  "enhanced security",
+  "counterfeit prevention",
+  "anti-counterfeit",
+];
+const BANKNOTE_LOW_PRIORITY_KEYWORDS = [
+  "new sig/date",
+  "new signature",
+  "new date",
+  "signature date",
+  "confirmed",
+  "reported",
+  "catalog",
+];
+const BANKNOTE_LOW_PRIORITY_CODE_PATTERN = /\bb\d{2,}[a-z]?\b/i;
 const ID_SIGNAL_OBJECT_KEYWORDS = [
   "passport",
   "passports",
@@ -3889,6 +3940,10 @@ function isRelevantSignalText(text) {
     return isAllowedIdentityIntent(text);
   }
 
+  if (hasBanknoteSignalObject(text) && (hasBanknoteHighPrioritySignal(text) || hasBanknoteLowPrioritySignal(text))) {
+    return true;
+  }
+
   const hasStrictIncludeKeyword = normalizeKeywordList(SIGNAL_STRICT_INCLUDE_KEYWORDS).some((keyword) =>
     textMatchesKeyword(text, keyword)
   );
@@ -3962,6 +4017,92 @@ function isAllowedIdentityIntent(text) {
   }
 
   return isStrongIdentityIntent(text);
+}
+
+function hasBanknoteSignalObject(text) {
+  return normalizeKeywordList(BANKNOTE_SIGNAL_OBJECT_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
+}
+
+function hasBanknoteHighPrioritySignal(text) {
+  return normalizeKeywordList(BANKNOTE_HIGH_PRIORITY_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
+}
+
+function hasBanknoteLowPrioritySignal(text) {
+  return normalizeKeywordList(BANKNOTE_LOW_PRIORITY_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword))
+    || BANKNOTE_LOW_PRIORITY_CODE_PATTERN.test(text);
+}
+
+function getBanknoteSignalMatches(text) {
+  if (!hasBanknoteSignalObject(text)) {
+    return [];
+  }
+
+  const matches = [];
+  const pushMatch = (id, confidence) => {
+    const existing = matches.find((match) => match.id === id);
+    if (!existing) {
+      matches.push({ id, confidence });
+      return;
+    }
+
+    if (existing.confidence !== "high" && confidence === "high") {
+      existing.confidence = "high";
+    }
+  };
+  const hasAny = (keywords) => normalizeKeywordList(keywords).some((keyword) => textMatchesKeyword(text, keyword));
+
+  const hasHighPriorityBanknoteSignal = hasBanknoteHighPrioritySignal(text);
+  const hasLowPriorityBanknoteSignal = hasBanknoteLowPrioritySignal(text);
+
+  if (hasAny(["law", "regulation", "regulations", "legislation", "mandate", "policy", "directive"])) {
+    pushMatch("regulations", "high");
+  }
+
+  if (hasAny([
+    "withdraw",
+    "withdrawn",
+    "withdrawal",
+    "demonetised",
+    "demonetized",
+    "demonetisation",
+    "demonetization",
+    "out of circulation",
+    "cease legal tender",
+    "no longer legal tender",
+    "legal tender until",
+    "exchange deadline",
+  ])) {
+    pushMatch("regulations", "high");
+  }
+
+  if (hasAny(["banknote series", "new series", "new banknote family"])) {
+    pushMatch("new-releases", "high");
+  }
+
+  if (hasAny(["redesigned", "redesign", "new design", "new banknote design"])) {
+    pushMatch("design-changes", "high");
+  }
+
+  if (hasAny([
+    "security feature",
+    "security features",
+    "hologram",
+    "windowed thread",
+    "security thread",
+    "polymer",
+    "upgraded banknote",
+    "enhanced security",
+    "counterfeit prevention",
+    "anti-counterfeit",
+  ])) {
+    pushMatch("security-features", "high");
+  }
+
+  if (!hasHighPriorityBanknoteSignal && hasLowPriorityBanknoteSignal) {
+    pushMatch("new-releases", "low");
+  }
+
+  return matches;
 }
 
 function getIdDocumentSignalMatches(text) {
@@ -4080,9 +4221,13 @@ function getArticleSignalMatches(article) {
     designChangeCategory && countMatchedKeywords(haystack, designChangeCategory.strong) >= 1
   );
   const idDocumentMatches = getIdDocumentSignalMatches(haystack);
+  const banknoteMatches = getBanknoteSignalMatches(haystack);
 
-  return idDocumentMatches.concat(SIGNAL_CATEGORIES.flatMap((category) => {
-    if (idDocumentMatches.some((match) => match.id === category.id)) {
+  return idDocumentMatches.concat(banknoteMatches, SIGNAL_CATEGORIES.flatMap((category) => {
+    if (
+      idDocumentMatches.some((match) => match.id === category.id) ||
+      banknoteMatches.some((match) => match.id === category.id)
+    ) {
       return [];
     }
 
