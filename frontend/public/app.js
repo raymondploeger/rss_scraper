@@ -5269,6 +5269,7 @@ function toggleGroupedArticleSources(article) {
 
 function renderArticleCard(article) {
   const node = elements.articleCardTemplate.content.cloneNode(true);
+  const card = node.querySelector(".article-card");
   const link = node.querySelector(".article-link");
   const image = node.querySelector(".article-image");
   const topic = node.querySelector(".article-topic");
@@ -5283,6 +5284,10 @@ function renderArticleCard(article) {
   const groupedSources = getGroupedArticleSources(article);
   const articleStateKey = getGroupedArticleStateKey(article);
   const isGroupedSourcesExpanded = runtime.expandedGroupedSourceKeys.has(articleStateKey);
+
+  if (card && isGroupedSourcesExpanded && groupedSources.length) {
+    card.classList.add("article-card--sources-expanded");
+  }
 
   link.href = article.canonicalLink || article.link;
   image.src = finalImageSrc || PLACEHOLDER_IMAGE;
@@ -5329,7 +5334,7 @@ function renderArticleCard(article) {
     const sourcePanel = document.createElement("div");
     sourcePanel.className = "grouped-sources-inline";
 
-    groupedSources.slice(0, 5).forEach((sourceArticle) => {
+    groupedSources.slice(0, 12).forEach((sourceArticle) => {
       const row = document.createElement("div");
       row.className = "grouped-source-item";
 
@@ -5362,10 +5367,10 @@ function renderArticleCard(article) {
       sourcePanel.appendChild(row);
     });
 
-    if (groupedSources.length > 5) {
+    if (groupedSources.length > 12) {
       const more = document.createElement("div");
       more.className = "grouped-sources-more";
-      more.textContent = `+ ${groupedSources.length - 5} more sources`;
+      more.textContent = `+ ${groupedSources.length - 12} more sources`;
       sourcePanel.appendChild(more);
     }
 
