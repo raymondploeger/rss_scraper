@@ -5269,7 +5269,6 @@ function toggleGroupedArticleSources(article) {
 
 function renderArticleCard(article) {
   const node = elements.articleCardTemplate.content.cloneNode(true);
-  const card = node.querySelector(".article-card");
   const link = node.querySelector(".article-link");
   const image = node.querySelector(".article-image");
   const topic = node.querySelector(".article-topic");
@@ -5277,6 +5276,7 @@ function renderArticleCard(article) {
   const date = node.querySelector(".article-date");
   const title = node.querySelector(".article-title");
   const feed = node.querySelector(".article-feed");
+  const body = node.querySelector(".article-body");
   const meta = node.querySelector(".article-meta");
   const finalImageSrc = getArticleImageSrc(article);
   const primarySignalCategory = getPrimaryArticleSignalCategory(article);
@@ -5325,45 +5325,51 @@ function renderArticleCard(article) {
     meta.appendChild(duplicateBadge);
   }
 
-  if (card && groupedSources.length && isGroupedSourcesExpanded) {
+  if (body && groupedSources.length && isGroupedSourcesExpanded) {
     const sourcePanel = document.createElement("div");
-    sourcePanel.className = "article-inline-sources";
+    sourcePanel.className = "grouped-sources-inline";
 
     groupedSources.slice(0, 5).forEach((sourceArticle) => {
       const row = document.createElement("div");
-      row.className = "article-inline-source-row";
+      row.className = "grouped-source-item";
 
       const header = document.createElement("div");
-      header.className = "article-inline-source-meta";
+      header.className = "grouped-source-meta";
       header.textContent = [sourceArticle.source || "Unknown source", formatDate(sourceArticle.pubDate)]
         .filter(Boolean)
         .join(" • ");
 
-      const sourceTitle = document.createElement(sourceArticle.canonicalLink || sourceArticle.link ? "a" : "div");
-      sourceTitle.className = "article-inline-source-link";
+      const sourceTitle = document.createElement("div");
+      sourceTitle.className = "grouped-source-title";
       sourceTitle.textContent = sourceArticle.title || "Untitled article";
 
-      if (sourceTitle.tagName === "A") {
-        sourceTitle.href = sourceArticle.canonicalLink || sourceArticle.link;
-        sourceTitle.target = "_blank";
-        sourceTitle.rel = "noopener noreferrer";
-        sourceTitle.addEventListener("click", (event) => {
+      row.append(header, sourceTitle);
+
+      const sourceLink = sourceArticle.canonicalLink || sourceArticle.link;
+      if (sourceLink) {
+        const openLink = document.createElement("a");
+        openLink.className = "grouped-source-open";
+        openLink.href = sourceLink;
+        openLink.target = "_blank";
+        openLink.rel = "noopener noreferrer";
+        openLink.textContent = "Open";
+        openLink.addEventListener("click", (event) => {
           event.stopPropagation();
         });
+        row.appendChild(openLink);
       }
 
-      row.append(header, sourceTitle);
       sourcePanel.appendChild(row);
     });
 
     if (groupedSources.length > 5) {
       const more = document.createElement("div");
-      more.className = "article-inline-sources-more";
+      more.className = "grouped-sources-more";
       more.textContent = `+ ${groupedSources.length - 5} more sources`;
       sourcePanel.appendChild(more);
     }
 
-    card.appendChild(sourcePanel);
+    body.appendChild(sourcePanel);
   }
 
   return node;
