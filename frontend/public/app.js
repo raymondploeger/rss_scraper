@@ -697,6 +697,7 @@ const runtime = {
   previousSnapshotStats: null,
   snapshotLoaded: false,
   expandedGroupedSourceKeys: new Set(),
+  fullyExpandedGroupedSourceKeys: new Set(),
 };
 
 const elements = {
@@ -5267,6 +5268,23 @@ function toggleGroupedArticleSources(article) {
   renderArticles();
 }
 
+function toggleGroupedArticleSourceList(article) {
+  const groupedSources = getGroupedArticleSources(article);
+  if (groupedSources.length <= 12) {
+    return;
+  }
+
+  const stateKey = getGroupedArticleStateKey(article);
+  if (runtime.fullyExpandedGroupedSourceKeys.has(stateKey)) {
+    runtime.fullyExpandedGroupedSourceKeys.delete(stateKey);
+  } else {
+    runtime.fullyExpandedGroupedSourceKeys.add(stateKey);
+    runtime.expandedGroupedSourceKeys.add(stateKey);
+  }
+
+  renderArticles();
+}
+
 function renderArticleCard(article) {
   const node = elements.articleCardTemplate.content.cloneNode(true);
   const card = node.querySelector(".article-card");
@@ -5284,6 +5302,7 @@ function renderArticleCard(article) {
   const groupedSources = getGroupedArticleSources(article);
   const articleStateKey = getGroupedArticleStateKey(article);
   const isGroupedSourcesExpanded = runtime.expandedGroupedSourceKeys.has(articleStateKey);
+  const isGroupedSourceListExpanded = runtime.fullyExpandedGroupedSourceKeys.has(articleStateKey);
 
   if (card && isGroupedSourcesExpanded && groupedSources.length) {
     card.classList.add("article-card--sources-expanded");
@@ -5333,8 +5352,9 @@ function renderArticleCard(article) {
   if (body && groupedSources.length && isGroupedSourcesExpanded) {
     const sourcePanel = document.createElement("div");
     sourcePanel.className = "grouped-sources-inline";
+    const visibleGroupedSources = isGroupedSourceListExpanded ? groupedSources : groupedSources.slice(0, 12);
 
-    groupedSources.slice(0, 12).forEach((sourceArticle) => {
+    visibleGroupedSources.forEach((sourceArticle) => {
       const row = document.createElement("div");
       row.className = "grouped-source-item";
 
@@ -5367,10 +5387,16 @@ function renderArticleCard(article) {
       sourcePanel.appendChild(row);
     });
 
-    if (groupedSources.length > 12) {
-      const more = document.createElement("div");
+    if (groupedSources.length > 12 && !isGroupedSourceListExpanded) {
+      const more = document.createElement("button");
+      more.type = "button";
       more.className = "grouped-sources-more";
       more.textContent = `+ ${groupedSources.length - 12} more sources`;
+      more.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleGroupedArticleSourceList(article);
+      });
       sourcePanel.appendChild(more);
     }
 
