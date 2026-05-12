@@ -3924,10 +3924,64 @@ function getArticleTopicType(article) {
   return "noise";
 }
 
+function getPassportEventType(article) {
+  const text = getArticleTopicClassifierText(article);
+  if (!text) {
+    return "passport_noise";
+  }
+
+  const hasAny = (keywords) => normalizeKeywordList(keywords).some((keyword) => textMatchesKeyword(text, keyword));
+
+  if (hasAny(PASSPORT_EVENT_TYPE_RULES.passport_noise)) {
+    return "passport_noise";
+  }
+
+  if (hasAny(PASSPORT_EVENT_TYPE_RULES.passport_ranking)) {
+    return "passport_ranking";
+  }
+
+  if (hasAny(PASSPORT_EVENT_TYPE_RULES.ees_border_control)) {
+    return "ees_border_control";
+  }
+
+  if (hasAny(PASSPORT_EVENT_TYPE_RULES.passport_fraud)) {
+    return "passport_fraud";
+  }
+
+  if (hasAny(PASSPORT_EVENT_TYPE_RULES.passport_processing)) {
+    return "passport_processing";
+  }
+
+  if (hasAny(PASSPORT_EVENT_TYPE_RULES.passport_regulation)) {
+    return "passport_regulation";
+  }
+
+  if (hasAny(PASSPORT_EVENT_TYPE_RULES.passport_design)) {
+    return "passport_design";
+  }
+
+  if (
+    [
+      "passport",
+      "passports",
+      "biometric passport",
+      "e-passport",
+      "epassport",
+      "state department passport",
+    ].some((keyword) => textMatchesKeyword(text, keyword))
+  ) {
+    return "travel_passport_other";
+  }
+
+  return "passport_noise";
+}
+
 function normalizeLoadedArticle(article) {
+  const topicType = getArticleTopicType(article);
   return {
     ...article,
-    topicType: getArticleTopicType(article),
+    topicType,
+    eventType: getArticleEventTypeForTopic(article, topicType),
   };
 }
 
@@ -5418,6 +5472,150 @@ const ARTICLE_TOPIC_TYPE_NOISE_KEYWORDS = [
   "favorite banknotes",
   "beautiful banknotes",
 ];
+const PASSPORT_EVENT_TYPE_RULES = {
+  passport_regulation: [
+    "revoke",
+    "revocation",
+    "child support",
+    "citizenship law",
+    "passport rule",
+    "passport law",
+    "visa requirement",
+    "immigration rule",
+  ],
+  passport_design: [
+    "new passport design",
+    "redesigned passport",
+    "commemorative passport",
+    "america250",
+    "america 250",
+    "portrait",
+    "trump passport design",
+    "passport book size",
+  ],
+  passport_fraud: [
+    "fake passport",
+    "false passport",
+    "stolen identity",
+    "passport fraud",
+    "forged passport",
+    "identity theft",
+  ],
+  passport_processing: [
+    "passport services halted",
+    "passport system failure",
+    "passport renewal",
+    "passport office",
+    "processing delay",
+    "appointment booking",
+  ],
+  passport_ranking: [
+    "passport index",
+    "passport ranking",
+    "strongest passport",
+    "weakest passport",
+    "visa-free access",
+  ],
+  ees_border_control: [
+    "ees",
+    "entry/exit system",
+    "eta",
+    "etias",
+    "biometric border checks",
+    "passport stamps",
+    "border delays",
+  ],
+  passport_noise: [
+    "digital product passport",
+    "product passport",
+    "material passport",
+    "pet passport",
+    "farmers market passport",
+    "skills passport",
+    "talent passport",
+    "cultural passport",
+    "roadmap passport",
+    "road map passport",
+    "phone passport design",
+    "foldable passport-style",
+    "passport program",
+    "passport scheme",
+    "metaphorical passport",
+  ],
+};
+const BANKNOTE_EVENT_TYPE_RULES = {
+  banknote_new_design: [
+    "redesign",
+    "redesigned",
+    "new design",
+    "design unveiled",
+    "portrait change",
+    "new banknote design",
+  ],
+  banknote_new_series: [
+    "new series",
+    "new banknote series",
+    "new family",
+    "new note family",
+    "enter circulation",
+    "enters circulation",
+  ],
+  banknote_signature_change: [
+    "new sig/date",
+    "new signature",
+    "new date",
+    "signature date",
+    "confirmed",
+  ],
+  banknote_withdrawal: [
+    "withdrawn",
+    "withdrawal",
+    "withdrawn from circulation",
+    "out of circulation",
+    "no longer legal tender",
+    "legal tender until",
+    "demonetized",
+    "demonetised",
+    "exchange deadline",
+  ],
+  counterfeit_banknotes: [
+    "counterfeit",
+    "fake banknote",
+    "forged banknote",
+    "fraud",
+    "seizure",
+    "fake notes",
+    "counterfeit notes",
+  ],
+  commemorative_note: [
+    "commemorative",
+    "anniversary note",
+    "centennial",
+    "honouring",
+    "honoring",
+  ],
+  polymer_transition: [
+    "polymer",
+    "plastic banknote",
+    "substrate",
+    "security feature",
+    "windowed thread",
+    "hologram",
+  ],
+  banknote_auction_noise: [
+    "catalog",
+    "shop",
+    "for sale",
+    "ebay",
+    "pmg",
+    "pcgs",
+    "reddit",
+    "tiktok",
+    "instagram collection",
+    "favorite banknotes",
+    "beautiful banknotes",
+  ],
+};
 
 function getArticleFingerprint(article) {
   const normalizedTitle = String(article?.title || "")
@@ -5559,18 +5757,39 @@ function isIdentityLikeArticle(article) {
 function getBanknoteEventType(article) {
   const text = getArticleSignalText(article);
   if (!text) {
-    return "";
+    return "banknote_other";
+  }
+
+  if (
+    [
+      "catalog",
+      "shop",
+      "for sale",
+      "ebay",
+      "pmg",
+      "pcgs",
+      "reddit",
+      "tiktok",
+      "instagram collection",
+      "favorite banknotes",
+      "beautiful banknotes",
+    ].some((keyword) => textMatchesKeyword(text, keyword))
+  ) {
+    return "banknote_auction_noise";
   }
 
   if (
     [
       "counterfeit",
-      "fake",
-      "forged",
+      "fake banknote",
+      "forged banknote",
       "fraud",
+      "seizure",
+      "fake notes",
+      "counterfeit notes",
     ].some((keyword) => textMatchesKeyword(text, keyword))
   ) {
-    return "fraud/counterfeit";
+    return "counterfeit_banknotes";
   }
 
   if (
@@ -5578,57 +5797,116 @@ function getBanknoteEventType(article) {
       "new sig/date",
       "new signature",
       "new date",
+      "signature date",
       "confirmed",
-      "catalog",
-      "reddit",
-      "tiktok",
-      "instagram",
-    ].some((keyword) => textMatchesKeyword(text, keyword))
+    ].some((keyword) => textMatchesKeyword(text, keyword)) || BANKNOTE_LOW_PRIORITY_CODE_PATTERN.test(text)
   ) {
-    return "noise";
+    return "banknote_signature_change";
   }
 
   if (
     [
-      "withdraw",
       "withdrawn",
       "withdrawal",
+      "withdrawn from circulation",
       "demonetised",
       "demonetized",
       "out of circulation",
-      "legal tender",
-      "cease legal tender",
+      "no longer legal tender",
+      "legal tender until",
       "exchange deadline",
     ].some((keyword) => textMatchesKeyword(text, keyword))
   ) {
-    return "regulation";
+    return "banknote_withdrawal";
   }
 
   if (
     [
+      "new banknote series",
       "new series",
-      "redesign",
-      "redesigned",
-      "new banknote",
+      "new note family",
       "new family",
-      "design unveiled",
+      "enter circulation",
+      "enters circulation",
     ].some((keyword) => textMatchesKeyword(text, keyword))
   ) {
-    return "design";
+    return "banknote_new_series";
+  }
+
+  if (
+    [
+      "redesign",
+      "redesigned",
+      "new design",
+      "design unveiled",
+      "portrait change",
+      "new banknote design",
+    ].some((keyword) => textMatchesKeyword(text, keyword))
+  ) {
+    return "banknote_new_design";
+  }
+
+  if (
+    [
+      "commemorative",
+      "anniversary note",
+      "centennial",
+      "honouring",
+      "honoring",
+    ].some((keyword) => textMatchesKeyword(text, keyword))
+  ) {
+    return "commemorative_note";
   }
 
   if (
     [
       "security feature",
       "polymer",
-      "counterfeit",
-      "anti-counterfeit",
+      "plastic banknote",
+      "substrate",
+      "windowed thread",
+      "hologram",
     ].some((keyword) => textMatchesKeyword(text, keyword))
   ) {
-    return "security";
+    return "polymer_transition";
   }
 
-  return "";
+  return "banknote_other";
+}
+
+function getArticleEventTypeForTopic(article, topicType = getArticleTopicType(article)) {
+  switch (topicType) {
+    case "banknote":
+      return getBanknoteEventType(article);
+    case "travel_passport":
+      return getPassportEventType(article);
+    case "identity_document":
+    case "digital_identity":
+    case "dmv_driver_license":
+      return getArticleEventType(article);
+    default:
+      return "noise";
+  }
+}
+
+function getBanknoteGroupingType(eventType) {
+  switch (eventType) {
+    case "banknote_signature_change":
+    case "banknote_auction_noise":
+      return "noise";
+    case "banknote_withdrawal":
+      return "regulation";
+    case "banknote_new_design":
+    case "banknote_new_series":
+    case "commemorative_note":
+      return "design";
+    case "polymer_transition":
+      return "security";
+    case "counterfeit_banknotes":
+      return "fraud/counterfeit";
+    default:
+      return "";
+  }
 }
 
 function getBanknoteEventCountry(article) {
@@ -5716,8 +5994,9 @@ function getIdentityEventKey(article) {
   const normalizedTopic = normalizeFilterTag(article?.topic || getFeedTopic(article?.feedId) || "");
   if (normalizedTopic === "banknotes") {
     const banknoteEventType = getBanknoteEventType(article);
-    if (banknoteEventType) {
-      if (banknoteEventType === "noise") {
+    const banknoteGroupingType = getBanknoteGroupingType(banknoteEventType);
+    if (banknoteGroupingType) {
+      if (banknoteGroupingType === "noise") {
         return getArticleFingerprint(article) || "";
       }
 
@@ -5728,7 +6007,7 @@ function getIdentityEventKey(article) {
         return getArticleFingerprint(article) || "";
       }
 
-      return `${normalizedTopic}-${banknoteEventType}-${banknoteCountry}-${banknoteTerms.join("-") || "generic"}`;
+      return `${normalizedTopic}-${banknoteGroupingType}-${banknoteCountry}-${banknoteTerms.join("-") || "generic"}`;
     }
   }
 
