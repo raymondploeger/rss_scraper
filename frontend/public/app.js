@@ -4035,8 +4035,8 @@ function getGovernmentDocumentConfidence(article) {
   return score;
 }
 
-function getIdentityDocumentRelevance(article) {
-  const text = [
+function getIdentityDocumentContextText(article) {
+  return [
     article?.title,
     article?.description,
     article?.summary,
@@ -4047,11 +4047,38 @@ function getIdentityDocumentRelevance(article) {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+}
+
+function getIdentityContextSignals(article) {
+  const text = getIdentityDocumentContextText(article);
+  const hasAny = (keywords) => normalizeKeywordList(keywords).some((keyword) => textMatchesKeyword(text, keyword));
+
+  return {
+    government: hasAny(IDENTITY_CONTEXT_KEYWORDS.government),
+    border: hasAny(IDENTITY_CONTEXT_KEYWORDS.border),
+    immigration: hasAny(IDENTITY_CONTEXT_KEYWORDS.immigration),
+    fraud: hasAny(IDENTITY_CONTEXT_KEYWORDS.fraud),
+    security: hasAny(IDENTITY_CONTEXT_KEYWORDS.security),
+    issuance: hasAny(IDENTITY_CONTEXT_KEYWORDS.issuance),
+    infrastructure: hasAny(IDENTITY_CONTEXT_KEYWORDS.infrastructure),
+    travelRule: hasAny(IDENTITY_CONTEXT_KEYWORDS.travelRule),
+    unrelatedLifestyle: hasAny(IDENTITY_CONTEXT_KEYWORDS.unrelatedLifestyle),
+    sports: hasAny(IDENTITY_CONTEXT_KEYWORDS.sports),
+    pets: hasAny(IDENTITY_CONTEXT_KEYWORDS.pets),
+    entertainment: hasAny(IDENTITY_CONTEXT_KEYWORDS.entertainment),
+    education: hasAny(IDENTITY_CONTEXT_KEYWORDS.education),
+    genericTravel: hasAny(IDENTITY_CONTEXT_KEYWORDS.genericTravel),
+  };
+}
+
+function getIdentityDocumentRelevance(article) {
+  const text = getIdentityDocumentContextText(article);
 
   if (!text) {
     return 0;
   }
 
+  const context = getIdentityContextSignals(article);
   let score = 0;
   normalizeKeywordList(IDENTITY_DOCUMENT_HIGH_RELEVANCE_SIGNALS).forEach((keyword) => {
     if (textMatchesKeyword(text, keyword)) {
@@ -4068,8 +4095,94 @@ function getIdentityDocumentRelevance(article) {
       score -= 8;
     }
   });
+  if (context.government) {
+    score += 6;
+  }
+  if (context.border) {
+    score += 6;
+  }
+  if (context.immigration) {
+    score += 6;
+  }
+  if (context.fraud) {
+    score += 6;
+  }
+  if (context.security) {
+    score += 5;
+  }
+  if (context.issuance) {
+    score += 5;
+  }
+  if (context.infrastructure) {
+    score += 5;
+  }
+  if (context.travelRule) {
+    score += 4;
+  }
+  if (context.unrelatedLifestyle) {
+    score -= 10;
+  }
+  if (context.sports) {
+    score -= 10;
+  }
+  if (context.pets) {
+    score -= 10;
+  }
+  if (context.entertainment) {
+    score -= 8;
+  }
+  if (context.education) {
+    score -= 8;
+  }
+  if (context.genericTravel) {
+    score -= 8;
+  }
 
   return score;
+}
+
+function shouldRejectPassportArticle(article) {
+  const topicText = [
+    article?.title,
+    article?.topic,
+    article?.topicType,
+    getArticleTags(article).join(" "),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const hasPassportKeyword = article?.topicType === "travel_passport"
+    || textMatchesKeyword(topicText, "passport")
+    || textMatchesKeyword(topicText, "passports");
+
+  if (!hasPassportKeyword) {
+    return false;
+  }
+
+  const context = getIdentityContextSignals(article);
+  const hasStrongPositiveContext = context.government
+    || context.border
+    || context.immigration
+    || context.fraud
+    || context.security
+    || context.issuance
+    || context.infrastructure
+    || context.travelRule;
+
+  if (hasStrongPositiveContext) {
+    return false;
+  }
+
+  const negativeContextCount = [
+    context.unrelatedLifestyle,
+    context.sports,
+    context.pets,
+    context.entertainment,
+    context.education,
+    context.genericTravel,
+  ].filter(Boolean).length;
+
+  return negativeContextCount > 0 && getIdentityDocumentRelevance(article) < IDENTITY_DOCUMENT_RELEVANCE_THRESHOLD;
 }
 
 function isLowRelevancePassportArticle(article) {
@@ -4089,7 +4202,8 @@ function isLowRelevancePassportArticle(article) {
     return false;
   }
 
-  return getIdentityDocumentRelevance(article) < IDENTITY_DOCUMENT_RELEVANCE_THRESHOLD;
+  return shouldRejectPassportArticle(article)
+    || getIdentityDocumentRelevance(article) < IDENTITY_DOCUMENT_RELEVANCE_THRESHOLD;
 }
 
 function isRealTravelDocumentArticle(article) {
@@ -4098,7 +4212,7 @@ function isRealTravelDocumentArticle(article) {
     return false;
   }
 
-  if (isPassportNoiseArticle(article) || isHardPassportNoise(article)) {
+  if (isPassportNoiseArticle(article) || isHardPassportNoise(article) || shouldRejectPassportArticle(article)) {
     return false;
   }
 
@@ -5471,12 +5585,36 @@ function getVisibleArticles() {
     })
     .filter((article) => {
       const relevance = getIdentityDocumentRelevance(article);
-      const rejected = isLowRelevancePassportArticle(article);
-      if (rejected) {
-        console.debug("[identity-relevance]", {
+      const rejected = shouldRejectPassportArticle(article) || isLowRelevancePassportArticle(article);
+      const topicText = [
+        article?.title,
+        article?.topic,
+        article?.topicType,
+        getArticleTags(article).join(" "),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      const hasPassportKeyword = article?.topicType === "travel_passport"
+        || textMatchesKeyword(topicText, "passport")
+        || textMatchesKeyword(topicText, "passports");
+
+      if (hasPassportKeyword) {
+        const context = getIdentityContextSignals(article);
+        const rejectedReason = rejected
+          ? context.sports ? "sports"
+            : context.pets ? "pets"
+            : context.education ? "education"
+            : context.unrelatedLifestyle ? "lifestyle"
+            : context.entertainment ? "entertainment"
+            : context.genericTravel ? "generic travel"
+            : "low relevance"
+          : "";
+        console.debug("[passport-context-filter]", {
           title: article?.title || "Untitled article",
-          relevance,
-          rejected,
+          kept: !rejected,
+          rejectedReason,
+          score: relevance,
         });
       }
 
@@ -5887,6 +6025,121 @@ const IDENTITY_DOCUMENT_NEGATIVE_RELEVANCE_SIGNALS = [
   "civic passport",
 ];
 const IDENTITY_DOCUMENT_RELEVANCE_THRESHOLD = 3;
+const IDENTITY_CONTEXT_KEYWORDS = {
+  government: [
+    "ministry",
+    "government",
+    "passport office",
+    "state department",
+    "citizenship",
+    "nationality",
+    "law",
+    "regulation",
+  ],
+  border: [
+    "border control",
+    "border crossing",
+    "customs",
+    "airport border",
+    "entry exit system",
+    "ees",
+    "etias",
+    "biometric checks",
+  ],
+  immigration: [
+    "immigration",
+    "visa",
+    "asylum",
+    "deportation",
+    "residency",
+    "permit",
+    "immigration enforcement",
+  ],
+  fraud: [
+    "fraud",
+    "passport fraud",
+    "forged",
+    "forged passport",
+    "counterfeit",
+    "revocation",
+  ],
+  security: [
+    "icao",
+    "biometric",
+    "document security",
+    "travel document",
+    "identity",
+    "digital id",
+    "eid",
+    "kyc",
+  ],
+  issuance: [
+    "issuance",
+    "passport issuance",
+    "passport renewal",
+    "passport revocation",
+  ],
+  infrastructure: [
+    "identity system",
+    "national id",
+    "identity card",
+    "residence permit",
+    "digital id",
+    "eid",
+  ],
+  travelRule: [
+    "travel restriction",
+    "visa policy",
+    "entry requirements",
+    "immigration policy",
+    "visa waiver",
+  ],
+  unrelatedLifestyle: [
+    "influencer",
+    "celebrity",
+    "wedding",
+    "backpacker",
+    "safari",
+    "holiday advice",
+    "vacation tips",
+    "travel hacks",
+    "tourist guide",
+  ],
+  sports: [
+    "football",
+    "soccer",
+    "club",
+    "player",
+    "transfer",
+    "coach",
+    "match",
+  ],
+  pets: [
+    "pet passport",
+    "dog",
+    "cat",
+    "animal travel",
+  ],
+  entertainment: [
+    "entertainment",
+    "reality tv",
+    "easter",
+    "blog post",
+    "generic health",
+  ],
+  education: [
+    "study abroad",
+    "university",
+    "student exchange",
+  ],
+  genericTravel: [
+    "travel lifestyle",
+    "travel anecdote",
+    "generic travel",
+    "travel warning",
+    "travel story",
+  ],
+};
 const BANKNOTE_EVENT_TYPE_RULES = {
   banknote_new_design: [
     "redesign",
