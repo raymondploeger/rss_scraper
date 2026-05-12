@@ -3874,6 +3874,63 @@ function getArticleSignalText(article) {
     .toLowerCase();
 }
 
+function getArticleTopicClassifierText(article) {
+  return [
+    article?.title,
+    article?.description,
+    article?.summary,
+    article?.summaryShort,
+    article?.contentSnippet,
+    article?.source,
+    article?.topic,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function getArticleTopicType(article) {
+  const text = getArticleTopicClassifierText(article);
+  if (!text) {
+    return "noise";
+  }
+
+  const hasAny = (keywords) => normalizeKeywordList(keywords).some((keyword) => textMatchesKeyword(text, keyword));
+
+  if (hasAny(ARTICLE_TOPIC_TYPE_NOISE_KEYWORDS)) {
+    return "noise";
+  }
+
+  if (hasAny(ARTICLE_TOPIC_TYPE_BANKNOTE_KEYWORDS)) {
+    return "banknote";
+  }
+
+  if (hasAny(ARTICLE_TOPIC_TYPE_DRIVER_LICENSE_KEYWORDS)) {
+    return "dmv_driver_license";
+  }
+
+  if (hasAny(ARTICLE_TOPIC_TYPE_DIGITAL_IDENTITY_KEYWORDS)) {
+    return "digital_identity";
+  }
+
+  if (hasAny(ARTICLE_TOPIC_TYPE_IDENTITY_DOCUMENT_KEYWORDS)) {
+    return "identity_document";
+  }
+
+  if (hasAny(ARTICLE_TOPIC_TYPE_TRAVEL_PASSPORT_KEYWORDS)) {
+    return "travel_passport";
+  }
+
+  return "noise";
+}
+
+function normalizeLoadedArticle(article) {
+  return {
+    ...article,
+    topicType: getArticleTopicType(article),
+  };
+}
+
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -5293,6 +5350,74 @@ const GROUPING_EVENT_ENTITY_KEYWORDS = [
   ["guatemala", ["guatemala", "quetzal"]],
   ["bangladesh", ["bangladesh", "bangladeshi", "taka"]],
 ];
+const ARTICLE_TOPIC_TYPE_BANKNOTE_KEYWORDS = [
+  "banknote",
+  "banknotes",
+  "currency note",
+  "paper money",
+  "legal tender",
+  "central bank",
+  "polymer note",
+  "counterfeit note",
+  "demonetization",
+  "demonetisation",
+  "withdrawn from circulation",
+];
+const ARTICLE_TOPIC_TYPE_IDENTITY_DOCUMENT_KEYWORDS = [
+  "identity card",
+  "id card",
+  "national id",
+  "biometric id",
+  "identity document",
+  "birth certificate",
+  "residence permit",
+];
+const ARTICLE_TOPIC_TYPE_TRAVEL_PASSPORT_KEYWORDS = [
+  "passport issuance",
+  "passport renewal",
+  "passport revocation",
+  "passport services",
+  "passport office",
+  "state department passport",
+  "biometric passport",
+  "e-passport",
+  "epassport",
+];
+const ARTICLE_TOPIC_TYPE_DIGITAL_IDENTITY_KEYWORDS = [
+  "digital id",
+  "eid",
+  "electronic id",
+  "mobile id",
+  "identity verification",
+];
+const ARTICLE_TOPIC_TYPE_DRIVER_LICENSE_KEYWORDS = [
+  "driver licence",
+  "driver license",
+  "drivers license",
+  "driver's license",
+  "dmv",
+];
+const ARTICLE_TOPIC_TYPE_NOISE_KEYWORDS = [
+  "product passport",
+  "digital product passport",
+  "material passport",
+  "pet passport",
+  "farmers market passport",
+  "skills passport",
+  "talent passport",
+  "road map passport",
+  "roadmap passport",
+  "stamp passport",
+  "passport to freedom",
+  "metaphorical passport",
+  "shop listing",
+  "auction",
+  "ebay",
+  "reddit collection",
+  "tiktok collection",
+  "favorite banknotes",
+  "beautiful banknotes",
+];
 
 function getArticleFingerprint(article) {
   const normalizedTitle = String(article?.title || "")
@@ -6183,15 +6308,16 @@ async function loadSnapshot() {
     loadAllArticles(),
     apiRequest("/api/dmv-catalog"),
   ]);
+  const normalizedArticles = articles.map(normalizeLoadedArticle);
 
   state.feeds = feeds;
-  state.articles = articles;
+  state.articles = normalizedArticles;
   state.dmvCatalog = Array.isArray(dmvCatalog) ? dmvCatalog : [];
   restoreExactArticleFilterFromSession();
-  syncDashboardAlerts(feeds, articles);
+  syncDashboardAlerts(feeds, normalizedArticles);
   syncActivityLog();
   renderDashboard();
-  syncNewArticleNotifications(articles);
+  syncNewArticleNotifications(normalizedArticles);
   syncFeedErrorNotifications();
   syncFeedPanelVisibility();
 }
