@@ -5793,6 +5793,94 @@ function getBanknoteSignatureGroupingTerms(article, entity = "") {
   return Array.from(new Set(parts)).slice(0, 3);
 }
 
+function getBanknoteGroupingAnchors(article) {
+  const text = getNormalizedGroupingText(article);
+  const entity = getBanknoteEventCountry(article) || getDetectedEventEntity(article) || "";
+  const denominationMatch = text.match(/\b(\d{1,4}(?:[.,]\d{1,2})?)\s*(peso|pesos|taka|rupee|rupees|dollar|dollars|euro|euros|quetzal|quetzales|dinar|dinars|leu|lei|naira|pound|pounds|rand|lev|leva)\b/i);
+  const yearMatches = Array.from(new Set(text.match(/\b20\d{2}\b/g) || [])).slice(0, 2);
+  return {
+    entity,
+    denomination: denominationMatch ? `${denominationMatch[1]}-${String(denominationMatch[2]).toLowerCase()}` : "",
+    yearFamily: yearMatches.join("-"),
+    eventType: getDetailedArticleEventType(article),
+  };
+}
+
+function getIdentityGroupingAnchors(article) {
+  return {
+    entity: getDetectedEventEntity(article) || "",
+    eventType: getDetailedArticleEventType(article),
+  };
+}
+
+function getConflictReason(leftArticle, rightArticle) {
+  const leftTopicFamily = getArticleGroupingTopicFamily(leftArticle);
+  const rightTopicFamily = getArticleGroupingTopicFamily(rightArticle);
+  if (leftTopicFamily !== rightTopicFamily) {
+    return "different topic family";
+  }
+
+  const leftEventType = getDetailedArticleEventType(leftArticle);
+  const rightEventType = getDetailedArticleEventType(rightArticle);
+  if (leftEventType !== rightEventType) {
+    return "different event type";
+  }
+
+  if (leftTopicFamily === "travel_passport" || leftTopicFamily === "identity_document") {
+    if (
+      leftEventType === "passport_noise" ||
+      rightEventType === "passport_noise"
+    ) {
+      return "passport noise is isolated";
+    }
+
+    const leftAnchors = getIdentityGroupingAnchors(leftArticle);
+    const rightAnchors = getIdentityGroupingAnchors(rightArticle);
+    if (leftAnchors.entity && rightAnchors.entity && leftAnchors.entity !== rightAnchors.entity) {
+      return "different passport entity";
+    }
+  }
+
+  if (leftTopicFamily === "banknote") {
+    if (
+      leftEventType === "banknote_auction_noise" ||
+      rightEventType === "banknote_auction_noise"
+    ) {
+      return "banknote auction noise is isolated";
+    }
+
+    const leftAnchors = getBanknoteGroupingAnchors(leftArticle);
+    const rightAnchors = getBanknoteGroupingAnchors(rightArticle);
+
+    if (leftAnchors.entity && rightAnchors.entity && leftAnchors.entity !== rightAnchors.entity) {
+      return "different banknote entity";
+    }
+
+    if (leftEventType === "banknote_signature_change") {
+      if (leftAnchors.denomination && rightAnchors.denomination && leftAnchors.denomination !== rightAnchors.denomination) {
+        return "different signature-change denomination";
+      }
+
+      if (leftAnchors.yearFamily && rightAnchors.yearFamily && leftAnchors.yearFamily !== rightAnchors.yearFamily) {
+        return "different signature-change year family";
+      }
+    }
+  }
+
+  const leftTerms = getEventSpecificTerms(leftArticle, getDetectedEventEntity(leftArticle), 3);
+  const rightTerms = new Set(getEventSpecificTerms(rightArticle, getDetectedEventEntity(rightArticle), 3));
+  const sharedTerms = leftTerms.filter((term) => rightTerms.has(term));
+  if (!sharedTerms.length && leftTopicFamily !== "banknote") {
+    return "no shared specific event terms";
+  }
+
+  return "";
+}
+
+function hasConflictingEventSignals(leftArticle, rightArticle) {
+  return getConflictReason(leftArticle, rightArticle);
+}
+
 function isIdentityLikeArticle(article) {
   const normalizedTopic = normalizeFilterTag(article?.topic || getFeedTopic(article?.feedId) || "");
   if (
@@ -6119,10 +6207,32 @@ function groupArticlesByEvent(articles) {
       grouped[key] = [];
     }
 
-    grouped[key].push(article);
+    const matchingGroup = grouped[key].find((group) => {
+      const primary = group[0];
+      const conflictReason = hasConflictingEventSignals(primary, article);
+      if (conflictReason) {
+        console.debug("[grouping conflict]", {
+          leftTitle: primary?.title || "Untitled article",
+          rightTitle: article?.title || "Untitled article",
+          leftEventType: getDetailedArticleEventType(primary),
+          rightEventType: getDetailedArticleEventType(article),
+          reason: conflictReason,
+        });
+        return false;
+      }
+
+      return true;
+    });
+
+    if (matchingGroup) {
+      matchingGroup.push(article);
+      return;
+    }
+
+    grouped[key].push([article]);
   });
 
-  return Object.values(grouped).map((group) => {
+  return Object.values(grouped).flatMap((bucket) => bucket).map((group) => {
     const primary = group[0];
     if (group.length > 1) {
       console.log("GROUPED EVENT", {
