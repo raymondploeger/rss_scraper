@@ -4049,6 +4049,65 @@ function getIdentityDocumentContextText(article) {
     .toLowerCase();
 }
 
+function getPrimaryPassportSubject(article) {
+  const titleText = String(article?.title || "").toLowerCase();
+  const descriptionText = String(article?.description || article?.summary || "").toLowerCase();
+  const firstSentenceText = String(descriptionText.split(/(?<=[.!?])\s+/)[0] || descriptionText).toLowerCase();
+  const sourceText = String(article?.source || "").toLowerCase();
+  const tagsText = getArticleTags(article).join(" ").toLowerCase();
+  const bodyText = [descriptionText, tagsText].filter(Boolean).join(" ");
+
+  const weights = {
+    title: 4,
+    firstSentence: 2,
+    body: 1,
+    source: 2,
+  };
+
+  const scores = Object.fromEntries(
+    Object.keys(PRIMARY_PASSPORT_SUBJECT_RULES).map((subject) => [subject, 0])
+  );
+
+  Object.entries(PRIMARY_PASSPORT_SUBJECT_RULES).forEach(([subject, keywords]) => {
+    normalizeKeywordList(keywords).forEach((keyword) => {
+      if (textMatchesKeyword(titleText, keyword)) {
+        scores[subject] += weights.title;
+      }
+      if (textMatchesKeyword(firstSentenceText, keyword)) {
+        scores[subject] += weights.firstSentence;
+      }
+      if (textMatchesKeyword(bodyText, keyword)) {
+        scores[subject] += weights.body;
+      }
+      if (textMatchesKeyword(sourceText, keyword)) {
+        scores[subject] += weights.source;
+      }
+    });
+  });
+
+  normalizeKeywordList(PRIMARY_PASSPORT_SOURCE_POSITIVE_SIGNALS).forEach((keyword) => {
+    if (textMatchesKeyword(sourceText, keyword)) {
+      scores.identity_infrastructure += 2;
+      scores.passport_regulation += 1;
+    }
+  });
+  normalizeKeywordList(PRIMARY_PASSPORT_SOURCE_NEGATIVE_SIGNALS).forEach((keyword) => {
+    if (textMatchesKeyword(sourceText, keyword)) {
+      scores.unrelated += 3;
+    }
+  });
+
+  const sortedSubjects = Object.entries(scores).sort((left, right) => right[1] - left[1]);
+  const [primarySubject, primaryScore] = sortedSubjects[0] || ["unrelated", 0];
+  const unrelatedScore = scores.unrelated || 0;
+
+  if (!primaryScore || primarySubject === "unrelated" || unrelatedScore >= primaryScore) {
+    return "unrelated";
+  }
+
+  return primarySubject;
+}
+
 function getIdentityContextSignals(article) {
   const text = getIdentityDocumentContextText(article);
   const hasAny = (keywords) => normalizeKeywordList(keywords).some((keyword) => textMatchesKeyword(text, keyword));
@@ -4141,6 +4200,32 @@ function getIdentityDocumentRelevance(article) {
   return score;
 }
 
+function isPrimaryPassportIntelligence(article) {
+  const titleText = String(article?.title || "").toLowerCase();
+  const combinedText = getIdentityDocumentContextText(article);
+  const primarySubject = getPrimaryPassportSubject(article);
+  const hasCentralIdentityTopic = [
+    "passport",
+    "passports",
+    "travel document",
+    "identity",
+    "visa",
+    "immigration",
+    "border",
+    "etias",
+    "ees",
+    "digital id",
+    "eid",
+    "icao",
+  ].some((keyword) => textMatchesKeyword(titleText, keyword) || textMatchesKeyword(combinedText, keyword));
+
+  if (!hasCentralIdentityTopic) {
+    return false;
+  }
+
+  return primarySubject !== "unrelated";
+}
+
 function shouldRejectPassportArticle(article) {
   const topicText = [
     article?.title,
@@ -4157,6 +4242,10 @@ function shouldRejectPassportArticle(article) {
 
   if (!hasPassportKeyword) {
     return false;
+  }
+
+  if (!isPrimaryPassportIntelligence(article)) {
+    return true;
   }
 
   const context = getIdentityContextSignals(article);
@@ -5586,6 +5675,7 @@ function getVisibleArticles() {
     .filter((article) => {
       const relevance = getIdentityDocumentRelevance(article);
       const rejected = shouldRejectPassportArticle(article) || isLowRelevancePassportArticle(article);
+      const primarySubject = getPrimaryPassportSubject(article);
       const topicText = [
         article?.title,
         article?.topic,
@@ -5602,7 +5692,8 @@ function getVisibleArticles() {
       if (hasPassportKeyword) {
         const context = getIdentityContextSignals(article);
         const rejectedReason = rejected
-          ? context.sports ? "sports"
+          ? primarySubject === "unrelated" ? "primary subject unrelated"
+            : context.sports ? "sports"
             : context.pets ? "pets"
             : context.education ? "education"
             : context.unrelatedLifestyle ? "lifestyle"
@@ -5615,6 +5706,12 @@ function getVisibleArticles() {
           kept: !rejected,
           rejectedReason,
           score: relevance,
+        });
+        console.debug("[primary-passport-subject]", {
+          title: article?.title || "Untitled article",
+          primarySubject,
+          kept: !rejected,
+          rejectedReason,
         });
       }
 
@@ -6140,6 +6237,129 @@ const IDENTITY_CONTEXT_KEYWORDS = {
     "travel story",
   ],
 };
+const PRIMARY_PASSPORT_SUBJECT_RULES = {
+  border_systems: [
+    "ees",
+    "etias",
+    "entry exit system",
+    "entry/exit system",
+    "border control",
+    "border checks",
+    "biometric checks",
+    "border crossing",
+    "customs",
+  ],
+  immigration: [
+    "immigration",
+    "immigration enforcement",
+    "asylum",
+    "deportation",
+    "entry requirements",
+    "travel restriction",
+  ],
+  citizenship: [
+    "citizenship",
+    "citizenship law",
+    "nationality law",
+    "naturalization",
+  ],
+  passport_fraud: [
+    "passport fraud",
+    "forged passport",
+    "fake passport",
+    "false passport",
+    "counterfeit",
+    "identity theft",
+  ],
+  passport_issuance: [
+    "passport office",
+    "passport issuance",
+    "passport renewal",
+    "passport services",
+    "appointment booking",
+  ],
+  passport_regulation: [
+    "passport revocation",
+    "visa policy",
+    "visa",
+    "law",
+    "regulation",
+    "state department",
+    "revocation",
+  ],
+  identity_infrastructure: [
+    "digital id",
+    "eid",
+    "identity card",
+    "national id",
+    "residence permit",
+    "identity system",
+    "travel document",
+    "icao",
+    "ministry of interior",
+  ],
+  visa_policy: [
+    "visa policy",
+    "visa waiver",
+    "visa requirement",
+    "visa rules",
+  ],
+  travel_document_security: [
+    "document security",
+    "biometric",
+    "forged passport",
+    "passport fraud",
+    "travel document",
+    "icao",
+  ],
+  unrelated: [
+    "player",
+    "football",
+    "coach",
+    "influencer",
+    "wedding",
+    "dna day",
+    "healthcare",
+    "language scheme",
+    "fundraiser",
+    "backpacker",
+    "celebrity",
+    "tourist tips",
+    "workflow",
+    "payroll",
+    "software",
+    "market",
+    "scam empire",
+    "shooting",
+    "murder",
+    "local politics",
+    "study abroad",
+    "university",
+    "pet passport",
+  ],
+};
+const PRIMARY_PASSPORT_SOURCE_POSITIVE_SIGNALS = [
+  ".gov",
+  "icao",
+  "state department",
+  "immigration",
+  "border",
+  "etias",
+  "ees",
+  "document security",
+  "biometric",
+  "identity",
+];
+const PRIMARY_PASSPORT_SOURCE_NEGATIVE_SIGNALS = [
+  "celebrity",
+  "gossip",
+  "sports",
+  "lifestyle",
+  "workflow",
+  "payroll",
+  "software",
+  "travel blog",
+];
 const BANKNOTE_EVENT_TYPE_RULES = {
   banknote_new_design: [
     "redesign",
