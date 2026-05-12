@@ -4035,6 +4035,63 @@ function getGovernmentDocumentConfidence(article) {
   return score;
 }
 
+function getIdentityDocumentRelevance(article) {
+  const text = [
+    article?.title,
+    article?.description,
+    article?.summary,
+    article?.source,
+    article?.topic,
+    getArticleTags(article).join(" "),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (!text) {
+    return 0;
+  }
+
+  let score = 0;
+  normalizeKeywordList(IDENTITY_DOCUMENT_HIGH_RELEVANCE_SIGNALS).forEach((keyword) => {
+    if (textMatchesKeyword(text, keyword)) {
+      score += 5;
+    }
+  });
+  normalizeKeywordList(IDENTITY_DOCUMENT_MEDIUM_RELEVANCE_SIGNALS).forEach((keyword) => {
+    if (textMatchesKeyword(text, keyword)) {
+      score += 2;
+    }
+  });
+  normalizeKeywordList(IDENTITY_DOCUMENT_NEGATIVE_RELEVANCE_SIGNALS).forEach((keyword) => {
+    if (textMatchesKeyword(text, keyword)) {
+      score -= 8;
+    }
+  });
+
+  return score;
+}
+
+function isLowRelevancePassportArticle(article) {
+  const topicText = [
+    article?.topic,
+    article?.topicType,
+    getArticleTags(article).join(" "),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const hasPassportTopic = article?.topicType === "travel_passport"
+    || textMatchesKeyword(topicText, "passport")
+    || textMatchesKeyword(topicText, "passports");
+
+  if (!hasPassportTopic) {
+    return false;
+  }
+
+  return getIdentityDocumentRelevance(article) < IDENTITY_DOCUMENT_RELEVANCE_THRESHOLD;
+}
+
 function isRealTravelDocumentArticle(article) {
   const text = getArticleTopicClassifierText(article);
   if (!text) {
@@ -5412,6 +5469,19 @@ function getVisibleArticles() {
 
       return !rejectedAsNoise;
     })
+    .filter((article) => {
+      const relevance = getIdentityDocumentRelevance(article);
+      const rejected = isLowRelevancePassportArticle(article);
+      if (rejected) {
+        console.debug("[identity-relevance]", {
+          title: article?.title || "Untitled article",
+          relevance,
+          rejected,
+        });
+      }
+
+      return !rejected;
+    })
     .filter(isUiRelevantIntelligenceArticle)
     .filter(articleMatchesFilters)
     .sort((left, right) => toDate(right.pubDate).getTime() - toDate(left.pubDate).getTime());
@@ -5753,6 +5823,70 @@ const GOVERNMENT_DOCUMENT_NEGATIVE_SIGNALS = [
   ["wellness passport", -5],
   ["material passport", -5],
 ];
+const IDENTITY_DOCUMENT_HIGH_RELEVANCE_SIGNALS = [
+  "passport office",
+  "border control",
+  "immigration",
+  "citizenship law",
+  "visa",
+  "etias",
+  "ees",
+  "biometric",
+  "identity card",
+  "residence permit",
+  "travel document",
+  "passport fraud",
+  "forged passport",
+  "counterfeiting",
+  "document security",
+  "border crossing",
+  "customs",
+  "state department",
+  "icao",
+  "ministry of interior",
+  "passport issuance",
+  "passport renewal",
+  "passport revocation",
+  "nationality law",
+  "digital id",
+  "eid",
+  "kyc",
+  "immigration enforcement",
+];
+const IDENTITY_DOCUMENT_MEDIUM_RELEVANCE_SIGNALS = [
+  "airport",
+  "travel restriction",
+  "border queue",
+  "entry exit system",
+  "immigration policy",
+  "deportation",
+  "asylum",
+  "visa waiver",
+];
+const IDENTITY_DOCUMENT_NEGATIVE_RELEVANCE_SIGNALS = [
+  "celebrity",
+  "influencer",
+  "football",
+  "soccer",
+  "library",
+  "tourism campaign",
+  "fundraiser",
+  "market",
+  "event passport",
+  "loyalty",
+  "reward",
+  "health campaign",
+  "dna day",
+  "hospitality",
+  "entertainment",
+  "reality tv",
+  "wedding",
+  "safari",
+  "language passport",
+  "mural passport",
+  "civic passport",
+];
+const IDENTITY_DOCUMENT_RELEVANCE_THRESHOLD = 3;
 const BANKNOTE_EVENT_TYPE_RULES = {
   banknote_new_design: [
     "redesign",
@@ -6015,6 +6149,8 @@ function getConflictReason(leftArticle, rightArticle) {
     const rightRejectedBecauseNoise = isPassportNoiseArticle(rightArticle);
     const leftConfidence = getGovernmentDocumentConfidence(leftArticle);
     const rightConfidence = getGovernmentDocumentConfidence(rightArticle);
+    const leftLowRelevance = isLowRelevancePassportArticle(leftArticle);
+    const rightLowRelevance = isLowRelevancePassportArticle(rightArticle);
 
     console.debug("[grouping validation]", {
       title: leftArticle?.title || "Untitled article",
@@ -6036,6 +6172,10 @@ function getConflictReason(leftArticle, rightArticle) {
 
     if (Math.abs(leftConfidence - rightConfidence) > 6) {
       return "government-document confidence mismatch";
+    }
+
+    if (leftLowRelevance !== rightLowRelevance) {
+      return "identity-document relevance mismatch";
     }
 
     if (
