@@ -3932,7 +3932,7 @@ function getPassportEventType(article) {
 
   const hasAny = (keywords) => normalizeKeywordList(keywords).some((keyword) => textMatchesKeyword(text, keyword));
 
-  if (hasAny(PASSPORT_EVENT_TYPE_RULES.passport_noise)) {
+  if (isPassportNoiseArticle(article) || hasAny(PASSPORT_EVENT_TYPE_RULES.passport_noise)) {
     return "passport_noise";
   }
 
@@ -3970,10 +3970,32 @@ function getPassportEventType(article) {
       "state department passport",
     ].some((keyword) => textMatchesKeyword(text, keyword))
   ) {
-    return "travel_passport_other";
+    return isRealTravelDocumentArticle(article) ? "travel_passport_other" : "passport_noise";
   }
 
   return "passport_noise";
+}
+
+function isPassportNoiseArticle(article) {
+  const text = getArticleTopicClassifierText(article);
+  if (!text) {
+    return true;
+  }
+
+  return normalizeKeywordList(PASSPORT_HARD_NOISE_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
+}
+
+function isRealTravelDocumentArticle(article) {
+  const text = getArticleTopicClassifierText(article);
+  if (!text) {
+    return false;
+  }
+
+  if (isPassportNoiseArticle(article)) {
+    return false;
+  }
+
+  return normalizeKeywordList(REAL_TRAVEL_DOCUMENT_POSITIVE_SIGNALS).some((keyword) => textMatchesKeyword(text, keyword));
 }
 
 function normalizeLoadedArticle(article) {
@@ -5571,6 +5593,63 @@ const PASSPORT_EVENT_TYPE_RULES = {
     "metaphorical passport",
   ],
 };
+const REAL_TRAVEL_DOCUMENT_POSITIVE_SIGNALS = [
+  "visa",
+  "citizenship",
+  "immigration",
+  "border",
+  "customs",
+  "etias",
+  "ees",
+  "passport office",
+  "state department",
+  "biometric checks",
+  "travel document",
+  "passport renewal",
+  "entry requirements",
+  "airport",
+  "border crossing",
+  "identity fraud",
+  "nationality law",
+  "passport revocation",
+];
+const PASSPORT_HARD_NOISE_KEYWORDS = [
+  "digital product passport",
+  "product passport",
+  "material passport",
+  "pet passport",
+  "skills passport",
+  "talent passport",
+  "farmers market passport",
+  "language passport",
+  "passport-style foldable",
+  "passport style foldable",
+  "samsung passport-style",
+  "cultural passport",
+  "vaccine passport history",
+  "metaphorical passport",
+  "software passport",
+  "health passport",
+  "health passport systems",
+  "product registry passport",
+  "foldable",
+  "samsung",
+  "farmers market",
+  "product registry",
+  "supply chain",
+  "coshh",
+  "language initiative",
+  "hospitality talent",
+  "roadmap",
+  "civic action",
+  "hidden gems",
+  "tmx",
+  "product infrastructure",
+  "material traceability",
+  "passport program",
+  "passport scheme",
+  "phone passport",
+];
 const BANKNOTE_EVENT_TYPE_RULES = {
   banknote_new_design: [
     "redesign",
@@ -5827,6 +5906,29 @@ function getConflictReason(leftArticle, rightArticle) {
   }
 
   if (leftTopicFamily === "travel_passport" || leftTopicFamily === "identity_document") {
+    const leftIsRealTravelDocument = isRealTravelDocumentArticle(leftArticle);
+    const rightIsRealTravelDocument = isRealTravelDocumentArticle(rightArticle);
+    const leftRejectedBecauseNoise = isPassportNoiseArticle(leftArticle);
+    const rightRejectedBecauseNoise = isPassportNoiseArticle(rightArticle);
+
+    console.debug("[grouping validation]", {
+      title: leftArticle?.title || "Untitled article",
+      eventType: leftEventType,
+      isRealTravelDocument: leftIsRealTravelDocument,
+      rejectedBecauseNoise: leftRejectedBecauseNoise,
+    });
+
+    console.debug("[grouping validation]", {
+      title: rightArticle?.title || "Untitled article",
+      eventType: rightEventType,
+      isRealTravelDocument: rightIsRealTravelDocument,
+      rejectedBecauseNoise: rightRejectedBecauseNoise,
+    });
+
+    if (leftIsRealTravelDocument !== rightIsRealTravelDocument) {
+      return "real vs noise passport domain mismatch";
+    }
+
     if (
       leftEventType === "passport_noise" ||
       rightEventType === "passport_noise"
