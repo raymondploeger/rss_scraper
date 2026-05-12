@@ -5387,6 +5387,34 @@ const GROUPING_GENERIC_TOPIC_WORDS = new Set([
   "new",
   "rollout",
   "system",
+  "regulation",
+  "regulations",
+  "policy",
+  "policies",
+  "rule",
+  "rules",
+  "passport",
+  "passports",
+  "processing",
+  "services",
+  "office",
+  "delay",
+  "delays",
+  "ranking",
+  "index",
+  "border",
+  "control",
+  "checks",
+  "verification",
+  "issuance",
+  "renewal",
+  "commemorative",
+  "anniversary",
+  "counterfeit",
+  "security",
+  "features",
+  "design",
+  "redesign",
 ]);
 const GROUPING_EVENT_ENTITY_KEYWORDS = [
   ["armenia", ["armenia", "armenian"]],
@@ -5726,6 +5754,45 @@ function getEventSpecificTerms(article, entity = "", limit = 2) {
   return Array.from(new Set(tokens)).slice(0, limit);
 }
 
+function getDetailedArticleEventType(article) {
+  return String(article?.eventType || getArticleEventTypeForTopic(article, getArticleTopicType(article)) || "").trim();
+}
+
+function getArticleGroupingTopicFamily(article) {
+  const topicType = getArticleTopicType(article);
+  switch (topicType) {
+    case "banknote":
+      return "banknote";
+    case "travel_passport":
+      return "travel_passport";
+    case "identity_document":
+    case "digital_identity":
+    case "dmv_driver_license":
+      return "identity_document";
+    default:
+      return "noise";
+  }
+}
+
+function getBanknoteSignatureGroupingTerms(article, entity = "") {
+  const text = getNormalizedGroupingText(article);
+  const denominationMatch = text.match(/\b(\d{1,4}(?:[.,]\d{1,2})?)\s*(peso|pesos|taka|rupee|rupees|dollar|dollars|euro|euros|quetzal|quetzales|dinar|dinars|leu|lei|naira|pound|pounds|rand)\b/i);
+  const yearMatches = Array.from(new Set(text.match(/\b20\d{2}\b/g) || [])).slice(0, 2);
+  const entityParts = String(entity || "").split(/[-\s]+/).filter(Boolean);
+
+  const parts = [];
+  if (denominationMatch) {
+    parts.push(`${denominationMatch[1]}-${denominationMatch[2].toLowerCase()}`);
+  }
+  parts.push(...yearMatches);
+
+  if (!parts.length) {
+    parts.push(...getEventSpecificTerms(article, entityParts.join(" "), 2));
+  }
+
+  return Array.from(new Set(parts)).slice(0, 3);
+}
+
 function isIdentityLikeArticle(article) {
   const normalizedTopic = normalizeFilterTag(article?.topic || getFeedTopic(article?.feedId) || "");
   if (
@@ -5991,33 +6058,43 @@ function getIdentityEventKey(article) {
     return "identity_trump_passport_release";
   }
 
-  const normalizedTopic = normalizeFilterTag(article?.topic || getFeedTopic(article?.feedId) || "");
-  if (normalizedTopic === "banknotes") {
-    const banknoteEventType = getBanknoteEventType(article);
-    const banknoteGroupingType = getBanknoteGroupingType(banknoteEventType);
-    if (banknoteGroupingType) {
-      if (banknoteGroupingType === "noise") {
-        return getArticleFingerprint(article) || "";
-      }
+  const topicFamily = getArticleGroupingTopicFamily(article);
+  const eventType = getDetailedArticleEventType(article);
+  const detectedEntity = topicFamily === "banknote" ? getBanknoteEventCountry(article) : getDetectedEventEntity(article);
 
-      const detectedBanknoteCountry = getBanknoteEventCountry(article);
-      const banknoteCountry = detectedBanknoteCountry || "generic";
-      const banknoteTerms = getEventSpecificTerms(article, detectedBanknoteCountry, 2);
-      if (!banknoteTerms.length && !detectedBanknoteCountry) {
-        return getArticleFingerprint(article) || "";
-      }
-
-      return `${normalizedTopic}-${banknoteGroupingType}-${banknoteCountry}-${banknoteTerms.join("-") || "generic"}`;
+  if (topicFamily === "banknote") {
+    if (!eventType || eventType === "banknote_other" || eventType === "banknote_auction_noise") {
+      return getArticleFingerprint(article) || "";
     }
+
+    const banknoteTerms = eventType === "banknote_signature_change"
+      ? getBanknoteSignatureGroupingTerms(article, detectedEntity)
+      : getEventSpecificTerms(article, detectedEntity, 2);
+
+    if (!detectedEntity && !banknoteTerms.length) {
+      return getArticleFingerprint(article) || "";
+    }
+
+    return `${topicFamily}-${eventType}-${detectedEntity || "generic"}-${banknoteTerms.join("-") || "generic"}`;
   }
 
-  if (isIdentityLikeArticle(article)) {
-    const identityEventType = getArticleEventType(article);
-    const identityEntity = getDetectedEventEntity(article) || "generic";
-    const identityTerms = getEventSpecificTerms(article, identityEntity, 2);
-    if (identityEventType !== "other" && (identityEntity !== "generic" || identityTerms.length)) {
-      return `identity-${identityEventType}-${identityEntity}-${identityTerms.join("-") || "generic"}`;
+  if (topicFamily === "identity_document" || topicFamily === "travel_passport") {
+    if (
+      !eventType ||
+      eventType === "other" ||
+      eventType === "travel_passport_other" ||
+      eventType === "passport_noise" ||
+      eventType === "noise"
+    ) {
+      return getArticleFingerprint(article) || "";
     }
+
+    const identityTerms = getEventSpecificTerms(article, detectedEntity, 2);
+    if (!detectedEntity && !identityTerms.length) {
+      return getArticleFingerprint(article) || "";
+    }
+
+    return `${topicFamily}-${eventType}-${detectedEntity || "generic"}-${identityTerms.join("-") || "generic"}`;
   }
 
   const fingerprint = getArticleFingerprint(article);
@@ -6047,6 +6124,14 @@ function groupArticlesByEvent(articles) {
 
   return Object.values(grouped).map((group) => {
     const primary = group[0];
+    if (group.length > 1) {
+      console.log("GROUPED EVENT", {
+        title: primary?.title || "Untitled article",
+        eventType: getDetailedArticleEventType(primary),
+        groupedCount: group.length,
+      });
+    }
+
     return {
       ...primary,
       sources: group,
