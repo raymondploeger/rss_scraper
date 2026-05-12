@@ -3985,17 +3985,68 @@ function isPassportNoiseArticle(article) {
   return normalizeKeywordList(PASSPORT_HARD_NOISE_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
 }
 
+function isHardPassportNoise(article) {
+  const text = [
+    article?.title,
+    article?.description,
+    article?.summary,
+    article?.source,
+    getArticleTags(article).join(" "),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (!text) {
+    return false;
+  }
+
+  return normalizeKeywordList(PASSPORT_HARD_NOISE_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
+}
+
+function getGovernmentDocumentConfidence(article) {
+  const text = [
+    article?.title,
+    article?.description,
+    article?.summary,
+    article?.source,
+    getArticleTags(article).join(" "),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (!text) {
+    return 0;
+  }
+
+  let score = 0;
+  GOVERNMENT_DOCUMENT_POSITIVE_SIGNALS.forEach(([keyword, value]) => {
+    if (textMatchesKeyword(text, keyword)) {
+      score += value;
+    }
+  });
+  GOVERNMENT_DOCUMENT_NEGATIVE_SIGNALS.forEach(([keyword, value]) => {
+    if (textMatchesKeyword(text, keyword)) {
+      score += value;
+    }
+  });
+
+  return score;
+}
+
 function isRealTravelDocumentArticle(article) {
   const text = getArticleTopicClassifierText(article);
   if (!text) {
     return false;
   }
 
-  if (isPassportNoiseArticle(article)) {
+  if (isPassportNoiseArticle(article) || isHardPassportNoise(article)) {
     return false;
   }
 
-  return normalizeKeywordList(REAL_TRAVEL_DOCUMENT_POSITIVE_SIGNALS).some((keyword) => textMatchesKeyword(text, keyword));
+  return normalizeKeywordList(REAL_TRAVEL_DOCUMENT_POSITIVE_SIGNALS).some((keyword) => textMatchesKeyword(text, keyword))
+    || getGovernmentDocumentConfidence(article) >= 3;
 }
 
 function normalizeLoadedArticle(article) {
@@ -5349,6 +5400,18 @@ function articleMatchesFilters(article) {
 
 function getVisibleArticles() {
   return state.articles
+    .filter((article) => {
+      const rejectedAsNoise = isHardPassportNoise(article);
+      if (rejectedAsNoise) {
+        console.debug("[passport-filter]", {
+          title: article?.title || "Untitled article",
+          confidence: getGovernmentDocumentConfidence(article),
+          rejectedAsNoise,
+        });
+      }
+
+      return !rejectedAsNoise;
+    })
     .filter(isUiRelevantIntelligenceArticle)
     .filter(articleMatchesFilters)
     .sort((left, right) => toDate(right.pubDate).getTime() - toDate(left.pubDate).getTime());
@@ -5649,6 +5712,46 @@ const PASSPORT_HARD_NOISE_KEYWORDS = [
   "passport program",
   "passport scheme",
   "phone passport",
+  "tourism passport",
+  "loyalty passport",
+  "wellness passport",
+  "event passport",
+  "educational passport",
+  "vaccine passport history",
+  "power bank",
+  "registry platform",
+];
+const GOVERNMENT_DOCUMENT_POSITIVE_SIGNALS = [
+  ["passport office", 3],
+  ["visa", 3],
+  ["immigration", 3],
+  ["citizenship", 3],
+  ["border", 3],
+  ["customs", 3],
+  ["etias", 3],
+  ["ees", 3],
+  ["biometric checks", 3],
+  ["travel document", 3],
+  ["state department", 3],
+  ["nationality law", 3],
+  ["border crossing", 3],
+  ["airport", 2],
+  ["fraud", 2],
+  ["revocation", 2],
+  ["national id", 2],
+  ["residence permit", 2],
+];
+const GOVERNMENT_DOCUMENT_NEGATIVE_SIGNALS = [
+  ["product passport", -5],
+  ["pet passport", -5],
+  ["foldable", -5],
+  ["supply chain", -5],
+  ["hospitality", -5],
+  ["market passport", -5],
+  ["civic passport", -5],
+  ["language passport", -5],
+  ["wellness passport", -5],
+  ["material passport", -5],
 ];
 const BANKNOTE_EVENT_TYPE_RULES = {
   banknote_new_design: [
@@ -5910,6 +6013,8 @@ function getConflictReason(leftArticle, rightArticle) {
     const rightIsRealTravelDocument = isRealTravelDocumentArticle(rightArticle);
     const leftRejectedBecauseNoise = isPassportNoiseArticle(leftArticle);
     const rightRejectedBecauseNoise = isPassportNoiseArticle(rightArticle);
+    const leftConfidence = getGovernmentDocumentConfidence(leftArticle);
+    const rightConfidence = getGovernmentDocumentConfidence(rightArticle);
 
     console.debug("[grouping validation]", {
       title: leftArticle?.title || "Untitled article",
@@ -5927,6 +6032,10 @@ function getConflictReason(leftArticle, rightArticle) {
 
     if (leftIsRealTravelDocument !== rightIsRealTravelDocument) {
       return "real vs noise passport domain mismatch";
+    }
+
+    if (Math.abs(leftConfidence - rightConfidence) > 6) {
+      return "government-document confidence mismatch";
     }
 
     if (
