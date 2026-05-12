@@ -5252,6 +5252,47 @@ const ARTICLE_FINGERPRINT_STOP_WORDS = new Set([
   "will",
   "with",
 ]);
+const GROUPING_GENERIC_TOPIC_WORDS = new Set([
+  "banknote",
+  "banknotes",
+  "note",
+  "notes",
+  "polymer",
+  "passport",
+  "passports",
+  "id",
+  "identity",
+  "document",
+  "documents",
+  "digital",
+  "biometric",
+  "driver",
+  "license",
+  "licence",
+  "release",
+  "released",
+  "update",
+  "news",
+  "new",
+  "rollout",
+  "system",
+]);
+const GROUPING_EVENT_ENTITY_KEYWORDS = [
+  ["armenia", ["armenia", "armenian"]],
+  ["nigeria", ["nigeria", "nigerian"]],
+  ["south-africa", ["south africa", "south african"]],
+  ["ecowas", ["ecowas"]],
+  ["pakistan", ["pakistan", "pakistani"]],
+  ["kazakhstan", ["kazakhstan", "kazakh"]],
+  ["rbi", ["rbi", "reserve bank of india"]],
+  ["norges-bank", ["norges bank"]],
+  ["state-department", ["state department"]],
+  ["uk", ["united kingdom", "uk", "britain", "british"]],
+  ["us", ["united states", "usa", "us", "american"]],
+  ["canada", ["canada", "canadian"]],
+  ["guatemala", ["guatemala", "quetzal"]],
+  ["bangladesh", ["bangladesh", "bangladeshi", "taka"]],
+];
 
 function getArticleFingerprint(article) {
   const normalizedTitle = String(article?.title || "")
@@ -5276,10 +5317,135 @@ function getArticleEntitySignature(article) {
   return entityKeywords.filter((keyword) => textMatchesKeyword(haystack, keyword)).sort().join("|");
 }
 
+function getNormalizedGroupingText(article) {
+  return [
+    article?.title || "",
+    article?.summary || "",
+    article?.description || "",
+    article?.source || "",
+    article?.topic || "",
+  ]
+    .join(" ")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ");
+}
+
+function getDetectedEventEntity(article) {
+  const feed = state.feeds.find((item) => item.id === article?.feedId);
+  const feedCountry = normalizeCountry(article?.country || article?.region || getFeedCountry(feed));
+  if (feedCountry) {
+    return feedCountry;
+  }
+
+  const text = getNormalizedGroupingText(article);
+  const matchedEntity = GROUPING_EVENT_ENTITY_KEYWORDS.find(([, keywords]) =>
+    keywords.some((keyword) => textMatchesKeyword(text, keyword))
+  );
+
+  return matchedEntity ? matchedEntity[0] : "";
+}
+
+function getArticleEventType(article) {
+  const text = getArticleSignalText(article);
+  if (!text) {
+    return "other";
+  }
+
+  if (["outage", "down", "unavailable", "service disruption", "service outage"].some((keyword) => textMatchesKeyword(text, keyword))) {
+    return "service outage";
+  }
+
+  if (["tender", "procurement", "request for proposal", "rfp", "bid"].some((keyword) => textMatchesKeyword(text, keyword))) {
+    return "tender/procurement";
+  }
+
+  if (["fraud", "counterfeit", "fake", "forged", "forgery", "scam"].some((keyword) => textMatchesKeyword(text, keyword))) {
+    return "fraud/counterfeit";
+  }
+
+  if (["rollout", "rolled out", "launch", "launched", "deployed", "implemented"].some((keyword) => textMatchesKeyword(text, keyword))) {
+    return "rollout";
+  }
+
+  if (["law", "regulation", "mandate", "policy", "directive", "compliance"].some((keyword) => textMatchesKeyword(text, keyword))) {
+    return "regulation";
+  }
+
+  if (["security feature", "security features", "hologram", "watermark", "breach", "vulnerability"].some((keyword) => textMatchesKeyword(text, keyword))) {
+    return "security";
+  }
+
+  if (["redesign", "redesigned", "new design", "new series", "new family", "portrait", "motif"].some((keyword) => textMatchesKeyword(text, keyword))) {
+    return "design";
+  }
+
+  if (["digital id", "identity verification", "nfc", "chip", "platform", "verification system", "biometric system"].some((keyword) => textMatchesKeyword(text, keyword))) {
+    return "technology";
+  }
+
+  if (["issued", "released", "unveiled", "introduced"].some((keyword) => textMatchesKeyword(text, keyword))) {
+    return "release";
+  }
+
+  return "other";
+}
+
+function getEventSpecificTerms(article, entity = "", limit = 2) {
+  const entityParts = new Set(String(entity || "").split(/[-\s]+/).filter(Boolean));
+  const tokens = getNormalizedGroupingText(article)
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token && token.length > 3)
+    .filter((token) => !ARTICLE_FINGERPRINT_STOP_WORDS.has(token))
+    .filter((token) => !GROUPING_GENERIC_TOPIC_WORDS.has(token))
+    .filter((token) => !entityParts.has(token));
+
+  return Array.from(new Set(tokens)).slice(0, limit);
+}
+
+function isIdentityLikeArticle(article) {
+  const normalizedTopic = normalizeFilterTag(article?.topic || getFeedTopic(article?.feedId) || "");
+  if (
+    [
+      "identity document",
+      "passport",
+      "driver license",
+      "digital identity",
+      "travel document",
+      "document security",
+      "border control",
+      "verification",
+    ].includes(normalizedTopic)
+  ) {
+    return true;
+  }
+
+  const text = getArticleSignalText(article);
+  return [
+    "passport",
+    "identity document",
+    "driver license",
+    "digital id",
+    "identity verification",
+    "smart id",
+  ].some((keyword) => textMatchesKeyword(text, keyword));
+}
+
 function getBanknoteEventType(article) {
   const text = getArticleSignalText(article);
   if (!text) {
     return "";
+  }
+
+  if (
+    [
+      "counterfeit",
+      "fake",
+      "forged",
+      "fraud",
+    ].some((keyword) => textMatchesKeyword(text, keyword))
+  ) {
+    return "fraud/counterfeit";
   }
 
   if (
@@ -5430,8 +5596,23 @@ function getIdentityEventKey(article) {
         return getArticleFingerprint(article) || "";
       }
 
-      const banknoteCountry = getBanknoteEventCountry(article) || "generic";
-      return `${normalizedTopic}-${banknoteEventType}-${banknoteCountry}`;
+      const detectedBanknoteCountry = getBanknoteEventCountry(article);
+      const banknoteCountry = detectedBanknoteCountry || "generic";
+      const banknoteTerms = getEventSpecificTerms(article, detectedBanknoteCountry, 2);
+      if (!banknoteTerms.length && !detectedBanknoteCountry) {
+        return getArticleFingerprint(article) || "";
+      }
+
+      return `${normalizedTopic}-${banknoteEventType}-${banknoteCountry}-${banknoteTerms.join("-") || "generic"}`;
+    }
+  }
+
+  if (isIdentityLikeArticle(article)) {
+    const identityEventType = getArticleEventType(article);
+    const identityEntity = getDetectedEventEntity(article) || "generic";
+    const identityTerms = getEventSpecificTerms(article, identityEntity, 2);
+    if (identityEventType !== "other" && (identityEntity !== "generic" || identityTerms.length)) {
+      return `identity-${identityEventType}-${identityEntity}-${identityTerms.join("-") || "generic"}`;
     }
   }
 
