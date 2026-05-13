@@ -5822,6 +5822,51 @@ const GROUPING_EVENT_ENTITY_KEYWORDS = [
   ["guatemala", ["guatemala", "quetzal"]],
   ["bangladesh", ["bangladesh", "bangladeshi", "taka"]],
 ];
+const EVENT_FINGERPRINT_AGENCY_KEYWORDS = [
+  ["state-department", ["state department"]],
+  ["icao", ["icao"]],
+  ["rbi", ["rbi", "reserve bank of india"]],
+  ["norges-bank", ["norges bank"]],
+  ["ministry-of-interior", ["ministry of interior"]],
+  ["immigration-agency", ["immigration", "immigration agency"]],
+  ["border-authority", ["border authority", "border control", "customs"]],
+];
+const EVENT_FINGERPRINT_SYSTEM_KEYWORDS = [
+  ["ees", ["ees", "entry exit system", "entry/exit system"]],
+  ["etias", ["etias"]],
+  ["passport-revocation", ["passport revocation", "revocation", "child support"]],
+  ["citizenship-law", ["citizenship law", "nationality law"]],
+  ["biometric-checks", ["biometric checks", "biometric border checks"]],
+  ["visa-waiver", ["visa waiver", "visa policy", "visa requirement"]],
+  ["border-checks", ["border checks", "border control", "border crossing"]],
+  ["passport-fraud", ["passport fraud", "forged passport", "fake passport"]],
+  ["passport-issuance", ["passport issuance", "passport office", "passport renewal"]],
+  ["digital-id", ["digital id", "eid", "identity system"]],
+  ["icao", ["icao", "travel document security"]],
+];
+const EVENT_FINGERPRINT_ACTION_KEYWORDS = [
+  ["rollout", ["rollout", "rolled out", "launched", "deployed", "implemented"]],
+  ["suspension", ["suspension", "suspended"]],
+  ["revocation", ["revocation", "revoked"]],
+  ["fraud-warning", ["warning", "fraud warning", "warns against"]],
+  ["court-ruling", ["court ruling", "court", "judge"]],
+  ["law-update", ["law update", "regulation", "policy change", "directive"]],
+  ["application-fees", ["application fee", "application fees", "passport fee"]],
+  ["border-delays", ["border delays", "border queue", "queue"]],
+  ["deportation", ["deportation", "deported"]],
+  ["issuance", ["issuance", "issued", "passport issuance"]],
+  ["renewal", ["renewal", "renewed", "passport renewal"]],
+  ["counterfeiting", ["counterfeit", "forged passport", "fake passport"]],
+];
+const EVENT_FINGERPRINT_SUBJECT_KEYWORDS = [
+  ["border-system", ["ees", "etias", "border control", "border checks", "entry exit system"]],
+  ["citizenship-law", ["citizenship law", "nationality law"]],
+  ["passport-fraud", ["passport fraud", "forged passport", "fake passport"]],
+  ["immigration-enforcement", ["immigration enforcement", "deportation", "asylum"]],
+  ["document-security", ["document security", "icao", "biometric"]],
+  ["travel-advisory", ["travel advisory", "visa requirement", "entry requirements"]],
+  ["airport-operations", ["airport", "border queue", "border delays"]],
+];
 const ARTICLE_TOPIC_TYPE_BANKNOTE_KEYWORDS = [
   "banknote",
   "banknotes",
@@ -6485,6 +6530,124 @@ function getDetectedEventEntity(article) {
   return matchedEntity ? matchedEntity[0] : "";
 }
 
+function getMatchingFingerprintKeys(text, definitions) {
+  return definitions
+    .filter(([, keywords]) => keywords.some((keyword) => textMatchesKeyword(text, keyword)))
+    .map(([key]) => key);
+}
+
+function getEventFingerprintTimeBucket(article) {
+  const publishedAt = toDate(article?.pubDate);
+  if (Number.isNaN(publishedAt.getTime())) {
+    return "";
+  }
+
+  return publishedAt.toISOString().slice(0, 10);
+}
+
+function extractEventFingerprint(article) {
+  const text = getNormalizedGroupingText(article);
+  const countries = Array.from(new Set([
+    getDetectedEventEntity(article),
+    ...getMatchingFingerprintKeys(text, GROUPING_EVENT_ENTITY_KEYWORDS),
+  ].filter(Boolean)));
+  const agencies = Array.from(new Set(getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_AGENCY_KEYWORDS)));
+  const systems = Array.from(new Set(getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_SYSTEM_KEYWORDS)));
+  const actionType = getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_ACTION_KEYWORDS)[0] || getDetailedArticleEventType(article) || "";
+  const subjectType = getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_SUBJECT_KEYWORDS)[0]
+    || (getPrimaryPassportSubject(article) !== "unrelated" ? getPrimaryPassportSubject(article) : getDetailedArticleEventType(article) || "");
+  const timeBucket = getEventFingerprintTimeBucket(article);
+  const keywords = getEventSpecificTerms(article, countries[0] || agencies[0] || "", 4);
+
+  const fingerprint = {
+    countries,
+    agencies,
+    systems,
+    actionType,
+    subjectType,
+    timeBucket,
+    keywords,
+  };
+
+  console.debug("[event-fingerprint]", {
+    title: article?.title || "Untitled article",
+    countries,
+    systems,
+    actionType,
+    subjectType,
+  });
+
+  return fingerprint;
+}
+
+function getFingerprintIntersection(leftValues, rightValues) {
+  const rightSet = new Set(rightValues);
+  return leftValues.filter((value) => rightSet.has(value));
+}
+
+function getEventFingerprintMatch(leftArticle, rightArticle) {
+  const leftFingerprint = extractEventFingerprint(leftArticle);
+  const rightFingerprint = extractEventFingerprint(rightArticle);
+  let score = 0;
+
+  const sharedCountries = getFingerprintIntersection(leftFingerprint.countries, rightFingerprint.countries);
+  if (sharedCountries.length) {
+    score += 4;
+  } else if (leftFingerprint.countries.length && rightFingerprint.countries.length) {
+    score -= 6;
+  }
+
+  const sharedAgencies = getFingerprintIntersection(leftFingerprint.agencies, rightFingerprint.agencies);
+  if (sharedAgencies.length) {
+    score += 3;
+  }
+
+  const sharedSystems = getFingerprintIntersection(leftFingerprint.systems, rightFingerprint.systems);
+  if (sharedSystems.length) {
+    score += 4;
+  } else if (leftFingerprint.systems.length && rightFingerprint.systems.length) {
+    score -= 5;
+  }
+
+  if (leftFingerprint.actionType && rightFingerprint.actionType) {
+    score += leftFingerprint.actionType === rightFingerprint.actionType ? 3 : -4;
+  }
+
+  if (leftFingerprint.subjectType && rightFingerprint.subjectType) {
+    score += leftFingerprint.subjectType === rightFingerprint.subjectType ? 3 : -4;
+  }
+
+  const sharedKeywords = getFingerprintIntersection(leftFingerprint.keywords, rightFingerprint.keywords);
+  if (sharedKeywords.length) {
+    score += 2;
+  } else if (leftFingerprint.keywords.length && rightFingerprint.keywords.length) {
+    score -= 2;
+  }
+
+  const leftDate = toDate(leftArticle?.pubDate);
+  const rightDate = toDate(rightArticle?.pubDate);
+  if (!Number.isNaN(leftDate.getTime()) && !Number.isNaN(rightDate.getTime())) {
+    const dayDiff = Math.abs(leftDate.getTime() - rightDate.getTime()) / (1000 * 60 * 60 * 24);
+    if (dayDiff <= 14) {
+      score += 2;
+    } else if (dayDiff > 45) {
+      score -= 2;
+    }
+  }
+
+  const grouped = score >= 8;
+  return {
+    grouped,
+    score,
+    leftFingerprint,
+    rightFingerprint,
+  };
+}
+
+function isSameEventFingerprint(leftArticle, rightArticle) {
+  return getEventFingerprintMatch(leftArticle, rightArticle).grouped;
+}
+
 function getArticleEventType(article) {
   const text = getArticleSignalText(article);
   if (!text) {
@@ -6696,6 +6859,17 @@ function getConflictReason(leftArticle, rightArticle) {
   const sharedTerms = leftTerms.filter((term) => rightTerms.has(term));
   if (!sharedTerms.length && leftTopicFamily !== "banknote") {
     return "no shared specific event terms";
+  }
+
+  const fingerprintMatch = getEventFingerprintMatch(leftArticle, rightArticle);
+  console.debug("[group-score]", {
+    titleA: leftArticle?.title || "Untitled article",
+    titleB: rightArticle?.title || "Untitled article",
+    score: fingerprintMatch.score,
+    grouped: fingerprintMatch.grouped,
+  });
+  if (!fingerprintMatch.grouped) {
+    return "event fingerprint mismatch";
   }
 
   return "";
