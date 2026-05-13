@@ -4049,6 +4049,29 @@ function getIdentityDocumentContextText(article) {
     .toLowerCase();
 }
 
+function isPassportOrIdentityTopicArticle(article) {
+  const topicText = [
+    article?.title,
+    article?.topic,
+    article?.topicType,
+    getArticleTags(article).join(" "),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return [
+    article?.topicType === "travel_passport",
+    article?.topicType === "identity_document",
+    article?.topicType === "digital_identity",
+    textMatchesKeyword(topicText, "passport"),
+    textMatchesKeyword(topicText, "passports"),
+    textMatchesKeyword(topicText, "identity document"),
+    textMatchesKeyword(topicText, "identity documents"),
+    textMatchesKeyword(topicText, "travel document"),
+  ].some(Boolean);
+}
+
 function getPrimaryPassportSubject(article) {
   const titleText = String(article?.title || "").toLowerCase();
   const descriptionText = String(article?.description || article?.summary || "").toLowerCase();
@@ -4200,6 +4223,108 @@ function getIdentityDocumentRelevance(article) {
   return score;
 }
 
+function getHighConfidencePassportAssessment(article) {
+  const titleText = String(article?.title || "").toLowerCase();
+  const subtitleText = String(article?.summary || "").toLowerCase();
+  const descriptionText = String(article?.description || "").toLowerCase();
+  const firstSentenceText = String((article?.description || article?.summary || "").split(/(?<=[.!?])\s+/)[0] || "").toLowerCase();
+  const sourceText = String(article?.source || "").toLowerCase();
+  const combinedText = getIdentityDocumentContextText(article);
+  const primarySubject = getPrimaryPassportSubject(article);
+  const context = getIdentityContextSignals(article);
+  let score = getIdentityDocumentRelevance(article);
+
+  normalizeKeywordList(HIGH_CONFIDENCE_PASSPORT_POSITIVE_SIGNALS).forEach((keyword) => {
+    if (textMatchesKeyword(titleText, keyword)) {
+      score += 6;
+    }
+    if (textMatchesKeyword(subtitleText, keyword)) {
+      score += 4;
+    }
+    if (textMatchesKeyword(firstSentenceText, keyword)) {
+      score += 3;
+    }
+    if (textMatchesKeyword(descriptionText, keyword)) {
+      score += 1;
+    }
+  });
+
+  normalizeKeywordList(HIGH_CONFIDENCE_PASSPORT_NEGATIVE_SIGNALS).forEach((keyword) => {
+    if (textMatchesKeyword(titleText, keyword)) {
+      score -= 8;
+    }
+    if (textMatchesKeyword(subtitleText, keyword)) {
+      score -= 6;
+    }
+    if (textMatchesKeyword(firstSentenceText, keyword)) {
+      score -= 5;
+    }
+    if (textMatchesKeyword(descriptionText, keyword)) {
+      score -= 2;
+    }
+  });
+
+  if (context.government || context.border || context.immigration || context.fraud || context.security || context.infrastructure) {
+    score += 5;
+  }
+  if (primarySubject !== "unrelated") {
+    score += 6;
+  } else {
+    score -= 12;
+  }
+
+  normalizeKeywordList(PRIMARY_PASSPORT_SOURCE_POSITIVE_SIGNALS).forEach((keyword) => {
+    if (textMatchesKeyword(sourceText, keyword)) {
+      score += 4;
+    }
+  });
+  normalizeKeywordList(PRIMARY_PASSPORT_SOURCE_NEGATIVE_SIGNALS).forEach((keyword) => {
+    if (textMatchesKeyword(sourceText, keyword)) {
+      score -= 5;
+    }
+  });
+
+  const hasCentralSignal = normalizeKeywordList(HIGH_CONFIDENCE_PASSPORT_POSITIVE_SIGNALS).some((keyword) =>
+    textMatchesKeyword(titleText, keyword)
+    || textMatchesKeyword(subtitleText, keyword)
+    || textMatchesKeyword(firstSentenceText, keyword)
+    || textMatchesKeyword(sourceText, keyword)
+  ) || (
+    primarySubject !== "unrelated"
+    && [
+      "passport",
+      "passports",
+      "travel document",
+      "identity card",
+      "digital id",
+      "eid",
+      "immigration",
+      "visa",
+      "border",
+    ].some((keyword) => textMatchesKeyword(titleText, keyword) || textMatchesKeyword(combinedText, keyword))
+  );
+
+  let rejectedReason = "";
+  if (!hasCentralSignal) {
+    rejectedReason = "no central identity signal";
+  } else if (primarySubject === "unrelated") {
+    rejectedReason = "primary subject unrelated";
+  } else if (score < HIGH_CONFIDENCE_PASSPORT_THRESHOLD) {
+    rejectedReason = "below high-confidence threshold";
+  }
+
+  return {
+    score,
+    primarySubject,
+    kept: hasCentralSignal && primarySubject !== "unrelated" && score >= HIGH_CONFIDENCE_PASSPORT_THRESHOLD,
+    rejectedReason,
+  };
+}
+
+function isHighConfidencePassportIntelligence(article) {
+  return getHighConfidencePassportAssessment(article).kept;
+}
+
 function isPrimaryPassportIntelligence(article) {
   const titleText = String(article?.title || "").toLowerCase();
   const combinedText = getIdentityDocumentContextText(article);
@@ -4227,24 +4352,11 @@ function isPrimaryPassportIntelligence(article) {
 }
 
 function shouldRejectPassportArticle(article) {
-  const topicText = [
-    article?.title,
-    article?.topic,
-    article?.topicType,
-    getArticleTags(article).join(" "),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  const hasPassportKeyword = article?.topicType === "travel_passport"
-    || textMatchesKeyword(topicText, "passport")
-    || textMatchesKeyword(topicText, "passports");
-
-  if (!hasPassportKeyword) {
+  if (!isPassportOrIdentityTopicArticle(article)) {
     return false;
   }
 
-  if (!isPrimaryPassportIntelligence(article)) {
+  if (!isHighConfidencePassportIntelligence(article)) {
     return true;
   }
 
@@ -5674,38 +5786,34 @@ function getVisibleArticles() {
     })
     .filter((article) => {
       const relevance = getIdentityDocumentRelevance(article);
+      const highConfidenceAssessment = getHighConfidencePassportAssessment(article);
       const rejected = shouldRejectPassportArticle(article) || isLowRelevancePassportArticle(article);
-      const primarySubject = getPrimaryPassportSubject(article);
-      const topicText = [
-        article?.title,
-        article?.topic,
-        article?.topicType,
-        getArticleTags(article).join(" "),
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      const hasPassportKeyword = article?.topicType === "travel_passport"
-        || textMatchesKeyword(topicText, "passport")
-        || textMatchesKeyword(topicText, "passports");
+      const primarySubject = highConfidenceAssessment.primarySubject;
+      const hasPassportKeyword = isPassportOrIdentityTopicArticle(article);
 
       if (hasPassportKeyword) {
         const context = getIdentityContextSignals(article);
         const rejectedReason = rejected
-          ? primarySubject === "unrelated" ? "primary subject unrelated"
+          ? highConfidenceAssessment.rejectedReason || (primarySubject === "unrelated" ? "primary subject unrelated"
             : context.sports ? "sports"
             : context.pets ? "pets"
             : context.education ? "education"
             : context.unrelatedLifestyle ? "lifestyle"
             : context.entertainment ? "entertainment"
             : context.genericTravel ? "generic travel"
-            : "low relevance"
+            : "low relevance")
           : "";
         console.debug("[passport-context-filter]", {
           title: article?.title || "Untitled article",
           kept: !rejected,
           rejectedReason,
           score: relevance,
+        });
+        console.debug("[passport-relevance]", {
+          title: article?.title || "Untitled article",
+          score: highConfidenceAssessment.score,
+          kept: !rejected,
+          rejectedReason,
         });
         console.debug("[primary-passport-subject]", {
           title: article?.title || "Untitled article",
@@ -6405,6 +6513,66 @@ const PRIMARY_PASSPORT_SOURCE_NEGATIVE_SIGNALS = [
   "software",
   "travel blog",
 ];
+const HIGH_CONFIDENCE_PASSPORT_POSITIVE_SIGNALS = [
+  "immigration",
+  "border control",
+  "etias",
+  "ees",
+  "visa",
+  "citizenship",
+  "nationality law",
+  "passport office",
+  "biometric",
+  "identity card",
+  "residence permit",
+  "forged passport",
+  "document fraud",
+  "icao",
+  "travel document",
+  "issuance",
+  "renewal",
+  "revocation",
+  "asylum",
+  "customs",
+  "border crossing",
+  "state department",
+  "ministry of interior",
+  "digital id",
+  "eid",
+  "kyc",
+];
+const HIGH_CONFIDENCE_PASSPORT_NEGATIVE_SIGNALS = [
+  "kidnapping",
+  "murder",
+  "celebrity",
+  "influencer",
+  "wedding",
+  "safari",
+  "reality tv",
+  "scandal",
+  "gossip",
+  "football",
+  "soccer",
+  "basketball",
+  "player",
+  "coach",
+  "transfer",
+  "vacation",
+  "tourist guide",
+  "travel hacks",
+  "holiday tips",
+  "library funding",
+  "local fundraiser",
+  "school event",
+  "easter message",
+  "festival passport",
+  "event passport",
+  "death certificate",
+  "generic legal drama",
+  "family disputes",
+  "court story",
+];
+const HIGH_CONFIDENCE_PASSPORT_THRESHOLD = 14;
 const BANKNOTE_EVENT_TYPE_RULES = {
   banknote_new_design: [
     "redesign",
