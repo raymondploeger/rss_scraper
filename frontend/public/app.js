@@ -4325,6 +4325,95 @@ function isHighConfidencePassportIntelligence(article) {
   return getHighConfidencePassportAssessment(article).kept;
 }
 
+function getKeesingIdentityRelevance(article) {
+  const titleText = String(article?.title || "").toLowerCase();
+  const subtitleText = String(article?.summary || "").toLowerCase();
+  const descriptionText = String(article?.description || "").toLowerCase();
+  const firstSentenceText = String((article?.description || article?.summary || "").split(/(?<=[.!?])\s+/)[0] || "").toLowerCase();
+  const sourceText = String(article?.source || "").toLowerCase();
+  const combinedText = getIdentityDocumentContextText(article);
+  const primarySubject = getPrimaryPassportSubject(article);
+
+  let score = 0;
+  const applyWeightedSignals = (keywords, weights) => {
+    normalizeKeywordList(keywords).forEach((keyword) => {
+      if (textMatchesKeyword(titleText, keyword)) {
+        score += weights.title;
+      }
+      if (textMatchesKeyword(subtitleText, keyword)) {
+        score += weights.subtitle;
+      }
+      if (textMatchesKeyword(firstSentenceText, keyword)) {
+        score += weights.firstSentence;
+      }
+      if (textMatchesKeyword(descriptionText, keyword)) {
+        score += weights.description;
+      }
+      if (textMatchesKeyword(sourceText, keyword)) {
+        score += weights.source;
+      }
+    });
+  };
+
+  Object.values(KEESING_POSITIVE_SIGNALS).forEach((keywords) => {
+    applyWeightedSignals(keywords, {
+      title: 6,
+      subtitle: 4,
+      firstSentence: 3,
+      description: 1,
+      source: 3,
+    });
+  });
+  Object.values(KEESING_NEGATIVE_SIGNALS).forEach((keywords) => {
+    applyWeightedSignals(keywords, {
+      title: -8,
+      subtitle: -6,
+      firstSentence: -5,
+      description: -2,
+      source: -4,
+    });
+  });
+  normalizeKeywordList(KEESING_HARD_KEEP_SIGNALS).forEach((keyword) => {
+    if (
+      textMatchesKeyword(titleText, keyword)
+      || textMatchesKeyword(subtitleText, keyword)
+      || textMatchesKeyword(firstSentenceText, keyword)
+      || textMatchesKeyword(descriptionText, keyword)
+      || textMatchesKeyword(sourceText, keyword)
+    ) {
+      score += 10;
+    }
+  });
+
+  const hasRequiredComponent = normalizeKeywordList(KEESING_REQUIRED_COMPONENT_SIGNALS).some((keyword) =>
+    textMatchesKeyword(titleText, keyword)
+    || textMatchesKeyword(subtitleText, keyword)
+    || textMatchesKeyword(firstSentenceText, keyword)
+    || textMatchesKeyword(combinedText, keyword)
+    || textMatchesKeyword(sourceText, keyword)
+  );
+
+  if (primarySubject !== "unrelated") {
+    score += 6;
+  } else {
+    score -= 10;
+  }
+
+  if (isRealTravelDocumentArticle(article)) {
+    score += 4;
+  }
+
+  if (!hasRequiredComponent) {
+    score -= 12;
+  }
+
+  return {
+    score,
+    primarySubject,
+    hasRequiredComponent,
+  };
+}
+
 function isPrimaryPassportIntelligence(article) {
   const titleText = String(article?.title || "").toLowerCase();
   const combinedText = getIdentityDocumentContextText(article);
@@ -4357,6 +4446,17 @@ function shouldRejectPassportArticle(article) {
   }
 
   if (!isHighConfidencePassportIntelligence(article)) {
+    return true;
+  }
+
+  const keesingAssessment = getKeesingIdentityRelevance(article);
+  if (!keesingAssessment.hasRequiredComponent) {
+    return true;
+  }
+  if (keesingAssessment.primarySubject === "unrelated") {
+    return true;
+  }
+  if (keesingAssessment.score < KEESING_RELEVANCE_THRESHOLD) {
     return true;
   }
 
@@ -5787,6 +5887,7 @@ function getVisibleArticles() {
     .filter((article) => {
       const relevance = getIdentityDocumentRelevance(article);
       const highConfidenceAssessment = getHighConfidencePassportAssessment(article);
+      const keesingAssessment = getKeesingIdentityRelevance(article);
       const rejected = shouldRejectPassportArticle(article) || isLowRelevancePassportArticle(article);
       const primarySubject = highConfidenceAssessment.primarySubject;
       const hasPassportKeyword = isPassportOrIdentityTopicArticle(article);
@@ -5794,14 +5895,17 @@ function getVisibleArticles() {
       if (hasPassportKeyword) {
         const context = getIdentityContextSignals(article);
         const rejectedReason = rejected
-          ? highConfidenceAssessment.rejectedReason || (primarySubject === "unrelated" ? "primary subject unrelated"
+          ? (!keesingAssessment.hasRequiredComponent ? "missing document/system component"
+            : keesingAssessment.primarySubject === "unrelated" ? "keesing subject unrelated"
+            : keesingAssessment.score < KEESING_RELEVANCE_THRESHOLD ? "below keesing threshold"
+            : highConfidenceAssessment.rejectedReason || (primarySubject === "unrelated" ? "primary subject unrelated"
             : context.sports ? "sports"
             : context.pets ? "pets"
             : context.education ? "education"
             : context.unrelatedLifestyle ? "lifestyle"
             : context.entertainment ? "entertainment"
             : context.genericTravel ? "generic travel"
-            : "low relevance")
+            : "low relevance"))
           : "";
         console.debug("[passport-context-filter]", {
           title: article?.title || "Untitled article",
@@ -5812,6 +5916,12 @@ function getVisibleArticles() {
         console.debug("[passport-relevance]", {
           title: article?.title || "Untitled article",
           score: highConfidenceAssessment.score,
+          kept: !rejected,
+          rejectedReason,
+        });
+        console.debug("[keesing-relevance]", {
+          title: article?.title || "Untitled article",
+          score: keesingAssessment.score,
           kept: !rejected,
           rejectedReason,
         });
@@ -6573,6 +6683,136 @@ const HIGH_CONFIDENCE_PASSPORT_NEGATIVE_SIGNALS = [
   "court story",
 ];
 const HIGH_CONFIDENCE_PASSPORT_THRESHOLD = 14;
+const KEESING_POSITIVE_SIGNALS = {
+  documentSecurity: [
+    "forged passport",
+    "counterfeit",
+    "document fraud",
+    "fake passport",
+    "icao",
+    "biometric verification",
+    "eid",
+    "digital id",
+    "nfc verification",
+    "border technology",
+    "mrz",
+    "identity verification",
+  ],
+  borderInfrastructure: [
+    "etias",
+    "ees",
+    "border control",
+    "biometric checks",
+    "airport immigration",
+    "customs systems",
+    "entry exit system",
+    "entry/exit system",
+  ],
+  issuanceRegulation: [
+    "passport issuance",
+    "renewal",
+    "revocation",
+    "nationality law",
+    "citizenship law",
+    "residence permit",
+    "visa system",
+    "visa systems",
+    "passport office",
+    "state department",
+    "ministry of interior",
+  ],
+  identitySystems: [
+    "national id",
+    "digital identity",
+    "kyc",
+    "authentication",
+    "government identity system",
+    "government identity systems",
+  ],
+};
+const KEESING_NEGATIVE_SIGNALS = {
+  humanInterest: [
+    "isis bride",
+    "isis brides",
+    "celebrity travel",
+    "influencer",
+    "wedding",
+    "travel drama",
+    "personal anecdote",
+    "personal story",
+  ],
+  genericTravel: [
+    "6 month passport rule",
+    "six month passport rule",
+    "holiday travel tips",
+    "tourism advice",
+    "travel hacks",
+    "vacation planning",
+    "travel tips",
+    "tourist guide",
+  ],
+  genericCrime: [
+    "shooting",
+    "shootings",
+    "kidnapping",
+    "kidnappings",
+    "terrorism",
+    "military incident",
+    "court case",
+    "court story",
+  ],
+  genericPolitics: [
+    "racial commentary",
+    "geopolitical commentary",
+    "activism",
+    "activist",
+  ],
+};
+const KEESING_HARD_KEEP_SIGNALS = [
+  "forged passport",
+  "fake documents",
+  "border systems",
+  "biometric border checks",
+  "etias",
+  "ees",
+  "icao",
+  "digital identity",
+  "eid",
+  "document fraud",
+  "passport revocation",
+  "nationality law",
+  "citizenship law",
+  "immigration systems",
+  "visa systems",
+  "airport biometric systems",
+];
+const KEESING_REQUIRED_COMPONENT_SIGNALS = [
+  "issuance",
+  "renewal",
+  "revocation",
+  "fraud",
+  "document fraud",
+  "forged passport",
+  "fake passport",
+  "counterfeit",
+  "biometric",
+  "biometric checks",
+  "biometric verification",
+  "border control",
+  "border systems",
+  "etias",
+  "ees",
+  "identity verification",
+  "government identity system",
+  "government identity systems",
+  "passport office",
+  "visa system",
+  "visa systems",
+  "digital identity",
+  "eid",
+  "icao",
+];
+const KEESING_RELEVANCE_THRESHOLD = 16;
 const BANKNOTE_EVENT_TYPE_RULES = {
   banknote_new_design: [
     "redesign",
