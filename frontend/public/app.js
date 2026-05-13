@@ -4425,6 +4425,154 @@ function getKeesingIdentityRelevance(article) {
   };
 }
 
+function isBanknoteTopicArticle(article) {
+  const topicText = [
+    article?.title,
+    article?.topic,
+    article?.topicType,
+    getArticleTags(article).join(" "),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return [
+    article?.topicType === "banknote",
+    textMatchesKeyword(topicText, "banknote"),
+    textMatchesKeyword(topicText, "banknotes"),
+    textMatchesKeyword(topicText, "currency note"),
+    textMatchesKeyword(topicText, "paper money"),
+  ].some(Boolean);
+}
+
+function getBanknoteIntelligenceRelevance(article) {
+  const titleText = String(article?.title || "").toLowerCase();
+  const subtitleText = String(article?.summary || "").toLowerCase();
+  const descriptionText = String(article?.description || "").toLowerCase();
+  const firstSentenceText = String((article?.description || article?.summary || "").split(/(?<=[.!?])\s+/)[0] || "").toLowerCase();
+  const sourceText = String(article?.source || "").toLowerCase();
+  const combinedText = getArticleSignalText(article);
+  const eventType = getBanknoteEventType(article);
+
+  let score = 0;
+  const applyWeightedSignals = (keywords, weights) => {
+    normalizeKeywordList(keywords).forEach((keyword) => {
+      if (textMatchesKeyword(titleText, keyword)) {
+        score += weights.title;
+      }
+      if (textMatchesKeyword(subtitleText, keyword)) {
+        score += weights.subtitle;
+      }
+      if (textMatchesKeyword(firstSentenceText, keyword)) {
+        score += weights.firstSentence;
+      }
+      if (textMatchesKeyword(descriptionText, keyword)) {
+        score += weights.description;
+      }
+      if (textMatchesKeyword(sourceText, keyword)) {
+        score += weights.source;
+      }
+    });
+  };
+
+  Object.values(BANKNOTE_INTELLIGENCE_POSITIVE_SIGNALS).forEach((keywords) => {
+    applyWeightedSignals(keywords, {
+      title: 6,
+      subtitle: 4,
+      firstSentence: 3,
+      description: 1,
+      source: 3,
+    });
+  });
+  Object.values(BANKNOTE_INTELLIGENCE_NEGATIVE_SIGNALS).forEach((keywords) => {
+    applyWeightedSignals(keywords, {
+      title: -8,
+      subtitle: -6,
+      firstSentence: -5,
+      description: -2,
+      source: -4,
+    });
+  });
+  normalizeKeywordList(BANKNOTE_INTELLIGENCE_HARD_KEEP_SIGNALS).forEach((keyword) => {
+    if (
+      textMatchesKeyword(titleText, keyword)
+      || textMatchesKeyword(subtitleText, keyword)
+      || textMatchesKeyword(firstSentenceText, keyword)
+      || textMatchesKeyword(descriptionText, keyword)
+      || textMatchesKeyword(sourceText, keyword)
+    ) {
+      score += 10;
+    }
+  });
+  normalizeKeywordList(BANKNOTE_INTELLIGENCE_HARD_REJECT_SIGNALS).forEach((keyword) => {
+    if (
+      textMatchesKeyword(titleText, keyword)
+      || textMatchesKeyword(subtitleText, keyword)
+      || textMatchesKeyword(firstSentenceText, keyword)
+      || textMatchesKeyword(descriptionText, keyword)
+      || textMatchesKeyword(sourceText, keyword)
+    ) {
+      score -= 12;
+    }
+  });
+
+  const hasRequiredComponent = normalizeKeywordList(BANKNOTE_REQUIRED_COMPONENT_SIGNALS).some((keyword) =>
+    textMatchesKeyword(titleText, keyword)
+    || textMatchesKeyword(subtitleText, keyword)
+    || textMatchesKeyword(firstSentenceText, keyword)
+    || textMatchesKeyword(combinedText, keyword)
+    || textMatchesKeyword(sourceText, keyword)
+  );
+
+  const isSignatureOnly = (
+    eventType === "banknote_signature_change"
+    || normalizeKeywordList(BANKNOTE_SIGNATURE_ONLY_SIGNALS).some((keyword) =>
+      textMatchesKeyword(titleText, keyword)
+      || textMatchesKeyword(subtitleText, keyword)
+      || textMatchesKeyword(firstSentenceText, keyword)
+      || textMatchesKeyword(descriptionText, keyword)
+    )
+    || BANKNOTE_LOW_PRIORITY_CODE_PATTERN.test(combinedText)
+  );
+
+  if (eventType === "banknote_withdrawal" || eventType === "counterfeit_banknotes") {
+    score += 10;
+  } else if (eventType === "banknote_new_design" || eventType === "banknote_new_series" || eventType === "polymer_transition") {
+    score += 8;
+  } else if (eventType === "banknote_auction_noise") {
+    score -= 14;
+  } else if (eventType === "commemorative_note") {
+    score -= 4;
+  }
+
+  if (isSignatureOnly) {
+    score -= 10;
+  }
+
+  if (!hasRequiredComponent) {
+    score -= 12;
+  }
+
+  let rejectedReason = "";
+  if (!hasRequiredComponent) {
+    rejectedReason = "missing central-bank/document component";
+  } else if (eventType === "banknote_auction_noise") {
+    rejectedReason = "collector or auction noise";
+  } else if (isSignatureOnly && score < BANKNOTE_RELEVANCE_THRESHOLD) {
+    rejectedReason = "signature/date-only update";
+  } else if (score < BANKNOTE_RELEVANCE_THRESHOLD) {
+    rejectedReason = "below banknote relevance threshold";
+  }
+
+  return {
+    score,
+    eventType,
+    hasRequiredComponent,
+    kept: hasRequiredComponent && score >= BANKNOTE_RELEVANCE_THRESHOLD,
+    rejectedReason,
+  };
+}
+
 function isPrimaryPassportIntelligence(article) {
   const titleText = String(article?.title || "").toLowerCase();
   const combinedText = getIdentityDocumentContextText(article);
@@ -5900,9 +6048,13 @@ function getVisibleArticles() {
         const relevance = getIdentityDocumentRelevance(article);
         const highConfidenceAssessment = getHighConfidencePassportAssessment(article);
         const keesingAssessment = getKeesingIdentityRelevance(article);
-        const rejected = shouldRejectPassportArticle(article) || isLowRelevancePassportArticle(article);
+        const banknoteAssessment = getBanknoteIntelligenceRelevance(article);
+        const rejected = shouldRejectPassportArticle(article)
+          || isLowRelevancePassportArticle(article)
+          || (isBanknoteTopicArticle(article) && !banknoteAssessment.kept);
         const primarySubject = highConfidenceAssessment.primarySubject;
         const hasPassportKeyword = isPassportOrIdentityTopicArticle(article);
+        const hasBanknoteKeyword = isBanknoteTopicArticle(article);
 
         if (hasPassportKeyword) {
           const context = getIdentityContextSignals(article);
@@ -5941,6 +6093,16 @@ function getVisibleArticles() {
             title: article?.title || "Untitled article",
             primarySubject,
             kept: !rejected,
+            rejectedReason,
+          });
+        }
+
+        if (hasBanknoteKeyword) {
+          const rejectedReason = !banknoteAssessment.kept ? banknoteAssessment.rejectedReason : "";
+          console.debug("[banknote-relevance]", {
+            title: article?.title || "Untitled article",
+            score: banknoteAssessment.score,
+            kept: banknoteAssessment.kept,
             rejectedReason,
           });
         }
@@ -6832,6 +6994,174 @@ const KEESING_REQUIRED_COMPONENT_SIGNALS = [
   "icao",
 ];
 const KEESING_RELEVANCE_THRESHOLD = 16;
+const BANKNOTE_INTELLIGENCE_POSITIVE_SIGNALS = {
+  centralBankActions: [
+    "central bank",
+    "withdrawn from circulation",
+    "demonetisation",
+    "demonetization",
+    "legal tender withdrawal",
+    "circulation changes",
+    "issuance",
+    "replacement series",
+    "redesign",
+    "new family",
+    "new denomination",
+    "polymer transition",
+    "currency reform",
+  ],
+  securityCounterfeiting: [
+    "counterfeit banknotes",
+    "anti-counterfeit",
+    "forged notes",
+    "security feature",
+    "hologram",
+    "watermark",
+    "polymer substrate",
+    "uv features",
+    "authentication",
+    "cash security",
+    "counterfeit alert",
+  ],
+  realDesignChanges: [
+    "new portrait",
+    "redesign",
+    "new artwork",
+    "substrate migration",
+    "tactile features",
+    "accessibility features",
+    "anti-counterfeit redesign",
+    "major redesign",
+    "new banknote family",
+  ],
+  currencyInfrastructure: [
+    "banknote printing",
+    "currency production",
+    "mint",
+    "security printer",
+    "de la rue",
+    "giesecke+devrient",
+    "giesecke devrient",
+    "crane currency",
+    "oberthur",
+    "sicpa",
+  ],
+};
+const BANKNOTE_INTELLIGENCE_NEGATIVE_SIGNALS = {
+  collectorHobby: [
+    "pcgs",
+    "unc",
+    "graded note",
+    "auction",
+    "collectible",
+    "numismatic sales",
+    "ebay",
+    "rarity value",
+    "serial number collecting",
+    "pmg",
+  ],
+  socialCommunityNoise: [
+    "reddit",
+    "facebook repost",
+    "youtube collector",
+    "tiktok",
+    "influencer video",
+    "instagram collection",
+  ],
+  genericFinance: [
+    "stock markets",
+    "trade negotiations",
+    "grain deals",
+    "forex",
+    "investment analysis",
+    "economic commentary",
+    "market trends",
+  ],
+  genericCrime: [
+    "robbery cash seizure",
+    "atm theft",
+    "unrelated fraud",
+    "scam story",
+    "cash seizure",
+  ],
+  spam: [
+    "linkedin",
+    "market spam",
+    "ai-generated market report",
+    "app store",
+    "currency printing market trends",
+    "app listing",
+  ],
+};
+const BANKNOTE_INTELLIGENCE_HARD_KEEP_SIGNALS = [
+  "demonetisation",
+  "demonetization",
+  "legal tender withdrawal",
+  "counterfeit alert",
+  "central bank warning",
+  "polymer migration",
+  "major redesign",
+  "anti-counterfeit technology",
+  "circulation withdrawal",
+  "currency reform",
+  "security feature upgrade",
+  "security feature upgrades",
+  "new banknote family",
+  "new banknote family launch",
+  "new banknote family launches",
+];
+const BANKNOTE_INTELLIGENCE_HARD_REJECT_SIGNALS = [
+  "collector listing",
+  "grading post",
+  "reddit collector",
+  "hobby showcase",
+  "generic finance news",
+  "trade negotiations",
+  "geopolitics",
+  "market report",
+  "app store",
+  "app listing",
+  "linkedin",
+];
+const BANKNOTE_REQUIRED_COMPONENT_SIGNALS = [
+  "central bank",
+  "withdrawn from circulation",
+  "demonetisation",
+  "demonetization",
+  "legal tender withdrawal",
+  "issuance",
+  "replacement series",
+  "redesign",
+  "new family",
+  "new denomination",
+  "polymer transition",
+  "counterfeit banknotes",
+  "anti-counterfeit",
+  "forged notes",
+  "security feature",
+  "hologram",
+  "watermark",
+  "polymer substrate",
+  "authentication",
+  "banknote printing",
+  "currency production",
+  "security printer",
+  "de la rue",
+  "giesecke+devrient",
+  "crane currency",
+  "oberthur",
+  "sicpa",
+];
+const BANKNOTE_SIGNATURE_ONLY_SIGNALS = [
+  "new sig/date",
+  "new signature",
+  "new date",
+  "signature date",
+  "confirmed",
+  "prefix confirmed",
+  "replacement batch confirmation",
+];
+const BANKNOTE_RELEVANCE_THRESHOLD = 14;
 const BANKNOTE_EVENT_TYPE_RULES = {
   banknote_new_design: [
     "redesign",
