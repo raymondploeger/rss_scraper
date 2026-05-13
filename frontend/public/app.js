@@ -10,6 +10,7 @@ const ACTIVITY_LOG_TTL_MS = 24 * 60 * 60 * 1000;
 const POLLING_INTERVAL_MS = 30000;
 const ARTICLE_PAGE_SIZE = 400;
 const NOTIFICATION_TIMEOUT_MS = 7000;
+const DEBUG_INTELLIGENCE = false;
 const DASHBOARD_ALERT_LIMIT = 8;
 const ACTIVITY_LOG_LIMIT = 24;
 const LOW_VALUE_ARTICLE_THRESHOLD = 5;
@@ -749,6 +750,8 @@ const runtime = {
   snapshotLoaded: false,
   expandedGroupedSourceKeys: new Set(),
   fullyExpandedGroupedSourceKeys: new Set(),
+  articleComputationCache: new Map(),
+  articlePairComputationCache: new Map(),
 };
 
 const elements = {
@@ -4036,289 +4039,301 @@ function getGovernmentDocumentConfidence(article) {
 }
 
 function getIdentityDocumentContextText(article) {
-  return [
-    article?.title,
-    article?.description,
-    article?.summary,
-    article?.source,
-    article?.topic,
-    getArticleTags(article).join(" "),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+  return getCachedArticleValue(article, "identityDocumentContextText", () =>
+    [
+      article?.title,
+      article?.description,
+      article?.summary,
+      article?.source,
+      article?.topic,
+      getArticleTags(article).join(" "),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+  );
 }
 
 function isPassportOrIdentityTopicArticle(article) {
-  const topicText = [
-    article?.title,
-    article?.topic,
-    article?.topicType,
-    getArticleTags(article).join(" "),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+  return getCachedArticleValue(article, "isPassportOrIdentityTopicArticle", () => {
+    const topicText = [
+      article?.title,
+      article?.topic,
+      article?.topicType,
+      getArticleTags(article).join(" "),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
 
-  return [
-    article?.topicType === "travel_passport",
-    article?.topicType === "identity_document",
-    article?.topicType === "digital_identity",
-    textMatchesKeyword(topicText, "passport"),
-    textMatchesKeyword(topicText, "passports"),
-    textMatchesKeyword(topicText, "identity document"),
-    textMatchesKeyword(topicText, "identity documents"),
-    textMatchesKeyword(topicText, "travel document"),
-  ].some(Boolean);
+    return [
+      article?.topicType === "travel_passport",
+      article?.topicType === "identity_document",
+      article?.topicType === "digital_identity",
+      textMatchesKeyword(topicText, "passport"),
+      textMatchesKeyword(topicText, "passports"),
+      textMatchesKeyword(topicText, "identity document"),
+      textMatchesKeyword(topicText, "identity documents"),
+      textMatchesKeyword(topicText, "travel document"),
+    ].some(Boolean);
+  });
 }
 
 function getPrimaryPassportSubject(article) {
-  const titleText = String(article?.title || "").toLowerCase();
-  const descriptionText = String(article?.description || article?.summary || "").toLowerCase();
-  const firstSentenceText = String(descriptionText.split(/(?<=[.!?])\s+/)[0] || descriptionText).toLowerCase();
-  const sourceText = String(article?.source || "").toLowerCase();
-  const tagsText = getArticleTags(article).join(" ").toLowerCase();
-  const bodyText = [descriptionText, tagsText].filter(Boolean).join(" ");
+  return getCachedArticleValue(article, "primaryPassportSubject", () => {
+    const titleText = String(article?.title || "").toLowerCase();
+    const descriptionText = String(article?.description || article?.summary || "").toLowerCase();
+    const firstSentenceText = String(descriptionText.split(/(?<=[.!?])\s+/)[0] || descriptionText).toLowerCase();
+    const sourceText = String(article?.source || "").toLowerCase();
+    const tagsText = getArticleTags(article).join(" ").toLowerCase();
+    const bodyText = [descriptionText, tagsText].filter(Boolean).join(" ");
 
-  const weights = {
-    title: 4,
-    firstSentence: 2,
-    body: 1,
-    source: 2,
-  };
+    const weights = {
+      title: 4,
+      firstSentence: 2,
+      body: 1,
+      source: 2,
+    };
 
-  const scores = Object.fromEntries(
-    Object.keys(PRIMARY_PASSPORT_SUBJECT_RULES).map((subject) => [subject, 0])
-  );
+    const scores = Object.fromEntries(
+      Object.keys(PRIMARY_PASSPORT_SUBJECT_RULES).map((subject) => [subject, 0])
+    );
 
-  Object.entries(PRIMARY_PASSPORT_SUBJECT_RULES).forEach(([subject, keywords]) => {
-    normalizeKeywordList(keywords).forEach((keyword) => {
-      if (textMatchesKeyword(titleText, keyword)) {
-        scores[subject] += weights.title;
-      }
-      if (textMatchesKeyword(firstSentenceText, keyword)) {
-        scores[subject] += weights.firstSentence;
-      }
-      if (textMatchesKeyword(bodyText, keyword)) {
-        scores[subject] += weights.body;
-      }
+    Object.entries(PRIMARY_PASSPORT_SUBJECT_RULES).forEach(([subject, keywords]) => {
+      normalizeKeywordList(keywords).forEach((keyword) => {
+        if (textMatchesKeyword(titleText, keyword)) {
+          scores[subject] += weights.title;
+        }
+        if (textMatchesKeyword(firstSentenceText, keyword)) {
+          scores[subject] += weights.firstSentence;
+        }
+        if (textMatchesKeyword(bodyText, keyword)) {
+          scores[subject] += weights.body;
+        }
+        if (textMatchesKeyword(sourceText, keyword)) {
+          scores[subject] += weights.source;
+        }
+      });
+    });
+
+    normalizeKeywordList(PRIMARY_PASSPORT_SOURCE_POSITIVE_SIGNALS).forEach((keyword) => {
       if (textMatchesKeyword(sourceText, keyword)) {
-        scores[subject] += weights.source;
+        scores.identity_infrastructure += 2;
+        scores.passport_regulation += 1;
       }
     });
-  });
+    normalizeKeywordList(PRIMARY_PASSPORT_SOURCE_NEGATIVE_SIGNALS).forEach((keyword) => {
+      if (textMatchesKeyword(sourceText, keyword)) {
+        scores.unrelated += 3;
+      }
+    });
 
-  normalizeKeywordList(PRIMARY_PASSPORT_SOURCE_POSITIVE_SIGNALS).forEach((keyword) => {
-    if (textMatchesKeyword(sourceText, keyword)) {
-      scores.identity_infrastructure += 2;
-      scores.passport_regulation += 1;
+    const sortedSubjects = Object.entries(scores).sort((left, right) => right[1] - left[1]);
+    const [primarySubject, primaryScore] = sortedSubjects[0] || ["unrelated", 0];
+    const unrelatedScore = scores.unrelated || 0;
+
+    if (!primaryScore || primarySubject === "unrelated" || unrelatedScore >= primaryScore) {
+      return "unrelated";
     }
+
+    return primarySubject;
   });
-  normalizeKeywordList(PRIMARY_PASSPORT_SOURCE_NEGATIVE_SIGNALS).forEach((keyword) => {
-    if (textMatchesKeyword(sourceText, keyword)) {
-      scores.unrelated += 3;
-    }
-  });
-
-  const sortedSubjects = Object.entries(scores).sort((left, right) => right[1] - left[1]);
-  const [primarySubject, primaryScore] = sortedSubjects[0] || ["unrelated", 0];
-  const unrelatedScore = scores.unrelated || 0;
-
-  if (!primaryScore || primarySubject === "unrelated" || unrelatedScore >= primaryScore) {
-    return "unrelated";
-  }
-
-  return primarySubject;
 }
 
 function getIdentityContextSignals(article) {
-  const text = getIdentityDocumentContextText(article);
-  const hasAny = (keywords) => normalizeKeywordList(keywords).some((keyword) => textMatchesKeyword(text, keyword));
+  return getCachedArticleValue(article, "identityContextSignals", () => {
+    const text = getIdentityDocumentContextText(article);
+    const hasAny = (keywords) => normalizeKeywordList(keywords).some((keyword) => textMatchesKeyword(text, keyword));
 
-  return {
-    government: hasAny(IDENTITY_CONTEXT_KEYWORDS.government),
-    border: hasAny(IDENTITY_CONTEXT_KEYWORDS.border),
-    immigration: hasAny(IDENTITY_CONTEXT_KEYWORDS.immigration),
-    fraud: hasAny(IDENTITY_CONTEXT_KEYWORDS.fraud),
-    security: hasAny(IDENTITY_CONTEXT_KEYWORDS.security),
-    issuance: hasAny(IDENTITY_CONTEXT_KEYWORDS.issuance),
-    infrastructure: hasAny(IDENTITY_CONTEXT_KEYWORDS.infrastructure),
-    travelRule: hasAny(IDENTITY_CONTEXT_KEYWORDS.travelRule),
-    unrelatedLifestyle: hasAny(IDENTITY_CONTEXT_KEYWORDS.unrelatedLifestyle),
-    sports: hasAny(IDENTITY_CONTEXT_KEYWORDS.sports),
-    pets: hasAny(IDENTITY_CONTEXT_KEYWORDS.pets),
-    entertainment: hasAny(IDENTITY_CONTEXT_KEYWORDS.entertainment),
-    education: hasAny(IDENTITY_CONTEXT_KEYWORDS.education),
-    genericTravel: hasAny(IDENTITY_CONTEXT_KEYWORDS.genericTravel),
-  };
+    return {
+      government: hasAny(IDENTITY_CONTEXT_KEYWORDS.government),
+      border: hasAny(IDENTITY_CONTEXT_KEYWORDS.border),
+      immigration: hasAny(IDENTITY_CONTEXT_KEYWORDS.immigration),
+      fraud: hasAny(IDENTITY_CONTEXT_KEYWORDS.fraud),
+      security: hasAny(IDENTITY_CONTEXT_KEYWORDS.security),
+      issuance: hasAny(IDENTITY_CONTEXT_KEYWORDS.issuance),
+      infrastructure: hasAny(IDENTITY_CONTEXT_KEYWORDS.infrastructure),
+      travelRule: hasAny(IDENTITY_CONTEXT_KEYWORDS.travelRule),
+      unrelatedLifestyle: hasAny(IDENTITY_CONTEXT_KEYWORDS.unrelatedLifestyle),
+      sports: hasAny(IDENTITY_CONTEXT_KEYWORDS.sports),
+      pets: hasAny(IDENTITY_CONTEXT_KEYWORDS.pets),
+      entertainment: hasAny(IDENTITY_CONTEXT_KEYWORDS.entertainment),
+      education: hasAny(IDENTITY_CONTEXT_KEYWORDS.education),
+      genericTravel: hasAny(IDENTITY_CONTEXT_KEYWORDS.genericTravel),
+    };
+  });
 }
 
 function getIdentityDocumentRelevance(article) {
-  const text = getIdentityDocumentContextText(article);
+  return getCachedArticleValue(article, "identityDocumentRelevance", () => {
+    const text = getIdentityDocumentContextText(article);
 
-  if (!text) {
-    return 0;
-  }
+    if (!text) {
+      return 0;
+    }
 
-  const context = getIdentityContextSignals(article);
-  let score = 0;
-  normalizeKeywordList(IDENTITY_DOCUMENT_HIGH_RELEVANCE_SIGNALS).forEach((keyword) => {
-    if (textMatchesKeyword(text, keyword)) {
+    const context = getIdentityContextSignals(article);
+    let score = 0;
+    normalizeKeywordList(IDENTITY_DOCUMENT_HIGH_RELEVANCE_SIGNALS).forEach((keyword) => {
+      if (textMatchesKeyword(text, keyword)) {
+        score += 5;
+      }
+    });
+    normalizeKeywordList(IDENTITY_DOCUMENT_MEDIUM_RELEVANCE_SIGNALS).forEach((keyword) => {
+      if (textMatchesKeyword(text, keyword)) {
+        score += 2;
+      }
+    });
+    normalizeKeywordList(IDENTITY_DOCUMENT_NEGATIVE_RELEVANCE_SIGNALS).forEach((keyword) => {
+      if (textMatchesKeyword(text, keyword)) {
+        score -= 8;
+      }
+    });
+    if (context.government) {
+      score += 6;
+    }
+    if (context.border) {
+      score += 6;
+    }
+    if (context.immigration) {
+      score += 6;
+    }
+    if (context.fraud) {
+      score += 6;
+    }
+    if (context.security) {
       score += 5;
     }
-  });
-  normalizeKeywordList(IDENTITY_DOCUMENT_MEDIUM_RELEVANCE_SIGNALS).forEach((keyword) => {
-    if (textMatchesKeyword(text, keyword)) {
-      score += 2;
+    if (context.issuance) {
+      score += 5;
     }
-  });
-  normalizeKeywordList(IDENTITY_DOCUMENT_NEGATIVE_RELEVANCE_SIGNALS).forEach((keyword) => {
-    if (textMatchesKeyword(text, keyword)) {
+    if (context.infrastructure) {
+      score += 5;
+    }
+    if (context.travelRule) {
+      score += 4;
+    }
+    if (context.unrelatedLifestyle) {
+      score -= 10;
+    }
+    if (context.sports) {
+      score -= 10;
+    }
+    if (context.pets) {
+      score -= 10;
+    }
+    if (context.entertainment) {
       score -= 8;
     }
-  });
-  if (context.government) {
-    score += 6;
-  }
-  if (context.border) {
-    score += 6;
-  }
-  if (context.immigration) {
-    score += 6;
-  }
-  if (context.fraud) {
-    score += 6;
-  }
-  if (context.security) {
-    score += 5;
-  }
-  if (context.issuance) {
-    score += 5;
-  }
-  if (context.infrastructure) {
-    score += 5;
-  }
-  if (context.travelRule) {
-    score += 4;
-  }
-  if (context.unrelatedLifestyle) {
-    score -= 10;
-  }
-  if (context.sports) {
-    score -= 10;
-  }
-  if (context.pets) {
-    score -= 10;
-  }
-  if (context.entertainment) {
-    score -= 8;
-  }
-  if (context.education) {
-    score -= 8;
-  }
-  if (context.genericTravel) {
-    score -= 8;
-  }
+    if (context.education) {
+      score -= 8;
+    }
+    if (context.genericTravel) {
+      score -= 8;
+    }
 
-  return score;
+    return score;
+  });
 }
 
 function getHighConfidencePassportAssessment(article) {
-  const titleText = String(article?.title || "").toLowerCase();
-  const subtitleText = String(article?.summary || "").toLowerCase();
-  const descriptionText = String(article?.description || "").toLowerCase();
-  const firstSentenceText = String((article?.description || article?.summary || "").split(/(?<=[.!?])\s+/)[0] || "").toLowerCase();
-  const sourceText = String(article?.source || "").toLowerCase();
-  const combinedText = getIdentityDocumentContextText(article);
-  const primarySubject = getPrimaryPassportSubject(article);
-  const context = getIdentityContextSignals(article);
-  let score = getIdentityDocumentRelevance(article);
+  return getCachedArticleValue(article, "highConfidencePassportAssessment", () => {
+    const titleText = String(article?.title || "").toLowerCase();
+    const subtitleText = String(article?.summary || "").toLowerCase();
+    const descriptionText = String(article?.description || "").toLowerCase();
+    const firstSentenceText = String((article?.description || article?.summary || "").split(/(?<=[.!?])\s+/)[0] || "").toLowerCase();
+    const sourceText = String(article?.source || "").toLowerCase();
+    const combinedText = getIdentityDocumentContextText(article);
+    const primarySubject = getPrimaryPassportSubject(article);
+    const context = getIdentityContextSignals(article);
+    let score = getIdentityDocumentRelevance(article);
 
-  normalizeKeywordList(HIGH_CONFIDENCE_PASSPORT_POSITIVE_SIGNALS).forEach((keyword) => {
-    if (textMatchesKeyword(titleText, keyword)) {
+    normalizeKeywordList(HIGH_CONFIDENCE_PASSPORT_POSITIVE_SIGNALS).forEach((keyword) => {
+      if (textMatchesKeyword(titleText, keyword)) {
+        score += 6;
+      }
+      if (textMatchesKeyword(subtitleText, keyword)) {
+        score += 4;
+      }
+      if (textMatchesKeyword(firstSentenceText, keyword)) {
+        score += 3;
+      }
+      if (textMatchesKeyword(descriptionText, keyword)) {
+        score += 1;
+      }
+    });
+
+    normalizeKeywordList(HIGH_CONFIDENCE_PASSPORT_NEGATIVE_SIGNALS).forEach((keyword) => {
+      if (textMatchesKeyword(titleText, keyword)) {
+        score -= 8;
+      }
+      if (textMatchesKeyword(subtitleText, keyword)) {
+        score -= 6;
+      }
+      if (textMatchesKeyword(firstSentenceText, keyword)) {
+        score -= 5;
+      }
+      if (textMatchesKeyword(descriptionText, keyword)) {
+        score -= 2;
+      }
+    });
+
+    if (context.government || context.border || context.immigration || context.fraud || context.security || context.infrastructure) {
+      score += 5;
+    }
+    if (primarySubject !== "unrelated") {
       score += 6;
+    } else {
+      score -= 12;
     }
-    if (textMatchesKeyword(subtitleText, keyword)) {
-      score += 4;
+
+    normalizeKeywordList(PRIMARY_PASSPORT_SOURCE_POSITIVE_SIGNALS).forEach((keyword) => {
+      if (textMatchesKeyword(sourceText, keyword)) {
+        score += 4;
+      }
+    });
+    normalizeKeywordList(PRIMARY_PASSPORT_SOURCE_NEGATIVE_SIGNALS).forEach((keyword) => {
+      if (textMatchesKeyword(sourceText, keyword)) {
+        score -= 5;
+      }
+    });
+
+    const hasCentralSignal = normalizeKeywordList(HIGH_CONFIDENCE_PASSPORT_POSITIVE_SIGNALS).some((keyword) =>
+      textMatchesKeyword(titleText, keyword)
+      || textMatchesKeyword(subtitleText, keyword)
+      || textMatchesKeyword(firstSentenceText, keyword)
+      || textMatchesKeyword(sourceText, keyword)
+    ) || (
+      primarySubject !== "unrelated"
+      && [
+        "passport",
+        "passports",
+        "travel document",
+        "identity card",
+        "digital id",
+        "eid",
+        "immigration",
+        "visa",
+        "border",
+      ].some((keyword) => textMatchesKeyword(titleText, keyword) || textMatchesKeyword(combinedText, keyword))
+    );
+
+    let rejectedReason = "";
+    if (!hasCentralSignal) {
+      rejectedReason = "no central identity signal";
+    } else if (primarySubject === "unrelated") {
+      rejectedReason = "primary subject unrelated";
+    } else if (score < HIGH_CONFIDENCE_PASSPORT_THRESHOLD) {
+      rejectedReason = "below high-confidence threshold";
     }
-    if (textMatchesKeyword(firstSentenceText, keyword)) {
-      score += 3;
-    }
-    if (textMatchesKeyword(descriptionText, keyword)) {
-      score += 1;
-    }
+
+    return {
+      score,
+      primarySubject,
+      kept: hasCentralSignal && primarySubject !== "unrelated" && score >= HIGH_CONFIDENCE_PASSPORT_THRESHOLD,
+      rejectedReason,
+    };
   });
-
-  normalizeKeywordList(HIGH_CONFIDENCE_PASSPORT_NEGATIVE_SIGNALS).forEach((keyword) => {
-    if (textMatchesKeyword(titleText, keyword)) {
-      score -= 8;
-    }
-    if (textMatchesKeyword(subtitleText, keyword)) {
-      score -= 6;
-    }
-    if (textMatchesKeyword(firstSentenceText, keyword)) {
-      score -= 5;
-    }
-    if (textMatchesKeyword(descriptionText, keyword)) {
-      score -= 2;
-    }
-  });
-
-  if (context.government || context.border || context.immigration || context.fraud || context.security || context.infrastructure) {
-    score += 5;
-  }
-  if (primarySubject !== "unrelated") {
-    score += 6;
-  } else {
-    score -= 12;
-  }
-
-  normalizeKeywordList(PRIMARY_PASSPORT_SOURCE_POSITIVE_SIGNALS).forEach((keyword) => {
-    if (textMatchesKeyword(sourceText, keyword)) {
-      score += 4;
-    }
-  });
-  normalizeKeywordList(PRIMARY_PASSPORT_SOURCE_NEGATIVE_SIGNALS).forEach((keyword) => {
-    if (textMatchesKeyword(sourceText, keyword)) {
-      score -= 5;
-    }
-  });
-
-  const hasCentralSignal = normalizeKeywordList(HIGH_CONFIDENCE_PASSPORT_POSITIVE_SIGNALS).some((keyword) =>
-    textMatchesKeyword(titleText, keyword)
-    || textMatchesKeyword(subtitleText, keyword)
-    || textMatchesKeyword(firstSentenceText, keyword)
-    || textMatchesKeyword(sourceText, keyword)
-  ) || (
-    primarySubject !== "unrelated"
-    && [
-      "passport",
-      "passports",
-      "travel document",
-      "identity card",
-      "digital id",
-      "eid",
-      "immigration",
-      "visa",
-      "border",
-    ].some((keyword) => textMatchesKeyword(titleText, keyword) || textMatchesKeyword(combinedText, keyword))
-  );
-
-  let rejectedReason = "";
-  if (!hasCentralSignal) {
-    rejectedReason = "no central identity signal";
-  } else if (primarySubject === "unrelated") {
-    rejectedReason = "primary subject unrelated";
-  } else if (score < HIGH_CONFIDENCE_PASSPORT_THRESHOLD) {
-    rejectedReason = "below high-confidence threshold";
-  }
-
-  return {
-    score,
-    primarySubject,
-    kept: hasCentralSignal && primarySubject !== "unrelated" && score >= HIGH_CONFIDENCE_PASSPORT_THRESHOLD,
-    rejectedReason,
-  };
 }
 
 function isHighConfidencePassportIntelligence(article) {
@@ -4326,251 +4341,257 @@ function isHighConfidencePassportIntelligence(article) {
 }
 
 function getKeesingIdentityRelevance(article) {
-  const titleText = String(article?.title || "").toLowerCase();
-  const subtitleText = String(article?.summary || "").toLowerCase();
-  const descriptionText = String(article?.description || "").toLowerCase();
-  const firstSentenceText = String((article?.description || article?.summary || "").split(/(?<=[.!?])\s+/)[0] || "").toLowerCase();
-  const sourceText = String(article?.source || "").toLowerCase();
-  const combinedText = getIdentityDocumentContextText(article);
-  const primarySubject = getPrimaryPassportSubject(article);
-  const context = getIdentityContextSignals(article);
+  return getCachedArticleValue(article, "keesingIdentityRelevance", () => {
+    const titleText = String(article?.title || "").toLowerCase();
+    const subtitleText = String(article?.summary || "").toLowerCase();
+    const descriptionText = String(article?.description || "").toLowerCase();
+    const firstSentenceText = String((article?.description || article?.summary || "").split(/(?<=[.!?])\s+/)[0] || "").toLowerCase();
+    const sourceText = String(article?.source || "").toLowerCase();
+    const combinedText = getIdentityDocumentContextText(article);
+    const primarySubject = getPrimaryPassportSubject(article);
+    const context = getIdentityContextSignals(article);
 
-  let score = 0;
-  const applyWeightedSignals = (keywords, weights) => {
-    normalizeKeywordList(keywords).forEach((keyword) => {
-      if (textMatchesKeyword(titleText, keyword)) {
-        score += weights.title;
-      }
-      if (textMatchesKeyword(subtitleText, keyword)) {
-        score += weights.subtitle;
-      }
-      if (textMatchesKeyword(firstSentenceText, keyword)) {
-        score += weights.firstSentence;
-      }
-      if (textMatchesKeyword(descriptionText, keyword)) {
-        score += weights.description;
-      }
-      if (textMatchesKeyword(sourceText, keyword)) {
-        score += weights.source;
-      }
-    });
-  };
+    let score = 0;
+    const applyWeightedSignals = (keywords, weights) => {
+      normalizeKeywordList(keywords).forEach((keyword) => {
+        if (textMatchesKeyword(titleText, keyword)) {
+          score += weights.title;
+        }
+        if (textMatchesKeyword(subtitleText, keyword)) {
+          score += weights.subtitle;
+        }
+        if (textMatchesKeyword(firstSentenceText, keyword)) {
+          score += weights.firstSentence;
+        }
+        if (textMatchesKeyword(descriptionText, keyword)) {
+          score += weights.description;
+        }
+        if (textMatchesKeyword(sourceText, keyword)) {
+          score += weights.source;
+        }
+      });
+    };
 
-  Object.values(KEESING_POSITIVE_SIGNALS).forEach((keywords) => {
-    applyWeightedSignals(keywords, {
-      title: 6,
-      subtitle: 4,
-      firstSentence: 3,
-      description: 1,
-      source: 3,
+    Object.values(KEESING_POSITIVE_SIGNALS).forEach((keywords) => {
+      applyWeightedSignals(keywords, {
+        title: 6,
+        subtitle: 4,
+        firstSentence: 3,
+        description: 1,
+        source: 3,
+      });
     });
-  });
-  Object.values(KEESING_NEGATIVE_SIGNALS).forEach((keywords) => {
-    applyWeightedSignals(keywords, {
-      title: -8,
-      subtitle: -6,
-      firstSentence: -5,
-      description: -2,
-      source: -4,
+    Object.values(KEESING_NEGATIVE_SIGNALS).forEach((keywords) => {
+      applyWeightedSignals(keywords, {
+        title: -8,
+        subtitle: -6,
+        firstSentence: -5,
+        description: -2,
+        source: -4,
+      });
     });
-  });
-  normalizeKeywordList(KEESING_HARD_KEEP_SIGNALS).forEach((keyword) => {
-    if (
+    normalizeKeywordList(KEESING_HARD_KEEP_SIGNALS).forEach((keyword) => {
+      if (
+        textMatchesKeyword(titleText, keyword)
+        || textMatchesKeyword(subtitleText, keyword)
+        || textMatchesKeyword(firstSentenceText, keyword)
+        || textMatchesKeyword(descriptionText, keyword)
+        || textMatchesKeyword(sourceText, keyword)
+      ) {
+        score += 10;
+      }
+    });
+
+    const hasRequiredComponent = normalizeKeywordList(KEESING_REQUIRED_COMPONENT_SIGNALS).some((keyword) =>
       textMatchesKeyword(titleText, keyword)
       || textMatchesKeyword(subtitleText, keyword)
       || textMatchesKeyword(firstSentenceText, keyword)
-      || textMatchesKeyword(descriptionText, keyword)
+      || textMatchesKeyword(combinedText, keyword)
       || textMatchesKeyword(sourceText, keyword)
-    ) {
-      score += 10;
+    );
+
+    if (primarySubject !== "unrelated") {
+      score += 6;
+    } else {
+      score -= 10;
     }
+
+    if (
+      context.government
+      || context.border
+      || context.immigration
+      || context.fraud
+      || context.security
+      || context.issuance
+      || context.infrastructure
+      || context.travelRule
+      || getGovernmentDocumentConfidence(article) >= 3
+    ) {
+      score += 4;
+    }
+
+    if (!hasRequiredComponent) {
+      score -= 12;
+    }
+
+    return {
+      score,
+      primarySubject,
+      hasRequiredComponent,
+    };
   });
-
-  const hasRequiredComponent = normalizeKeywordList(KEESING_REQUIRED_COMPONENT_SIGNALS).some((keyword) =>
-    textMatchesKeyword(titleText, keyword)
-    || textMatchesKeyword(subtitleText, keyword)
-    || textMatchesKeyword(firstSentenceText, keyword)
-    || textMatchesKeyword(combinedText, keyword)
-    || textMatchesKeyword(sourceText, keyword)
-  );
-
-  if (primarySubject !== "unrelated") {
-    score += 6;
-  } else {
-    score -= 10;
-  }
-
-  if (
-    context.government
-    || context.border
-    || context.immigration
-    || context.fraud
-    || context.security
-    || context.issuance
-    || context.infrastructure
-    || context.travelRule
-    || getGovernmentDocumentConfidence(article) >= 3
-  ) {
-    score += 4;
-  }
-
-  if (!hasRequiredComponent) {
-    score -= 12;
-  }
-
-  return {
-    score,
-    primarySubject,
-    hasRequiredComponent,
-  };
 }
 
 function isBanknoteTopicArticle(article) {
-  const topicText = [
-    article?.title,
-    article?.topic,
-    article?.topicType,
-    getArticleTags(article).join(" "),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+  return getCachedArticleValue(article, "isBanknoteTopicArticle", () => {
+    const topicText = [
+      article?.title,
+      article?.topic,
+      article?.topicType,
+      getArticleTags(article).join(" "),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
 
-  return [
-    article?.topicType === "banknote",
-    textMatchesKeyword(topicText, "banknote"),
-    textMatchesKeyword(topicText, "banknotes"),
-    textMatchesKeyword(topicText, "currency note"),
-    textMatchesKeyword(topicText, "paper money"),
-  ].some(Boolean);
+    return [
+      article?.topicType === "banknote",
+      textMatchesKeyword(topicText, "banknote"),
+      textMatchesKeyword(topicText, "banknotes"),
+      textMatchesKeyword(topicText, "currency note"),
+      textMatchesKeyword(topicText, "paper money"),
+    ].some(Boolean);
+  });
 }
 
 function getBanknoteIntelligenceRelevance(article) {
-  const titleText = String(article?.title || "").toLowerCase();
-  const subtitleText = String(article?.summary || "").toLowerCase();
-  const descriptionText = String(article?.description || "").toLowerCase();
-  const firstSentenceText = String((article?.description || article?.summary || "").split(/(?<=[.!?])\s+/)[0] || "").toLowerCase();
-  const sourceText = String(article?.source || "").toLowerCase();
-  const combinedText = getArticleSignalText(article);
-  const eventType = getBanknoteEventType(article);
+  return getCachedArticleValue(article, "banknoteIntelligenceRelevance", () => {
+    const titleText = String(article?.title || "").toLowerCase();
+    const subtitleText = String(article?.summary || "").toLowerCase();
+    const descriptionText = String(article?.description || "").toLowerCase();
+    const firstSentenceText = String((article?.description || article?.summary || "").split(/(?<=[.!?])\s+/)[0] || "").toLowerCase();
+    const sourceText = String(article?.source || "").toLowerCase();
+    const combinedText = getArticleSignalText(article);
+    const eventType = getBanknoteEventType(article);
 
-  let score = 0;
-  const applyWeightedSignals = (keywords, weights) => {
-    normalizeKeywordList(keywords).forEach((keyword) => {
-      if (textMatchesKeyword(titleText, keyword)) {
-        score += weights.title;
-      }
-      if (textMatchesKeyword(subtitleText, keyword)) {
-        score += weights.subtitle;
-      }
-      if (textMatchesKeyword(firstSentenceText, keyword)) {
-        score += weights.firstSentence;
-      }
-      if (textMatchesKeyword(descriptionText, keyword)) {
-        score += weights.description;
-      }
-      if (textMatchesKeyword(sourceText, keyword)) {
-        score += weights.source;
-      }
-    });
-  };
+    let score = 0;
+    const applyWeightedSignals = (keywords, weights) => {
+      normalizeKeywordList(keywords).forEach((keyword) => {
+        if (textMatchesKeyword(titleText, keyword)) {
+          score += weights.title;
+        }
+        if (textMatchesKeyword(subtitleText, keyword)) {
+          score += weights.subtitle;
+        }
+        if (textMatchesKeyword(firstSentenceText, keyword)) {
+          score += weights.firstSentence;
+        }
+        if (textMatchesKeyword(descriptionText, keyword)) {
+          score += weights.description;
+        }
+        if (textMatchesKeyword(sourceText, keyword)) {
+          score += weights.source;
+        }
+      });
+    };
 
-  Object.values(BANKNOTE_INTELLIGENCE_POSITIVE_SIGNALS).forEach((keywords) => {
-    applyWeightedSignals(keywords, {
-      title: 6,
-      subtitle: 4,
-      firstSentence: 3,
-      description: 1,
-      source: 3,
+    Object.values(BANKNOTE_INTELLIGENCE_POSITIVE_SIGNALS).forEach((keywords) => {
+      applyWeightedSignals(keywords, {
+        title: 6,
+        subtitle: 4,
+        firstSentence: 3,
+        description: 1,
+        source: 3,
+      });
     });
-  });
-  Object.values(BANKNOTE_INTELLIGENCE_NEGATIVE_SIGNALS).forEach((keywords) => {
-    applyWeightedSignals(keywords, {
-      title: -8,
-      subtitle: -6,
-      firstSentence: -5,
-      description: -2,
-      source: -4,
+    Object.values(BANKNOTE_INTELLIGENCE_NEGATIVE_SIGNALS).forEach((keywords) => {
+      applyWeightedSignals(keywords, {
+        title: -8,
+        subtitle: -6,
+        firstSentence: -5,
+        description: -2,
+        source: -4,
+      });
     });
-  });
-  normalizeKeywordList(BANKNOTE_INTELLIGENCE_HARD_KEEP_SIGNALS).forEach((keyword) => {
-    if (
+    normalizeKeywordList(BANKNOTE_INTELLIGENCE_HARD_KEEP_SIGNALS).forEach((keyword) => {
+      if (
+        textMatchesKeyword(titleText, keyword)
+        || textMatchesKeyword(subtitleText, keyword)
+        || textMatchesKeyword(firstSentenceText, keyword)
+        || textMatchesKeyword(descriptionText, keyword)
+        || textMatchesKeyword(sourceText, keyword)
+      ) {
+        score += 10;
+      }
+    });
+    normalizeKeywordList(BANKNOTE_INTELLIGENCE_HARD_REJECT_SIGNALS).forEach((keyword) => {
+      if (
+        textMatchesKeyword(titleText, keyword)
+        || textMatchesKeyword(subtitleText, keyword)
+        || textMatchesKeyword(firstSentenceText, keyword)
+        || textMatchesKeyword(descriptionText, keyword)
+        || textMatchesKeyword(sourceText, keyword)
+      ) {
+        score -= 12;
+      }
+    });
+
+    const hasRequiredComponent = normalizeKeywordList(BANKNOTE_REQUIRED_COMPONENT_SIGNALS).some((keyword) =>
       textMatchesKeyword(titleText, keyword)
       || textMatchesKeyword(subtitleText, keyword)
       || textMatchesKeyword(firstSentenceText, keyword)
-      || textMatchesKeyword(descriptionText, keyword)
+      || textMatchesKeyword(combinedText, keyword)
       || textMatchesKeyword(sourceText, keyword)
-    ) {
+    );
+
+    const isSignatureOnly = (
+      eventType === "banknote_signature_change"
+      || normalizeKeywordList(BANKNOTE_SIGNATURE_ONLY_SIGNALS).some((keyword) =>
+        textMatchesKeyword(titleText, keyword)
+        || textMatchesKeyword(subtitleText, keyword)
+        || textMatchesKeyword(firstSentenceText, keyword)
+        || textMatchesKeyword(descriptionText, keyword)
+      )
+      || BANKNOTE_LOW_PRIORITY_CODE_PATTERN.test(combinedText)
+    );
+
+    if (eventType === "banknote_withdrawal" || eventType === "counterfeit_banknotes") {
       score += 10;
+    } else if (eventType === "banknote_new_design" || eventType === "banknote_new_series" || eventType === "polymer_transition") {
+      score += 8;
+    } else if (eventType === "banknote_auction_noise") {
+      score -= 14;
+    } else if (eventType === "commemorative_note") {
+      score -= 4;
     }
-  });
-  normalizeKeywordList(BANKNOTE_INTELLIGENCE_HARD_REJECT_SIGNALS).forEach((keyword) => {
-    if (
-      textMatchesKeyword(titleText, keyword)
-      || textMatchesKeyword(subtitleText, keyword)
-      || textMatchesKeyword(firstSentenceText, keyword)
-      || textMatchesKeyword(descriptionText, keyword)
-      || textMatchesKeyword(sourceText, keyword)
-    ) {
+
+    if (isSignatureOnly) {
+      score -= 10;
+    }
+
+    if (!hasRequiredComponent) {
       score -= 12;
     }
+
+    let rejectedReason = "";
+    if (!hasRequiredComponent) {
+      rejectedReason = "missing central-bank/document component";
+    } else if (eventType === "banknote_auction_noise") {
+      rejectedReason = "collector or auction noise";
+    } else if (isSignatureOnly && score < BANKNOTE_RELEVANCE_THRESHOLD) {
+      rejectedReason = "signature/date-only update";
+    } else if (score < BANKNOTE_RELEVANCE_THRESHOLD) {
+      rejectedReason = "below banknote relevance threshold";
+    }
+
+    return {
+      score,
+      eventType,
+      hasRequiredComponent,
+      kept: hasRequiredComponent && score >= BANKNOTE_RELEVANCE_THRESHOLD,
+      rejectedReason,
+    };
   });
-
-  const hasRequiredComponent = normalizeKeywordList(BANKNOTE_REQUIRED_COMPONENT_SIGNALS).some((keyword) =>
-    textMatchesKeyword(titleText, keyword)
-    || textMatchesKeyword(subtitleText, keyword)
-    || textMatchesKeyword(firstSentenceText, keyword)
-    || textMatchesKeyword(combinedText, keyword)
-    || textMatchesKeyword(sourceText, keyword)
-  );
-
-  const isSignatureOnly = (
-    eventType === "banknote_signature_change"
-    || normalizeKeywordList(BANKNOTE_SIGNATURE_ONLY_SIGNALS).some((keyword) =>
-      textMatchesKeyword(titleText, keyword)
-      || textMatchesKeyword(subtitleText, keyword)
-      || textMatchesKeyword(firstSentenceText, keyword)
-      || textMatchesKeyword(descriptionText, keyword)
-    )
-    || BANKNOTE_LOW_PRIORITY_CODE_PATTERN.test(combinedText)
-  );
-
-  if (eventType === "banknote_withdrawal" || eventType === "counterfeit_banknotes") {
-    score += 10;
-  } else if (eventType === "banknote_new_design" || eventType === "banknote_new_series" || eventType === "polymer_transition") {
-    score += 8;
-  } else if (eventType === "banknote_auction_noise") {
-    score -= 14;
-  } else if (eventType === "commemorative_note") {
-    score -= 4;
-  }
-
-  if (isSignatureOnly) {
-    score -= 10;
-  }
-
-  if (!hasRequiredComponent) {
-    score -= 12;
-  }
-
-  let rejectedReason = "";
-  if (!hasRequiredComponent) {
-    rejectedReason = "missing central-bank/document component";
-  } else if (eventType === "banknote_auction_noise") {
-    rejectedReason = "collector or auction noise";
-  } else if (isSignatureOnly && score < BANKNOTE_RELEVANCE_THRESHOLD) {
-    rejectedReason = "signature/date-only update";
-  } else if (score < BANKNOTE_RELEVANCE_THRESHOLD) {
-    rejectedReason = "below banknote relevance threshold";
-  }
-
-  return {
-    score,
-    eventType,
-    hasRequiredComponent,
-    kept: hasRequiredComponent && score >= BANKNOTE_RELEVANCE_THRESHOLD,
-    rejectedReason,
-  };
 }
 
 function isPrimaryPassportIntelligence(article) {
@@ -4691,6 +4712,62 @@ function normalizeLoadedArticle(article) {
 
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function intelligenceDebug(...args) {
+  if (DEBUG_INTELLIGENCE) {
+    console.debug(...args);
+  }
+}
+
+function intelligenceLog(...args) {
+  if (DEBUG_INTELLIGENCE) {
+    console.log(...args);
+  }
+}
+
+function getArticleStableCacheKey(article) {
+  return String(
+    article?.id
+      || article?.url
+      || `${article?.title || "untitled"}|${article?.pubDate || ""}|${article?.feedId || ""}`
+  );
+}
+
+function getCachedArticleValue(article, cacheKey, computeValue) {
+  const articleKey = getArticleStableCacheKey(article);
+  let articleCache = runtime.articleComputationCache.get(articleKey);
+  if (!articleCache) {
+    articleCache = new Map();
+    runtime.articleComputationCache.set(articleKey, articleCache);
+  }
+
+  if (articleCache.has(cacheKey)) {
+    return articleCache.get(cacheKey);
+  }
+
+  const value = computeValue();
+  articleCache.set(cacheKey, value);
+  return value;
+}
+
+function getCachedArticlePairValue(leftArticle, rightArticle, cacheKey, computeValue) {
+  const leftKey = getArticleStableCacheKey(leftArticle);
+  const rightKey = getArticleStableCacheKey(rightArticle);
+  const pairKey = [leftKey, rightKey].sort().join("::");
+  let pairCache = runtime.articlePairComputationCache.get(pairKey);
+  if (!pairCache) {
+    pairCache = new Map();
+    runtime.articlePairComputationCache.set(pairKey, pairCache);
+  }
+
+  if (pairCache.has(cacheKey)) {
+    return pairCache.get(cacheKey);
+  }
+
+  const value = computeValue();
+  pairCache.set(cacheKey, value);
+  return value;
 }
 
 function textMatchesKeyword(text, keyword) {
@@ -5018,89 +5095,93 @@ function getPrimaryArticleSignalLabel(primarySignalCategory) {
 }
 
 function getArticleSignalMatches(article) {
-  const haystack = getArticleSignalText(article);
-  if (!haystack) {
-    return [];
-  }
-
-  if (!isRelevantSignalText(haystack)) {
-    return [];
-  }
-
-  if (!hasSignalCoreObject(haystack) || hasSignalNoiseContext(haystack)) {
-    return [];
-  }
-
-  const designChangeCategory = getSignalCategoryById("design-changes");
-  const hasDesignChangeSignal = Boolean(
-    designChangeCategory && countMatchedKeywords(haystack, designChangeCategory.strong) >= 1
-  );
-  const idDocumentMatches = getIdDocumentSignalMatches(haystack);
-  const banknoteMatches = getBanknoteSignalMatches(haystack);
-
-  return idDocumentMatches.concat(banknoteMatches, SIGNAL_CATEGORIES.flatMap((category) => {
-    if (
-      idDocumentMatches.some((match) => match.id === category.id) ||
-      banknoteMatches.some((match) => match.id === category.id)
-    ) {
+  return getCachedArticleValue(article, "articleSignalMatches", () => {
+    const haystack = getArticleSignalText(article);
+    if (!haystack) {
       return [];
     }
 
-    const strongMatches = countMatchedKeywords(haystack, category.strong);
-    const weakMatches = countMatchedKeywords(haystack, category.weak);
-    const excludeKeywords = normalizeKeywordList(category.exclude);
-    const requiredObjects = normalizeKeywordList(category.requiredObjects);
-    const categoryNoise = normalizeKeywordList(category.noise);
-    const hasExcludeMatch = excludeKeywords.some((keyword) => textMatchesKeyword(haystack, keyword));
-    if (hasExcludeMatch) {
+    if (!isRelevantSignalText(haystack)) {
       return [];
     }
 
-    if (category.id === "new-releases") {
-      const hasRequiredObjectMatch = requiredObjects.some((keyword) => textMatchesKeyword(haystack, keyword));
-      const hasCategoryNoise = categoryNoise.some((keyword) => textMatchesKeyword(haystack, keyword));
-      const hasReleaseVariantKeyword = normalizeKeywordList(SIGNAL_RELEASE_VARIANT_KEYWORDS).some((keyword) =>
-        textMatchesKeyword(haystack, keyword)
-      );
-      const hasReleaseObjectKeyword = normalizeKeywordList(SIGNAL_RELEASE_OBJECT_KEYWORDS).some((keyword) =>
-        textMatchesKeyword(haystack, keyword)
-      );
-      if (!hasRequiredObjectMatch || hasCategoryNoise || hasDesignChangeSignal) {
-        if (!(hasReleaseVariantKeyword && hasReleaseObjectKeyword) || hasCategoryNoise || hasDesignChangeSignal) {
-          return [];
-        }
+    if (!hasSignalCoreObject(haystack) || hasSignalNoiseContext(haystack)) {
+      return [];
+    }
+
+    const designChangeCategory = getSignalCategoryById("design-changes");
+    const hasDesignChangeSignal = Boolean(
+      designChangeCategory && countMatchedKeywords(haystack, designChangeCategory.strong) >= 1
+    );
+    const idDocumentMatches = getIdDocumentSignalMatches(haystack);
+    const banknoteMatches = getBanknoteSignalMatches(haystack);
+
+    return idDocumentMatches.concat(banknoteMatches, SIGNAL_CATEGORIES.flatMap((category) => {
+      if (
+        idDocumentMatches.some((match) => match.id === category.id) ||
+        banknoteMatches.some((match) => match.id === category.id)
+      ) {
+        return [];
       }
 
-      if (strongMatches >= 1 || (hasReleaseVariantKeyword && hasReleaseObjectKeyword)) {
+      const strongMatches = countMatchedKeywords(haystack, category.strong);
+      const weakMatches = countMatchedKeywords(haystack, category.weak);
+      const excludeKeywords = normalizeKeywordList(category.exclude);
+      const requiredObjects = normalizeKeywordList(category.requiredObjects);
+      const categoryNoise = normalizeKeywordList(category.noise);
+      const hasExcludeMatch = excludeKeywords.some((keyword) => textMatchesKeyword(haystack, keyword));
+      if (hasExcludeMatch) {
+        return [];
+      }
+
+      if (category.id === "new-releases") {
+        const hasRequiredObjectMatch = requiredObjects.some((keyword) => textMatchesKeyword(haystack, keyword));
+        const hasCategoryNoise = categoryNoise.some((keyword) => textMatchesKeyword(haystack, keyword));
+        const hasReleaseVariantKeyword = normalizeKeywordList(SIGNAL_RELEASE_VARIANT_KEYWORDS).some((keyword) =>
+          textMatchesKeyword(haystack, keyword)
+        );
+        const hasReleaseObjectKeyword = normalizeKeywordList(SIGNAL_RELEASE_OBJECT_KEYWORDS).some((keyword) =>
+          textMatchesKeyword(haystack, keyword)
+        );
+        if (!hasRequiredObjectMatch || hasCategoryNoise || hasDesignChangeSignal) {
+          if (!(hasReleaseVariantKeyword && hasReleaseObjectKeyword) || hasCategoryNoise || hasDesignChangeSignal) {
+            return [];
+          }
+        }
+
+        if (strongMatches >= 1 || (hasReleaseVariantKeyword && hasReleaseObjectKeyword)) {
+          return [{
+            id: category.id,
+            confidence: "high",
+          }];
+        }
+
+        return [];
+      }
+
+      if (strongMatches >= 1) {
         return [{
           id: category.id,
           confidence: "high",
         }];
       }
 
+      if (weakMatches >= 1) {
+        return [{
+          id: category.id,
+          confidence: "low",
+        }];
+      }
+
       return [];
-    }
-
-    if (strongMatches >= 1) {
-      return [{
-        id: category.id,
-        confidence: "high",
-      }];
-    }
-
-    if (weakMatches >= 1) {
-      return [{
-        id: category.id,
-        confidence: "low",
-      }];
-    }
-
-    return [];
-  }));
+    }));
+  });
 }
 
 function getArticleSignalCategories(article) {
-  return getArticleSignalMatches(article).map((match) => match.id);
+  return getCachedArticleValue(article, "articleSignalCategories", () =>
+    getArticleSignalMatches(article).map((match) => match.id)
+  );
 }
 
 function isUiRelevantIntelligenceArticle(article) {
@@ -6034,7 +6115,7 @@ function getVisibleArticles() {
     .filter((article) => {
       const rejectedAsNoise = isHardPassportNoise(article);
       if (rejectedAsNoise) {
-        console.debug("[passport-filter]", {
+        intelligenceDebug("[passport-filter]", {
           title: article?.title || "Untitled article",
           confidence: getGovernmentDocumentConfidence(article),
           rejectedAsNoise,
@@ -6071,25 +6152,25 @@ function getVisibleArticles() {
                 : context.genericTravel ? "generic travel"
                 : "low relevance"))
             : "";
-          console.debug("[passport-context-filter]", {
+          intelligenceDebug("[passport-context-filter]", {
             title: article?.title || "Untitled article",
             kept: !rejected,
             rejectedReason,
             score: relevance,
           });
-          console.debug("[passport-relevance]", {
+          intelligenceDebug("[passport-relevance]", {
             title: article?.title || "Untitled article",
             score: highConfidenceAssessment.score,
             kept: !rejected,
             rejectedReason,
           });
-          console.debug("[keesing-relevance]", {
+          intelligenceDebug("[keesing-relevance]", {
             title: article?.title || "Untitled article",
             score: keesingAssessment.score,
             kept: !rejected,
             rejectedReason,
           });
-          console.debug("[primary-passport-subject]", {
+          intelligenceDebug("[primary-passport-subject]", {
             title: article?.title || "Untitled article",
             primarySubject,
             kept: !rejected,
@@ -6099,7 +6180,7 @@ function getVisibleArticles() {
 
         if (hasBanknoteKeyword) {
           const rejectedReason = !banknoteAssessment.kept ? banknoteAssessment.rejectedReason : "";
-          console.debug("[banknote-relevance]", {
+          intelligenceDebug("[banknote-relevance]", {
             title: article?.title || "Untitled article",
             score: banknoteAssessment.score,
             kept: banknoteAssessment.kept,
@@ -7260,31 +7341,35 @@ function getArticleEntitySignature(article) {
 }
 
 function getNormalizedGroupingText(article) {
-  return [
-    article?.title || "",
-    article?.summary || "",
-    article?.description || "",
-    article?.source || "",
-    article?.topic || "",
-  ]
-    .join(" ")
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, " ");
+  return getCachedArticleValue(article, "normalizedGroupingText", () =>
+    [
+      article?.title || "",
+      article?.summary || "",
+      article?.description || "",
+      article?.source || "",
+      article?.topic || "",
+    ]
+      .join(" ")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, " ")
+  );
 }
 
 function getDetectedEventEntity(article) {
-  const feed = state.feeds.find((item) => item.id === article?.feedId);
-  const feedCountry = normalizeCountry(article?.country || article?.region || getFeedCountry(feed));
-  if (feedCountry) {
-    return feedCountry;
-  }
+  return getCachedArticleValue(article, "detectedEventEntity", () => {
+    const feed = state.feeds.find((item) => item.id === article?.feedId);
+    const feedCountry = normalizeCountry(article?.country || article?.region || getFeedCountry(feed));
+    if (feedCountry) {
+      return feedCountry;
+    }
 
-  const text = getNormalizedGroupingText(article);
-  const matchedEntity = GROUPING_EVENT_ENTITY_KEYWORDS.find(([, keywords]) =>
-    keywords.some((keyword) => textMatchesKeyword(text, keyword))
-  );
+    const text = getNormalizedGroupingText(article);
+    const matchedEntity = GROUPING_EVENT_ENTITY_KEYWORDS.find(([, keywords]) =>
+      keywords.some((keyword) => textMatchesKeyword(text, keyword))
+    );
 
-  return matchedEntity ? matchedEntity[0] : "";
+    return matchedEntity ? matchedEntity[0] : "";
+  });
 }
 
 function getMatchingFingerprintKeys(text, definitions) {
@@ -7303,38 +7388,40 @@ function getEventFingerprintTimeBucket(article) {
 }
 
 function extractEventFingerprint(article) {
-  const text = getNormalizedGroupingText(article);
-  const countries = Array.from(new Set([
-    getDetectedEventEntity(article),
-    ...getMatchingFingerprintKeys(text, GROUPING_EVENT_ENTITY_KEYWORDS),
-  ].filter(Boolean)));
-  const agencies = Array.from(new Set(getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_AGENCY_KEYWORDS)));
-  const systems = Array.from(new Set(getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_SYSTEM_KEYWORDS)));
-  const actionType = getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_ACTION_KEYWORDS)[0] || getDetailedArticleEventType(article) || "";
-  const subjectType = getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_SUBJECT_KEYWORDS)[0]
-    || (getPrimaryPassportSubject(article) !== "unrelated" ? getPrimaryPassportSubject(article) : getDetailedArticleEventType(article) || "");
-  const timeBucket = getEventFingerprintTimeBucket(article);
-  const keywords = getEventSpecificTerms(article, countries[0] || agencies[0] || "", 4);
+  return getCachedArticleValue(article, "eventFingerprint", () => {
+    const text = getNormalizedGroupingText(article);
+    const countries = Array.from(new Set([
+      getDetectedEventEntity(article),
+      ...getMatchingFingerprintKeys(text, GROUPING_EVENT_ENTITY_KEYWORDS),
+    ].filter(Boolean)));
+    const agencies = Array.from(new Set(getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_AGENCY_KEYWORDS)));
+    const systems = Array.from(new Set(getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_SYSTEM_KEYWORDS)));
+    const actionType = getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_ACTION_KEYWORDS)[0] || getDetailedArticleEventType(article) || "";
+    const subjectType = getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_SUBJECT_KEYWORDS)[0]
+      || (getPrimaryPassportSubject(article) !== "unrelated" ? getPrimaryPassportSubject(article) : getDetailedArticleEventType(article) || "");
+    const timeBucket = getEventFingerprintTimeBucket(article);
+    const keywords = getEventSpecificTerms(article, countries[0] || agencies[0] || "", 4);
 
-  const fingerprint = {
-    countries,
-    agencies,
-    systems,
-    actionType,
-    subjectType,
-    timeBucket,
-    keywords,
-  };
+    const fingerprint = {
+      countries,
+      agencies,
+      systems,
+      actionType,
+      subjectType,
+      timeBucket,
+      keywords,
+    };
 
-  console.debug("[event-fingerprint]", {
-    title: article?.title || "Untitled article",
-    countries,
-    systems,
-    actionType,
-    subjectType,
+    intelligenceDebug("[event-fingerprint]", {
+      title: article?.title || "Untitled article",
+      countries,
+      systems,
+      actionType,
+      subjectType,
+    });
+
+    return fingerprint;
   });
-
-  return fingerprint;
 }
 
 function getFingerprintIntersection(leftValues, rightValues) {
@@ -7343,62 +7430,64 @@ function getFingerprintIntersection(leftValues, rightValues) {
 }
 
 function getEventFingerprintMatch(leftArticle, rightArticle) {
-  const leftFingerprint = extractEventFingerprint(leftArticle);
-  const rightFingerprint = extractEventFingerprint(rightArticle);
-  let score = 0;
+  return getCachedArticlePairValue(leftArticle, rightArticle, "eventFingerprintMatch", () => {
+    const leftFingerprint = extractEventFingerprint(leftArticle);
+    const rightFingerprint = extractEventFingerprint(rightArticle);
+    let score = 0;
 
-  const sharedCountries = getFingerprintIntersection(leftFingerprint.countries, rightFingerprint.countries);
-  if (sharedCountries.length) {
-    score += 4;
-  } else if (leftFingerprint.countries.length && rightFingerprint.countries.length) {
-    score -= 6;
-  }
+    const sharedCountries = getFingerprintIntersection(leftFingerprint.countries, rightFingerprint.countries);
+    if (sharedCountries.length) {
+      score += 4;
+    } else if (leftFingerprint.countries.length && rightFingerprint.countries.length) {
+      score -= 6;
+    }
 
-  const sharedAgencies = getFingerprintIntersection(leftFingerprint.agencies, rightFingerprint.agencies);
-  if (sharedAgencies.length) {
-    score += 3;
-  }
+    const sharedAgencies = getFingerprintIntersection(leftFingerprint.agencies, rightFingerprint.agencies);
+    if (sharedAgencies.length) {
+      score += 3;
+    }
 
-  const sharedSystems = getFingerprintIntersection(leftFingerprint.systems, rightFingerprint.systems);
-  if (sharedSystems.length) {
-    score += 4;
-  } else if (leftFingerprint.systems.length && rightFingerprint.systems.length) {
-    score -= 5;
-  }
+    const sharedSystems = getFingerprintIntersection(leftFingerprint.systems, rightFingerprint.systems);
+    if (sharedSystems.length) {
+      score += 4;
+    } else if (leftFingerprint.systems.length && rightFingerprint.systems.length) {
+      score -= 5;
+    }
 
-  if (leftFingerprint.actionType && rightFingerprint.actionType) {
-    score += leftFingerprint.actionType === rightFingerprint.actionType ? 3 : -4;
-  }
+    if (leftFingerprint.actionType && rightFingerprint.actionType) {
+      score += leftFingerprint.actionType === rightFingerprint.actionType ? 3 : -4;
+    }
 
-  if (leftFingerprint.subjectType && rightFingerprint.subjectType) {
-    score += leftFingerprint.subjectType === rightFingerprint.subjectType ? 3 : -4;
-  }
+    if (leftFingerprint.subjectType && rightFingerprint.subjectType) {
+      score += leftFingerprint.subjectType === rightFingerprint.subjectType ? 3 : -4;
+    }
 
-  const sharedKeywords = getFingerprintIntersection(leftFingerprint.keywords, rightFingerprint.keywords);
-  if (sharedKeywords.length) {
-    score += 2;
-  } else if (leftFingerprint.keywords.length && rightFingerprint.keywords.length) {
-    score -= 2;
-  }
-
-  const leftDate = toDate(leftArticle?.pubDate);
-  const rightDate = toDate(rightArticle?.pubDate);
-  if (!Number.isNaN(leftDate.getTime()) && !Number.isNaN(rightDate.getTime())) {
-    const dayDiff = Math.abs(leftDate.getTime() - rightDate.getTime()) / (1000 * 60 * 60 * 24);
-    if (dayDiff <= 14) {
+    const sharedKeywords = getFingerprintIntersection(leftFingerprint.keywords, rightFingerprint.keywords);
+    if (sharedKeywords.length) {
       score += 2;
-    } else if (dayDiff > 45) {
+    } else if (leftFingerprint.keywords.length && rightFingerprint.keywords.length) {
       score -= 2;
     }
-  }
 
-  const grouped = score >= 8;
-  return {
-    grouped,
-    score,
-    leftFingerprint,
-    rightFingerprint,
-  };
+    const leftDate = toDate(leftArticle?.pubDate);
+    const rightDate = toDate(rightArticle?.pubDate);
+    if (!Number.isNaN(leftDate.getTime()) && !Number.isNaN(rightDate.getTime())) {
+      const dayDiff = Math.abs(leftDate.getTime() - rightDate.getTime()) / (1000 * 60 * 60 * 24);
+      if (dayDiff <= 14) {
+        score += 2;
+      } else if (dayDiff > 45) {
+        score -= 2;
+      }
+    }
+
+    const grouped = score >= 8;
+    return {
+      grouped,
+      score,
+      leftFingerprint,
+      rightFingerprint,
+    };
+  });
 }
 
 function isSameEventFingerprint(leftArticle, rightArticle) {
@@ -7545,14 +7634,14 @@ function getConflictReason(leftArticle, rightArticle) {
     const leftLowRelevance = isLowRelevancePassportArticle(leftArticle);
     const rightLowRelevance = isLowRelevancePassportArticle(rightArticle);
 
-    console.debug("[grouping validation]", {
+    intelligenceDebug("[grouping validation]", {
       title: leftArticle?.title || "Untitled article",
       eventType: leftEventType,
       isRealTravelDocument: leftIsRealTravelDocument,
       rejectedBecauseNoise: leftRejectedBecauseNoise,
     });
 
-    console.debug("[grouping validation]", {
+    intelligenceDebug("[grouping validation]", {
       title: rightArticle?.title || "Untitled article",
       eventType: rightEventType,
       isRealTravelDocument: rightIsRealTravelDocument,
@@ -7619,7 +7708,7 @@ function getConflictReason(leftArticle, rightArticle) {
   }
 
   const fingerprintMatch = getEventFingerprintMatch(leftArticle, rightArticle);
-  console.debug("[group-score]", {
+  intelligenceDebug("[group-score]", {
     titleA: leftArticle?.title || "Untitled article",
     titleB: rightArticle?.title || "Untitled article",
     score: fingerprintMatch.score,
@@ -7966,7 +8055,7 @@ function groupArticlesByEvent(articles) {
       const primary = group[0];
       const conflictReason = hasConflictingEventSignals(primary, article);
       if (conflictReason) {
-        console.debug("[grouping conflict]", {
+        intelligenceDebug("[grouping conflict]", {
           leftTitle: primary?.title || "Untitled article",
           rightTitle: article?.title || "Untitled article",
           leftEventType: getDetailedArticleEventType(primary),
@@ -7990,7 +8079,7 @@ function groupArticlesByEvent(articles) {
   return Object.values(grouped).flatMap((bucket) => bucket).map((group) => {
     const primary = group[0];
     if (group.length > 1) {
-      console.log("GROUPED EVENT", {
+      intelligenceLog("GROUPED EVENT", {
         title: primary?.title || "Untitled article",
         eventType: getDetailedArticleEventType(primary),
         groupedCount: group.length,
@@ -8537,6 +8626,8 @@ async function loadSnapshot() {
     loadAllArticles(),
     apiRequest("/api/dmv-catalog"),
   ]);
+  runtime.articleComputationCache.clear();
+  runtime.articlePairComputationCache.clear();
   const normalizedArticles = articles.map(normalizeLoadedArticle);
 
   state.feeds = feeds;
