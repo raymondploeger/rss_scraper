@@ -4333,6 +4333,7 @@ function getKeesingIdentityRelevance(article) {
   const sourceText = String(article?.source || "").toLowerCase();
   const combinedText = getIdentityDocumentContextText(article);
   const primarySubject = getPrimaryPassportSubject(article);
+  const context = getIdentityContextSignals(article);
 
   let score = 0;
   const applyWeightedSignals = (keywords, weights) => {
@@ -4399,7 +4400,17 @@ function getKeesingIdentityRelevance(article) {
     score -= 10;
   }
 
-  if (isRealTravelDocumentArticle(article)) {
+  if (
+    context.government
+    || context.border
+    || context.immigration
+    || context.fraud
+    || context.security
+    || context.issuance
+    || context.infrastructure
+    || context.travelRule
+    || getGovernmentDocumentConfidence(article) >= 3
+  ) {
     score += 4;
   }
 
@@ -5885,55 +5896,63 @@ function getVisibleArticles() {
       return !rejectedAsNoise;
     })
     .filter((article) => {
-      const relevance = getIdentityDocumentRelevance(article);
-      const highConfidenceAssessment = getHighConfidencePassportAssessment(article);
-      const keesingAssessment = getKeesingIdentityRelevance(article);
-      const rejected = shouldRejectPassportArticle(article) || isLowRelevancePassportArticle(article);
-      const primarySubject = highConfidenceAssessment.primarySubject;
-      const hasPassportKeyword = isPassportOrIdentityTopicArticle(article);
+      try {
+        const relevance = getIdentityDocumentRelevance(article);
+        const highConfidenceAssessment = getHighConfidencePassportAssessment(article);
+        const keesingAssessment = getKeesingIdentityRelevance(article);
+        const rejected = shouldRejectPassportArticle(article) || isLowRelevancePassportArticle(article);
+        const primarySubject = highConfidenceAssessment.primarySubject;
+        const hasPassportKeyword = isPassportOrIdentityTopicArticle(article);
 
-      if (hasPassportKeyword) {
-        const context = getIdentityContextSignals(article);
-        const rejectedReason = rejected
-          ? (!keesingAssessment.hasRequiredComponent ? "missing document/system component"
-            : keesingAssessment.primarySubject === "unrelated" ? "keesing subject unrelated"
-            : keesingAssessment.score < KEESING_RELEVANCE_THRESHOLD ? "below keesing threshold"
-            : highConfidenceAssessment.rejectedReason || (primarySubject === "unrelated" ? "primary subject unrelated"
-            : context.sports ? "sports"
-            : context.pets ? "pets"
-            : context.education ? "education"
-            : context.unrelatedLifestyle ? "lifestyle"
-            : context.entertainment ? "entertainment"
-            : context.genericTravel ? "generic travel"
-            : "low relevance"))
-          : "";
-        console.debug("[passport-context-filter]", {
+        if (hasPassportKeyword) {
+          const context = getIdentityContextSignals(article);
+          const rejectedReason = rejected
+            ? (!keesingAssessment.hasRequiredComponent ? "missing document/system component"
+              : keesingAssessment.primarySubject === "unrelated" ? "keesing subject unrelated"
+              : keesingAssessment.score < KEESING_RELEVANCE_THRESHOLD ? "below keesing threshold"
+              : highConfidenceAssessment.rejectedReason || (primarySubject === "unrelated" ? "primary subject unrelated"
+                : context.sports ? "sports"
+                : context.pets ? "pets"
+                : context.education ? "education"
+                : context.unrelatedLifestyle ? "lifestyle"
+                : context.entertainment ? "entertainment"
+                : context.genericTravel ? "generic travel"
+                : "low relevance"))
+            : "";
+          console.debug("[passport-context-filter]", {
+            title: article?.title || "Untitled article",
+            kept: !rejected,
+            rejectedReason,
+            score: relevance,
+          });
+          console.debug("[passport-relevance]", {
+            title: article?.title || "Untitled article",
+            score: highConfidenceAssessment.score,
+            kept: !rejected,
+            rejectedReason,
+          });
+          console.debug("[keesing-relevance]", {
+            title: article?.title || "Untitled article",
+            score: keesingAssessment.score,
+            kept: !rejected,
+            rejectedReason,
+          });
+          console.debug("[primary-passport-subject]", {
+            title: article?.title || "Untitled article",
+            primarySubject,
+            kept: !rejected,
+            rejectedReason,
+          });
+        }
+
+        return !rejected;
+      } catch (error) {
+        console.warn("[passport-relevance-failsafe]", {
           title: article?.title || "Untitled article",
-          kept: !rejected,
-          rejectedReason,
-          score: relevance,
+          message: error instanceof Error ? error.message : String(error),
         });
-        console.debug("[passport-relevance]", {
-          title: article?.title || "Untitled article",
-          score: highConfidenceAssessment.score,
-          kept: !rejected,
-          rejectedReason,
-        });
-        console.debug("[keesing-relevance]", {
-          title: article?.title || "Untitled article",
-          score: keesingAssessment.score,
-          kept: !rejected,
-          rejectedReason,
-        });
-        console.debug("[primary-passport-subject]", {
-          title: article?.title || "Untitled article",
-          primarySubject,
-          kept: !rejected,
-          rejectedReason,
-        });
+        return true;
       }
-
-      return !rejected;
     })
     .filter(isUiRelevantIntelligenceArticle)
     .filter(articleMatchesFilters)
