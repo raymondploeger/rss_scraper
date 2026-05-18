@@ -287,6 +287,94 @@ const SIGNAL_CATEGORIES = [
     weak: ["authentication", "machine readable", "mrz", "mobile id", "eid"],
     exclude: [],
   },
+  {
+    id: "fraud",
+    label: "Fraud",
+    badgeLabel: "Fraud",
+    strong: [],
+    weak: [],
+    exclude: [],
+  },
+  {
+    id: "counterfeit",
+    label: "Counterfeit",
+    badgeLabel: "Counterfeit",
+    strong: [],
+    weak: [],
+    exclude: [],
+  },
+  {
+    id: "withdrawal",
+    label: "Withdrawal",
+    badgeLabel: "Withdrawal",
+    strong: [],
+    weak: [],
+    exclude: [],
+  },
+  {
+    id: "redesign",
+    label: "Redesign",
+    badgeLabel: "Redesign",
+    strong: [],
+    weak: [],
+    exclude: [],
+  },
+  {
+    id: "rollout",
+    label: "Rollout",
+    badgeLabel: "Rollout",
+    strong: [],
+    weak: [],
+    exclude: [],
+  },
+  {
+    id: "delay",
+    label: "Delay",
+    badgeLabel: "Delay",
+    strong: [],
+    weak: [],
+    exclude: [],
+  },
+  {
+    id: "travel-disruption",
+    label: "Travel disruption",
+    badgeLabel: "Disruption",
+    strong: [],
+    weak: [],
+    exclude: [],
+  },
+  {
+    id: "criminal-misuse",
+    label: "Criminal misuse",
+    badgeLabel: "Criminal misuse",
+    strong: [],
+    weak: [],
+    exclude: [],
+  },
+  {
+    id: "biometric",
+    label: "Biometric",
+    badgeLabel: "Biometric",
+    strong: [],
+    weak: [],
+    exclude: [],
+  },
+  {
+    id: "identity-theft",
+    label: "Identity theft",
+    badgeLabel: "Identity theft",
+    strong: [],
+    weak: [],
+    exclude: [],
+  },
+  {
+    id: "border-control",
+    label: "Border control",
+    badgeLabel: "Border control",
+    strong: [],
+    weak: [],
+    exclude: [],
+  },
 ];
 const SIGNAL_CATEGORY_BY_ID = new Map(SIGNAL_CATEGORIES.map((category) => [category.id, category]));
 const SIGNAL_CORE_OBJECT_KEYWORDS = [
@@ -5132,15 +5220,32 @@ function getBanknoteSignalMatches(text) {
     "legal tender until",
     "exchange deadline",
   ])) {
+    pushMatch("withdrawal", "high");
     pushMatch("regulations", "high");
   }
 
-  if (hasAny(["banknote series", "new series", "new banknote family"])) {
+  if (hasAny(["banknote series", "new series", "new banknote family", "rolled out", "rollout", "launch"])) {
+    pushMatch("rollout", "high");
     pushMatch("new-releases", "high");
   }
 
   if (hasAny(["redesigned", "redesign", "new design", "new banknote design"])) {
+    pushMatch("redesign", "high");
     pushMatch("design-changes", "high");
+  }
+
+  if (hasAny([
+    "counterfeit banknotes",
+    "counterfeit notes",
+    "fake banknote",
+    "fake notes",
+    "forged notes",
+    "seizure",
+    "police warning",
+    "counterfeit alert",
+  ])) {
+    pushMatch("counterfeit", "high");
+    pushMatch("fraud", "high");
   }
 
   if (hasAny([
@@ -5156,6 +5261,11 @@ function getBanknoteSignalMatches(text) {
     "anti-counterfeit",
   ])) {
     pushMatch("security-features", "high");
+  }
+
+  if (hasAny(["polymer", "polymer substrate", "substrate migration", "polymer transition", "plastic banknote"])) {
+    pushMatch("technology", "high");
+    pushMatch("redesign", hasAny(["substrate migration", "polymer transition"]) ? "high" : "low");
   }
 
   if (!hasHighPriorityBanknoteSignal && hasLowPriorityBanknoteSignal) {
@@ -5216,6 +5326,32 @@ function getIdDocumentSignalMatches(text) {
     pushMatch("regulations", "high");
   }
 
+  if (hasAny(["delay", "delays", "queue", "queues", "disruption", "outage", "technical outage", "suspension", "suspended"])) {
+    pushMatch("delay", "high");
+  }
+
+  if (hasAny(["travel disruption", "border delays", "border queue", "airport disruption", "passport stamping replacement"])) {
+    pushMatch("travel-disruption", "high");
+  }
+
+  if (hasAny(["fake passport", "forged passport", "forged documents", "terrorist passport", "document fraud network"])) {
+    pushMatch("criminal-misuse", "high");
+    pushMatch("fraud", "high");
+  }
+
+  if (hasAny(["identity theft", "stolen identity"])) {
+    pushMatch("identity-theft", "high");
+    pushMatch("fraud", "high");
+  }
+
+  if (hasAny(["biometric", "biometric system", "biometric checks", "biometric border checks"])) {
+    pushMatch("biometric", "high");
+  }
+
+  if (hasAny(["border control", "border checks", "border crossing", "customs", "ees", "etias", "entry exit system", "entry/exit system"])) {
+    pushMatch("border-control", "high");
+  }
+
   if (hasAny(ID_SIGNAL_SECURITY_STRONG_KEYWORDS)) {
     pushMatch("security-features", "high");
   }
@@ -5225,14 +5361,18 @@ function getIdDocumentSignalMatches(text) {
   }
 
   if (hasAny(ID_SIGNAL_DESIGN_STRONG_KEYWORDS)) {
+    pushMatch("redesign", "high");
     pushMatch("design-changes", "high");
   } else if (hasAny(ID_SIGNAL_DESIGN_WEAK_KEYWORDS)) {
+    pushMatch("redesign", "low");
     pushMatch("design-changes", "low");
   }
 
   if (hasAny(ID_SIGNAL_RELEASE_STRONG_KEYWORDS)) {
+    pushMatch("rollout", "high");
     pushMatch("new-releases", "high");
   } else if (hasAny(ID_SIGNAL_RELEASE_SUPPORT_KEYWORDS)) {
+    pushMatch("rollout", "low");
     pushMatch("new-releases", "low");
   }
 
@@ -5372,10 +5512,20 @@ function getPrimaryArticleSignalCategory(article) {
     return null;
   }
 
-  return {
+  const primarySignalCategory = {
     ...category,
     confidence: primarySignalMatch.confidence,
   };
+
+  intelligenceDebug("[classification]", {
+    title: article?.title || "Untitled article",
+    signalType: primarySignalCategory.id,
+    entity: getDetectedEventEntity(article),
+    eventType: getDetailedArticleEventType(article),
+    confidence: primarySignalCategory.confidence,
+  });
+
+  return primarySignalCategory;
 }
 
 function isKeywordRuleFalsePositive(article, rule) {
@@ -6494,6 +6644,7 @@ const EVENT_FINGERPRINT_AGENCY_KEYWORDS = [
   ["rbi", ["rbi", "reserve bank of india"]],
   ["norges-bank", ["norges bank"]],
   ["ecb", ["ecb", "european central bank"]],
+  ["hnb", ["hnb", "croatian national bank"]],
   ["bank-of-england", ["bank of england"]],
   ["bulgarian-national-bank", ["bulgarian national bank"]],
   ["de-la-rue", ["de la rue"]],
@@ -6508,6 +6659,7 @@ const EVENT_FINGERPRINT_AGENCY_KEYWORDS = [
 const EVENT_FINGERPRINT_SYSTEM_KEYWORDS = [
   ["ees", ["ees", "entry exit system", "entry/exit system"]],
   ["etias", ["etias"]],
+  ["airport-disruption", ["dover", "airport disruption", "airport delays", "border queue", "port of dover"]],
   ["passport-revocation", ["passport revocation", "revocation", "child support"]],
   ["travel-exemption", ["travel exemption", "exemption", "exempt"]],
   ["citizenship-law", ["citizenship law", "nationality law"]],
@@ -6527,6 +6679,7 @@ const EVENT_FINGERPRINT_ACTION_KEYWORDS = [
   ["rollout", ["rollout", "rolled out", "launched", "deployed", "implemented"]],
   ["suspension", ["suspension", "suspended"]],
   ["revocation", ["revocation", "revoked"]],
+  ["exemption", ["exemption", "exempt", "waiver"]],
   ["fraud-warning", ["warning", "fraud warning", "warns against"]],
   ["court-ruling", ["court ruling", "court", "judge"]],
   ["law-update", ["law update", "regulation", "policy change", "directive"]],
@@ -8613,7 +8766,7 @@ function renderArticleCard(article) {
     groupedSources.forEach((sourceArticle, index) => {
       const row = document.createElement("div");
       row.className = "grouped-source-item";
-      if (index >= 3) {
+      if (index >= 2) {
         row.classList.add("is-extra-source");
         row.hidden = true;
         hiddenExtraSources.push(row);

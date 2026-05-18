@@ -1525,14 +1525,14 @@ h3 {
   display: grid;
   gap: 14px;
   padding: 20px 22px 18px;
-  min-height: 190px;
+  min-height: 176px;
 }
 
 .article-title {
   margin-bottom: 0;
   font-size: 1.08rem;
   font-weight: 700;
-  line-height: 1.45;
+  line-height: 1.38;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
@@ -1542,10 +1542,10 @@ h3 {
 .article-meta {
   display: flex;
   align-items: center;
-  gap: 8px 10px;
+  gap: 6px 8px;
   flex-wrap: wrap;
   font-size: 0.8rem;
-  line-height: 1.45;
+  line-height: 1.35;
   color: var(--muted);
 }
 
@@ -1598,12 +1598,12 @@ button.article-duplicate-badge {
 
 .article-feed {
   margin: 2px 0 0;
-  padding-top: 12px;
+  padding-top: 10px;
   border-top: 1px solid var(--line);
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  line-height: 1.45;
+  line-height: 1.35;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1611,22 +1611,24 @@ button.article-duplicate-badge {
 
 .grouped-sources-inline {
   margin: 0 18px 18px;
-  padding: 14px 16px;
+  padding: 10px 12px;
   border: 1px solid rgba(22, 96, 255, 0.12);
   border-top: 1px solid rgba(22, 96, 255, 0.12);
   border-radius: var(--radius-md);
   background: linear-gradient(180deg, rgba(22, 96, 255, 0.03), rgba(22, 96, 255, 0.015));
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 10px;
+  gap: 8px;
   color: var(--text);
+  max-height: 260px;
+  overflow-y: auto;
 }
 
 .grouped-source-item {
   display: grid;
-  gap: 5px;
+  gap: 4px;
   min-width: 0;
-  padding: 8px 10px;
+  padding: 6px 8px;
   border-radius: 12px;
   border: 1px solid var(--line);
   background: var(--bg-elevated);
@@ -1634,21 +1636,21 @@ button.article-duplicate-badge {
 
 .grouped-source-title {
   color: var(--text);
-  font-size: 0.84rem;
+  font-size: 0.8rem;
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.34;
   overflow-wrap: anywhere;
 }
 
 .grouped-source-meta {
   color: var(--muted);
-  font-size: 0.7rem;
-  line-height: 1.4;
+  font-size: 0.66rem;
+  line-height: 1.3;
 }
 
 .grouped-source-open {
   color: var(--accent);
-  font-size: 0.74rem;
+  font-size: 0.7rem;
   font-weight: 600;
   text-decoration: none;
   width: fit-content;
@@ -1660,7 +1662,7 @@ button.article-duplicate-badge {
 
 .grouped-sources-more {
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   font-weight: 700;
   grid-column: 1 / -1;
 }
