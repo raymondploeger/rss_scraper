@@ -8626,7 +8626,7 @@ function logFeedFilterDiagnostics(selectedFeedId, selectedFeedLabel, rawMatches,
 
 function finalizeRenderDiagnostics(payload = {}) {
   const renderedCardCount = document.querySelectorAll(".article-card").length;
-  const pageSize = Number(payload.pageSize) || ARTICLE_RENDER_PAGE_SIZE;
+  const pageArticlesCount = Number(payload.pageArticlesCount) || 0;
 
   console.info("[renderArticles]", {
     build: APP_BUILD,
@@ -8643,13 +8643,30 @@ function finalizeRenderDiagnostics(payload = {}) {
     dashboardMode: state.dashboardMode,
   });
 
-  if (renderedCardCount > pageSize) {
-    console.error("PAGINATION FAILED", {
+  console.warn("ACTUAL RENDERED CARDS", renderedCardCount);
+
+  if (renderedCardCount > pageArticlesCount) {
+    console.error("OVER-RENDER DETECTED", {
       renderedCardCount,
-      pageSize,
+      pageArticlesCount,
       build: APP_BUILD,
     });
   }
+
+  if (renderedCardCount > (Number(payload.pageSize) || ARTICLE_RENDER_PAGE_SIZE)) {
+    console.error("PAGINATION FAILED", {
+      renderedCardCount,
+      pageSize: Number(payload.pageSize) || ARTICLE_RENDER_PAGE_SIZE,
+      build: APP_BUILD,
+    });
+  }
+}
+
+function logRenderingPageArticlesOnly(groupedArticlesCount, pageArticles) {
+  console.warn("RENDERING PAGE ARTICLES ONLY", {
+    groupedArticlesCount,
+    pageArticlesCount: Array.isArray(pageArticles) ? pageArticles.length : 0,
+  });
 }
 
 function groupedArticleMatchesFeedFilter(article, feedId) {
@@ -8782,6 +8799,7 @@ function renderArticles() {
       filteredRawArticles: filteredRawArticles.length,
       groupedArticlesCount,
       paginatedPageSize: pageArticles.length,
+      pageArticlesCount: pageArticles.length,
       pageSize: state.pagination?.pageSize || ARTICLE_RENDER_PAGE_SIZE,
       activeFeedId,
       activeFeedLabel,
@@ -8804,6 +8822,7 @@ function renderArticles() {
       }
 
       const fragment = document.createDocumentFragment();
+      logRenderingPageArticlesOnly(groupedArticlesCount, pageArticles);
       pageArticles.forEach((article) => {
         fragment.appendChild(renderArticleCard(article));
       });
@@ -8830,6 +8849,7 @@ function renderArticles() {
       }
 
       const fragment = document.createDocumentFragment();
+      logRenderingPageArticlesOnly(groupedArticlesCount, pageArticles);
       pageArticles.forEach((article) => {
         fragment.appendChild(renderArticleCard(article));
       });
@@ -8864,6 +8884,7 @@ function renderArticles() {
       }
 
       const fragment = document.createDocumentFragment();
+      logRenderingPageArticlesOnly(groupedArticlesCount, pageArticles);
       visibleFeeds.forEach((feed) => {
         const feedArticles = articlesByFeedId.get(feed.id) || [];
         const groupCards = feedArticles.length
@@ -8905,6 +8926,7 @@ function renderArticles() {
       }
 
       const fragment = document.createDocumentFragment();
+      logRenderingPageArticlesOnly(groupedArticlesCount, pageArticles);
       visibleEntries.forEach((entry) => {
         const importedFeed = getFeedForCatalogEntry(entry);
         const feedArticles = importedFeed ? articlesByFeedId.get(importedFeed.id) || [] : [];
@@ -8959,6 +8981,7 @@ function renderArticles() {
 
     const fragment = document.createDocumentFragment();
 
+    logRenderingPageArticlesOnly(groupedArticlesCount, pageArticles);
     pageArticles.forEach((article) => {
       fragment.appendChild(renderArticleCard(article));
     });
