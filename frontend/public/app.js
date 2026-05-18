@@ -2871,7 +2871,7 @@ function getSnapshotFeedStats(snapshot, feedId) {
 }
 
 function generateAlerts(previous, current) {
-  console.log("[alerts][snapshot-compare]", { previous, current });
+  intelligenceLog("[alerts][snapshot-compare]", { previous, current });
   const candidates = [];
   const feedDiffs = [];
   const queueAlert = (priorityLevel, alert, score = 0, options = {}) => {
@@ -3072,7 +3072,7 @@ function generateAlerts(previous, current) {
     }
   });
 
-  console.log("ALERT DIFF", {
+  intelligenceLog("ALERT DIFF", {
     totalDiff: newArticleCount,
     feedDiffs,
   });
@@ -3861,38 +3861,46 @@ function getArticleKeywordText(article) {
 }
 
 function getArticleSignalText(article) {
-  return [
-    article.title,
-    article.description,
-    article.summary,
-    article.summaryShort,
-    article.contentSnippet,
-    article.source,
-    article.topic,
-    getArticleTags(article).join(" "),
-    getArticleFilterTags(article).join(" "),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+  return getCachedArticleValue(article, "articleSignalText", () =>
+    [
+      article.title,
+      article.description,
+      article.summary,
+      article.summaryShort,
+      article.contentSnippet,
+      article.source,
+      article.topic,
+      getArticleTags(article).join(" "),
+      getArticleFilterTags(article).join(" "),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+  );
 }
 
 function getArticleTopicClassifierText(article) {
-  return [
-    article?.title,
-    article?.description,
-    article?.summary,
-    article?.summaryShort,
-    article?.contentSnippet,
-    article?.source,
-    article?.topic,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+  return getCachedArticleValue(article, "articleTopicClassifierText", () =>
+    [
+      article?.title,
+      article?.description,
+      article?.summary,
+      article?.summaryShort,
+      article?.contentSnippet,
+      article?.source,
+      article?.topic,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+  );
 }
 
 function getArticleTopicType(article) {
+  if (article?.topicType) {
+    return String(article.topicType);
+  }
+
   const text = getArticleTopicClassifierText(article);
   if (!text) {
     return "noise";
@@ -3928,114 +3936,122 @@ function getArticleTopicType(article) {
 }
 
 function getPassportEventType(article) {
-  const text = getArticleTopicClassifierText(article);
-  if (!text) {
+  return getCachedArticleValue(article, "passportEventType", () => {
+    const text = getArticleTopicClassifierText(article);
+    if (!text) {
+      return "passport_noise";
+    }
+
+    const hasAny = (keywords) => normalizeKeywordList(keywords).some((keyword) => textMatchesKeyword(text, keyword));
+
+    if (isPassportNoiseArticle(article) || hasAny(PASSPORT_EVENT_TYPE_RULES.passport_noise)) {
+      return "passport_noise";
+    }
+
+    if (hasAny(PASSPORT_EVENT_TYPE_RULES.passport_ranking)) {
+      return "passport_ranking";
+    }
+
+    if (hasAny(PASSPORT_EVENT_TYPE_RULES.ees_border_control)) {
+      return "ees_border_control";
+    }
+
+    if (hasAny(PASSPORT_EVENT_TYPE_RULES.passport_fraud)) {
+      return "passport_fraud";
+    }
+
+    if (hasAny(PASSPORT_EVENT_TYPE_RULES.passport_processing)) {
+      return "passport_processing";
+    }
+
+    if (hasAny(PASSPORT_EVENT_TYPE_RULES.passport_regulation)) {
+      return "passport_regulation";
+    }
+
+    if (hasAny(PASSPORT_EVENT_TYPE_RULES.passport_design)) {
+      return "passport_design";
+    }
+
+    if (
+      [
+        "passport",
+        "passports",
+        "biometric passport",
+        "e-passport",
+        "epassport",
+        "state department passport",
+      ].some((keyword) => textMatchesKeyword(text, keyword))
+    ) {
+      return isRealTravelDocumentArticle(article) ? "travel_passport_other" : "passport_noise";
+    }
+
     return "passport_noise";
-  }
-
-  const hasAny = (keywords) => normalizeKeywordList(keywords).some((keyword) => textMatchesKeyword(text, keyword));
-
-  if (isPassportNoiseArticle(article) || hasAny(PASSPORT_EVENT_TYPE_RULES.passport_noise)) {
-    return "passport_noise";
-  }
-
-  if (hasAny(PASSPORT_EVENT_TYPE_RULES.passport_ranking)) {
-    return "passport_ranking";
-  }
-
-  if (hasAny(PASSPORT_EVENT_TYPE_RULES.ees_border_control)) {
-    return "ees_border_control";
-  }
-
-  if (hasAny(PASSPORT_EVENT_TYPE_RULES.passport_fraud)) {
-    return "passport_fraud";
-  }
-
-  if (hasAny(PASSPORT_EVENT_TYPE_RULES.passport_processing)) {
-    return "passport_processing";
-  }
-
-  if (hasAny(PASSPORT_EVENT_TYPE_RULES.passport_regulation)) {
-    return "passport_regulation";
-  }
-
-  if (hasAny(PASSPORT_EVENT_TYPE_RULES.passport_design)) {
-    return "passport_design";
-  }
-
-  if (
-    [
-      "passport",
-      "passports",
-      "biometric passport",
-      "e-passport",
-      "epassport",
-      "state department passport",
-    ].some((keyword) => textMatchesKeyword(text, keyword))
-  ) {
-    return isRealTravelDocumentArticle(article) ? "travel_passport_other" : "passport_noise";
-  }
-
-  return "passport_noise";
+  });
 }
 
 function isPassportNoiseArticle(article) {
-  const text = getArticleTopicClassifierText(article);
-  if (!text) {
-    return true;
-  }
+  return getCachedArticleValue(article, "passportNoiseArticle", () => {
+    const text = getArticleTopicClassifierText(article);
+    if (!text) {
+      return true;
+    }
 
-  return normalizeKeywordList(PASSPORT_HARD_NOISE_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
+    return normalizeKeywordList(PASSPORT_HARD_NOISE_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
+  });
 }
 
 function isHardPassportNoise(article) {
-  const text = [
-    article?.title,
-    article?.description,
-    article?.summary,
-    article?.source,
-    getArticleTags(article).join(" "),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+  return getCachedArticleValue(article, "hardPassportNoise", () => {
+    const text = [
+      article?.title,
+      article?.description,
+      article?.summary,
+      article?.source,
+      getArticleTags(article).join(" "),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
 
-  if (!text) {
-    return false;
-  }
+    if (!text) {
+      return false;
+    }
 
-  return normalizeKeywordList(PASSPORT_HARD_NOISE_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
+    return normalizeKeywordList(PASSPORT_HARD_NOISE_KEYWORDS).some((keyword) => textMatchesKeyword(text, keyword));
+  });
 }
 
 function getGovernmentDocumentConfidence(article) {
-  const text = [
-    article?.title,
-    article?.description,
-    article?.summary,
-    article?.source,
-    getArticleTags(article).join(" "),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+  return getCachedArticleValue(article, "governmentDocumentConfidence", () => {
+    const text = [
+      article?.title,
+      article?.description,
+      article?.summary,
+      article?.source,
+      getArticleTags(article).join(" "),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
 
-  if (!text) {
-    return 0;
-  }
-
-  let score = 0;
-  GOVERNMENT_DOCUMENT_POSITIVE_SIGNALS.forEach(([keyword, value]) => {
-    if (textMatchesKeyword(text, keyword)) {
-      score += value;
+    if (!text) {
+      return 0;
     }
-  });
-  GOVERNMENT_DOCUMENT_NEGATIVE_SIGNALS.forEach(([keyword, value]) => {
-    if (textMatchesKeyword(text, keyword)) {
-      score += value;
-    }
-  });
 
-  return score;
+    let score = 0;
+    GOVERNMENT_DOCUMENT_POSITIVE_SIGNALS.forEach(([keyword, value]) => {
+      if (textMatchesKeyword(text, keyword)) {
+        score += value;
+      }
+    });
+    GOVERNMENT_DOCUMENT_NEGATIVE_SIGNALS.forEach(([keyword, value]) => {
+      if (textMatchesKeyword(text, keyword)) {
+        score += value;
+      }
+    });
+
+    return score;
+  });
 }
 
 function getIdentityDocumentContextText(article) {
@@ -4688,26 +4704,30 @@ function isLowRelevancePassportArticle(article) {
 }
 
 function isRealTravelDocumentArticle(article) {
-  const text = getArticleTopicClassifierText(article);
-  if (!text) {
-    return false;
-  }
+  return getCachedArticleValue(article, "realTravelDocumentArticle", () => {
+    const text = getArticleTopicClassifierText(article);
+    if (!text) {
+      return false;
+    }
 
-  if (isPassportNoiseArticle(article) || isHardPassportNoise(article) || shouldRejectPassportArticle(article)) {
-    return false;
-  }
+    if (isPassportNoiseArticle(article) || isHardPassportNoise(article) || shouldRejectPassportArticle(article)) {
+      return false;
+    }
 
-  return normalizeKeywordList(REAL_TRAVEL_DOCUMENT_POSITIVE_SIGNALS).some((keyword) => textMatchesKeyword(text, keyword))
-    || getGovernmentDocumentConfidence(article) >= 3;
+    return normalizeKeywordList(REAL_TRAVEL_DOCUMENT_POSITIVE_SIGNALS).some((keyword) => textMatchesKeyword(text, keyword))
+      || getGovernmentDocumentConfidence(article) >= 3;
+  });
 }
 
 function normalizeLoadedArticle(article) {
   const topicType = getArticleTopicType(article);
-  return {
+  const normalizedArticle = {
     ...article,
     topicType,
     eventType: getArticleEventTypeForTopic(article, topicType),
   };
+  primeArticleIntelligence(normalizedArticle);
+  return normalizedArticle;
 }
 
 function escapeRegExp(value) {
@@ -4723,6 +4743,18 @@ function intelligenceDebug(...args) {
 function intelligenceLog(...args) {
   if (DEBUG_INTELLIGENCE) {
     console.log(...args);
+  }
+}
+
+function intelligenceTime(label) {
+  if (DEBUG_INTELLIGENCE) {
+    console.time(label);
+  }
+}
+
+function intelligenceTimeEnd(label) {
+  if (DEBUG_INTELLIGENCE) {
+    console.timeEnd(label);
   }
 }
 
@@ -4768,6 +4800,42 @@ function getCachedArticlePairValue(leftArticle, rightArticle, cacheKey, computeV
   const value = computeValue();
   pairCache.set(cacheKey, value);
   return value;
+}
+
+function primeArticleIntelligence(article) {
+  if (!article || article._intelligence) {
+    return article?._intelligence || null;
+  }
+
+  try {
+    const intelligence = {
+      cacheKey: getArticleStableCacheKey(article),
+      topicType: getArticleTopicType(article),
+      eventType: String(article?.eventType || ""),
+      detectedEventEntity: getDetectedEventEntity(article),
+      eventFingerprint: extractEventFingerprint(article),
+      identityDocumentRelevance: getIdentityDocumentRelevance(article),
+      highConfidencePassportAssessment: getHighConfidencePassportAssessment(article),
+      keesingIdentityRelevance: getKeesingIdentityRelevance(article),
+      banknoteIntelligenceRelevance: getBanknoteIntelligenceRelevance(article),
+      governmentDocumentConfidence: getGovernmentDocumentConfidence(article),
+      passportNoiseArticle: isPassportNoiseArticle(article),
+      realTravelDocumentArticle: isRealTravelDocumentArticle(article),
+    };
+
+    article._intelligence = intelligence;
+    return intelligence;
+  } catch (error) {
+    article._intelligence = {
+      cacheKey: getArticleStableCacheKey(article),
+      bootstrapError: error instanceof Error ? error.message : String(error),
+    };
+    intelligenceDebug("[intelligence-prime-failed]", {
+      title: article?.title || "Untitled article",
+      message: article._intelligence.bootstrapError,
+    });
+    return article._intelligence;
+  }
 }
 
 function textMatchesKeyword(text, keyword) {
@@ -5796,7 +5864,7 @@ function syncFeedPanelVisibility() {
     elements.addSourceToggle.textContent = addSourceExpanded ? "Hide add" : "+ Add";
   }
 
-  console.log("Panel collapsed:", collapsed, {
+  intelligenceLog("Panel collapsed:", collapsed, {
     feedPanelContentHidden: elements.feedPanelContent.hidden,
     addSourceContentHidden: elements.addSourceContent?.hidden,
   });
@@ -6111,7 +6179,8 @@ function articleMatchesFilters(article) {
 }
 
 function getVisibleArticles() {
-  return state.articles
+  intelligenceTime("getVisibleArticles");
+  const visibleArticles = state.articles
     .filter((article) => {
       const rejectedAsNoise = isHardPassportNoise(article);
       if (rejectedAsNoise) {
@@ -6126,10 +6195,11 @@ function getVisibleArticles() {
     })
     .filter((article) => {
       try {
-        const relevance = getIdentityDocumentRelevance(article);
-        const highConfidenceAssessment = getHighConfidencePassportAssessment(article);
-        const keesingAssessment = getKeesingIdentityRelevance(article);
-        const banknoteAssessment = getBanknoteIntelligenceRelevance(article);
+        const intelligence = article?._intelligence || primeArticleIntelligence(article) || {};
+        const relevance = intelligence.identityDocumentRelevance ?? getIdentityDocumentRelevance(article);
+        const highConfidenceAssessment = intelligence.highConfidencePassportAssessment ?? getHighConfidencePassportAssessment(article);
+        const keesingAssessment = intelligence.keesingIdentityRelevance ?? getKeesingIdentityRelevance(article);
+        const banknoteAssessment = intelligence.banknoteIntelligenceRelevance ?? getBanknoteIntelligenceRelevance(article);
         const rejected = shouldRejectPassportArticle(article)
           || isLowRelevancePassportArticle(article)
           || (isBanknoteTopicArticle(article) && !banknoteAssessment.kept);
@@ -6200,6 +6270,8 @@ function getVisibleArticles() {
     .filter(isUiRelevantIntelligenceArticle)
     .filter(articleMatchesFilters)
     .sort((left, right) => toDate(right.pubDate).getTime() - toDate(left.pubDate).getTime());
+  intelligenceTimeEnd("getVisibleArticles");
+  return visibleArticles;
 }
 
 function getArticleCountLabel(count) {
@@ -7553,7 +7625,12 @@ function getEventSpecificTerms(article, entity = "", limit = 2) {
 }
 
 function getDetailedArticleEventType(article) {
-  return String(article?.eventType || getArticleEventTypeForTopic(article, getArticleTopicType(article)) || "").trim();
+  return String(
+    article?._intelligence?.eventType ||
+      article?.eventType ||
+      getArticleEventTypeForTopic(article, getArticleTopicType(article)) ||
+      ""
+  ).trim();
 }
 
 function getArticleGroupingTopicFamily(article) {
@@ -7722,7 +7799,9 @@ function getConflictReason(leftArticle, rightArticle) {
 }
 
 function hasConflictingEventSignals(leftArticle, rightArticle) {
-  return getConflictReason(leftArticle, rightArticle);
+  return getCachedArticlePairValue(leftArticle, rightArticle, "conflictReason", () =>
+    getConflictReason(leftArticle, rightArticle)
+  );
 }
 
 function isIdentityLikeArticle(article) {
@@ -7941,106 +8020,109 @@ function getBanknoteEventCountry(article) {
 }
 
 function getIdentityEventKey(article) {
-  const normalizedText = [
-    article?.title || "",
-    article?.summary || "",
-    article?.description || "",
-    article?.source || "",
-  ]
-    .join(" ")
-    .toLowerCase();
+  return getCachedArticleValue(article, "identityEventKey", () => {
+    const normalizedText = [
+      article?.title || "",
+      article?.summary || "",
+      article?.description || "",
+      article?.source || "",
+    ]
+      .join(" ")
+      .toLowerCase();
 
-  const hasTrumpPassportReleaseNoise = [
-    "caitlyn",
-    "jenner",
-    "gender",
-    "trans",
-    "transgender",
-    "immigration",
-    "shutdown",
-    "tsa",
-    "study abroad",
-    "cuba",
-    "oil blockade",
-    "population growth",
-  ].some((keyword) => normalizedText.includes(keyword));
-
-  const isTrumpPassportReleaseStory =
-    normalizedText.includes("trump") &&
-    (normalizedText.includes("passport") || normalizedText.includes("passports")) &&
-    [
-      "design",
-      "release",
-      "released",
-      "unveiled",
-      "state department",
-      "america250",
-      "america 250",
-      "250th",
-      "commemorative",
-      "anniversary",
-      "portrait",
-      "face",
-      "image",
-      "signature",
-      "patriot passport",
+    const hasTrumpPassportReleaseNoise = [
+      "caitlyn",
+      "jenner",
+      "gender",
+      "trans",
+      "transgender",
+      "immigration",
+      "shutdown",
+      "tsa",
+      "study abroad",
+      "cuba",
+      "oil blockade",
+      "population growth",
     ].some((keyword) => normalizedText.includes(keyword));
 
-  if (isTrumpPassportReleaseStory && !hasTrumpPassportReleaseNoise) {
-    return "identity_trump_passport_release";
-  }
+    const isTrumpPassportReleaseStory =
+      normalizedText.includes("trump") &&
+      (normalizedText.includes("passport") || normalizedText.includes("passports")) &&
+      [
+        "design",
+        "release",
+        "released",
+        "unveiled",
+        "state department",
+        "america250",
+        "america 250",
+        "250th",
+        "commemorative",
+        "anniversary",
+        "portrait",
+        "face",
+        "image",
+        "signature",
+        "patriot passport",
+      ].some((keyword) => normalizedText.includes(keyword));
 
-  const topicFamily = getArticleGroupingTopicFamily(article);
-  const eventType = getDetailedArticleEventType(article);
-  const detectedEntity = topicFamily === "banknote" ? getBanknoteEventCountry(article) : getDetectedEventEntity(article);
-
-  if (topicFamily === "banknote") {
-    if (!eventType || eventType === "banknote_other" || eventType === "banknote_auction_noise") {
-      return getArticleFingerprint(article) || "";
+    if (isTrumpPassportReleaseStory && !hasTrumpPassportReleaseNoise) {
+      return "identity_trump_passport_release";
     }
 
-    const banknoteTerms = eventType === "banknote_signature_change"
-      ? getBanknoteSignatureGroupingTerms(article, detectedEntity)
-      : getEventSpecificTerms(article, detectedEntity, 2);
+    const topicFamily = getArticleGroupingTopicFamily(article);
+    const eventType = getDetailedArticleEventType(article);
+    const detectedEntity = topicFamily === "banknote" ? getBanknoteEventCountry(article) : getDetectedEventEntity(article);
 
-    if (!detectedEntity && !banknoteTerms.length) {
-      return getArticleFingerprint(article) || "";
+    if (topicFamily === "banknote") {
+      if (!eventType || eventType === "banknote_other" || eventType === "banknote_auction_noise") {
+        return getArticleFingerprint(article) || "";
+      }
+
+      const banknoteTerms = eventType === "banknote_signature_change"
+        ? getBanknoteSignatureGroupingTerms(article, detectedEntity)
+        : getEventSpecificTerms(article, detectedEntity, 2);
+
+      if (!detectedEntity && !banknoteTerms.length) {
+        return getArticleFingerprint(article) || "";
+      }
+
+      return `${topicFamily}-${eventType}-${detectedEntity || "generic"}-${banknoteTerms.join("-") || "generic"}`;
     }
 
-    return `${topicFamily}-${eventType}-${detectedEntity || "generic"}-${banknoteTerms.join("-") || "generic"}`;
-  }
+    if (topicFamily === "identity_document" || topicFamily === "travel_passport") {
+      if (
+        !eventType ||
+        eventType === "other" ||
+        eventType === "travel_passport_other" ||
+        eventType === "passport_noise" ||
+        eventType === "noise"
+      ) {
+        return getArticleFingerprint(article) || "";
+      }
 
-  if (topicFamily === "identity_document" || topicFamily === "travel_passport") {
-    if (
-      !eventType ||
-      eventType === "other" ||
-      eventType === "travel_passport_other" ||
-      eventType === "passport_noise" ||
-      eventType === "noise"
-    ) {
-      return getArticleFingerprint(article) || "";
+      const identityTerms = getEventSpecificTerms(article, detectedEntity, 2);
+      if (!detectedEntity && !identityTerms.length) {
+        return getArticleFingerprint(article) || "";
+      }
+
+      return `${topicFamily}-${eventType}-${detectedEntity || "generic"}-${identityTerms.join("-") || "generic"}`;
     }
 
-    const identityTerms = getEventSpecificTerms(article, detectedEntity, 2);
-    if (!detectedEntity && !identityTerms.length) {
-      return getArticleFingerprint(article) || "";
+    const fingerprint = getArticleFingerprint(article);
+    if (!fingerprint) {
+      return "";
     }
 
-    return `${topicFamily}-${eventType}-${detectedEntity || "generic"}-${identityTerms.join("-") || "generic"}`;
-  }
-
-  const fingerprint = getArticleFingerprint(article);
-  if (!fingerprint) {
-    return "";
-  }
-
-  const fingerprintTokens = getArticleFingerprintTokens(article);
-  const entitySignature = getArticleEntitySignature(article);
-  const coreTokens = fingerprintTokens.slice(0, 6).join(" ");
-  return entitySignature || coreTokens || fingerprint;
+    const fingerprintTokens = getArticleFingerprintTokens(article);
+    const entitySignature = getArticleEntitySignature(article);
+    const coreTokens = fingerprintTokens.slice(0, 6).join(" ");
+    return entitySignature || coreTokens || fingerprint;
+  });
 }
 
 function groupArticlesByEvent(articles) {
+  intelligenceTime("groupArticlesByEvent");
   const grouped = {};
 
   articles.forEach((article, index) => {
@@ -8076,7 +8158,7 @@ function groupArticlesByEvent(articles) {
     grouped[key].push([article]);
   });
 
-  return Object.values(grouped).flatMap((bucket) => bucket).map((group) => {
+  const groupedArticles = Object.values(grouped).flatMap((bucket) => bucket).map((group) => {
     const primary = group[0];
     if (group.length > 1) {
       intelligenceLog("GROUPED EVENT", {
@@ -8093,6 +8175,8 @@ function groupArticlesByEvent(articles) {
       groupedArticlesCount: Math.max(0, group.length - 1),
     };
   });
+  intelligenceTimeEnd("groupArticlesByEvent");
+  return groupedArticles;
 }
 
 function updateArticleFilterContext(articles) {
@@ -8179,6 +8263,25 @@ function getGroupedArticleSources(article) {
   });
 }
 
+function rerenderGroupedArticleCard(article) {
+  const stateKey = getGroupedArticleStateKey(article);
+  const selectorKey = window.CSS?.escape ? window.CSS.escape(stateKey) : stateKey.replace(/["\\]/g, "\\$&");
+  const existingCard = elements.articlesGrid?.querySelector(`.article-card[data-article-state-key="${selectorKey}"]`);
+  if (!existingCard) {
+    renderArticles();
+    return;
+  }
+
+  const nextNode = renderArticleCard(article);
+  const nextCard = nextNode.firstElementChild || nextNode.firstChild;
+  if (!nextCard) {
+    renderArticles();
+    return;
+  }
+
+  existingCard.replaceWith(nextCard);
+}
+
 function toggleGroupedArticleSources(article) {
   const groupedSources = getGroupedArticleSources(article);
   if (!groupedSources.length) {
@@ -8192,7 +8295,7 @@ function toggleGroupedArticleSources(article) {
     runtime.expandedGroupedSourceKeys.add(stateKey);
   }
 
-  renderArticles();
+  rerenderGroupedArticleCard(article);
 }
 
 function toggleGroupedArticleSourceList(article) {
@@ -8209,7 +8312,7 @@ function toggleGroupedArticleSourceList(article) {
     runtime.expandedGroupedSourceKeys.add(stateKey);
   }
 
-  renderArticles();
+  rerenderGroupedArticleCard(article);
 }
 
 function renderArticleCard(article) {
@@ -8230,6 +8333,8 @@ function renderArticleCard(article) {
   const articleStateKey = getGroupedArticleStateKey(article);
   const isGroupedSourcesExpanded = runtime.expandedGroupedSourceKeys.has(articleStateKey);
   const isGroupedSourceListExpanded = runtime.fullyExpandedGroupedSourceKeys.has(articleStateKey);
+
+  card.dataset.articleStateKey = articleStateKey;
 
   if (card && isGroupedSourcesExpanded && groupedSources.length) {
     card.classList.add("article-card--sources-expanded");
@@ -8398,181 +8503,186 @@ function renderSkeletons() {
 }
 
 function renderArticles() {
-  let articles;
+  intelligenceTime("renderArticles");
+  try {
+    let articles;
 
-  if (state.filters.date) {
-    articles = state.articles
-      .filter(articleMatchesFilters)
-      .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
-  } else {
-    const visibleArticles = getVisibleArticles();
-    articles = groupArticlesByEvent(visibleArticles);
-  }
+    if (state.filters.date) {
+      articles = state.articles
+        .filter(articleMatchesFilters)
+        .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+    } else {
+      const visibleArticles = getVisibleArticles();
+      articles = groupArticlesByEvent(visibleArticles);
+    }
 
-  const selectedUsDmvEntry = getSelectedUsDmvCatalogEntry();
-  const selectedUsDmvFeed = getSelectedDmvFeed();
-  const selectedCanadaEntry = getSelectedCanadaCatalogEntry();
-  const selectedDmvOfficialUrl = String(
-    selectedUsDmvFeed?.officialUrl ||
-      selectedUsDmvEntry?.officialUrl ||
-      selectedCanadaEntry?.officialUrl ||
-      ""
-  ).trim();
+    const selectedUsDmvEntry = getSelectedUsDmvCatalogEntry();
+    const selectedUsDmvFeed = getSelectedDmvFeed();
+    const selectedCanadaEntry = getSelectedCanadaCatalogEntry();
+    const selectedDmvOfficialUrl = String(
+      selectedUsDmvFeed?.officialUrl ||
+        selectedUsDmvEntry?.officialUrl ||
+        selectedCanadaEntry?.officialUrl ||
+        ""
+    ).trim();
 
-  syncFilterUx();
-  updateArticleFilterContext(articles);
+    syncFilterUx();
+    updateArticleFilterContext(articles);
 
-  if (state.filters.feedId) {
-    elements.articlesGrid.classList.remove("is-grouped-feed-view");
-    elements.resultsCount.textContent = `${articles.length} results`;
-    elements.articlesGrid.innerHTML = "";
+    if (state.filters.feedId) {
+      elements.articlesGrid.classList.remove("is-grouped-feed-view");
+      elements.resultsCount.textContent = `${articles.length} results`;
+      elements.articlesGrid.innerHTML = "";
 
-    if (!articles.length) {
-      elements.articlesGrid.innerHTML =
-        `<div class="empty-state">No articles match the active filters.</div>`;
+      if (!articles.length) {
+        elements.articlesGrid.innerHTML =
+          `<div class="empty-state">No articles match the active filters.</div>`;
+        return;
+      }
+
+      const fragment = document.createDocumentFragment();
+      articles.forEach((article) => {
+        fragment.appendChild(renderArticleCard(article));
+      });
+      elements.articlesGrid.appendChild(fragment);
       return;
     }
 
-    const fragment = document.createDocumentFragment();
-    articles.forEach((article) => {
-      fragment.appendChild(renderArticleCard(article));
-    });
-    elements.articlesGrid.appendChild(fragment);
-    return;
-  }
+    if ((selectedUsDmvEntry || selectedCanadaEntry) && !state.filters.feedId) {
+      elements.articlesGrid.classList.remove("is-grouped-feed-view");
+      elements.resultsCount.textContent = `${articles.length} results`;
+      elements.articlesGrid.innerHTML = "";
 
-  if ((selectedUsDmvEntry || selectedCanadaEntry) && !state.filters.feedId) {
-    elements.articlesGrid.classList.remove("is-grouped-feed-view");
-    elements.resultsCount.textContent = `${articles.length} results`;
-    elements.articlesGrid.innerHTML = "";
-
-    if (!articles.length) {
-      renderDmvEmptyState(
-        isUsLinkOnlyEntry(selectedUsDmvEntry) || isCanadaLinkOnlyEntry(selectedCanadaEntry)
-          ? "No RSS feed available for this DMV."
-          : "No news available",
-        selectedDmvOfficialUrl
-      );
-      return;
-    }
-
-    const fragment = document.createDocumentFragment();
-    articles.forEach((article) => {
-      fragment.appendChild(renderArticleCard(article));
-    });
-    elements.articlesGrid.appendChild(fragment);
-    return;
-  }
-
-  if (state.dashboardMode === "usa" && !getActiveArticleFeedId()) {
-    elements.articlesGrid.classList.add("is-grouped-feed-view");
-    const dmvFeeds = getUsDmvFeeds();
-    const articlesByFeedId = new Map();
-
-    articles.forEach((article) => {
-      const items = articlesByFeedId.get(article.feedId) || [];
-      items.push(article);
-      articlesByFeedId.set(article.feedId, items);
-    });
-
-    elements.resultsCount.textContent = `${dmvFeeds.length} results`;
-    elements.articlesGrid.innerHTML = "";
-
-    if (!dmvFeeds.length) {
-      elements.articlesGrid.innerHTML =
-        `<div class="empty-state">No articles match the active filters.</div>`;
-      return;
-    }
-
-    const fragment = document.createDocumentFragment();
-    dmvFeeds.forEach((feed) => {
-      const feedArticles = articlesByFeedId.get(feed.id) || [];
-      const groupCards = feedArticles.length
-        ? feedArticles.map((article) => renderArticleCard(article))
-        : [renderDmvPlaceholderCard(feed)];
-      fragment.appendChild(renderFeedGroup(feed.name || "Untitled feed", groupCards));
-    });
-    elements.articlesGrid.appendChild(fragment);
-    return;
-  }
-
-  if (state.dashboardMode === "canada" && !state.filters.canadaDmvFeedPath) {
-    elements.articlesGrid.classList.add("is-grouped-feed-view");
-    const canadaEntries = getCanadaDmvCatalogEntries();
-    const articlesByFeedId = new Map();
-
-    articles.forEach((article) => {
-      const items = articlesByFeedId.get(article.feedId) || [];
-      items.push(article);
-      articlesByFeedId.set(article.feedId, items);
-    });
-
-    elements.resultsCount.textContent = `${canadaEntries.length} results`;
-    elements.articlesGrid.innerHTML = "";
-
-    if (!canadaEntries.length) {
-      elements.articlesGrid.innerHTML =
-        `<div class="empty-state">No imported news available for Canada DMV entries yet.</div>`;
-      return;
-    }
-
-    const fragment = document.createDocumentFragment();
-    canadaEntries.forEach((entry) => {
-      const importedFeed = getFeedForCatalogEntry(entry);
-      const feedArticles = importedFeed ? articlesByFeedId.get(importedFeed.id) || [] : [];
-      const entryLabel = getCatalogEntrySubdivisionLabel(entry);
-      const entryCountry = getCatalogEntryCountry(entry);
-      const feedLike = importedFeed || {
-        name: entryLabel,
-        topic: "General",
-        officialUrl: entry.officialUrl,
-        rssUrl: "",
-        dmvMode: getCatalogEntryMode(entry),
-        dmvRegion: entryCountry,
-        dmvCountry: entryCountry,
-        dmvSubdivision: entryLabel,
-        dmvSubdivisionType: entry.subdivisionType || "province-territory",
-        dmvSourceFamily: entry.sourceFamily || "dmv",
-      };
-      const groupCards = feedArticles.length
-        ? feedArticles.map((article) => renderArticleCard(article))
-        : [renderDmvPlaceholderCard(feedLike)];
-      fragment.appendChild(renderFeedGroup(entryLabel, groupCards));
-    });
-    elements.articlesGrid.appendChild(fragment);
-    return;
-  }
-
-  elements.resultsCount.textContent = `${articles.length} results`;
-  elements.articlesGrid.classList.remove("is-grouped-feed-view");
-  elements.articlesGrid.innerHTML = "";
-
-  if (!articles.length) {
-    const emptyStateMessage = state.filters.canadaDmvAll
-      ? "Canada DMV entries are shown as official links unless RSS news is available."
-      : selectedCanadaEntry
-        ? isCanadaLinkOnlyEntry(selectedCanadaEntry)
-          ? "This Canada DMV entry is available as an official link only."
-          : "No imported news available for this Canada DMV entry yet."
-        : selectedUsDmvEntry
-          ? isUsLinkOnlyEntry(selectedUsDmvEntry)
+      if (!articles.length) {
+        renderDmvEmptyState(
+          isUsLinkOnlyEntry(selectedUsDmvEntry) || isCanadaLinkOnlyEntry(selectedCanadaEntry)
             ? "No RSS feed available for this DMV."
-            : "No imported news available for this USA DMV entry yet."
-        : selectedUsDmvFeed
-          ? "No imported news available for this USA DMV entry yet."
-          : "No articles match the active filters.";
-    const officialUrl = !state.filters.canadaDmvAll ? selectedDmvOfficialUrl : "";
-    renderDmvEmptyState(emptyStateMessage, officialUrl);
-    return;
+            : "No news available",
+          selectedDmvOfficialUrl
+        );
+        return;
+      }
+
+      const fragment = document.createDocumentFragment();
+      articles.forEach((article) => {
+        fragment.appendChild(renderArticleCard(article));
+      });
+      elements.articlesGrid.appendChild(fragment);
+      return;
+    }
+
+    if (state.dashboardMode === "usa" && !getActiveArticleFeedId()) {
+      elements.articlesGrid.classList.add("is-grouped-feed-view");
+      const dmvFeeds = getUsDmvFeeds();
+      const articlesByFeedId = new Map();
+
+      articles.forEach((article) => {
+        const items = articlesByFeedId.get(article.feedId) || [];
+        items.push(article);
+        articlesByFeedId.set(article.feedId, items);
+      });
+
+      elements.resultsCount.textContent = `${dmvFeeds.length} results`;
+      elements.articlesGrid.innerHTML = "";
+
+      if (!dmvFeeds.length) {
+        elements.articlesGrid.innerHTML =
+          `<div class="empty-state">No articles match the active filters.</div>`;
+        return;
+      }
+
+      const fragment = document.createDocumentFragment();
+      dmvFeeds.forEach((feed) => {
+        const feedArticles = articlesByFeedId.get(feed.id) || [];
+        const groupCards = feedArticles.length
+          ? feedArticles.map((article) => renderArticleCard(article))
+          : [renderDmvPlaceholderCard(feed)];
+        fragment.appendChild(renderFeedGroup(feed.name || "Untitled feed", groupCards));
+      });
+      elements.articlesGrid.appendChild(fragment);
+      return;
+    }
+
+    if (state.dashboardMode === "canada" && !state.filters.canadaDmvFeedPath) {
+      elements.articlesGrid.classList.add("is-grouped-feed-view");
+      const canadaEntries = getCanadaDmvCatalogEntries();
+      const articlesByFeedId = new Map();
+
+      articles.forEach((article) => {
+        const items = articlesByFeedId.get(article.feedId) || [];
+        items.push(article);
+        articlesByFeedId.set(article.feedId, items);
+      });
+
+      elements.resultsCount.textContent = `${canadaEntries.length} results`;
+      elements.articlesGrid.innerHTML = "";
+
+      if (!canadaEntries.length) {
+        elements.articlesGrid.innerHTML =
+          `<div class="empty-state">No imported news available for Canada DMV entries yet.</div>`;
+        return;
+      }
+
+      const fragment = document.createDocumentFragment();
+      canadaEntries.forEach((entry) => {
+        const importedFeed = getFeedForCatalogEntry(entry);
+        const feedArticles = importedFeed ? articlesByFeedId.get(importedFeed.id) || [] : [];
+        const entryLabel = getCatalogEntrySubdivisionLabel(entry);
+        const entryCountry = getCatalogEntryCountry(entry);
+        const feedLike = importedFeed || {
+          name: entryLabel,
+          topic: "General",
+          officialUrl: entry.officialUrl,
+          rssUrl: "",
+          dmvMode: getCatalogEntryMode(entry),
+          dmvRegion: entryCountry,
+          dmvCountry: entryCountry,
+          dmvSubdivision: entryLabel,
+          dmvSubdivisionType: entry.subdivisionType || "province-territory",
+          dmvSourceFamily: entry.sourceFamily || "dmv",
+        };
+        const groupCards = feedArticles.length
+          ? feedArticles.map((article) => renderArticleCard(article))
+          : [renderDmvPlaceholderCard(feedLike)];
+        fragment.appendChild(renderFeedGroup(entryLabel, groupCards));
+      });
+      elements.articlesGrid.appendChild(fragment);
+      return;
+    }
+
+    elements.resultsCount.textContent = `${articles.length} results`;
+    elements.articlesGrid.classList.remove("is-grouped-feed-view");
+    elements.articlesGrid.innerHTML = "";
+
+    if (!articles.length) {
+      const emptyStateMessage = state.filters.canadaDmvAll
+        ? "Canada DMV entries are shown as official links unless RSS news is available."
+        : selectedCanadaEntry
+          ? isCanadaLinkOnlyEntry(selectedCanadaEntry)
+            ? "This Canada DMV entry is available as an official link only."
+            : "No imported news available for this Canada DMV entry yet."
+          : selectedUsDmvEntry
+            ? isUsLinkOnlyEntry(selectedUsDmvEntry)
+              ? "No RSS feed available for this DMV."
+              : "No imported news available for this USA DMV entry yet."
+            : selectedUsDmvFeed
+              ? "No imported news available for this USA DMV entry yet."
+              : "No articles match the active filters.";
+      const officialUrl = !state.filters.canadaDmvAll ? selectedDmvOfficialUrl : "";
+      renderDmvEmptyState(emptyStateMessage, officialUrl);
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+
+    articles.forEach((article) => {
+      fragment.appendChild(renderArticleCard(article));
+    });
+
+    elements.articlesGrid.appendChild(fragment);
+  } finally {
+    intelligenceTimeEnd("renderArticles");
   }
-
-  const fragment = document.createDocumentFragment();
-
-  articles.forEach((article) => {
-    fragment.appendChild(renderArticleCard(article));
-  });
-
-  elements.articlesGrid.appendChild(fragment);
 }
 
 function renderDashboard() {
@@ -8628,9 +8738,9 @@ async function loadSnapshot() {
   ]);
   runtime.articleComputationCache.clear();
   runtime.articlePairComputationCache.clear();
+  state.feeds = feeds;
   const normalizedArticles = articles.map(normalizeLoadedArticle);
 
-  state.feeds = feeds;
   state.articles = normalizedArticles;
   state.dmvCatalog = Array.isArray(dmvCatalog) ? dmvCatalog : [];
   restoreExactArticleFilterFromSession();
