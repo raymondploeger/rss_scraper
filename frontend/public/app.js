@@ -8610,8 +8610,17 @@ function finalizeRenderDiagnostics(payload = {}) {
   const renderedCardCount = document.querySelectorAll(".article-card").length;
   const maxRenderedCards = 30;
   const branchName = payload.branchName || "default";
+  const total = Number(payload.total) || 0;
+  const page = Number(payload.page) || 1;
+  const pageSize = Number(payload.pageSize) || 30;
 
   console.warn("cards rendered", renderedCardCount);
+  console.warn("pagination", {
+    total,
+    page,
+    pageSize,
+    rendered: renderedCardCount,
+  });
 
   if (renderedCardCount > maxRenderedCards) {
     console.error("HARD CAP FAILED", {
@@ -8863,7 +8872,13 @@ function renderArticlesFallback(error) {
   renderPaginationControls(fallbackPagination);
 
   const renderedCards = document.querySelectorAll(".article-card").length;
-  if (renderedCards > 50) {
+  console.warn("pagination", {
+    total: fallbackAllArticles.length,
+    page: fallbackPagination.currentPage,
+    pageSize: fallbackPagination.pageSize,
+    rendered: renderedCards,
+  });
+  if (renderedCards > 30) {
     console.error("HARD CAP FAILED", renderedCards);
   }
 }
@@ -8944,6 +8959,9 @@ function renderArticles() {
 
     const renderDiagnostics = {
       branchName: "feed-filter",
+      total: articles.length,
+      page: articlePagination.currentPage,
+      pageSize: articlePagination.pageSize,
     };
 
     if (state.filters.feedId) {
