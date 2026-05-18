@@ -23,7 +23,7 @@ const SUMMARY_METRICS = [
 ];
 const DEFAULT_SOURCE_GROUPS = ["USA", "Canada", "Google Alerts", "Other"];
 const TAG_FILTER_MIN_COUNT = 0;
-const ARTICLE_RENDER_PAGE_SIZE = 50;
+const ARTICLE_RENDER_PAGE_SIZE = 30;
 const TAG_LIST_STORAGE_KEY = "dashboardTagList";
 const KEYWORD_FILTER_STORAGE_KEY = "dashboardKeywordFilters";
 const NOISE_KEYWORDS_EXPANDED_STORAGE_KEY = "noiseKeywordsExpanded";
@@ -8302,14 +8302,7 @@ function toggleGroupedArticleSources(article) {
     return;
   }
 
-  const stateKey = getGroupedArticleStateKey(article);
-  if (runtime.expandedGroupedSourceKeys.has(stateKey)) {
-    runtime.expandedGroupedSourceKeys.delete(stateKey);
-  } else {
-    runtime.expandedGroupedSourceKeys.add(stateKey);
-  }
-
-  rerenderGroupedArticleCard(article);
+  return;
 }
 
 function toggleGroupedArticleSourceList(article) {
@@ -8318,15 +8311,7 @@ function toggleGroupedArticleSourceList(article) {
     return;
   }
 
-  const stateKey = getGroupedArticleStateKey(article);
-  if (runtime.fullyExpandedGroupedSourceKeys.has(stateKey)) {
-    runtime.fullyExpandedGroupedSourceKeys.delete(stateKey);
-  } else {
-    runtime.fullyExpandedGroupedSourceKeys.add(stateKey);
-    runtime.expandedGroupedSourceKeys.add(stateKey);
-  }
-
-  rerenderGroupedArticleCard(article);
+  return;
 }
 
 function renderArticleCard(article) {
@@ -8602,67 +8587,38 @@ function getSelectedFeedLabel() {
   return String(elements.feedFilter?.selectedOptions?.[0]?.textContent || "").trim();
 }
 
-function logFeedFilterDiagnostics(selectedFeedId, selectedFeedLabel, rawMatches, groupedMatches) {
+function logFeedFilterDiagnostics(selectedFeedId, selectedFeedLabel, rawMatches, groupedMatches, renderedCount = 0) {
   if (!selectedFeedId) {
     return;
   }
 
-  const firstTitles = groupedMatches
-    .slice(0, 5)
+  const firstTitles = rawMatches
+    .slice(0, 10)
     .map((article) => article?.title || "Untitled article");
-
-  const isFocusFeed = /banknotenews|news\.notafilia\.pl/i.test(selectedFeedLabel)
-    || groupedMatches.some((article) => /banknotenews|news\.notafilia\.pl/i.test(String(article?.source || "")));
 
   console.info("[feed-filter-diagnostics]", {
     selectedFeedId,
     selectedFeedLabel,
-    rawMatchCount: rawMatches.length,
-    groupedMatchCount: groupedMatches.length,
+    rawMatchesBeforeRelevance: rawMatches.length,
+    matchesAfterRelevance: groupedMatches.length,
+    renderedCount,
     firstMatchingTitles: firstTitles,
-    focusFeed: isFocusFeed,
   });
 }
 
 function finalizeRenderDiagnostics(payload = {}) {
   const renderedCardCount = document.querySelectorAll(".article-card").length;
-  const pageArticlesCount = Number(payload.pageArticlesCount) || 0;
+  const maxRenderedCards = 30;
+  const branchName = payload.branchName || "default";
 
-  console.info("[renderArticles]", {
-    build: APP_BUILD,
-    totalRawArticles: Number(payload.totalRawArticles) || 0,
-    filteredRawArticles: Number(payload.filteredRawArticles) || 0,
-    groupedArticlesCount: Number(payload.groupedArticlesCount) || 0,
-    paginatedPageSize: Number(payload.paginatedPageSize) || 0,
-    actualRenderedCardCount: renderedCardCount,
-    activeFeedId: payload.activeFeedId || "",
-    activeFeedLabel: payload.activeFeedLabel || "",
-    activeTopic: payload.activeTopic || "",
-    currentPage: Number(payload.currentPage) || 1,
-    totalPages: Number(payload.totalPages) || 1,
-    dashboardMode: state.dashboardMode,
-  });
+  console.warn("cards rendered", renderedCardCount);
 
-  console.warn("ACTUAL RENDERED CARDS", renderedCardCount);
-
-  if (renderedCardCount > pageArticlesCount) {
-    console.error("OVER-RENDER DETECTED", {
+  if (renderedCardCount > maxRenderedCards) {
+    console.error("HARD CAP FAILED", {
+      branchName,
       renderedCardCount,
-      pageArticlesCount,
-      build: APP_BUILD,
+      maxRenderedCards,
     });
-  }
-
-  if (renderedCardCount > (Number(payload.pageSize) || ARTICLE_RENDER_PAGE_SIZE)) {
-    console.error("PAGINATION FAILED", {
-      renderedCardCount,
-      pageSize: Number(payload.pageSize) || ARTICLE_RENDER_PAGE_SIZE,
-      build: APP_BUILD,
-    });
-  }
-
-  if (renderedCardCount > 50) {
-    console.error("HARD CAP FAILED", renderedCardCount);
   }
 }
 
@@ -8850,7 +8806,15 @@ function renderArticlesFallback(error) {
     const shouldIgnoreFeedIdForGrouping = Boolean(state.filters?.feedId) && !state.filters?.date;
     fallbackAllArticles = state.filters?.date
       ? state.articles.filter(articleMatchesFilters).sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate))
-      : (() => {
+      : state.filters?.feedId
+        ? (() => {
+            const rawFeedMatches = state.articles
+              .filter((article) => articleMatchesSelectedFeed(article, state.filters.feedId))
+              .filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
+              .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+            return groupArticlesByEvent(rawFeedMatches);
+          })()
+        : (() => {
           const visibleArticles = getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping });
           const groupedArticles = groupArticlesByEvent(visibleArticles);
           return shouldIgnoreFeedIdForGrouping
@@ -8873,7 +8837,7 @@ function renderArticlesFallback(error) {
   }
 
   const fallbackPagination = getPaginatedItems(fallbackAllArticles);
-  const MAX_RENDERED_ARTICLES = 50;
+  const MAX_RENDERED_ARTICLES = 30;
   const fallbackPageArticles = Array.isArray(fallbackPagination.items) ? fallbackPagination.items : [];
   const articlesToRender = fallbackPageArticles.slice(0, MAX_RENDERED_ARTICLES);
 
@@ -8915,8 +8879,21 @@ function renderArticles() {
     let groupedArticlesCount = 0;
     const activeFeedId = state.filters.feedId || "";
     const activeFeedLabel = getSelectedFeedLabel();
+    let feedDebugRawMatches = [];
+    let feedDebugAfterRelevanceMatches = [];
 
-    if (state.filters.date) {
+    if (activeFeedId && !state.filters.date) {
+      feedDebugRawMatches = state.articles
+        .filter((article) => articleMatchesSelectedFeed(article, activeFeedId))
+        .filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
+        .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+      feedDebugAfterRelevanceMatches = getVisibleArticles({ ignoreFeedId: true })
+        .filter((article) => articleMatchesSelectedFeed(article, activeFeedId));
+      filteredRawArticles = feedDebugRawMatches;
+      const groupedArticles = groupArticlesByEvent(feedDebugRawMatches);
+      groupedArticlesCount = groupedArticles.length;
+      articles = groupedArticles;
+    } else if (state.filters.date) {
       filteredRawArticles = state.articles
         .filter(articleMatchesFilters)
         .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
@@ -8930,12 +8907,6 @@ function renderArticles() {
       articles = shouldIgnoreFeedIdForGrouping
         ? groupedArticles.filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
         : groupedArticles;
-
-      if (activeFeedId) {
-        const rawMatches = visibleArticles.filter((article) => articleMatchesSelectedFeed(article, activeFeedId));
-        const groupedMatches = groupedArticles.filter((article) => groupedArticleMatchesFeedFilter(article, activeFeedId));
-        logFeedFilterDiagnostics(activeFeedId, activeFeedLabel, rawMatches, groupedMatches);
-      }
     }
 
     const selectedUsDmvEntry = getSelectedUsDmvCatalogEntry();
@@ -8954,24 +8925,25 @@ function renderArticles() {
     const pageArticles = Array.isArray(articlePagination.items)
       ? articlePagination.items.slice(0, ARTICLE_RENDER_PAGE_SIZE)
       : [];
-    const MAX_RENDERED_ARTICLES = 50;
+    const MAX_RENDERED_ARTICLES = 30;
     const articlesToRender = Array.isArray(pageArticles)
       ? pageArticles.slice(0, MAX_RENDERED_ARTICLES)
       : Array.isArray(articles)
         ? articles.slice(0, MAX_RENDERED_ARTICLES)
         : [];
+
+    if (activeFeedId) {
+      logFeedFilterDiagnostics(
+        activeFeedId,
+        activeFeedLabel,
+        feedDebugRawMatches,
+        feedDebugAfterRelevanceMatches,
+        articlesToRender.length
+      );
+    }
+
     const renderDiagnostics = {
-      totalRawArticles,
-      filteredRawArticles: filteredRawArticles.length,
-      groupedArticlesCount,
-      paginatedPageSize: pageArticles.length,
-      pageArticlesCount: articlesToRender.length,
-      pageSize: state.pagination?.pageSize || ARTICLE_RENDER_PAGE_SIZE,
-      activeFeedId,
-      activeFeedLabel,
-      activeTopic: state.filters.topic || "",
-      currentPage: articlePagination.currentPage,
-      totalPages: articlePagination.totalPages,
+      branchName: "feed-filter",
     };
 
     if (state.filters.feedId) {
@@ -9010,6 +8982,7 @@ function renderArticles() {
             : "No news available",
           selectedDmvOfficialUrl
         );
+        renderDiagnostics.branchName = "selected-dmv-empty";
         finalizeRenderDiagnostics(renderDiagnostics);
         return;
       }
@@ -9020,6 +8993,7 @@ function renderArticles() {
         fragment.appendChild(renderArticleCard(article));
       });
       elements.articlesGrid.appendChild(fragment);
+      renderDiagnostics.branchName = "selected-dmv";
       finalizeRenderDiagnostics(renderDiagnostics);
       return;
     }
@@ -9045,6 +9019,7 @@ function renderArticles() {
       if (!articlePagination.totalCount) {
         elements.articlesGrid.innerHTML =
           `<div class="empty-state">No articles match the active filters.</div>`;
+        renderDiagnostics.branchName = "usa-grouped-empty";
         finalizeRenderDiagnostics(renderDiagnostics);
         return;
       }
@@ -9059,6 +9034,7 @@ function renderArticles() {
         fragment.appendChild(renderFeedGroup(feed.name || "Untitled feed", groupCards));
       });
       elements.articlesGrid.appendChild(fragment);
+      renderDiagnostics.branchName = "usa-grouped";
       finalizeRenderDiagnostics(renderDiagnostics);
       return;
     }
@@ -9087,6 +9063,7 @@ function renderArticles() {
       if (!articlePagination.totalCount) {
         elements.articlesGrid.innerHTML =
           `<div class="empty-state">No imported news available for Canada DMV entries yet.</div>`;
+        renderDiagnostics.branchName = "canada-grouped-empty";
         finalizeRenderDiagnostics(renderDiagnostics);
         return;
       }
@@ -9116,6 +9093,7 @@ function renderArticles() {
         fragment.appendChild(renderFeedGroup(entryLabel, groupCards));
       });
       elements.articlesGrid.appendChild(fragment);
+      renderDiagnostics.branchName = "canada-grouped";
       finalizeRenderDiagnostics(renderDiagnostics);
       return;
     }
@@ -9141,6 +9119,7 @@ function renderArticles() {
               : "No articles match the active filters.";
       const officialUrl = !state.filters.canadaDmvAll ? selectedDmvOfficialUrl : "";
       renderDmvEmptyState(emptyStateMessage, officialUrl);
+      renderDiagnostics.branchName = "default-empty";
       finalizeRenderDiagnostics(renderDiagnostics);
       return;
     }
@@ -9153,6 +9132,7 @@ function renderArticles() {
     });
 
     elements.articlesGrid.appendChild(fragment);
+    renderDiagnostics.branchName = state.filters.feedId ? "feed-filter" : "default";
     finalizeRenderDiagnostics(renderDiagnostics);
   } catch (error) {
     renderArticlesFallback(error);
