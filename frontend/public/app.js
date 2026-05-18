@@ -6105,10 +6105,12 @@ function renderFeedList() {
   syncFeedPanelVisibility();
 }
 
-function articleMatchesFilters(article) {
+function articleMatchesFilters(article, options = {}) {
   if (isOfficialFallbackArticle(article)) {
     return false;
   }
+
+  const ignoreFeedId = Boolean(options.ignoreFeedId);
 
   const activeKeywordRule = getActiveTopicKeywordRule();
   if (activeKeywordRule && isKeywordRuleFalsePositive(article, activeKeywordRule)) {
@@ -6160,17 +6162,17 @@ function articleMatchesFilters(article) {
     }
   }
 
-  if (getActiveArticleFeedId() && article.feedId !== getActiveArticleFeedId()) {
+  if (!ignoreFeedId && getActiveArticleFeedId() && article.feedId !== getActiveArticleFeedId()) {
     return false;
   }
 
-  if (!getActiveArticleFeedId() && state.filters.canadaDmvAll && !isCanadianDmvAbbr(
+  if (!ignoreFeedId && !getActiveArticleFeedId() && state.filters.canadaDmvAll && !isCanadianDmvAbbr(
     state.feeds.find((feed) => feed.id === article.feedId)?.dmvAbbr
   )) {
     return false;
   }
 
-  if (!getActiveArticleFeedId() && state.dashboardMode === "usa" && !isDmvFeedId(article.feedId)) {
+  if (!ignoreFeedId && !getActiveArticleFeedId() && state.dashboardMode === "usa" && !isDmvFeedId(article.feedId)) {
     return false;
   }
 
@@ -6189,7 +6191,7 @@ function articleMatchesFilters(article) {
   return true;
 }
 
-function getVisibleArticles() {
+function getVisibleArticles(options = {}) {
   intelligenceTime("getVisibleArticles");
   const visibleArticles = state.articles
     .filter((article) => {
@@ -6279,7 +6281,7 @@ function getVisibleArticles() {
       }
     })
     .filter(isUiRelevantIntelligenceArticle)
-    .filter(articleMatchesFilters)
+    .filter((article) => articleMatchesFilters(article, options))
     .sort((left, right) => toDate(right.pubDate).getTime() - toDate(left.pubDate).getTime());
   intelligenceTimeEnd("getVisibleArticles");
   return visibleArticles;
@@ -8595,6 +8597,22 @@ function renderPaginationControls(pagination) {
   }
 }
 
+function groupedArticleMatchesFeedFilter(article, feedId) {
+  if (!feedId) {
+    return true;
+  }
+
+  if (article?.feedId === feedId) {
+    return true;
+  }
+
+  if (!Array.isArray(article?.sources) || !article.sources.length) {
+    return false;
+  }
+
+  return article.sources.some((sourceArticle) => sourceArticle?.feedId === feedId);
+}
+
 function renderArticlesFallback(error) {
   console.warn("[render-articles-fallback]", {
     message: error instanceof Error ? error.message : String(error),
@@ -8604,9 +8622,16 @@ function renderArticlesFallback(error) {
 
   let fallbackAllArticles = [];
   try {
+    const shouldIgnoreFeedIdForGrouping = Boolean(state.filters?.feedId) && !state.filters?.date;
     fallbackAllArticles = state.filters?.date
       ? state.articles.filter(articleMatchesFilters).sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate))
-      : groupArticlesByEvent(getVisibleArticles());
+      : (() => {
+          const visibleArticles = getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping });
+          const groupedArticles = groupArticlesByEvent(visibleArticles);
+          return shouldIgnoreFeedIdForGrouping
+            ? groupedArticles.filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
+            : groupedArticles;
+        })();
   } catch (innerError) {
     console.warn("[render-articles-fallback-inner]", {
       message: innerError instanceof Error ? innerError.message : String(innerError),
@@ -8652,14 +8677,18 @@ function renderArticles() {
   try {
     syncPaginationContext();
     let articles;
+    const shouldIgnoreFeedIdForGrouping = Boolean(state.filters.feedId) && !state.filters.date;
 
     if (state.filters.date) {
       articles = state.articles
         .filter(articleMatchesFilters)
         .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
     } else {
-      const visibleArticles = getVisibleArticles();
-      articles = groupArticlesByEvent(visibleArticles);
+      const visibleArticles = getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping });
+      const groupedArticles = groupArticlesByEvent(visibleArticles);
+      articles = shouldIgnoreFeedIdForGrouping
+        ? groupedArticles.filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
+        : groupedArticles;
     }
 
     const selectedUsDmvEntry = getSelectedUsDmvCatalogEntry();
@@ -8675,7 +8704,9 @@ function renderArticles() {
     syncFilterUx();
     updateArticleFilterContext(articles);
     const articlePagination = getPaginatedItems(articles);
-    const pageArticles = articlePagination.items;
+    const pageArticles = Array.isArray(articlePagination.items)
+      ? articlePagination.items.slice(0, ARTICLE_RENDER_PAGE_SIZE)
+      : [];
 
     if (state.filters.feedId) {
       elements.articlesGrid.classList.remove("is-grouped-feed-view");
@@ -8724,27 +8755,29 @@ function renderArticles() {
     if (state.dashboardMode === "usa" && !getActiveArticleFeedId()) {
       elements.articlesGrid.classList.add("is-grouped-feed-view");
       const dmvFeeds = getUsDmvFeeds();
-      const feedPagination = getPaginatedItems(dmvFeeds);
       const articlesByFeedId = new Map();
 
-      articles.forEach((article) => {
+      pageArticles.forEach((article) => {
         const items = articlesByFeedId.get(article.feedId) || [];
         items.push(article);
         articlesByFeedId.set(article.feedId, items);
       });
 
-      elements.resultsCount.textContent = `${feedPagination.totalCount} results`;
-      elements.articlesGrid.innerHTML = "";
-      renderPaginationControls(feedPagination);
+      const visibleFeedIds = new Set(pageArticles.map((article) => article.feedId).filter(Boolean));
+      const visibleFeeds = dmvFeeds.filter((feed) => visibleFeedIds.has(feed.id));
 
-      if (!feedPagination.totalCount) {
+      elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
+      elements.articlesGrid.innerHTML = "";
+      renderPaginationControls(articlePagination);
+
+      if (!articlePagination.totalCount) {
         elements.articlesGrid.innerHTML =
           `<div class="empty-state">No articles match the active filters.</div>`;
         return;
       }
 
       const fragment = document.createDocumentFragment();
-      feedPagination.items.forEach((feed) => {
+      visibleFeeds.forEach((feed) => {
         const feedArticles = articlesByFeedId.get(feed.id) || [];
         const groupCards = feedArticles.length
           ? feedArticles.map((article) => renderArticleCard(article))
@@ -8758,27 +8791,32 @@ function renderArticles() {
     if (state.dashboardMode === "canada" && !state.filters.canadaDmvFeedPath) {
       elements.articlesGrid.classList.add("is-grouped-feed-view");
       const canadaEntries = getCanadaDmvCatalogEntries();
-      const entryPagination = getPaginatedItems(canadaEntries);
       const articlesByFeedId = new Map();
 
-      articles.forEach((article) => {
+      pageArticles.forEach((article) => {
         const items = articlesByFeedId.get(article.feedId) || [];
         items.push(article);
         articlesByFeedId.set(article.feedId, items);
       });
 
-      elements.resultsCount.textContent = `${entryPagination.totalCount} results`;
-      elements.articlesGrid.innerHTML = "";
-      renderPaginationControls(entryPagination);
+      const visibleFeedIds = new Set(pageArticles.map((article) => article.feedId).filter(Boolean));
+      const visibleEntries = canadaEntries.filter((entry) => {
+        const feed = getFeedForCatalogEntry(entry);
+        return feed ? visibleFeedIds.has(feed.id) : false;
+      });
 
-      if (!entryPagination.totalCount) {
+      elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
+      elements.articlesGrid.innerHTML = "";
+      renderPaginationControls(articlePagination);
+
+      if (!articlePagination.totalCount) {
         elements.articlesGrid.innerHTML =
           `<div class="empty-state">No imported news available for Canada DMV entries yet.</div>`;
         return;
       }
 
       const fragment = document.createDocumentFragment();
-      entryPagination.items.forEach((entry) => {
+      visibleEntries.forEach((entry) => {
         const importedFeed = getFeedForCatalogEntry(entry);
         const feedArticles = importedFeed ? articlesByFeedId.get(importedFeed.id) || [] : [];
         const entryLabel = getCatalogEntrySubdivisionLabel(entry);
