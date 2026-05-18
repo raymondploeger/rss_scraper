@@ -1383,6 +1383,43 @@ h3 {
   display: none !important;
 }
 
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+}
+
+.pagination-summary,
+.pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pagination-range,
+.pagination-status {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.pagination-button {
+  padding: 8px 12px;
+}
+
+.pagination-button:disabled {
+  opacity: 0.55;
+  cursor: default;
+  transform: none;
+}
+
 .articles-grid.is-grouped-feed-view {
   grid-template-columns: 1fr;
 }
@@ -1695,6 +1732,11 @@ button.grouped-sources-more {
 
   .articles-grid {
     grid-template-columns: 1fr;
+  }
+
+  .pagination-controls {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .analytics-grid {

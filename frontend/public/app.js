@@ -22,6 +22,7 @@ const SUMMARY_METRICS = [
 ];
 const DEFAULT_SOURCE_GROUPS = ["USA", "Canada", "Google Alerts", "Other"];
 const TAG_FILTER_MIN_COUNT = 0;
+const ARTICLE_PAGE_SIZE = 50;
 const TAG_LIST_STORAGE_KEY = "dashboardTagList";
 const KEYWORD_FILTER_STORAGE_KEY = "dashboardKeywordFilters";
 const NOISE_KEYWORDS_EXPANDED_STORAGE_KEY = "noiseKeywordsExpanded";
@@ -732,6 +733,10 @@ const state = {
     articleIds: [],
     alertLabel: "",
   },
+  pagination: {
+    page: 1,
+    pageSize: ARTICLE_PAGE_SIZE,
+  },
 };
 
 const runtime = {
@@ -752,6 +757,7 @@ const runtime = {
   fullyExpandedGroupedSourceKeys: new Set(),
   articleComputationCache: new Map(),
   articlePairComputationCache: new Map(),
+  paginationContextKey: "",
 };
 
 const elements = {
@@ -759,6 +765,11 @@ const elements = {
   summaryGrid: document.getElementById("summary-grid"),
   articlesGrid: document.getElementById("articles-grid"),
   articleFilterContext: document.getElementById("article-filter-context"),
+  paginationControls: document.getElementById("pagination-controls"),
+  paginationRange: document.getElementById("pagination-range"),
+  paginationStatus: document.getElementById("pagination-status"),
+  paginationPrev: document.getElementById("pagination-prev"),
+  paginationNext: document.getElementById("pagination-next"),
   topicFilter: document.getElementById("topic-filter"),
   tagFilter: document.getElementById("tag-filter"),
   signalFilter: document.getElementById("signal-filter"),
@@ -8486,6 +8497,9 @@ function renderFeedGroup(titleText, cards) {
 
 function renderSkeletons() {
   elements.articlesGrid.classList.remove("is-grouped-feed-view");
+  if (elements.paginationControls) {
+    elements.paginationControls.hidden = true;
+  }
   elements.articlesGrid.innerHTML = Array.from({ length: 8 })
     .map(
       () => `
@@ -8502,9 +8516,72 @@ function renderSkeletons() {
     .join("");
 }
 
+function getPaginationContextKey() {
+  return JSON.stringify({
+    dashboardMode: state.dashboardMode,
+    filters: state.filters,
+    analyticsScope: state.analyticsScope,
+    analyticsQualityFilter: state.analyticsQualityFilter,
+  });
+}
+
+function syncPaginationContext() {
+  const nextContextKey = getPaginationContextKey();
+  if (runtime.paginationContextKey !== nextContextKey) {
+    runtime.paginationContextKey = nextContextKey;
+    state.pagination.page = 1;
+  }
+}
+
+function getPaginatedItems(items) {
+  const totalCount = Array.isArray(items) ? items.length : 0;
+  const pageSize = Math.max(1, Number(state.pagination.pageSize) || ARTICLE_PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const currentPage = Math.min(Math.max(1, Number(state.pagination.page) || 1), totalPages);
+  state.pagination.page = currentPage;
+
+  const startIndex = totalCount ? (currentPage - 1) * pageSize : 0;
+  const endIndex = Math.min(startIndex + pageSize, totalCount);
+
+  return {
+    items: Array.isArray(items) ? items.slice(startIndex, endIndex) : [],
+    totalCount,
+    pageSize,
+    currentPage,
+    totalPages,
+    startIndex,
+    endIndex,
+  };
+}
+
+function renderPaginationControls(pagination) {
+  if (!elements.paginationControls || !elements.paginationRange || !elements.paginationStatus) {
+    return;
+  }
+
+  const totalCount = Number(pagination?.totalCount) || 0;
+  const currentPage = Number(pagination?.currentPage) || 1;
+  const totalPages = Number(pagination?.totalPages) || 1;
+  const startDisplay = totalCount ? (Number(pagination?.startIndex) || 0) + 1 : 0;
+  const endDisplay = Number(pagination?.endIndex) || 0;
+
+  elements.paginationControls.hidden = totalCount === 0;
+  elements.paginationRange.textContent = `Showing ${startDisplay}-${endDisplay} of ${totalCount}`;
+  elements.paginationStatus.textContent = `Page ${currentPage} of ${totalPages}`;
+
+  if (elements.paginationPrev) {
+    elements.paginationPrev.disabled = currentPage <= 1;
+  }
+
+  if (elements.paginationNext) {
+    elements.paginationNext.disabled = currentPage >= totalPages;
+  }
+}
+
 function renderArticles() {
   intelligenceTime("renderArticles");
   try {
+    syncPaginationContext();
     let articles;
 
     if (state.filters.date) {
@@ -8528,20 +8605,23 @@ function renderArticles() {
 
     syncFilterUx();
     updateArticleFilterContext(articles);
+    const articlePagination = getPaginatedItems(articles);
+    const pageArticles = articlePagination.items;
 
     if (state.filters.feedId) {
       elements.articlesGrid.classList.remove("is-grouped-feed-view");
-      elements.resultsCount.textContent = `${articles.length} results`;
+      elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
       elements.articlesGrid.innerHTML = "";
+      renderPaginationControls(articlePagination);
 
-      if (!articles.length) {
+      if (!articlePagination.totalCount) {
         elements.articlesGrid.innerHTML =
           `<div class="empty-state">No articles match the active filters.</div>`;
         return;
       }
 
       const fragment = document.createDocumentFragment();
-      articles.forEach((article) => {
+      pageArticles.forEach((article) => {
         fragment.appendChild(renderArticleCard(article));
       });
       elements.articlesGrid.appendChild(fragment);
@@ -8550,10 +8630,11 @@ function renderArticles() {
 
     if ((selectedUsDmvEntry || selectedCanadaEntry) && !state.filters.feedId) {
       elements.articlesGrid.classList.remove("is-grouped-feed-view");
-      elements.resultsCount.textContent = `${articles.length} results`;
+      elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
       elements.articlesGrid.innerHTML = "";
+      renderPaginationControls(articlePagination);
 
-      if (!articles.length) {
+      if (!articlePagination.totalCount) {
         renderDmvEmptyState(
           isUsLinkOnlyEntry(selectedUsDmvEntry) || isCanadaLinkOnlyEntry(selectedCanadaEntry)
             ? "No RSS feed available for this DMV."
@@ -8564,7 +8645,7 @@ function renderArticles() {
       }
 
       const fragment = document.createDocumentFragment();
-      articles.forEach((article) => {
+      pageArticles.forEach((article) => {
         fragment.appendChild(renderArticleCard(article));
       });
       elements.articlesGrid.appendChild(fragment);
@@ -8574,6 +8655,7 @@ function renderArticles() {
     if (state.dashboardMode === "usa" && !getActiveArticleFeedId()) {
       elements.articlesGrid.classList.add("is-grouped-feed-view");
       const dmvFeeds = getUsDmvFeeds();
+      const feedPagination = getPaginatedItems(dmvFeeds);
       const articlesByFeedId = new Map();
 
       articles.forEach((article) => {
@@ -8582,17 +8664,18 @@ function renderArticles() {
         articlesByFeedId.set(article.feedId, items);
       });
 
-      elements.resultsCount.textContent = `${dmvFeeds.length} results`;
+      elements.resultsCount.textContent = `${feedPagination.totalCount} results`;
       elements.articlesGrid.innerHTML = "";
+      renderPaginationControls(feedPagination);
 
-      if (!dmvFeeds.length) {
+      if (!feedPagination.totalCount) {
         elements.articlesGrid.innerHTML =
           `<div class="empty-state">No articles match the active filters.</div>`;
         return;
       }
 
       const fragment = document.createDocumentFragment();
-      dmvFeeds.forEach((feed) => {
+      feedPagination.items.forEach((feed) => {
         const feedArticles = articlesByFeedId.get(feed.id) || [];
         const groupCards = feedArticles.length
           ? feedArticles.map((article) => renderArticleCard(article))
@@ -8606,6 +8689,7 @@ function renderArticles() {
     if (state.dashboardMode === "canada" && !state.filters.canadaDmvFeedPath) {
       elements.articlesGrid.classList.add("is-grouped-feed-view");
       const canadaEntries = getCanadaDmvCatalogEntries();
+      const entryPagination = getPaginatedItems(canadaEntries);
       const articlesByFeedId = new Map();
 
       articles.forEach((article) => {
@@ -8614,17 +8698,18 @@ function renderArticles() {
         articlesByFeedId.set(article.feedId, items);
       });
 
-      elements.resultsCount.textContent = `${canadaEntries.length} results`;
+      elements.resultsCount.textContent = `${entryPagination.totalCount} results`;
       elements.articlesGrid.innerHTML = "";
+      renderPaginationControls(entryPagination);
 
-      if (!canadaEntries.length) {
+      if (!entryPagination.totalCount) {
         elements.articlesGrid.innerHTML =
           `<div class="empty-state">No imported news available for Canada DMV entries yet.</div>`;
         return;
       }
 
       const fragment = document.createDocumentFragment();
-      canadaEntries.forEach((entry) => {
+      entryPagination.items.forEach((entry) => {
         const importedFeed = getFeedForCatalogEntry(entry);
         const feedArticles = importedFeed ? articlesByFeedId.get(importedFeed.id) || [] : [];
         const entryLabel = getCatalogEntrySubdivisionLabel(entry);
@@ -8650,11 +8735,12 @@ function renderArticles() {
       return;
     }
 
-    elements.resultsCount.textContent = `${articles.length} results`;
+    elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
     elements.articlesGrid.classList.remove("is-grouped-feed-view");
     elements.articlesGrid.innerHTML = "";
+    renderPaginationControls(articlePagination);
 
-    if (!articles.length) {
+    if (!articlePagination.totalCount) {
       const emptyStateMessage = state.filters.canadaDmvAll
         ? "Canada DMV entries are shown as official links unless RSS news is available."
         : selectedCanadaEntry
@@ -8675,7 +8761,7 @@ function renderArticles() {
 
     const fragment = document.createDocumentFragment();
 
-    articles.forEach((article) => {
+    pageArticles.forEach((article) => {
       fragment.appendChild(renderArticleCard(article));
     });
 
@@ -9038,6 +9124,20 @@ function bindEvents() {
     clearExactArticleFilter();
     state.filters.date = event.target.value;
     renderSummary();
+    renderArticles();
+  });
+
+  elements.paginationPrev?.addEventListener("click", () => {
+    if (state.pagination.page <= 1) {
+      return;
+    }
+
+    state.pagination.page -= 1;
+    renderArticles();
+  });
+
+  elements.paginationNext?.addEventListener("click", () => {
+    state.pagination.page += 1;
     renderArticles();
   });
 
