@@ -6163,7 +6163,7 @@ function articleMatchesFilters(article, options = {}) {
     }
   }
 
-  if (!ignoreFeedId && getActiveArticleFeedId() && article.feedId !== getActiveArticleFeedId()) {
+  if (!ignoreFeedId && getActiveArticleFeedId() && !articleMatchesSelectedFeed(article, getActiveArticleFeedId())) {
     return false;
   }
 
@@ -8660,6 +8660,10 @@ function finalizeRenderDiagnostics(payload = {}) {
       build: APP_BUILD,
     });
   }
+
+  if (renderedCardCount > 50) {
+    console.error("HARD CAP FAILED", renderedCardCount);
+  }
 }
 
 function logRenderingPageArticlesOnly(groupedArticlesCount, pageArticles) {
@@ -8669,20 +8673,169 @@ function logRenderingPageArticlesOnly(groupedArticlesCount, pageArticles) {
   });
 }
 
-function groupedArticleMatchesFeedFilter(article, feedId) {
+function normalizeFeedMatchValue(value) {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) {
+    return "";
+  }
+
+  return text
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/[/?#].*$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getFeedMatchDomain(value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  try {
+    const normalizedUrl = /^[a-z]+:\/\//i.test(raw) ? raw : `https://${raw}`;
+    const hostname = new URL(normalizedUrl).hostname.replace(/^www\./, "").toLowerCase();
+    return hostname;
+  } catch {
+    return "";
+  }
+}
+
+function addFeedMatchTokens(tokenSet, value) {
+  const normalized = normalizeFeedMatchValue(value);
+  if (!normalized) {
+    return;
+  }
+
+  tokenSet.add(normalized);
+
+  const domain = getFeedMatchDomain(value);
+  if (domain) {
+    tokenSet.add(domain);
+    const hostParts = domain.split(".");
+    if (hostParts.length > 2) {
+      tokenSet.add(hostParts.slice(-2).join("."));
+    }
+  }
+}
+
+function getSelectedFeedMatchTokens(feedId) {
+  const tokens = new Set();
+  const selectedFeed = state.feeds.find((feed) => feed.id === feedId);
+
+  [
+    feedId,
+    selectedFeed?.id,
+    selectedFeed?.name,
+    selectedFeed?.title,
+    selectedFeed?.feedTitle,
+    selectedFeed?.source,
+    selectedFeed?.sourceName,
+    selectedFeed?.rssUrl,
+    selectedFeed?.officialUrl,
+    selectedFeed?.url,
+    selectedFeed?.siteUrl,
+    selectedFeed?.homepage,
+  ].forEach((value) => addFeedMatchTokens(tokens, value));
+
+  const combined = Array.from(tokens).join(" ");
+  if (combined.includes("banknotenews")) {
+    ["banknotenews", "banknotenews.com", "owen linzmayer"].forEach((value) =>
+      addFeedMatchTokens(tokens, value)
+    );
+  }
+
+  if (combined.includes("notafilia")) {
+    ["news.notafilia.pl", "notafilia.pl", "notafilia"].forEach((value) => addFeedMatchTokens(tokens, value));
+  }
+
+  return tokens;
+}
+
+function getArticleFeedMatchTokens(article) {
+  const tokens = new Set();
+
+  const addArticleTokens = (item) => {
+    if (!item || typeof item !== "object") {
+      return;
+    }
+
+    [
+      item.feedId,
+      item.feed,
+      item.source,
+      item.sourceName,
+      item.feedTitle,
+      item.link,
+      item.url,
+      item.canonicalLink,
+    ].forEach((value) => addFeedMatchTokens(tokens, value));
+
+    const derivedFeed = item.feedId ? state.feeds.find((feed) => feed.id === item.feedId) : null;
+    [
+      derivedFeed?.id,
+      derivedFeed?.name,
+      derivedFeed?.title,
+      derivedFeed?.feedTitle,
+      derivedFeed?.source,
+      derivedFeed?.sourceName,
+      derivedFeed?.rssUrl,
+      derivedFeed?.officialUrl,
+      derivedFeed?.url,
+      derivedFeed?.siteUrl,
+      derivedFeed?.homepage,
+    ].forEach((value) => addFeedMatchTokens(tokens, value));
+  };
+
+  addArticleTokens(article);
+  if (Array.isArray(article?.sources)) {
+    article.sources.forEach(addArticleTokens);
+  }
+
+  const combined = Array.from(tokens).join(" ");
+  if (combined.includes("banknotenews")) {
+    ["banknotenews", "banknotenews.com", "owen linzmayer"].forEach((value) =>
+      addFeedMatchTokens(tokens, value)
+    );
+  }
+
+  if (combined.includes("notafilia")) {
+    ["news.notafilia.pl", "notafilia.pl", "notafilia"].forEach((value) => addFeedMatchTokens(tokens, value));
+  }
+
+  return tokens;
+}
+
+function articleMatchesSelectedFeed(article, feedId) {
   if (!feedId) {
     return true;
   }
 
-  if (article?.feedId === feedId) {
-    return true;
+  const selectedTokens = getSelectedFeedMatchTokens(feedId);
+  const articleTokens = getArticleFeedMatchTokens(article);
+
+  if (!selectedTokens.size || !articleTokens.size) {
+    return article?.feedId === feedId;
   }
 
-  if (!Array.isArray(article?.sources) || !article.sources.length) {
-    return false;
-  }
+  return Array.from(selectedTokens).some((selectedToken) => {
+    return Array.from(articleTokens).some((articleToken) => {
+      if (!selectedToken || !articleToken) {
+        return false;
+      }
 
-  return article.sources.some((sourceArticle) => sourceArticle?.feedId === feedId);
+      return (
+        selectedToken === articleToken ||
+        articleToken.includes(selectedToken) ||
+        selectedToken.includes(articleToken)
+      );
+    });
+  });
+}
+
+function groupedArticleMatchesFeedFilter(article, feedId) {
+  return articleMatchesSelectedFeed(article, feedId);
 }
 
 function renderArticlesFallback(error) {
@@ -8720,7 +8873,9 @@ function renderArticlesFallback(error) {
   }
 
   const fallbackPagination = getPaginatedItems(fallbackAllArticles);
-  const fallbackArticles = fallbackPagination.items.slice(0, ARTICLE_RENDER_PAGE_SIZE);
+  const MAX_RENDERED_ARTICLES = 50;
+  const fallbackPageArticles = Array.isArray(fallbackPagination.items) ? fallbackPagination.items : [];
+  const articlesToRender = fallbackPageArticles.slice(0, MAX_RENDERED_ARTICLES);
 
   if (elements.resultsCount) {
     elements.resultsCount.textContent = `${fallbackPagination.totalCount} results`;
@@ -8730,11 +8885,11 @@ function renderArticlesFallback(error) {
     elements.articlesGrid.classList.remove("is-grouped-feed-view");
     elements.articlesGrid.innerHTML = "";
 
-    if (!fallbackArticles.length) {
+    if (!articlesToRender.length) {
       elements.articlesGrid.innerHTML = `<div class="empty-state">No articles match the active filters.</div>`;
     } else {
       const fragment = document.createDocumentFragment();
-      fallbackArticles.forEach((article) => {
+      articlesToRender.forEach((article) => {
         fragment.appendChild(renderArticleCard(article));
       });
       elements.articlesGrid.appendChild(fragment);
@@ -8742,6 +8897,11 @@ function renderArticlesFallback(error) {
   }
 
   renderPaginationControls(fallbackPagination);
+
+  const renderedCards = document.querySelectorAll(".article-card").length;
+  if (renderedCards > 50) {
+    console.error("HARD CAP FAILED", renderedCards);
+  }
 }
 
 function renderArticles() {
@@ -8772,7 +8932,7 @@ function renderArticles() {
         : groupedArticles;
 
       if (activeFeedId) {
-        const rawMatches = visibleArticles.filter((article) => article?.feedId === activeFeedId);
+        const rawMatches = visibleArticles.filter((article) => articleMatchesSelectedFeed(article, activeFeedId));
         const groupedMatches = groupedArticles.filter((article) => groupedArticleMatchesFeedFilter(article, activeFeedId));
         logFeedFilterDiagnostics(activeFeedId, activeFeedLabel, rawMatches, groupedMatches);
       }
@@ -8794,12 +8954,18 @@ function renderArticles() {
     const pageArticles = Array.isArray(articlePagination.items)
       ? articlePagination.items.slice(0, ARTICLE_RENDER_PAGE_SIZE)
       : [];
+    const MAX_RENDERED_ARTICLES = 50;
+    const articlesToRender = Array.isArray(pageArticles)
+      ? pageArticles.slice(0, MAX_RENDERED_ARTICLES)
+      : Array.isArray(articles)
+        ? articles.slice(0, MAX_RENDERED_ARTICLES)
+        : [];
     const renderDiagnostics = {
       totalRawArticles,
       filteredRawArticles: filteredRawArticles.length,
       groupedArticlesCount,
       paginatedPageSize: pageArticles.length,
-      pageArticlesCount: pageArticles.length,
+      pageArticlesCount: articlesToRender.length,
       pageSize: state.pagination?.pageSize || ARTICLE_RENDER_PAGE_SIZE,
       activeFeedId,
       activeFeedLabel,
@@ -8822,8 +8988,8 @@ function renderArticles() {
       }
 
       const fragment = document.createDocumentFragment();
-      logRenderingPageArticlesOnly(groupedArticlesCount, pageArticles);
-      pageArticles.forEach((article) => {
+      logRenderingPageArticlesOnly(groupedArticlesCount, articlesToRender);
+      articlesToRender.forEach((article) => {
         fragment.appendChild(renderArticleCard(article));
       });
       elements.articlesGrid.appendChild(fragment);
@@ -8849,8 +9015,8 @@ function renderArticles() {
       }
 
       const fragment = document.createDocumentFragment();
-      logRenderingPageArticlesOnly(groupedArticlesCount, pageArticles);
-      pageArticles.forEach((article) => {
+      logRenderingPageArticlesOnly(groupedArticlesCount, articlesToRender);
+      articlesToRender.forEach((article) => {
         fragment.appendChild(renderArticleCard(article));
       });
       elements.articlesGrid.appendChild(fragment);
@@ -8863,13 +9029,13 @@ function renderArticles() {
       const dmvFeeds = getUsDmvFeeds();
       const articlesByFeedId = new Map();
 
-      pageArticles.forEach((article) => {
+      articlesToRender.forEach((article) => {
         const items = articlesByFeedId.get(article.feedId) || [];
         items.push(article);
         articlesByFeedId.set(article.feedId, items);
       });
 
-      const visibleFeedIds = new Set(pageArticles.map((article) => article.feedId).filter(Boolean));
+      const visibleFeedIds = new Set(articlesToRender.map((article) => article.feedId).filter(Boolean));
       const visibleFeeds = dmvFeeds.filter((feed) => visibleFeedIds.has(feed.id));
 
       elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
@@ -8884,7 +9050,7 @@ function renderArticles() {
       }
 
       const fragment = document.createDocumentFragment();
-      logRenderingPageArticlesOnly(groupedArticlesCount, pageArticles);
+      logRenderingPageArticlesOnly(groupedArticlesCount, articlesToRender);
       visibleFeeds.forEach((feed) => {
         const feedArticles = articlesByFeedId.get(feed.id) || [];
         const groupCards = feedArticles.length
@@ -8902,13 +9068,13 @@ function renderArticles() {
       const canadaEntries = getCanadaDmvCatalogEntries();
       const articlesByFeedId = new Map();
 
-      pageArticles.forEach((article) => {
+      articlesToRender.forEach((article) => {
         const items = articlesByFeedId.get(article.feedId) || [];
         items.push(article);
         articlesByFeedId.set(article.feedId, items);
       });
 
-      const visibleFeedIds = new Set(pageArticles.map((article) => article.feedId).filter(Boolean));
+      const visibleFeedIds = new Set(articlesToRender.map((article) => article.feedId).filter(Boolean));
       const visibleEntries = canadaEntries.filter((entry) => {
         const feed = getFeedForCatalogEntry(entry);
         return feed ? visibleFeedIds.has(feed.id) : false;
@@ -8926,7 +9092,7 @@ function renderArticles() {
       }
 
       const fragment = document.createDocumentFragment();
-      logRenderingPageArticlesOnly(groupedArticlesCount, pageArticles);
+      logRenderingPageArticlesOnly(groupedArticlesCount, articlesToRender);
       visibleEntries.forEach((entry) => {
         const importedFeed = getFeedForCatalogEntry(entry);
         const feedArticles = importedFeed ? articlesByFeedId.get(importedFeed.id) || [] : [];
@@ -8981,8 +9147,8 @@ function renderArticles() {
 
     const fragment = document.createDocumentFragment();
 
-    logRenderingPageArticlesOnly(groupedArticlesCount, pageArticles);
-    pageArticles.forEach((article) => {
+    logRenderingPageArticlesOnly(groupedArticlesCount, articlesToRender);
+    articlesToRender.forEach((article) => {
       fragment.appendChild(renderArticleCard(article));
     });
 
