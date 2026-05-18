@@ -759,6 +759,9 @@ const runtime = {
   articleComputationCache: new Map(),
   articlePairComputationCache: new Map(),
   paginationContextKey: "",
+  scheduledRenderFrame: 0,
+  scheduledRenderTimeout: 0,
+  scheduledRenderReason: "",
 };
 
 const elements = {
@@ -831,6 +834,51 @@ function debounce(callback, wait = 250) {
     window.clearTimeout(timeout);
     timeout = window.setTimeout(() => callback(...args), wait);
   };
+}
+
+function flushScheduledRender() {
+  if (runtime.scheduledRenderFrame) {
+    window.cancelAnimationFrame(runtime.scheduledRenderFrame);
+    runtime.scheduledRenderFrame = 0;
+  }
+
+  if (runtime.scheduledRenderTimeout) {
+    window.clearTimeout(runtime.scheduledRenderTimeout);
+    runtime.scheduledRenderTimeout = 0;
+  }
+
+  const reason = runtime.scheduledRenderReason || "scheduled";
+  runtime.scheduledRenderReason = "";
+  intelligenceDebug("[scheduleRenderArticles:flush]", { reason });
+  renderArticles();
+}
+
+function scheduleRenderArticles(reason = "interaction", options = {}) {
+  const mode = options.mode === "timeout" ? "timeout" : "frame";
+  runtime.scheduledRenderReason = reason;
+
+  if (runtime.scheduledRenderFrame) {
+    window.cancelAnimationFrame(runtime.scheduledRenderFrame);
+    runtime.scheduledRenderFrame = 0;
+  }
+
+  if (runtime.scheduledRenderTimeout) {
+    window.clearTimeout(runtime.scheduledRenderTimeout);
+    runtime.scheduledRenderTimeout = 0;
+  }
+
+  if (mode === "timeout") {
+    runtime.scheduledRenderTimeout = window.setTimeout(() => {
+      runtime.scheduledRenderTimeout = 0;
+      flushScheduledRender();
+    }, 0);
+    return;
+  }
+
+  runtime.scheduledRenderFrame = window.requestAnimationFrame(() => {
+    runtime.scheduledRenderFrame = 0;
+    flushScheduledRender();
+  });
 }
 
 function toDate(value) {
@@ -3403,7 +3451,7 @@ function applyTodayArticleFilter() {
   state.filters.date = nextDate;
   elements.dateFilter.value = nextDate;
   renderSummary();
-  renderArticles();
+  scheduleRenderArticles("today-filter");
 }
 
 function loadStoredExactArticleFilter() {
@@ -3748,7 +3796,7 @@ function applyKeywordInputs() {
     include: parseKeywordInput(elements.includeKeywordsInput?.value, DEFAULT_KEYWORD_INCLUDES),
     exclude: parseKeywordInput(elements.excludeKeywordsInput?.value, DEFAULT_KEYWORD_EXCLUDES),
   });
-  renderArticles();
+  scheduleRenderArticles("keyword-inputs");
 }
 
 function keywordListsMatch(left, right) {
@@ -5635,7 +5683,7 @@ function refreshTagControls() {
   }
   renderFeedOptions();
   renderTagManager();
-  renderArticles();
+  scheduleRenderArticles("tag-controls");
 }
 
 function addTagFromInput() {
@@ -8282,14 +8330,12 @@ function rerenderGroupedArticleCard(article) {
   const selectorKey = window.CSS?.escape ? window.CSS.escape(stateKey) : stateKey.replace(/["\\]/g, "\\$&");
   const existingCard = elements.articlesGrid?.querySelector(`.article-card[data-article-state-key="${selectorKey}"]`);
   if (!existingCard) {
-    renderArticles();
     return;
   }
 
   const nextNode = renderArticleCard(article);
   const nextCard = nextNode.firstElementChild || nextNode.firstChild;
   if (!nextCard) {
-    renderArticles();
     return;
   }
 
@@ -8342,6 +8388,8 @@ function renderArticleCard(article) {
   link.href = article.canonicalLink || article.link;
   image.src = finalImageSrc || PLACEHOLDER_IMAGE;
   image.alt = article.title || "Article thumbnail";
+  image.loading = "lazy";
+  image.decoding = "async";
   image.onerror = () => {
     image.onerror = null;
     image.alt = "No image available";
@@ -8614,7 +8662,7 @@ function renderPaginationControls(pagination) {
       }
 
       state.pagination.page -= 1;
-      renderArticles();
+      scheduleRenderArticles("pagination-prev");
     };
   }
 
@@ -8626,7 +8674,7 @@ function renderPaginationControls(pagination) {
       }
 
       state.pagination.page += 1;
-      renderArticles();
+      scheduleRenderArticles("pagination-next");
     };
   }
 
@@ -8951,6 +8999,7 @@ function renderArticlesFallback(error) {
 function renderArticles() {
   intelligenceTime("renderArticles");
   try {
+    intelligenceTime("renderArticles:filter-group");
     syncPaginationContext();
     let articles;
     const shouldIgnoreFeedIdForGrouping = Boolean(state.filters.feedId) && !state.filters.date;
@@ -9021,6 +9070,7 @@ function renderArticles() {
         articlesToRender.length
       );
     }
+    intelligenceTimeEnd("renderArticles:filter-group");
 
     const renderDiagnostics = {
       branchName: "feed-filter",
@@ -9031,6 +9081,7 @@ function renderArticles() {
     };
 
     if (state.filters.feedId) {
+      intelligenceTime("renderArticles:dom-update");
       elements.articlesGrid.classList.remove("is-grouped-feed-view");
       elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
       elements.articlesGrid.innerHTML = "";
@@ -9039,6 +9090,7 @@ function renderArticles() {
         elements.articlesGrid.innerHTML =
           `<div class="empty-state">No articles match the active filters.</div>`;
         renderPaginationControls(articlePagination);
+        intelligenceTimeEnd("renderArticles:dom-update");
         finalizeRenderDiagnostics(renderDiagnostics);
         return;
       }
@@ -9050,11 +9102,13 @@ function renderArticles() {
       });
       elements.articlesGrid.appendChild(fragment);
       renderPaginationControls(articlePagination);
+      intelligenceTimeEnd("renderArticles:dom-update");
       finalizeRenderDiagnostics(renderDiagnostics);
       return;
     }
 
     if ((selectedUsDmvEntry || selectedCanadaEntry) && !state.filters.feedId) {
+      intelligenceTime("renderArticles:dom-update");
       elements.articlesGrid.classList.remove("is-grouped-feed-view");
       elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
       elements.articlesGrid.innerHTML = "";
@@ -9068,6 +9122,7 @@ function renderArticles() {
         );
         renderPaginationControls(articlePagination);
         renderDiagnostics.branchName = "selected-dmv-empty";
+        intelligenceTimeEnd("renderArticles:dom-update");
         finalizeRenderDiagnostics(renderDiagnostics);
         return;
       }
@@ -9079,12 +9134,14 @@ function renderArticles() {
       });
       elements.articlesGrid.appendChild(fragment);
       renderPaginationControls(articlePagination);
+      intelligenceTimeEnd("renderArticles:dom-update");
       renderDiagnostics.branchName = "selected-dmv";
       finalizeRenderDiagnostics(renderDiagnostics);
       return;
     }
 
     if (state.dashboardMode === "usa" && !getActiveArticleFeedId()) {
+      intelligenceTime("renderArticles:dom-update");
       elements.articlesGrid.classList.add("is-grouped-feed-view");
       const dmvFeeds = getUsDmvFeeds();
       const articlesByFeedId = new Map();
@@ -9106,6 +9163,7 @@ function renderArticles() {
           `<div class="empty-state">No articles match the active filters.</div>`;
         renderPaginationControls(articlePagination);
         renderDiagnostics.branchName = "usa-grouped-empty";
+        intelligenceTimeEnd("renderArticles:dom-update");
         finalizeRenderDiagnostics(renderDiagnostics);
         return;
       }
@@ -9121,12 +9179,14 @@ function renderArticles() {
       });
       elements.articlesGrid.appendChild(fragment);
       renderPaginationControls(articlePagination);
+      intelligenceTimeEnd("renderArticles:dom-update");
       renderDiagnostics.branchName = "usa-grouped";
       finalizeRenderDiagnostics(renderDiagnostics);
       return;
     }
 
     if (state.dashboardMode === "canada" && !state.filters.canadaDmvFeedPath) {
+      intelligenceTime("renderArticles:dom-update");
       elements.articlesGrid.classList.add("is-grouped-feed-view");
       const canadaEntries = getCanadaDmvCatalogEntries();
       const articlesByFeedId = new Map();
@@ -9151,6 +9211,7 @@ function renderArticles() {
           `<div class="empty-state">No imported news available for Canada DMV entries yet.</div>`;
         renderPaginationControls(articlePagination);
         renderDiagnostics.branchName = "canada-grouped-empty";
+        intelligenceTimeEnd("renderArticles:dom-update");
         finalizeRenderDiagnostics(renderDiagnostics);
         return;
       }
@@ -9181,11 +9242,13 @@ function renderArticles() {
       });
       elements.articlesGrid.appendChild(fragment);
       renderPaginationControls(articlePagination);
+      intelligenceTimeEnd("renderArticles:dom-update");
       renderDiagnostics.branchName = "canada-grouped";
       finalizeRenderDiagnostics(renderDiagnostics);
       return;
     }
 
+    intelligenceTime("renderArticles:dom-update");
     elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
     elements.articlesGrid.classList.remove("is-grouped-feed-view");
     elements.articlesGrid.innerHTML = "";
@@ -9208,6 +9271,7 @@ function renderArticles() {
       renderDmvEmptyState(emptyStateMessage, officialUrl);
       renderPaginationControls(articlePagination);
       renderDiagnostics.branchName = "default-empty";
+      intelligenceTimeEnd("renderArticles:dom-update");
       finalizeRenderDiagnostics(renderDiagnostics);
       return;
     }
@@ -9221,6 +9285,7 @@ function renderArticles() {
 
     elements.articlesGrid.appendChild(fragment);
     renderPaginationControls(articlePagination);
+    intelligenceTimeEnd("renderArticles:dom-update");
     renderDiagnostics.branchName = state.filters.feedId ? "feed-filter" : "default";
     finalizeRenderDiagnostics(renderDiagnostics);
   } catch (error) {
@@ -9415,23 +9480,27 @@ async function importDmvFeeds() {
 }
 
 function bindEvents() {
-  elements.searchFilter.addEventListener("input", (event) => {
+  const debouncedSearchRender = debounce((value) => {
     clearExactArticleFilter();
-    state.filters.search = event.target.value.trim();
-    renderArticles();
+    state.filters.search = value;
+    scheduleRenderArticles("search-filter", { mode: "frame" });
+  }, 250);
+
+  elements.searchFilter.addEventListener("input", (event) => {
+    debouncedSearchRender(event.target.value.trim());
   });
 
   elements.topicFilter.addEventListener("change", (event) => {
     clearExactArticleFilter();
     state.filters.topic = event.target.value;
-    renderArticles();
+    scheduleRenderArticles("topic-filter", { mode: "frame" });
   });
 
   if (elements.tagFilter) {
     elements.tagFilter.addEventListener("change", (event) => {
       clearExactArticleFilter();
       state.filters.tag = normalizeFilterTag(event.target.value);
-      renderArticles();
+      scheduleRenderArticles("tag-filter", { mode: "frame" });
     });
   }
 
@@ -9439,7 +9508,7 @@ function bindEvents() {
     elements.signalFilter.addEventListener("change", (event) => {
       clearExactArticleFilter();
       state.filters.signalCategory = String(event.target.value || "").trim();
-      renderArticles();
+      scheduleRenderArticles("signal-filter", { mode: "frame" });
     });
   }
 
@@ -9518,7 +9587,7 @@ function bindEvents() {
   if (elements.keywordResetButton) {
     elements.keywordResetButton.addEventListener("click", () => {
       resetKeywordFilters();
-      renderArticles();
+      scheduleRenderArticles("keyword-reset", { mode: "frame" });
     });
   }
 
@@ -9538,7 +9607,7 @@ function bindEvents() {
     renderFeedList();
     renderDmvOfficialLink();
     renderDmvModeIndicator();
-    renderArticles();
+    scheduleRenderArticles("feed-filter", { mode: "frame" });
   });
 
   if (elements.dmvFeedFilter) {
@@ -9556,7 +9625,7 @@ function bindEvents() {
       renderFeedList();
       renderDmvOfficialLink();
       renderDmvModeIndicator();
-      renderArticles();
+      scheduleRenderArticles("dmv-feed-filter", { mode: "frame" });
     });
   }
 
@@ -9575,7 +9644,7 @@ function bindEvents() {
       renderFeedList();
       renderDmvOfficialLink();
       renderDmvModeIndicator();
-      renderArticles();
+      scheduleRenderArticles("canada-dmv-filter", { mode: "frame" });
     });
   }
 
@@ -9583,7 +9652,7 @@ function bindEvents() {
     clearExactArticleFilter();
     state.filters.date = event.target.value;
     renderSummary();
-    renderArticles();
+    scheduleRenderArticles("date-filter", { mode: "frame" });
   });
 
   elements.paginationPrev?.addEventListener("click", () => {
@@ -9592,12 +9661,12 @@ function bindEvents() {
     }
 
     state.pagination.page -= 1;
-    renderArticles();
+    scheduleRenderArticles("pagination-prev", { mode: "frame" });
   });
 
   elements.paginationNext?.addEventListener("click", () => {
     state.pagination.page += 1;
-    renderArticles();
+    scheduleRenderArticles("pagination-next", { mode: "frame" });
   });
 
   elements.summaryGrid.addEventListener("click", (event) => {
@@ -9763,7 +9832,7 @@ function bindEvents() {
     renderDmvOfficialLink();
     renderDmvModeIndicator();
     renderSummary();
-    renderArticles();
+    scheduleRenderArticles("clear-filters", { mode: "frame" });
     renderFeedList();
   });
 
@@ -9872,7 +9941,7 @@ function bindEvents() {
       renderFeedList();
       renderDmvOfficialLink();
       renderDmvModeIndicator();
-      renderArticles();
+      scheduleRenderArticles("usa-dashboard-toggle", { mode: "frame" });
     });
   }
 
@@ -9894,7 +9963,7 @@ function bindEvents() {
       renderFeedList();
       renderDmvOfficialLink();
       renderDmvModeIndicator();
-      renderArticles();
+      scheduleRenderArticles("canada-dashboard-toggle", { mode: "frame" });
     });
   }
 
