@@ -8613,6 +8613,7 @@ function finalizeRenderDiagnostics(payload = {}) {
   const total = Number(payload.total) || 0;
   const page = Number(payload.page) || 1;
   const pageSize = Number(payload.pageSize) || 30;
+  const totalPages = Number(payload.totalPages) || 1;
 
   console.warn("cards rendered", renderedCardCount);
   console.warn("pagination", {
@@ -8620,6 +8621,11 @@ function finalizeRenderDiagnostics(payload = {}) {
     page,
     pageSize,
     rendered: renderedCardCount,
+  });
+  console.warn("pagination rendered", {
+    page,
+    totalPages,
+    renderedCards: renderedCardCount,
   });
 
   if (renderedCardCount > maxRenderedCards) {
@@ -8878,6 +8884,11 @@ function renderArticlesFallback(error) {
     pageSize: fallbackPagination.pageSize,
     rendered: renderedCards,
   });
+  console.warn("pagination rendered", {
+    page: fallbackPagination.currentPage,
+    totalPages: fallbackPagination.totalPages,
+    renderedCards,
+  });
   if (renderedCards > 30) {
     console.error("HARD CAP FAILED", renderedCards);
   }
@@ -8962,17 +8973,18 @@ function renderArticles() {
       total: articles.length,
       page: articlePagination.currentPage,
       pageSize: articlePagination.pageSize,
+      totalPages: articlePagination.totalPages,
     };
 
     if (state.filters.feedId) {
       elements.articlesGrid.classList.remove("is-grouped-feed-view");
       elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
       elements.articlesGrid.innerHTML = "";
-      renderPaginationControls(articlePagination);
 
       if (!articlePagination.totalCount) {
         elements.articlesGrid.innerHTML =
           `<div class="empty-state">No articles match the active filters.</div>`;
+        renderPaginationControls(articlePagination);
         finalizeRenderDiagnostics(renderDiagnostics);
         return;
       }
@@ -8983,6 +8995,7 @@ function renderArticles() {
         fragment.appendChild(renderArticleCard(article));
       });
       elements.articlesGrid.appendChild(fragment);
+      renderPaginationControls(articlePagination);
       finalizeRenderDiagnostics(renderDiagnostics);
       return;
     }
@@ -8991,7 +9004,6 @@ function renderArticles() {
       elements.articlesGrid.classList.remove("is-grouped-feed-view");
       elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
       elements.articlesGrid.innerHTML = "";
-      renderPaginationControls(articlePagination);
 
       if (!articlePagination.totalCount) {
         renderDmvEmptyState(
@@ -9000,6 +9012,7 @@ function renderArticles() {
             : "No news available",
           selectedDmvOfficialUrl
         );
+        renderPaginationControls(articlePagination);
         renderDiagnostics.branchName = "selected-dmv-empty";
         finalizeRenderDiagnostics(renderDiagnostics);
         return;
@@ -9011,6 +9024,7 @@ function renderArticles() {
         fragment.appendChild(renderArticleCard(article));
       });
       elements.articlesGrid.appendChild(fragment);
+      renderPaginationControls(articlePagination);
       renderDiagnostics.branchName = "selected-dmv";
       finalizeRenderDiagnostics(renderDiagnostics);
       return;
@@ -9032,11 +9046,11 @@ function renderArticles() {
 
       elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
       elements.articlesGrid.innerHTML = "";
-      renderPaginationControls(articlePagination);
 
       if (!articlePagination.totalCount) {
         elements.articlesGrid.innerHTML =
           `<div class="empty-state">No articles match the active filters.</div>`;
+        renderPaginationControls(articlePagination);
         renderDiagnostics.branchName = "usa-grouped-empty";
         finalizeRenderDiagnostics(renderDiagnostics);
         return;
@@ -9052,6 +9066,7 @@ function renderArticles() {
         fragment.appendChild(renderFeedGroup(feed.name || "Untitled feed", groupCards));
       });
       elements.articlesGrid.appendChild(fragment);
+      renderPaginationControls(articlePagination);
       renderDiagnostics.branchName = "usa-grouped";
       finalizeRenderDiagnostics(renderDiagnostics);
       return;
@@ -9076,11 +9091,11 @@ function renderArticles() {
 
       elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
       elements.articlesGrid.innerHTML = "";
-      renderPaginationControls(articlePagination);
 
       if (!articlePagination.totalCount) {
         elements.articlesGrid.innerHTML =
           `<div class="empty-state">No imported news available for Canada DMV entries yet.</div>`;
+        renderPaginationControls(articlePagination);
         renderDiagnostics.branchName = "canada-grouped-empty";
         finalizeRenderDiagnostics(renderDiagnostics);
         return;
@@ -9111,6 +9126,7 @@ function renderArticles() {
         fragment.appendChild(renderFeedGroup(entryLabel, groupCards));
       });
       elements.articlesGrid.appendChild(fragment);
+      renderPaginationControls(articlePagination);
       renderDiagnostics.branchName = "canada-grouped";
       finalizeRenderDiagnostics(renderDiagnostics);
       return;
@@ -9119,7 +9135,6 @@ function renderArticles() {
     elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
     elements.articlesGrid.classList.remove("is-grouped-feed-view");
     elements.articlesGrid.innerHTML = "";
-    renderPaginationControls(articlePagination);
 
     if (!articlePagination.totalCount) {
       const emptyStateMessage = state.filters.canadaDmvAll
@@ -9137,6 +9152,7 @@ function renderArticles() {
               : "No articles match the active filters.";
       const officialUrl = !state.filters.canadaDmvAll ? selectedDmvOfficialUrl : "";
       renderDmvEmptyState(emptyStateMessage, officialUrl);
+      renderPaginationControls(articlePagination);
       renderDiagnostics.branchName = "default-empty";
       finalizeRenderDiagnostics(renderDiagnostics);
       return;
@@ -9150,6 +9166,7 @@ function renderArticles() {
     });
 
     elements.articlesGrid.appendChild(fragment);
+    renderPaginationControls(articlePagination);
     renderDiagnostics.branchName = state.filters.feedId ? "feed-filter" : "default";
     finalizeRenderDiagnostics(renderDiagnostics);
   } catch (error) {
