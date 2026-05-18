@@ -8388,7 +8388,38 @@ function toggleGroupedArticleSources(article) {
     return;
   }
 
-  return;
+  const stateKey = getGroupedArticleStateKey(article);
+  const selectorKey = window.CSS?.escape ? window.CSS.escape(stateKey) : stateKey.replace(/["\\]/g, "\\$&");
+  const card = elements.articlesGrid?.querySelector(`.article-card[data-article-state-key="${selectorKey}"]`);
+  if (!card) {
+    return;
+  }
+
+  const sourcePanel = card.querySelector(".grouped-sources-inline");
+  const toggleButton = card.querySelector(".article-duplicate-badge");
+  if (!sourcePanel || !toggleButton) {
+    return;
+  }
+
+  const isExpanded = !sourcePanel.hidden;
+  const nextExpanded = !isExpanded;
+
+  sourcePanel.hidden = !nextExpanded;
+  card.classList.toggle("article-card--sources-expanded", nextExpanded);
+  toggleButton.setAttribute("aria-expanded", String(nextExpanded));
+  toggleButton.title = nextExpanded ? "Hide grouped sources" : "Show grouped sources";
+
+  if (nextExpanded) {
+    runtime.expandedGroupedSourceKeys.add(stateKey);
+  } else {
+    runtime.expandedGroupedSourceKeys.delete(stateKey);
+    runtime.fullyExpandedGroupedSourceKeys.delete(stateKey);
+  }
+
+  intelligenceDebug("[source-toggle]", {
+    key: stateKey,
+    expanded: nextExpanded,
+  });
 }
 
 function toggleGroupedArticleSourceList(article) {
@@ -8417,7 +8448,6 @@ function renderArticleCard(article) {
   const groupedSources = getGroupedArticleSources(article);
   const articleStateKey = getGroupedArticleStateKey(article);
   const isGroupedSourcesExpanded = runtime.expandedGroupedSourceKeys.has(articleStateKey);
-  const isGroupedSourceListExpanded = runtime.fullyExpandedGroupedSourceKeys.has(articleStateKey);
 
   card.dataset.articleStateKey = articleStateKey;
 
@@ -8468,10 +8498,11 @@ function renderArticleCard(article) {
     meta.appendChild(duplicateBadge);
   }
 
-  if (body && groupedSources.length && isGroupedSourcesExpanded) {
+  if (body && groupedSources.length) {
     const sourcePanel = document.createElement("div");
     sourcePanel.className = "grouped-sources-inline";
-    const visibleGroupedSources = isGroupedSourceListExpanded ? groupedSources : groupedSources.slice(0, 12);
+    sourcePanel.hidden = !isGroupedSourcesExpanded;
+    const visibleGroupedSources = groupedSources;
 
     visibleGroupedSources.forEach((sourceArticle) => {
       const row = document.createElement("div");
@@ -8505,19 +8536,6 @@ function renderArticleCard(article) {
 
       sourcePanel.appendChild(row);
     });
-
-    if (groupedSources.length > 12 && !isGroupedSourceListExpanded) {
-      const more = document.createElement("button");
-      more.type = "button";
-      more.className = "grouped-sources-more";
-      more.textContent = `+ ${groupedSources.length - 12} more sources`;
-      more.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        toggleGroupedArticleSourceList(article);
-      });
-      sourcePanel.appendChild(more);
-    }
 
     body.appendChild(sourcePanel);
   }
