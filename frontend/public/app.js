@@ -22,7 +22,7 @@ const SUMMARY_METRICS = [
 ];
 const DEFAULT_SOURCE_GROUPS = ["USA", "Canada", "Google Alerts", "Other"];
 const TAG_FILTER_MIN_COUNT = 0;
-const ARTICLE_PAGE_SIZE = 50;
+const ARTICLE_RENDER_PAGE_SIZE = 50;
 const TAG_LIST_STORAGE_KEY = "dashboardTagList";
 const KEYWORD_FILTER_STORAGE_KEY = "dashboardKeywordFilters";
 const NOISE_KEYWORDS_EXPANDED_STORAGE_KEY = "noiseKeywordsExpanded";
@@ -735,7 +735,7 @@ const state = {
   },
   pagination: {
     page: 1,
-    pageSize: ARTICLE_PAGE_SIZE,
+    pageSize: ARTICLE_RENDER_PAGE_SIZE,
   },
 };
 
@@ -8525,7 +8525,23 @@ function getPaginationContextKey() {
   });
 }
 
+function ensurePaginationState() {
+  if (!state.pagination || typeof state.pagination !== "object") {
+    state.pagination = {
+      page: 1,
+      pageSize: ARTICLE_RENDER_PAGE_SIZE,
+    };
+  }
+
+  const nextPage = Math.max(1, Number(state.pagination.page) || 1);
+  const nextPageSize = Math.max(1, Number(state.pagination.pageSize) || ARTICLE_RENDER_PAGE_SIZE);
+  state.pagination.page = nextPage;
+  state.pagination.pageSize = nextPageSize;
+  return state.pagination;
+}
+
 function syncPaginationContext() {
+  ensurePaginationState();
   const nextContextKey = getPaginationContextKey();
   if (runtime.paginationContextKey !== nextContextKey) {
     runtime.paginationContextKey = nextContextKey;
@@ -8534,10 +8550,11 @@ function syncPaginationContext() {
 }
 
 function getPaginatedItems(items) {
+  const paginationState = ensurePaginationState();
   const totalCount = Array.isArray(items) ? items.length : 0;
-  const pageSize = Math.max(1, Number(state.pagination.pageSize) || ARTICLE_PAGE_SIZE);
+  const pageSize = Math.max(1, Number(paginationState.pageSize) || ARTICLE_RENDER_PAGE_SIZE);
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-  const currentPage = Math.min(Math.max(1, Number(state.pagination.page) || 1), totalPages);
+  const currentPage = Math.min(Math.max(1, Number(paginationState.page) || 1), totalPages);
   state.pagination.page = currentPage;
 
   const startIndex = totalCount ? (currentPage - 1) * pageSize : 0;
@@ -8576,6 +8593,58 @@ function renderPaginationControls(pagination) {
   if (elements.paginationNext) {
     elements.paginationNext.disabled = currentPage >= totalPages;
   }
+}
+
+function renderArticlesFallback(error) {
+  console.warn("[render-articles-fallback]", {
+    message: error instanceof Error ? error.message : String(error),
+  });
+
+  ensurePaginationState();
+
+  let fallbackAllArticles = [];
+  try {
+    fallbackAllArticles = state.filters?.date
+      ? state.articles.filter(articleMatchesFilters).sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate))
+      : groupArticlesByEvent(getVisibleArticles());
+  } catch (innerError) {
+    console.warn("[render-articles-fallback-inner]", {
+      message: innerError instanceof Error ? innerError.message : String(innerError),
+    });
+    fallbackAllArticles = state.articles
+      .filter((article) => {
+        try {
+          return articleMatchesFilters(article);
+        } catch (_error) {
+          return true;
+        }
+      })
+      .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+  }
+
+  const fallbackPagination = getPaginatedItems(fallbackAllArticles);
+  const fallbackArticles = fallbackPagination.items.slice(0, ARTICLE_RENDER_PAGE_SIZE);
+
+  if (elements.resultsCount) {
+    elements.resultsCount.textContent = `${fallbackPagination.totalCount} results`;
+  }
+
+  if (elements.articlesGrid) {
+    elements.articlesGrid.classList.remove("is-grouped-feed-view");
+    elements.articlesGrid.innerHTML = "";
+
+    if (!fallbackArticles.length) {
+      elements.articlesGrid.innerHTML = `<div class="empty-state">No articles match the active filters.</div>`;
+    } else {
+      const fragment = document.createDocumentFragment();
+      fallbackArticles.forEach((article) => {
+        fragment.appendChild(renderArticleCard(article));
+      });
+      elements.articlesGrid.appendChild(fragment);
+    }
+  }
+
+  renderPaginationControls(fallbackPagination);
 }
 
 function renderArticles() {
@@ -8766,6 +8835,8 @@ function renderArticles() {
     });
 
     elements.articlesGrid.appendChild(fragment);
+  } catch (error) {
+    renderArticlesFallback(error);
   } finally {
     intelligenceTimeEnd("renderArticles");
   }
