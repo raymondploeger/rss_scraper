@@ -12,6 +12,9 @@ const ARTICLE_PAGE_SIZE = 400;
 const NOTIFICATION_TIMEOUT_MS = 7000;
 const DEBUG_INTELLIGENCE = false;
 const APP_BUILD = "pagination-feed-debug-v1";
+const SHOW_FEED_INSIGHTS = false;
+const SHOW_RECENT_ALERTS = false;
+const SHOW_ACTIVITY_LOG = false;
 const DASHBOARD_ALERT_LIMIT = 8;
 const ACTIVITY_LOG_LIMIT = 24;
 const LOW_VALUE_ARTICLE_THRESHOLD = 5;
@@ -3201,6 +3204,13 @@ function generateAlerts(previous, current) {
 }
 
 function syncDashboardAlerts(feeds, articles) {
+  if (!SHOW_RECENT_ALERTS && !SHOW_ACTIVITY_LOG) {
+    runtime.dashboardAlerts = [];
+    runtime.previousSnapshotStats = createSnapshotStats(feeds, articles);
+    saveAlertSnapshot(runtime.previousSnapshotStats);
+    return;
+  }
+
   const previous = loadStoredAlertSnapshot();
   const current = createSnapshotStats(feeds, articles);
 
@@ -3228,6 +3238,11 @@ function buildReviewActivityEntries() {
 }
 
 function syncActivityLog() {
+  if (!SHOW_ACTIVITY_LOG) {
+    runtime.activityLog = [];
+    return;
+  }
+
   const alertActivityEntries = runtime.dashboardAlerts
     .filter((alert) => !alert.isSystemMessage)
     .map((alert) => ({
@@ -3354,7 +3369,44 @@ function getDashboardAnalytics() {
 }
 
 function renderAnalyticsCard() {
+  if (!SHOW_FEED_INSIGHTS && !SHOW_RECENT_ALERTS && !SHOW_ACTIVITY_LOG) {
+    return null;
+  }
+
   const analytics = getDashboardAnalytics();
+  const analyticsPanels = [];
+
+  if (SHOW_FEED_INSIGHTS) {
+    analyticsPanels.push(`
+      <div class="analytics-panel analytics-panel-wide analytics-panel-ranking">
+        <span class="analytics-label">Feed insights</span>
+        <p class="analytics-panel-note">${escapeHtml(analytics.analyticsScopeLabel)}</p>
+        <p class="analytics-panel-note">Signals combine quality, recent activity, and article history.</p>
+        ${analytics.systemHealthMessage ? `<p class="analytics-empty">${escapeHtml(analytics.systemHealthMessage)}</p>` : ""}
+        ${renderFeedInsights(analytics.feedInsights)}
+      </div>
+    `);
+  }
+
+  if (SHOW_RECENT_ALERTS) {
+    analyticsPanels.push(`
+      <div class="analytics-panel analytics-panel-wide analytics-panel-alerts">
+        <span class="analytics-label">Recent alerts</span>
+        ${renderDashboardAlerts()}
+      </div>
+    `);
+  }
+
+  if (SHOW_ACTIVITY_LOG) {
+    analyticsPanels.push(`
+      <div class="analytics-panel analytics-panel-wide analytics-panel-activity">
+        <span class="analytics-label">Activity log</span>
+        <p class="analytics-panel-note">Recent meaningful events and recommended next steps from the last 24 hours.</p>
+        ${renderActivityLog()}
+      </div>
+    `);
+  }
+
   const card = document.createElement("article");
   card.className = "summary-card analytics-card";
   card.innerHTML = `
@@ -3373,22 +3425,7 @@ function renderAnalyticsCard() {
       <span class="analytics-scope-note">${escapeHtml(analytics.analyticsScopeNote)}</span>
     </div>
     <div class="analytics-grid">
-      <div class="analytics-panel analytics-panel-wide analytics-panel-ranking">
-        <span class="analytics-label">Feed insights</span>
-        <p class="analytics-panel-note">${escapeHtml(analytics.analyticsScopeLabel)}</p>
-        <p class="analytics-panel-note">Signals combine quality, recent activity, and article history.</p>
-        ${analytics.systemHealthMessage ? `<p class="analytics-empty">${escapeHtml(analytics.systemHealthMessage)}</p>` : ""}
-        ${renderFeedInsights(analytics.feedInsights)}
-      </div>
-      <div class="analytics-panel analytics-panel-wide analytics-panel-alerts">
-        <span class="analytics-label">Recent alerts</span>
-        ${renderDashboardAlerts()}
-      </div>
-      <div class="analytics-panel analytics-panel-wide analytics-panel-activity">
-        <span class="analytics-label">Activity log</span>
-        <p class="analytics-panel-note">Recent meaningful events and recommended next steps from the last 24 hours.</p>
-        ${renderActivityLog()}
-      </div>
+      ${analyticsPanels.join("")}
       <div class="analytics-panel">
         <span class="analytics-label">Analytics scope</span>
         <p>${analytics.includedFeedCount} included of ${analytics.totalAnalyticsFeeds} RSS feeds, ${analytics.zeroArticleFeeds} zero-article, ${analytics.highQualityFeeds} high quality, ${analytics.averageQualityScore}% avg quality</p>
@@ -3440,7 +3477,10 @@ function renderSummary() {
     fragment.appendChild(card);
   });
 
-  fragment.appendChild(renderAnalyticsCard());
+  const analyticsCard = renderAnalyticsCard();
+  if (analyticsCard) {
+    fragment.appendChild(analyticsCard);
+  }
   elements.summaryGrid.appendChild(fragment);
 }
 
@@ -10055,8 +10095,10 @@ async function init() {
   loadTheme();
   loadActiveTags();
   loadKeywordFilters();
-  runtime.activityLog = loadStoredActivityLog();
-  runtime.activityLogId = runtime.activityLog.reduce((maxId, entry) => Math.max(maxId, Number(entry.id) || 0), 0);
+  runtime.activityLog = SHOW_ACTIVITY_LOG ? loadStoredActivityLog() : [];
+  runtime.activityLogId = SHOW_ACTIVITY_LOG
+    ? runtime.activityLog.reduce((maxId, entry) => Math.max(maxId, Number(entry.id) || 0), 0)
+    : 0;
   state.noiseKeywordsExpanded = isNoiseKeywordsExpanded();
   state.feedPanelCollapsed = isFeedPanelCollapsed();
   resetDashboardState();
