@@ -1397,6 +1397,10 @@ h3 {
   flex-wrap: wrap;
 }
 
+.pagination-controls[hidden] {
+  display: none !important;
+}
+
 .pagination-summary,
 .pagination-actions {
   display: flex;

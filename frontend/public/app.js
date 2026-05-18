@@ -8559,28 +8559,82 @@ function getPaginatedItems(items) {
   };
 }
 
+function ensurePaginationControlsElement() {
+  let container = document.getElementById("pagination-controls");
+  if (!container && elements.articlesGrid?.parentElement) {
+    container = document.createElement("div");
+    container.id = "pagination-controls";
+    container.className = "pagination-controls";
+    elements.articlesGrid.insertAdjacentElement("afterend", container);
+  }
+
+  elements.paginationControls = container;
+  return container;
+}
+
 function renderPaginationControls(pagination) {
-  if (!elements.paginationControls || !elements.paginationRange || !elements.paginationStatus) {
+  const container = ensurePaginationControlsElement();
+  if (!container) {
     return;
   }
 
-  const totalCount = Number(pagination?.totalCount) || 0;
-  const currentPage = Number(pagination?.currentPage) || 1;
+  const totalItems = Number(pagination?.totalCount) || 0;
+  const page = Number(pagination?.currentPage) || 1;
   const totalPages = Number(pagination?.totalPages) || 1;
-  const startDisplay = totalCount ? (Number(pagination?.startIndex) || 0) + 1 : 0;
+  const startDisplay = totalItems ? (Number(pagination?.startIndex) || 0) + 1 : 0;
   const endDisplay = Number(pagination?.endIndex) || 0;
 
-  elements.paginationControls.hidden = totalCount === 0;
-  elements.paginationRange.textContent = `Showing ${startDisplay}-${endDisplay} of ${totalCount}`;
-  elements.paginationStatus.textContent = `Page ${currentPage} of ${totalPages}`;
+  container.innerHTML = `
+    <div class="pagination-summary">
+      <span class="pagination-range">Showing ${startDisplay}-${endDisplay} of ${totalItems}</span>
+      <span class="pagination-status">Page ${page} of ${totalPages}</span>
+    </div>
+    <div class="pagination-actions">
+      <button class="ghost-button pagination-button" type="button" data-pagination-action="prev">Previous</button>
+      <button class="ghost-button pagination-button" type="button" data-pagination-action="next">Next</button>
+    </div>
+  `;
+
+  container.hidden = totalItems === 0;
+  if (totalItems === 0) {
+    return;
+  }
+
+  container.removeAttribute("hidden");
+  elements.paginationRange = container.querySelector(".pagination-range");
+  elements.paginationStatus = container.querySelector(".pagination-status");
+  elements.paginationPrev = container.querySelector('[data-pagination-action="prev"]');
+  elements.paginationNext = container.querySelector('[data-pagination-action="next"]');
 
   if (elements.paginationPrev) {
-    elements.paginationPrev.disabled = currentPage <= 1;
+    elements.paginationPrev.disabled = page <= 1;
+    elements.paginationPrev.onclick = () => {
+      if (state.pagination.page <= 1) {
+        return;
+      }
+
+      state.pagination.page -= 1;
+      renderArticles();
+    };
   }
 
   if (elements.paginationNext) {
-    elements.paginationNext.disabled = currentPage >= totalPages;
+    elements.paginationNext.disabled = page >= totalPages;
+    elements.paginationNext.onclick = () => {
+      if (state.pagination.page >= totalPages) {
+        return;
+      }
+
+      state.pagination.page += 1;
+      renderArticles();
+    };
   }
+
+  console.warn("PAGINATION UI RENDERED", {
+    page,
+    totalPages,
+    totalItems,
+  });
 }
 
 function getSelectedFeedLabel() {
