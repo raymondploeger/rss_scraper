@@ -320,6 +320,22 @@ const SIGNAL_CATEGORIES = [
     exclude: [],
   },
   {
+    id: "polymer",
+    label: "Polymer",
+    badgeLabel: "Polymer",
+    strong: [],
+    weak: [],
+    exclude: [],
+  },
+  {
+    id: "commemorative",
+    label: "Commemorative",
+    badgeLabel: "Commemorative",
+    strong: [],
+    weak: [],
+    exclude: [],
+  },
+  {
     id: "rollout",
     label: "Rollout",
     badgeLabel: "Rollout",
@@ -5202,6 +5218,20 @@ function getBanknoteSignalMatches(text) {
   const hasHighPriorityBanknoteSignal = hasBanknoteHighPrioritySignal(text);
   const hasLowPriorityBanknoteSignal = hasBanknoteLowPrioritySignal(text);
 
+  if (hasAny([
+    "counterfeit banknotes",
+    "counterfeit notes",
+    "fake banknote",
+    "fake notes",
+    "forged notes",
+    "seizure",
+    "police warning",
+    "counterfeit alert",
+  ])) {
+    pushMatch("counterfeit", "high");
+    pushMatch("fraud", "high");
+  }
+
   if (hasAny(["law", "regulation", "regulations", "legislation", "mandate", "policy", "directive"])) {
     pushMatch("regulations", "high");
   }
@@ -5224,6 +5254,11 @@ function getBanknoteSignalMatches(text) {
     pushMatch("regulations", "high");
   }
 
+  if (hasAny(["commemorative", "anniversary note", "centennial", "honouring", "honoring"])) {
+    pushMatch("commemorative", "high");
+    pushMatch("new-releases", "low");
+  }
+
   if (hasAny(["banknote series", "new series", "new banknote family", "rolled out", "rollout", "launch"])) {
     pushMatch("rollout", "high");
     pushMatch("new-releases", "high");
@@ -5232,20 +5267,6 @@ function getBanknoteSignalMatches(text) {
   if (hasAny(["redesigned", "redesign", "new design", "new banknote design"])) {
     pushMatch("redesign", "high");
     pushMatch("design-changes", "high");
-  }
-
-  if (hasAny([
-    "counterfeit banknotes",
-    "counterfeit notes",
-    "fake banknote",
-    "fake notes",
-    "forged notes",
-    "seizure",
-    "police warning",
-    "counterfeit alert",
-  ])) {
-    pushMatch("counterfeit", "high");
-    pushMatch("fraud", "high");
   }
 
   if (hasAny([
@@ -5264,7 +5285,7 @@ function getBanknoteSignalMatches(text) {
   }
 
   if (hasAny(["polymer", "polymer substrate", "substrate migration", "polymer transition", "plastic banknote"])) {
-    pushMatch("technology", "high");
+    pushMatch("polymer", "high");
     pushMatch("redesign", hasAny(["substrate migration", "polymer transition"]) ? "high" : "low");
   }
 
@@ -6706,6 +6727,34 @@ const EVENT_FINGERPRINT_SUBJECT_KEYWORDS = [
   ["banknote-security", ["security feature", "hologram", "watermark", "polymer substrate", "windowed thread"]],
   ["banknote-counterfeit", ["counterfeit banknotes", "counterfeit alert", "forged notes", "fake banknote"]],
 ];
+const INTELLIGENCE_EVENT_SUBJECT_KEYWORDS = [
+  ["child-support-revocation", ["child support", "alimony debt", "parents behind", "passport revocation"]],
+  ["khargosh-fake-passport", ["khargosh", "let", "fake passport", "forged passport", "saudi arabia", "fled india"]],
+  ["ees-delay", ["ees", "delay", "delays", "queue", "queues", "technical problems", "technical outage"]],
+  ["ees-exemption", ["ees", "exemption", "exempt", "travel exemption"]],
+  ["ees-suspension", ["ees", "suspension", "suspended"]],
+  ["ees-rollout", ["ees", "rollout", "rolled out", "launch", "launched"]],
+  ["etias-rollout", ["etias", "rollout", "rolled out", "launch", "launched"]],
+  ["passport-fraud", ["passport fraud", "forged passport", "fake passport"]],
+  ["passport-issuance", ["passport issuance", "passport office", "issued passport"]],
+  ["passport-renewal", ["passport renewal", "renewal"]],
+  ["citizenship-law", ["citizenship law", "nationality law"]],
+  ["visa-policy", ["visa policy", "visa waiver", "visa requirement"]],
+  ["banknote-withdrawal", ["withdrawn from circulation", "withdrawal", "demonetisation", "demonetization", "legal tender withdrawal"]],
+  ["banknote-counterfeit", ["counterfeit banknotes", "counterfeit alert", "forged notes", "fake banknote"]],
+  ["banknote-redesign", ["new banknote design", "new family", "new series", "portrait change", "redesign"]],
+  ["polymer-transition", ["polymer migration", "polymer transition", "substrate migration", "plastic banknote"]],
+  ["commemorative-issue", ["commemorative", "anniversary note", "centennial"]],
+];
+const INTELLIGENCE_CURRENCY_KEYWORDS = [
+  ["euro", ["euro", "euros"]],
+  ["lev", ["lev", "leva"]],
+  ["rupee", ["rupee", "rupees", "₹"]],
+  ["pound", ["pound", "pounds", "sterling"]],
+  ["dollar", ["dollar", "dollars"]],
+  ["hryvnia", ["hryvnia"]],
+  ["rial", ["rial", "rials"]],
+];
 const ARTICLE_TOPIC_TYPE_BANKNOTE_KEYWORDS = [
   "banknote",
   "banknotes",
@@ -7749,6 +7798,86 @@ function getEventFingerprintTimeBucket(article) {
   return `${publishedAt.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
 }
 
+function extractEventEntities(article) {
+  return getCachedArticleValue(article, "eventEntities", () => {
+    const text = getNormalizedGroupingText(article);
+    const countries = Array.from(new Set([
+      getDetectedEventEntity(article),
+      ...getMatchingFingerprintKeys(text, GROUPING_EVENT_ENTITY_KEYWORDS),
+    ].filter(Boolean)));
+    const agencies = Array.from(new Set(getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_AGENCY_KEYWORDS)));
+    const systems = Array.from(new Set(getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_SYSTEM_KEYWORDS)));
+    const subjects = Array.from(new Set(getMatchingFingerprintKeys(text, INTELLIGENCE_EVENT_SUBJECT_KEYWORDS)));
+    const currencies = Array.from(new Set(getMatchingFingerprintKeys(text, INTELLIGENCE_CURRENCY_KEYWORDS)));
+    const denominationMatches = Array.from(new Set(
+      (text.match(/\b\d{1,4}(?:[.,]\d{1,2})?\s*(?:euro|euros|lev|leva|rupee|rupees|pound|pounds|dollar|dollars|hryvnia|rial|rials|peso|pesos|taka|naira)\b/gi) || [])
+        .map((value) => value.toLowerCase())
+    ));
+
+    return {
+      countries,
+      agencies,
+      systems,
+      subjects,
+      currencies,
+      denominations: denominationMatches,
+    };
+  });
+}
+
+function getEventClusterKey(article) {
+  return getCachedArticleValue(article, "eventClusterKey", () => {
+    const topicFamily = getArticleGroupingTopicFamily(article);
+    const eventType = getDetailedArticleEventType(article) || "other";
+    const entities = extractEventEntities(article);
+    const timeBucket = getEventFingerprintTimeBucket(article) || "undated";
+    const primaryCountry = entities.countries[0] || "generic";
+    const primaryAgency = entities.agencies[0] || "";
+    const primarySystem = entities.systems[0] || "";
+    const primarySubject = entities.subjects[0] || "";
+    const primaryCurrency = entities.currencies[0] || entities.denominations[0] || "";
+
+    if (primarySubject === "child-support-revocation") {
+      return `${topicFamily}-child-support-revocation-${primaryAgency || primaryCountry}-${timeBucket}`;
+    }
+
+    if (primarySubject === "khargosh-fake-passport") {
+      return `${topicFamily}-khargosh-fake-passport-${timeBucket}`;
+    }
+
+    if (primarySystem === "ees" || primarySystem === "etias") {
+      return `${topicFamily}-${primarySystem}-${primarySubject || eventType}-${primaryCountry}-${timeBucket}`;
+    }
+
+    if (topicFamily === "banknote") {
+      if (eventType === "banknote_withdrawal" || primarySubject === "banknote-withdrawal") {
+        return `${topicFamily}-withdrawal-${primaryCountry}-${primaryCurrency || "generic"}-${timeBucket}`;
+      }
+
+      if (eventType === "counterfeit_banknotes" || primarySubject === "banknote-counterfeit") {
+        return `${topicFamily}-counterfeit-${primaryCountry}-${primaryAgency || primaryCurrency || "generic"}-${timeBucket}`;
+      }
+
+      if (
+        eventType === "banknote_new_design" ||
+        eventType === "banknote_new_series" ||
+        primarySubject === "banknote-redesign" ||
+        primarySubject === "polymer-transition"
+      ) {
+        return `${topicFamily}-${primarySubject || eventType}-${primaryCountry}-${primaryCurrency || "generic"}-${timeBucket}`;
+      }
+    }
+
+    if (topicFamily === "travel_passport" || topicFamily === "identity_document") {
+      if (primarySubject) {
+        return `${topicFamily}-${primarySubject}-${primaryCountry}-${primaryAgency || primarySystem || "generic"}-${timeBucket}`;
+      }
+    }
+
+    return "";
+  });
+}
+
 function getGroupingConfidenceLevel({ score = 0, strongAnchorCount = 0, sharedKeywords = 0 }) {
   if (score >= 12 && strongAnchorCount >= 2) {
     return "high";
@@ -7888,6 +8017,24 @@ function getEventFingerprintMatch(leftArticle, rightArticle) {
 
 function isSameEventFingerprint(leftArticle, rightArticle) {
   return getEventFingerprintMatch(leftArticle, rightArticle).grouped;
+}
+
+function isSameIntelligenceEvent(leftArticle, rightArticle) {
+  return getCachedArticlePairValue(leftArticle, rightArticle, "sameIntelligenceEvent", () => {
+    const leftClusterKey = getEventClusterKey(leftArticle);
+    const rightClusterKey = getEventClusterKey(rightArticle);
+    if (leftClusterKey && rightClusterKey && leftClusterKey !== rightClusterKey) {
+      return false;
+    }
+
+    const conflictReason = getConflictReason(leftArticle, rightArticle);
+    if (conflictReason) {
+      return false;
+    }
+
+    const fingerprintMatch = getEventFingerprintMatch(leftArticle, rightArticle);
+    return fingerprintMatch.grouped && fingerprintMatch.confidence === "high";
+  });
 }
 
 function getArticleEventType(article) {
@@ -8362,6 +8509,11 @@ function getBanknoteEventCountry(article) {
 
 function getIdentityEventKey(article) {
   return getCachedArticleValue(article, "identityEventKey", () => {
+    const clusterKey = getEventClusterKey(article);
+    if (clusterKey) {
+      return clusterKey;
+    }
+
     const normalizedText = [
       article?.title || "",
       article?.summary || "",
@@ -8488,7 +8640,7 @@ function groupArticlesByEvent(articles) {
         return false;
       }
 
-      return true;
+      return isSameIntelligenceEvent(primary, article);
     });
 
     if (matchingGroup) {
