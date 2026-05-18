@@ -11,6 +11,7 @@ const POLLING_INTERVAL_MS = 30000;
 const ARTICLE_PAGE_SIZE = 400;
 const NOTIFICATION_TIMEOUT_MS = 7000;
 const DEBUG_INTELLIGENCE = false;
+const APP_BUILD = "pagination-feed-debug-v1";
 const DASHBOARD_ALERT_LIMIT = 8;
 const ACTIVITY_LOG_LIMIT = 24;
 const LOW_VALUE_ARTICLE_THRESHOLD = 5;
@@ -8597,6 +8598,60 @@ function renderPaginationControls(pagination) {
   }
 }
 
+function getSelectedFeedLabel() {
+  return String(elements.feedFilter?.selectedOptions?.[0]?.textContent || "").trim();
+}
+
+function logFeedFilterDiagnostics(selectedFeedId, selectedFeedLabel, rawMatches, groupedMatches) {
+  if (!selectedFeedId) {
+    return;
+  }
+
+  const firstTitles = groupedMatches
+    .slice(0, 5)
+    .map((article) => article?.title || "Untitled article");
+
+  const isFocusFeed = /banknotenews|news\.notafilia\.pl/i.test(selectedFeedLabel)
+    || groupedMatches.some((article) => /banknotenews|news\.notafilia\.pl/i.test(String(article?.source || "")));
+
+  console.info("[feed-filter-diagnostics]", {
+    selectedFeedId,
+    selectedFeedLabel,
+    rawMatchCount: rawMatches.length,
+    groupedMatchCount: groupedMatches.length,
+    firstMatchingTitles: firstTitles,
+    focusFeed: isFocusFeed,
+  });
+}
+
+function finalizeRenderDiagnostics(payload = {}) {
+  const renderedCardCount = document.querySelectorAll(".article-card").length;
+  const pageSize = Number(payload.pageSize) || ARTICLE_RENDER_PAGE_SIZE;
+
+  console.info("[renderArticles]", {
+    build: APP_BUILD,
+    totalRawArticles: Number(payload.totalRawArticles) || 0,
+    filteredRawArticles: Number(payload.filteredRawArticles) || 0,
+    groupedArticlesCount: Number(payload.groupedArticlesCount) || 0,
+    paginatedPageSize: Number(payload.paginatedPageSize) || 0,
+    actualRenderedCardCount: renderedCardCount,
+    activeFeedId: payload.activeFeedId || "",
+    activeFeedLabel: payload.activeFeedLabel || "",
+    activeTopic: payload.activeTopic || "",
+    currentPage: Number(payload.currentPage) || 1,
+    totalPages: Number(payload.totalPages) || 1,
+    dashboardMode: state.dashboardMode,
+  });
+
+  if (renderedCardCount > pageSize) {
+    console.error("PAGINATION FAILED", {
+      renderedCardCount,
+      pageSize,
+      build: APP_BUILD,
+    });
+  }
+}
+
 function groupedArticleMatchesFeedFilter(article, feedId) {
   if (!feedId) {
     return true;
@@ -8678,17 +8733,32 @@ function renderArticles() {
     syncPaginationContext();
     let articles;
     const shouldIgnoreFeedIdForGrouping = Boolean(state.filters.feedId) && !state.filters.date;
+    const totalRawArticles = Array.isArray(state.articles) ? state.articles.length : 0;
+    let filteredRawArticles = [];
+    let groupedArticlesCount = 0;
+    const activeFeedId = state.filters.feedId || "";
+    const activeFeedLabel = getSelectedFeedLabel();
 
     if (state.filters.date) {
-      articles = state.articles
+      filteredRawArticles = state.articles
         .filter(articleMatchesFilters)
         .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+      articles = filteredRawArticles;
+      groupedArticlesCount = articles.length;
     } else {
       const visibleArticles = getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping });
+      filteredRawArticles = visibleArticles;
       const groupedArticles = groupArticlesByEvent(visibleArticles);
+      groupedArticlesCount = groupedArticles.length;
       articles = shouldIgnoreFeedIdForGrouping
         ? groupedArticles.filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
         : groupedArticles;
+
+      if (activeFeedId) {
+        const rawMatches = visibleArticles.filter((article) => article?.feedId === activeFeedId);
+        const groupedMatches = groupedArticles.filter((article) => groupedArticleMatchesFeedFilter(article, activeFeedId));
+        logFeedFilterDiagnostics(activeFeedId, activeFeedLabel, rawMatches, groupedMatches);
+      }
     }
 
     const selectedUsDmvEntry = getSelectedUsDmvCatalogEntry();
@@ -8707,6 +8777,18 @@ function renderArticles() {
     const pageArticles = Array.isArray(articlePagination.items)
       ? articlePagination.items.slice(0, ARTICLE_RENDER_PAGE_SIZE)
       : [];
+    const renderDiagnostics = {
+      totalRawArticles,
+      filteredRawArticles: filteredRawArticles.length,
+      groupedArticlesCount,
+      paginatedPageSize: pageArticles.length,
+      pageSize: state.pagination?.pageSize || ARTICLE_RENDER_PAGE_SIZE,
+      activeFeedId,
+      activeFeedLabel,
+      activeTopic: state.filters.topic || "",
+      currentPage: articlePagination.currentPage,
+      totalPages: articlePagination.totalPages,
+    };
 
     if (state.filters.feedId) {
       elements.articlesGrid.classList.remove("is-grouped-feed-view");
@@ -8717,6 +8799,7 @@ function renderArticles() {
       if (!articlePagination.totalCount) {
         elements.articlesGrid.innerHTML =
           `<div class="empty-state">No articles match the active filters.</div>`;
+        finalizeRenderDiagnostics(renderDiagnostics);
         return;
       }
 
@@ -8725,6 +8808,7 @@ function renderArticles() {
         fragment.appendChild(renderArticleCard(article));
       });
       elements.articlesGrid.appendChild(fragment);
+      finalizeRenderDiagnostics(renderDiagnostics);
       return;
     }
 
@@ -8741,6 +8825,7 @@ function renderArticles() {
             : "No news available",
           selectedDmvOfficialUrl
         );
+        finalizeRenderDiagnostics(renderDiagnostics);
         return;
       }
 
@@ -8749,6 +8834,7 @@ function renderArticles() {
         fragment.appendChild(renderArticleCard(article));
       });
       elements.articlesGrid.appendChild(fragment);
+      finalizeRenderDiagnostics(renderDiagnostics);
       return;
     }
 
@@ -8773,6 +8859,7 @@ function renderArticles() {
       if (!articlePagination.totalCount) {
         elements.articlesGrid.innerHTML =
           `<div class="empty-state">No articles match the active filters.</div>`;
+        finalizeRenderDiagnostics(renderDiagnostics);
         return;
       }
 
@@ -8785,6 +8872,7 @@ function renderArticles() {
         fragment.appendChild(renderFeedGroup(feed.name || "Untitled feed", groupCards));
       });
       elements.articlesGrid.appendChild(fragment);
+      finalizeRenderDiagnostics(renderDiagnostics);
       return;
     }
 
@@ -8812,6 +8900,7 @@ function renderArticles() {
       if (!articlePagination.totalCount) {
         elements.articlesGrid.innerHTML =
           `<div class="empty-state">No imported news available for Canada DMV entries yet.</div>`;
+        finalizeRenderDiagnostics(renderDiagnostics);
         return;
       }
 
@@ -8839,6 +8928,7 @@ function renderArticles() {
         fragment.appendChild(renderFeedGroup(entryLabel, groupCards));
       });
       elements.articlesGrid.appendChild(fragment);
+      finalizeRenderDiagnostics(renderDiagnostics);
       return;
     }
 
@@ -8863,6 +8953,7 @@ function renderArticles() {
               : "No articles match the active filters.";
       const officialUrl = !state.filters.canadaDmvAll ? selectedDmvOfficialUrl : "";
       renderDmvEmptyState(emptyStateMessage, officialUrl);
+      finalizeRenderDiagnostics(renderDiagnostics);
       return;
     }
 
@@ -8873,6 +8964,7 @@ function renderArticles() {
     });
 
     elements.articlesGrid.appendChild(fragment);
+    finalizeRenderDiagnostics(renderDiagnostics);
   } catch (error) {
     renderArticlesFallback(error);
   } finally {
@@ -9632,6 +9724,7 @@ function bindEvents() {
 }
 
 async function init() {
+  console.info("APP_BUILD", APP_BUILD);
   loadTheme();
   loadActiveTags();
   loadKeywordFilters();
