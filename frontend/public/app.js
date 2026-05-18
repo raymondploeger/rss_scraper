@@ -6461,14 +6461,26 @@ const GROUPING_GENERIC_TOPIC_WORDS = new Set([
   "redesign",
 ]);
 const GROUPING_EVENT_ENTITY_KEYWORDS = [
+  ["italy", ["italy", "italian"]],
+  ["portugal", ["portugal", "portuguese"]],
+  ["greece", ["greece", "greek"]],
   ["armenia", ["armenia", "armenian"]],
   ["nigeria", ["nigeria", "nigerian"]],
   ["south-africa", ["south africa", "south african"]],
   ["ecowas", ["ecowas"]],
   ["pakistan", ["pakistan", "pakistani"]],
   ["kazakhstan", ["kazakhstan", "kazakh"]],
+  ["bulgaria", ["bulgaria", "bulgarian", "lev", "leva"]],
+  ["denmark", ["denmark", "danish", "krone"]],
+  ["eurozone", ["eurozone", "euro area", "euro"]],
   ["rbi", ["rbi", "reserve bank of india"]],
   ["norges-bank", ["norges bank"]],
+  ["ecb", ["ecb", "european central bank"]],
+  ["bank-of-england", ["bank of england"]],
+  ["state-department", ["state department"]],
+  ["icao", ["icao"]],
+  ["etias", ["etias"]],
+  ["ees", ["ees", "entry exit system", "entry/exit system"]],
   ["state-department", ["state department"]],
   ["uk", ["united kingdom", "uk", "britain", "british"]],
   ["us", ["united states", "usa", "us", "american"]],
@@ -6481,6 +6493,14 @@ const EVENT_FINGERPRINT_AGENCY_KEYWORDS = [
   ["icao", ["icao"]],
   ["rbi", ["rbi", "reserve bank of india"]],
   ["norges-bank", ["norges bank"]],
+  ["ecb", ["ecb", "european central bank"]],
+  ["bank-of-england", ["bank of england"]],
+  ["bulgarian-national-bank", ["bulgarian national bank"]],
+  ["de-la-rue", ["de la rue"]],
+  ["giesecke-devrient", ["giesecke+devrient", "giesecke devrient"]],
+  ["crane-currency", ["crane currency"]],
+  ["oberthur", ["oberthur"]],
+  ["sicpa", ["sicpa"]],
   ["ministry-of-interior", ["ministry of interior"]],
   ["immigration-agency", ["immigration", "immigration agency"]],
   ["border-authority", ["border authority", "border control", "customs"]],
@@ -6489,6 +6509,7 @@ const EVENT_FINGERPRINT_SYSTEM_KEYWORDS = [
   ["ees", ["ees", "entry exit system", "entry/exit system"]],
   ["etias", ["etias"]],
   ["passport-revocation", ["passport revocation", "revocation", "child support"]],
+  ["travel-exemption", ["travel exemption", "exemption", "exempt"]],
   ["citizenship-law", ["citizenship law", "nationality law"]],
   ["biometric-checks", ["biometric checks", "biometric border checks"]],
   ["visa-waiver", ["visa waiver", "visa policy", "visa requirement"]],
@@ -6497,6 +6518,10 @@ const EVENT_FINGERPRINT_SYSTEM_KEYWORDS = [
   ["passport-issuance", ["passport issuance", "passport office", "passport renewal"]],
   ["digital-id", ["digital id", "eid", "identity system"]],
   ["icao", ["icao", "travel document security"]],
+  ["banknote-withdrawal", ["withdrawn from circulation", "legal tender withdrawal", "exchange deadline", "demonetization", "demonetisation"]],
+  ["banknote-redesign", ["new banknote design", "redesign", "new family", "new series"]],
+  ["banknote-security", ["security feature", "hologram", "watermark", "polymer substrate", "windowed thread"]],
+  ["banknote-counterfeit", ["counterfeit banknotes", "counterfeit alert", "forged notes", "fake banknote"]],
 ];
 const EVENT_FINGERPRINT_ACTION_KEYWORDS = [
   ["rollout", ["rollout", "rolled out", "launched", "deployed", "implemented"]],
@@ -6511,6 +6536,9 @@ const EVENT_FINGERPRINT_ACTION_KEYWORDS = [
   ["issuance", ["issuance", "issued", "passport issuance"]],
   ["renewal", ["renewal", "renewed", "passport renewal"]],
   ["counterfeiting", ["counterfeit", "forged passport", "fake passport"]],
+  ["withdrawal", ["withdrawn", "withdrawal", "withdrawn from circulation", "exchange deadline"]],
+  ["redesign", ["redesign", "redesigned", "design unveiled", "new artwork"]],
+  ["migration", ["polymer migration", "substrate migration", "transition"]],
 ];
 const EVENT_FINGERPRINT_SUBJECT_KEYWORDS = [
   ["border-system", ["ees", "etias", "border control", "border checks", "entry exit system"]],
@@ -6520,6 +6548,10 @@ const EVENT_FINGERPRINT_SUBJECT_KEYWORDS = [
   ["document-security", ["document security", "icao", "biometric"]],
   ["travel-advisory", ["travel advisory", "visa requirement", "entry requirements"]],
   ["airport-operations", ["airport", "border queue", "border delays"]],
+  ["banknote-withdrawal", ["withdrawn from circulation", "legal tender", "exchange deadline", "demonetization", "demonetisation"]],
+  ["banknote-redesign", ["new banknote design", "new family", "new series", "portrait change"]],
+  ["banknote-security", ["security feature", "hologram", "watermark", "polymer substrate", "windowed thread"]],
+  ["banknote-counterfeit", ["counterfeit banknotes", "counterfeit alert", "forged notes", "fake banknote"]],
 ];
 const ARTICLE_TOPIC_TYPE_BANKNOTE_KEYWORDS = [
   "banknote",
@@ -7558,7 +7590,22 @@ function getEventFingerprintTimeBucket(article) {
     return "";
   }
 
-  return publishedAt.toISOString().slice(0, 10);
+  const startOfYear = new Date(Date.UTC(publishedAt.getUTCFullYear(), 0, 1));
+  const elapsedDays = Math.floor((publishedAt.getTime() - startOfYear.getTime()) / (1000 * 60 * 60 * 24));
+  const week = Math.floor(elapsedDays / 7) + 1;
+  return `${publishedAt.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+
+function getGroupingConfidenceLevel({ score = 0, strongAnchorCount = 0, sharedKeywords = 0 }) {
+  if (score >= 12 && strongAnchorCount >= 2) {
+    return "high";
+  }
+
+  if (score >= 9 && strongAnchorCount >= 1 && sharedKeywords >= 1) {
+    return "medium";
+  }
+
+  return "low";
 }
 
 function extractEventFingerprint(article) {
@@ -7647,17 +7694,39 @@ function getEventFingerprintMatch(leftArticle, rightArticle) {
     const rightDate = toDate(rightArticle?.pubDate);
     if (!Number.isNaN(leftDate.getTime()) && !Number.isNaN(rightDate.getTime())) {
       const dayDiff = Math.abs(leftDate.getTime() - rightDate.getTime()) / (1000 * 60 * 60 * 24);
-      if (dayDiff <= 14) {
+      if (leftFingerprint.timeBucket && rightFingerprint.timeBucket && leftFingerprint.timeBucket === rightFingerprint.timeBucket) {
         score += 2;
+      } else if (dayDiff <= 10) {
+        score += 2;
+      } else if (dayDiff > 21) {
+        score -= 4;
       } else if (dayDiff > 45) {
         score -= 2;
       }
     }
 
-    const grouped = score >= 8;
+    const strongAnchorCount =
+      Number(Boolean(sharedCountries.length)) +
+      Number(Boolean(sharedAgencies.length)) +
+      Number(Boolean(sharedSystems.length));
+    const confidence = getGroupingConfidenceLevel({
+      score,
+      strongAnchorCount,
+      sharedKeywords: sharedKeywords.length,
+    });
+    const isTrumpPassportCluster =
+      getIdentityEventKey(leftArticle) === "identity_trump_passport_release" &&
+      getIdentityEventKey(rightArticle) === "identity_trump_passport_release";
+    const grouped = confidence === "high" || (isTrumpPassportCluster && score >= 8);
     return {
       grouped,
       score,
+      confidence,
+      strongAnchorCount,
+      sharedCountries,
+      sharedAgencies,
+      sharedSystems,
+      sharedKeywords,
       leftFingerprint,
       rightFingerprint,
     };
@@ -7791,6 +7860,12 @@ function getIdentityGroupingAnchors(article) {
 }
 
 function getConflictReason(leftArticle, rightArticle) {
+  const leftEventKey = getIdentityEventKey(leftArticle);
+  const rightEventKey = getIdentityEventKey(rightArticle);
+  if (leftEventKey === "identity_trump_passport_release" && rightEventKey === "identity_trump_passport_release") {
+    return "";
+  }
+
   const leftTopicFamily = getArticleGroupingTopicFamily(leftArticle);
   const rightTopicFamily = getArticleGroupingTopicFamily(rightArticle);
   if (leftTopicFamily !== rightTopicFamily) {
@@ -7892,7 +7967,16 @@ function getConflictReason(leftArticle, rightArticle) {
     titleB: rightArticle?.title || "Untitled article",
     score: fingerprintMatch.score,
     grouped: fingerprintMatch.grouped,
+    confidence: fingerprintMatch.confidence,
   });
+  if (fingerprintMatch.strongAnchorCount < 1 && leftTopicFamily !== "banknote") {
+    return "missing strong event anchor";
+  }
+
+  if (fingerprintMatch.confidence !== "high") {
+    return `grouping confidence too low (${fingerprintMatch.confidence})`;
+  }
+
   if (!fingerprintMatch.grouped) {
     return "event fingerprint mismatch";
   }
@@ -8111,6 +8195,8 @@ function getBanknoteEventCountry(article) {
     ["pakistan", ["pakistan", "pakistani", "rupee"]],
     ["philippines", ["philippines", "philippine", "peso"]],
     ["romania", ["romania", "romanian", "leu"]],
+    ["bulgaria", ["bulgaria", "bulgarian", "lev", "leva"]],
+    ["denmark", ["denmark", "danish", "krone"]],
     ["eurozone", ["eurozone", "euro area"]],
   ];
 
@@ -8263,9 +8349,14 @@ function groupArticlesByEvent(articles) {
   const groupedArticles = Object.values(grouped).flatMap((bucket) => bucket).map((group) => {
     const primary = group[0];
     if (group.length > 1) {
-      intelligenceLog("GROUPED EVENT", {
+      const firstMatch = group[1] ? getEventFingerprintMatch(primary, group[1]) : null;
+      intelligenceDebug("[grouping]", {
         title: primary?.title || "Untitled article",
         eventType: getDetailedArticleEventType(primary),
+        entity: getDetectedEventEntity(primary),
+        fingerprint: extractEventFingerprint(primary),
+        confidence: firstMatch?.confidence || "high",
+        groupedWith: group.slice(1).map((item) => item?.title || "Untitled article"),
         groupedCount: group.length,
       });
     }
@@ -8463,6 +8554,7 @@ function renderArticleCard(article) {
   const isGroupedSourcesExpanded = runtime.expandedGroupedSourceKeys.has(articleStateKey);
 
   card.dataset.articleStateKey = articleStateKey;
+  card.classList.toggle("article-card--grouped", groupedSources.length > 0);
 
   if (card && isGroupedSourcesExpanded && groupedSources.length) {
     card.classList.add("article-card--sources-expanded");
@@ -8484,6 +8576,7 @@ function renderArticleCard(article) {
   date.textContent = formatDate(article.pubDate);
   title.textContent = article.title || "Untitled article";
   feed.textContent = getFeedName(article.feedId);
+  feed.title = feed.textContent;
 
   if (meta && primarySignalCategory) {
     const signalBadge = document.createElement("span");
@@ -8511,7 +8604,7 @@ function renderArticleCard(article) {
     meta.appendChild(duplicateBadge);
   }
 
-  if (body && groupedSources.length) {
+  if (groupedSources.length) {
     const sourcePanel = document.createElement("div");
     sourcePanel.className = "grouped-sources-inline";
     sourcePanel.hidden = !isGroupedSourcesExpanded;
@@ -8584,7 +8677,7 @@ function renderArticleCard(article) {
       sourcePanel.appendChild(moreButton);
     }
 
-    body.appendChild(sourcePanel);
+    card.appendChild(sourcePanel);
   }
 
   return node;
