@@ -8409,6 +8409,19 @@ function toggleGroupedArticleSources(article) {
   toggleButton.setAttribute("aria-expanded", String(nextExpanded));
   toggleButton.title = nextExpanded ? "Hide grouped sources" : "Show grouped sources";
 
+  if (!nextExpanded) {
+    const hiddenSourceRows = sourcePanel.querySelectorAll(".grouped-source-item.is-extra-source");
+    hiddenSourceRows.forEach((row) => {
+      row.hidden = true;
+    });
+
+    const moreButton = sourcePanel.querySelector(".grouped-sources-more");
+    if (moreButton) {
+      moreButton.textContent = `Show ${hiddenSourceRows.length} more sources`;
+      moreButton.setAttribute("aria-expanded", "false");
+    }
+  }
+
   if (nextExpanded) {
     runtime.expandedGroupedSourceKeys.add(stateKey);
   } else {
@@ -8502,11 +8515,16 @@ function renderArticleCard(article) {
     const sourcePanel = document.createElement("div");
     sourcePanel.className = "grouped-sources-inline";
     sourcePanel.hidden = !isGroupedSourcesExpanded;
-    const visibleGroupedSources = groupedSources;
+    const hiddenExtraSources = [];
 
-    visibleGroupedSources.forEach((sourceArticle) => {
+    groupedSources.forEach((sourceArticle, index) => {
       const row = document.createElement("div");
       row.className = "grouped-source-item";
+      if (index >= 3) {
+        row.classList.add("is-extra-source");
+        row.hidden = true;
+        hiddenExtraSources.push(row);
+      }
 
       const header = document.createElement("div");
       header.className = "grouped-source-meta";
@@ -8536,6 +8554,35 @@ function renderArticleCard(article) {
 
       sourcePanel.appendChild(row);
     });
+
+    if (hiddenExtraSources.length) {
+      const moreButton = document.createElement("button");
+      moreButton.type = "button";
+      moreButton.className = "grouped-sources-more";
+      moreButton.textContent = `Show ${hiddenExtraSources.length} more sources`;
+      moreButton.setAttribute("aria-expanded", "false");
+      moreButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const expanded = moreButton.getAttribute("aria-expanded") === "true";
+        const nextExpanded = !expanded;
+
+        hiddenExtraSources.forEach((row) => {
+          row.hidden = !nextExpanded;
+        });
+
+        moreButton.setAttribute("aria-expanded", String(nextExpanded));
+        moreButton.textContent = nextExpanded
+          ? "Hide extra sources"
+          : `Show ${hiddenExtraSources.length} more sources`;
+
+        intelligenceDebug("[source-toggle]", {
+          key: `${articleStateKey}:extra`,
+          expanded: nextExpanded,
+        });
+      });
+      sourcePanel.appendChild(moreButton);
+    }
 
     body.appendChild(sourcePanel);
   }
