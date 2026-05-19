@@ -45,6 +45,12 @@ export async function countFeeds(filters = {}) {
     where.lastStatus = filters.lastStatus;
   }
 
+  if (Array.isArray(filters.sourceTypes) && filters.sourceTypes.length) {
+    where.sourceType = { in: filters.sourceTypes };
+  } else if (typeof filters.sourceType === "string" && filters.sourceType.trim()) {
+    where.sourceType = filters.sourceType.trim();
+  }
+
   return prisma.feed.count({ where });
 }
 

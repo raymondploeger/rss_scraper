@@ -20,7 +20,7 @@ export const env = {
   pollCron: process.env.POLL_CRON || "*/5 * * * *",
   pollConcurrency: Math.max(1, toNumber(process.env.POLL_CONCURRENCY, 5)),
   requestTimeoutMs: Math.max(1000, toNumber(process.env.REQUEST_TIMEOUT_MS, 10000)),
-  maxFeeds: Math.max(1, toNumber(process.env.MAX_FEEDS, 50)),
+  maxFeeds: Math.max(1, toNumber(process.env.MAX_FEEDS, 150)),
   maxArticlePageSize: Math.max(50, toNumber(process.env.MAX_ARTICLE_PAGE_SIZE, 400)),
   scrapeRetryAttempts: Math.max(0, toNumber(process.env.SCRAPE_RETRY_ATTEMPTS, 2)),
   databaseUrl: process.env.DATABASE_URL || "",

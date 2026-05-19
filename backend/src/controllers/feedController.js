@@ -125,28 +125,31 @@ export async function listFeeds(request, response) {
 export async function createFeed(request, response) {
   try {
     const { name, topic, rssUrl, sourceType = "rss", isActive = true } = request.body;
+    const normalizedSourceType = String(sourceType || "rss").trim().toLowerCase();
 
     if (!rssUrl) {
       return response.status(400).json({ error: "Source URL is required." });
     }
 
-    const feedCount = await countFeeds();
-    if (feedCount >= env.maxFeeds) {
-      return response.status(400).json({ error: `Maximum of ${env.maxFeeds} feeds reached` });
+    if (normalizedSourceType === "rss") {
+      const rssFeedCount = await countFeeds({ sourceType: "rss" });
+      if (rssFeedCount >= env.maxFeeds) {
+        return response.status(400).json({ error: `Maximum of ${env.maxFeeds} RSS feeds reached` });
+      }
     }
 
-    const resolvedFeedUrl = await resolveSourceUrl(rssUrl, sourceType);
+    const resolvedFeedUrl = await resolveSourceUrl(rssUrl, normalizedSourceType);
     const duplicate = await findFeedByRssUrl(resolvedFeedUrl);
     if (duplicate) {
       return response.status(409).json({ error: "This source is already in the dashboard." });
     }
 
-    const parsed = sourceType === "rss" ? await parser.parseURL(resolvedFeedUrl) : null;
+    const parsed = normalizedSourceType === "rss" ? await parser.parseURL(resolvedFeedUrl) : null;
     const feed = await createFeedRecord({
       name: name || parsed?.title || "Untitled Source",
       topic: topic || name || parsed?.title || "General",
       rssUrl: resolvedFeedUrl,
-      sourceType,
+      sourceType: normalizedSourceType,
       isActive
     });
     broadcast("feed:update", { type: "feed:update", action: "created", feed: toFeedDto(feed) });

@@ -20,7 +20,7 @@ POLL_CRON=*/5 * * * *
 POLL_CONCURRENCY=5
 REQUEST_TIMEOUT_MS=10000
 SCRAPE_RETRY_ATTEMPTS=2
-MAX_FEEDS=50
+MAX_FEEDS=150
 PUBLIC_APP_URL=https://your-app.up.railway.app
 PLACEHOLDER_IMAGE=https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image
 ```

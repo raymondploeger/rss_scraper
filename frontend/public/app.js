@@ -11,6 +11,9 @@ const POLLING_INTERVAL_MS = 30000;
 const ARTICLE_PAGE_SIZE = 400;
 const NOTIFICATION_TIMEOUT_MS = 7000;
 const DEBUG_INTELLIGENCE = false;
+const MAX_RSS_FEEDS = 150;
+const MAX_RSS_FEEDS_MESSAGE = `Maximum of ${MAX_RSS_FEEDS} RSS feeds reached`;
+const FEED_FORM_HELPER_TEXT = `Monitor up to ${MAX_RSS_FEEDS} RSS feeds and websites.`;
 const APP_BUILD = "pagination-feed-debug-v1";
 const SHOW_FEED_INSIGHTS = false;
 const SHOW_RECENT_ALERTS = false;
@@ -1309,6 +1312,22 @@ function isLinkOnlyDmvSource(feed) {
 
 function isRssBackedDmvFeed(feed) {
   return Boolean(isCanadaRssBackedFeed(feed) || (isDmvSource(feed) && feed?.dmvMode === "rss"));
+}
+
+function isRssBackedFeed(feed) {
+  if (!feed) {
+    return false;
+  }
+
+  if (isLinkOnlyDmvSource(feed)) {
+    return false;
+  }
+
+  return String(feed?.sourceType || "rss").trim().toLowerCase() === "rss" || isRssBackedDmvFeed(feed);
+}
+
+function getRssBackedFeedCount(feeds = state.feeds) {
+  return Array.isArray(feeds) ? feeds.filter((feed) => isRssBackedFeed(feed)).length : 0;
 }
 
 function toCatalogSource(entry, { idPrefix = "catalog-dmv", topic = "DMV Directory" } = {}) {
@@ -3419,7 +3438,7 @@ function getDashboardAnalytics() {
   const averageQualityScore = includedFeedCount ? Math.round((qualityTotal / includedFeedCount) * 100) : 0;
   const activeFeeds = state.feeds.filter((feed) => feed.isActive !== false).length;
   const errorFeeds = state.feeds.filter(isFeedError).length;
-  const rssFeedCount = state.feeds.filter((feed) => feed.sourceType !== "link-only").length;
+  const rssFeedCount = getRssBackedFeedCount(state.feeds);
   const catalogOnlySources = getNonUsCatalogOnlySources();
   const linkOnlyCount =
     state.feeds.filter((feed) => feed.sourceType === "link-only" || isLinkOnlyDmvSource(feed)).length +
@@ -6241,14 +6260,28 @@ function syncSourceGroupTabs() {
 
 function syncFeedFormMode() {
   const isEditing = Boolean(state.editingFeedId);
+  const selectedSourceType = String(elements.feedSourceType?.value || "rss").trim().toLowerCase();
+  const rssFeedCount = getRssBackedFeedCount();
+  const rssLimitReached = !isEditing && selectedSourceType === "rss" && rssFeedCount >= MAX_RSS_FEEDS;
 
   if (elements.feedSubmit) {
     elements.feedSubmit.textContent = isEditing ? "Save changes" : "Add source";
+    elements.feedSubmit.disabled = rssLimitReached;
   }
 
   if (elements.feedCancel) {
     elements.feedCancel.hidden = !isEditing;
   }
+
+  if (elements.feedFormStatus && !isEditing) {
+    elements.feedFormStatus.textContent = rssLimitReached ? MAX_RSS_FEEDS_MESSAGE : FEED_FORM_HELPER_TEXT;
+  }
+
+  intelligenceDebug("[feed-limit]", {
+    rssFeedCount,
+    selectedSourceType,
+    rssLimitReached,
+  });
 }
 
 function resetDashboardState() {
@@ -6298,7 +6331,7 @@ function resetFeedForm(options = {}) {
   syncFeedFormMode();
 
   if (!preserveStatus) {
-    elements.feedFormStatus.textContent = "Monitor up to 50 RSS feeds and websites.";
+    elements.feedFormStatus.textContent = FEED_FORM_HELPER_TEXT;
   }
 }
 
@@ -10574,6 +10607,7 @@ function renderDashboard() {
   renderDmvModeIndicator();
   renderFeedList();
   renderArticles();
+  syncFeedFormMode();
   syncFeedPanelVisibility();
 }
 
@@ -11147,6 +11181,13 @@ function bindEvents() {
 
   elements.feedForm.addEventListener("submit", async (event) => {
     event.preventDefault();
+    const selectedSourceType = String(elements.feedSourceType?.value || "rss").trim().toLowerCase();
+    if (!state.editingFeedId && selectedSourceType === "rss" && getRssBackedFeedCount() >= MAX_RSS_FEEDS) {
+      elements.feedFormStatus.textContent = MAX_RSS_FEEDS_MESSAGE;
+      syncFeedFormMode();
+      return;
+    }
+
     elements.feedSubmit.disabled = true;
     const isEditing = Boolean(state.editingFeedId);
     elements.feedFormStatus.textContent = isEditing ? "Saving changes..." : "Adding feed...";
@@ -11178,7 +11219,7 @@ function bindEvents() {
     } catch (error) {
       elements.feedFormStatus.textContent = error.message;
     } finally {
-      elements.feedSubmit.disabled = false;
+      syncFeedFormMode();
     }
   });
 
@@ -11191,6 +11232,12 @@ function bindEvents() {
   if (elements.feedCancel) {
     elements.feedCancel.addEventListener("click", () => {
       resetFeedForm();
+    });
+  }
+
+  if (elements.feedSourceType) {
+    elements.feedSourceType.addEventListener("change", () => {
+      syncFeedFormMode();
     });
   }
 
