@@ -6249,6 +6249,10 @@ function syncAddSourcePanel(expanded) {
     return;
   }
 
+  if (expanded) {
+    state.feedPanelCollapsed = false;
+  }
+
   state.addSourceExpanded = expanded;
   syncFeedPanelVisibility();
 }
@@ -6346,11 +6350,14 @@ function resetDashboardState() {
 
 function resetFeedForm(options = {}) {
   const { preserveStatus = false } = options;
+  const currentStatus = elements.feedFormStatus?.textContent || "";
   state.editingFeedId = "";
   elements.feedForm.reset();
   syncFeedFormMode();
 
-  if (!preserveStatus) {
+  if (preserveStatus && elements.feedFormStatus) {
+    elements.feedFormStatus.textContent = currentStatus;
+  } else if (!preserveStatus) {
     elements.feedFormStatus.textContent = FEED_FORM_HELPER_TEXT;
   }
 }
@@ -10687,6 +10694,16 @@ async function loadSnapshot() {
   syncFeedPanelVisibility();
 }
 
+async function refreshFeedsOnly() {
+  const feeds = await apiRequest("/api/feeds");
+  state.feeds = Array.isArray(feeds) ? feeds : [];
+  renderSummary();
+  renderFeedOptions();
+  renderFeedList();
+  syncFeedFormMode();
+  syncFeedPanelVisibility();
+}
+
 function startPolling() {
   if (runtime.pollTimer) {
     window.clearInterval(runtime.pollTimer);
@@ -10706,6 +10723,9 @@ function initRealtime() {
     const eventSource = new EventSource("/api/stream");
     const refreshSnapshot = debounce(() => {
       void loadSnapshot();
+    });
+    const refreshFeedsOnlyDebounced = debounce(() => {
+      void refreshFeedsOnly();
     });
 
     runtime.eventSource = eventSource;
@@ -10738,9 +10758,8 @@ function initRealtime() {
       refreshSnapshot();
     });
 
-    ["article:update", "feed:update"].forEach((eventName) => {
-      eventSource.addEventListener(eventName, refreshSnapshot);
-    });
+    eventSource.addEventListener("article:update", refreshSnapshot);
+    eventSource.addEventListener("feed:update", refreshFeedsOnlyDebounced);
 
     eventSource.onerror = () => {
       runtime.realtimeEnabled = false;
@@ -11210,7 +11229,7 @@ function bindEvents() {
 
     elements.feedSubmit.disabled = true;
     const isEditing = Boolean(state.editingFeedId);
-    elements.feedFormStatus.textContent = isEditing ? "Saving changes..." : "Adding feed...";
+    elements.feedFormStatus.textContent = isEditing ? "Saving changes..." : "Adding source...";
 
     try {
       const payload = {
@@ -11229,7 +11248,11 @@ function bindEvents() {
       });
 
       if (isEditing) {
-        await updateFeed(state.editingFeedId, payload);
+        const updatedFeed = await updateFeed(state.editingFeedId, payload);
+        state.feeds = state.feeds.map((feed) => (feed.id === updatedFeed.id ? updatedFeed : feed));
+        renderSummary();
+        renderFeedOptions();
+        renderFeedList();
         elements.feedFormStatus.textContent = "Source updated.";
         showNotification({
           title: "Source updated",
@@ -11244,6 +11267,10 @@ function bindEvents() {
             isActive: true,
           }),
         });
+        state.feeds = [responseBody].concat(state.feeds.filter((feed) => feed.id !== responseBody.id));
+        renderSummary();
+        renderFeedOptions();
+        renderFeedList();
         debugIntelligenceLog("[add-source-response]", {
           sourceName: payload.name,
           topic: payload.topic,
@@ -11261,7 +11288,8 @@ function bindEvents() {
       }
 
       resetFeedForm({ preserveStatus: true });
-      await loadSnapshot();
+      syncAddSourcePanel(false);
+      syncFeedFormMode();
     } catch (error) {
       const errorMessage = error?.message || "Could not add source.";
       debugIntelligenceLog("[add-source-error]", {
