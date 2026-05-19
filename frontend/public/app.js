@@ -5016,6 +5016,8 @@ function primeArticleIntelligence(article) {
       cacheKey: getArticleStableCacheKey(article),
       topicType: getArticleTopicType(article),
       eventType: String(article?.eventType || ""),
+      normalizedEvent: normalizeIntelligenceEvent(article),
+      canonicalEventClusterKey: getCanonicalEventClusterKey(article),
       detectedEventEntity: getDetectedEventEntity(article),
       eventFingerprint: extractEventFingerprint(article),
       identityDocumentRelevance: getIdentityDocumentRelevance(article),
@@ -5423,6 +5425,59 @@ function getPrimaryArticleSignalLabel(primarySignalCategory) {
     : primarySignalCategory.badgeLabel || primarySignalCategory.label;
 }
 
+function getNormalizedEventSignalMatch(article) {
+  return getCachedArticleValue(article, "normalizedEventSignalMatch", () => {
+    const normalizedEvent = normalizeIntelligenceEvent(article);
+    const canonicalEventType = normalizedEvent?.canonicalEventType || "";
+    const action = normalizedEvent?.action || "";
+    if (!canonicalEventType || canonicalEventType === "other") {
+      return null;
+    }
+
+    const signalIdMap = {
+      passport_fraud: "fraud",
+      forged_document: "criminal-misuse",
+      identity_theft: "identity-theft",
+      passport_revocation: "regulations",
+      citizenship_law: "regulations",
+      visa_policy: "regulations",
+      border_delay: "delay",
+      border_rollout: "rollout",
+      biometric_border_check: "biometric",
+      ees_event: action === "delay" || action === "suspension" || action === "exemption" ? "delay"
+        : action === "rollout" ? "rollout"
+          : "border-control",
+      etias_event: action === "delay" || action === "suspension" || action === "exemption" ? "delay"
+        : action === "rollout" ? "rollout"
+          : "border-control",
+      digital_id_regulation: "regulations",
+      identity_infrastructure: "technology",
+      document_security_technology: "technology",
+      banknote_withdrawal: "withdrawal",
+      demonetisation: "withdrawal",
+      counterfeit_banknotes: "counterfeit",
+      banknote_redesign: "redesign",
+      new_banknote_series: "redesign",
+      polymer_migration: "polymer",
+      security_feature_update: "security-features",
+      commemorative_issue: "commemorative",
+      circulation_policy: "regulations",
+      central_bank_warning: "security-features",
+      banknote_production: "technology",
+    };
+
+    const signalId = signalIdMap[canonicalEventType];
+    if (!signalId) {
+      return null;
+    }
+
+    return {
+      id: signalId,
+      confidence: normalizedEvent.confidence === "low" ? "low" : "high",
+    };
+  });
+}
+
 function getArticleSignalMatches(article) {
   return getCachedArticleValue(article, "articleSignalMatches", () => {
     const haystack = getArticleSignalText(article);
@@ -5442,10 +5497,10 @@ function getArticleSignalMatches(article) {
     const hasDesignChangeSignal = Boolean(
       designChangeCategory && countMatchedKeywords(haystack, designChangeCategory.strong) >= 1
     );
+    const normalizedEventSignalMatch = getNormalizedEventSignalMatch(article);
     const idDocumentMatches = getIdDocumentSignalMatches(haystack);
     const banknoteMatches = getBanknoteSignalMatches(haystack);
-
-    return idDocumentMatches.concat(banknoteMatches, SIGNAL_CATEGORIES.flatMap((category) => {
+    const heuristicMatches = idDocumentMatches.concat(banknoteMatches, SIGNAL_CATEGORIES.flatMap((category) => {
       if (
         idDocumentMatches.some((match) => match.id === category.id) ||
         banknoteMatches.some((match) => match.id === category.id)
@@ -5504,6 +5559,15 @@ function getArticleSignalMatches(article) {
 
       return [];
     }));
+
+    if (
+      normalizedEventSignalMatch &&
+      !heuristicMatches.some((match) => match.id === normalizedEventSignalMatch.id)
+    ) {
+      return [normalizedEventSignalMatch].concat(heuristicMatches);
+    }
+
+    return heuristicMatches;
   });
 }
 
@@ -5542,7 +5606,7 @@ function getPrimaryArticleSignalCategory(article) {
     title: article?.title || "Untitled article",
     signalType: primarySignalCategory.id,
     entity: getDetectedEventEntity(article),
-    eventType: getDetailedArticleEventType(article),
+    eventType: normalizeIntelligenceEvent(article)?.canonicalEventType || getDetailedArticleEventType(article),
     confidence: primarySignalCategory.confidence,
   });
 
@@ -7798,21 +7862,692 @@ function getEventFingerprintTimeBucket(article) {
   return `${publishedAt.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
 }
 
+function getNormalizedEventTimeBucket(article) {
+  return getCachedArticleValue(article, "normalizedEventTimeBucket", () => {
+    const publishedAt = toDate(article?.pubDate);
+    if (Number.isNaN(publishedAt.getTime())) {
+      return "";
+    }
+
+    return `${publishedAt.getUTCFullYear()}-${String(publishedAt.getUTCMonth() + 1).padStart(2, "0")}`;
+  });
+}
+
+function extractCountries(article) {
+  return getCachedArticleValue(article, "normalizedCountries", () => {
+    const text = getArticleSignalText(article);
+    const feed = state.feeds.find((item) => item.id === article?.feedId);
+    const feedCountry = normalizeCountry(article?.country || article?.region || getFeedCountry(feed));
+    const countries = new Set();
+
+    if (feedCountry) {
+      countries.add(feedCountry);
+    }
+
+    getMatchingFingerprintKeys(text, GROUPING_EVENT_ENTITY_KEYWORDS)
+      .filter((value) => !["ees", "etias", "icao", "ecb", "rbi", "state-department"].includes(value))
+      .forEach((value) => countries.add(value));
+
+    [
+      ["uk", ["united kingdom", "uk", "britain", "british"]],
+      ["us", ["united states", "usa", "us", "american"]],
+      ["canada", ["canada", "canadian"]],
+      ["india", ["india", "indian"]],
+      ["croatia", ["croatia", "croatian"]],
+      ["ukraine", ["ukraine", "ukrainian"]],
+      ["rwanda", ["rwanda", "rwandan"]],
+      ["saudi-arabia", ["saudi arabia", "saudi"]],
+      ["eurozone", ["eurozone", "euro area"]],
+      ["ecowas", ["ecowas"]],
+    ].forEach(([key, keywords]) => {
+      if (keywords.some((keyword) => textMatchesKeyword(text, keyword))) {
+        countries.add(key);
+      }
+    });
+
+    return Array.from(countries).filter(Boolean);
+  });
+}
+
+function normalizeAuthorityValue(value) {
+  return normalizeFilterTag(String(value || "").replace(/\s+/g, " ").trim());
+}
+
+function extractAuthorities(article) {
+  return getCachedArticleValue(article, "normalizedAuthorities", () => {
+    const text = getArticleSignalText(article);
+    const authorities = new Set(getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_AGENCY_KEYWORDS));
+    const authorityPatterns = [
+      /\b(?:central|national|reserve) bank(?: of)? [a-z][a-z\s-]{2,50}\b/g,
+      /\bbank of [a-z][a-z\s-]{2,50}\b/g,
+      /\bministry of interior\b/g,
+      /\bstate department\b/g,
+      /\bpassport office\b/g,
+      /\bimmigration (?:authority|agency|department|service)\b/g,
+      /\bborder (?:agency|authority|police|control)\b/g,
+      /\bcustoms\b/g,
+      /\bnational id authority\b/g,
+      /\bsecurity printer\b/g,
+      /\bcurrency board\b/g,
+    ];
+
+    authorityPatterns.forEach((pattern) => {
+      const matches = text.match(pattern) || [];
+      matches
+        .map((match) => normalizeAuthorityValue(match))
+        .filter(Boolean)
+        .forEach((match) => authorities.add(match));
+    });
+
+    return Array.from(authorities);
+  });
+}
+
+function extractDenominations(article) {
+  return getCachedArticleValue(article, "normalizedDenominations", () => {
+    const text = getArticleSignalText(article);
+    return Array.from(new Set(
+      (text.match(/\b\d{1,4}(?:[.,]\d{1,2})?\s*(?:euro|euros|lev|leva|rupee|rupees|pound|pounds|dollar|dollars|hryvnia|rial|rials|peso|pesos|taka|naira|krone|krona)\b/gi) || [])
+        .map((value) => value.toLowerCase())
+    ));
+  });
+}
+
+function extractCurrencies(article) {
+  return getCachedArticleValue(article, "normalizedCurrencies", () => {
+    const text = getArticleSignalText(article);
+    const currencies = new Set(getMatchingFingerprintKeys(text, INTELLIGENCE_CURRENCY_KEYWORDS));
+
+    extractDenominations(article).forEach((value) => {
+      const currencyMatch = value.match(/(euro|euros|lev|leva|rupee|rupees|pound|pounds|dollar|dollars|hryvnia|rial|rials|peso|pesos|taka|naira|krone|krona)$/i);
+      if (currencyMatch) {
+        currencies.add(normalizeFilterTag(currencyMatch[1]));
+      }
+    });
+
+    if (textMatchesKeyword(text, "euro area")) {
+      currencies.add("euro");
+    }
+
+    return Array.from(currencies);
+  });
+}
+
+function extractDocumentSystems(article) {
+  return getCachedArticleValue(article, "normalizedSystems", () => {
+    const text = getArticleSignalText(article);
+    const systems = new Set(getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_SYSTEM_KEYWORDS));
+    const systemAliases = [
+      ["ees", ["ees", "entry exit system", "entry/exit system"]],
+      ["etias", ["etias"]],
+      ["icao", ["icao", "travel document security", "mrz"]],
+      ["digital-id", ["digital id", "digital identity", "government identity system"]],
+      ["eid", ["eid", "electronic id"]],
+      ["kyc", ["kyc", "know your customer"]],
+      ["biometric-border-checks", ["biometric border checks", "biometric checks", "airport biometric system"]],
+      ["passport-office", ["passport office", "passport services"]],
+      ["national-id", ["national id", "identity card", "national identity system"]],
+      ["residence-permit", ["residence permit"]],
+      ["document-verification", ["identity verification", "document verification", "nfc verification"]],
+    ];
+
+    systemAliases.forEach(([key, keywords]) => {
+      if (keywords.some((keyword) => textMatchesKeyword(text, keyword))) {
+        systems.add(key);
+      }
+    });
+
+    return Array.from(systems);
+  });
+}
+
+function extractActionTerms(article) {
+  return getCachedArticleValue(article, "normalizedActions", () => {
+    const text = getArticleSignalText(article);
+    const actions = new Set(getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_ACTION_KEYWORDS));
+    const canonicalActions = [
+      ["delay", ["delay", "delays", "queue", "queues", "backlog", "technical problem", "technical outage"]],
+      ["rollout", ["rollout", "rolled out", "launch", "launched", "go-live", "implemented", "deployment"]],
+      ["exemption", ["exemption", "exempt", "waiver"]],
+      ["suspension", ["suspension", "suspended", "halted", "paused"]],
+      ["revocation", ["revocation", "revoked", "cancelled", "withdrawn passport"]],
+      ["issuance", ["issuance", "issued", "issue passports", "passport issuance"]],
+      ["renewal", ["renewal", "renewed", "passport renewal"]],
+      ["warning", ["warning", "warns", "alert", "advisory"]],
+      ["law-update", ["law", "regulation", "policy", "directive", "bill", "amendment"]],
+      ["withdrawal", ["withdrawal", "withdrawn", "withdrawn from circulation", "exchange deadline", "retired"]],
+      ["demonetisation", ["demonetisation", "demonetization", "cease legal tender", "no longer legal tender"]],
+      ["redesign", ["redesign", "redesigned", "new design", "new artwork", "portrait change"]],
+      ["migration", ["migration", "transition", "polymer migration", "substrate migration"]],
+      ["counterfeit", ["counterfeit", "fake notes", "forged notes", "forged passport", "fake passport"]],
+      ["production", ["printing", "production", "security printer", "manufacturing"]],
+      ["rollout-delay", ["rollout delay", "implementation delay"]],
+    ];
+
+    canonicalActions.forEach(([action, keywords]) => {
+      if (keywords.some((keyword) => textMatchesKeyword(text, keyword))) {
+        actions.add(action);
+      }
+    });
+
+    return Array.from(actions);
+  });
+}
+
+function getNormalizedEventRegion(article, countries = []) {
+  return getCachedArticleValue(article, "normalizedRegion", () => {
+    const explicitRegion = normalizeCountry(article?.region || "");
+    if (explicitRegion) {
+      return explicitRegion;
+    }
+
+    if (countries.includes("eurozone")) {
+      return "europe";
+    }
+
+    if (countries.includes("ecowas")) {
+      return "west-africa";
+    }
+
+    return "";
+  });
+}
+
+function getNormalizedDocumentType(article, domain) {
+  return getCachedArticleValue(article, `normalizedDocumentType:${domain}`, () => {
+    const text = getArticleSignalText(article);
+    if (domain === "banknote") {
+      return "banknote";
+    }
+
+    if (textMatchesKeyword(text, "passport") || textMatchesKeyword(text, "e-passport") || textMatchesKeyword(text, "biometric passport")) {
+      return "passport";
+    }
+
+    if (textMatchesKeyword(text, "identity card") || textMatchesKeyword(text, "national id") || textMatchesKeyword(text, "id card")) {
+      return "identity-card";
+    }
+
+    if (textMatchesKeyword(text, "driver license") || textMatchesKeyword(text, "driver licence")) {
+      return "driver-license";
+    }
+
+    if (textMatchesKeyword(text, "residence permit")) {
+      return "residence-permit";
+    }
+
+    if (textMatchesKeyword(text, "travel document")) {
+      return "travel-document";
+    }
+
+    if (textMatchesKeyword(text, "digital id") || textMatchesKeyword(text, "eid")) {
+      return "digital-id";
+    }
+
+    return "";
+  });
+}
+
+function getNormalizedOperationalContext(article, context) {
+  return getCachedArticleValue(article, "normalizedOperationalContext", () => {
+    const text = getArticleSignalText(article);
+    const { systems = [], actions = [], authorities = [], countries = [] } = context;
+
+    if (textMatchesKeyword(text, "child support") || textMatchesKeyword(text, "alimony debt")) {
+      return "child_support_debt";
+    }
+
+    if (textMatchesKeyword(text, "identity theft")) {
+      return "identity_theft";
+    }
+
+    if (systems.includes("ees")) {
+      if (actions.includes("delay") || actions.includes("rollout-delay")) {
+        return "technical_delay";
+      }
+      if (actions.includes("exemption")) {
+        return "exemption";
+      }
+      if (actions.includes("suspension")) {
+        return "suspension";
+      }
+      if (actions.includes("rollout")) {
+        return "rollout";
+      }
+    }
+
+    if (systems.includes("etias")) {
+      if (actions.includes("delay") || actions.includes("rollout-delay")) {
+        return "technical_delay";
+      }
+      if (actions.includes("rollout")) {
+        return "rollout";
+      }
+    }
+
+    if (systems.includes("airport-disruption") || textMatchesKeyword(text, "airport")) {
+      return "airport_operations";
+    }
+
+    if (actions.includes("counterfeit") || textMatchesKeyword(text, "counterfeit")) {
+      return "counterfeit_alert";
+    }
+
+    if (actions.includes("warning") && authorities.some((authority) => authority.includes("bank") || authority.includes("authority"))) {
+      return "official_warning";
+    }
+
+    if (actions.includes("migration")) {
+      return "substrate_migration";
+    }
+
+    if (actions.includes("redesign")) {
+      return "design_refresh";
+    }
+
+    if (countries.includes("eurozone")) {
+      return "regional_policy";
+    }
+
+    return "";
+  });
+}
+
+function getNormalizedAction(article, context) {
+  return getCachedArticleValue(article, "normalizedPrimaryAction", () => {
+    const { actions = [], canonicalEventType = "" } = context;
+    if (!actions.length) {
+      if (canonicalEventType === "demonetisation") {
+        return "demonetisation";
+      }
+      return "";
+    }
+
+    if (actions.includes("demonetisation")) {
+      return "demonetisation";
+    }
+    if (actions.includes("withdrawal")) {
+      return "withdrawal";
+    }
+    if (actions.includes("rollout-delay") || actions.includes("delay")) {
+      return "delay";
+    }
+    if (actions.includes("rollout")) {
+      return "rollout";
+    }
+    if (actions.includes("revocation")) {
+      return "revocation";
+    }
+    if (actions.includes("law-update")) {
+      return "law-update";
+    }
+    if (actions.includes("counterfeit")) {
+      return "counterfeit";
+    }
+    if (actions.includes("migration")) {
+      return "migration";
+    }
+    if (actions.includes("redesign")) {
+      return "redesign";
+    }
+    if (actions.includes("issuance")) {
+      return "issuance";
+    }
+    if (actions.includes("renewal")) {
+      return "renewal";
+    }
+    if (actions.includes("warning")) {
+      return "warning";
+    }
+    if (actions.includes("suspension")) {
+      return "suspension";
+    }
+    if (actions.includes("exemption")) {
+      return "exemption";
+    }
+    if (actions.includes("production")) {
+      return "production";
+    }
+
+    return actions[0] || "";
+  });
+}
+
+function getNormalizedPrimaryEntity(domain, { countries = [], authorities = [], systems = [], currencies = [], denominations = [], documentType = "" }) {
+  if (domain === "banknote") {
+    return authorities[0] || currencies[0] || countries[0] || denominations[0] || documentType || "";
+  }
+
+  if (domain === "border_system") {
+    return systems[0] || authorities[0] || countries[0] || "";
+  }
+
+  if (domain === "digital_identity") {
+    return systems[0] || authorities[0] || countries[0] || documentType || "";
+  }
+
+  if (domain === "passport" || domain === "identity_document") {
+    return authorities[0] || systems[0] || countries[0] || documentType || "";
+  }
+
+  return authorities[0] || countries[0] || systems[0] || currencies[0] || documentType || "";
+}
+
+function resolveIdentityCanonicalEventType(article, context) {
+  const text = getArticleSignalText(article);
+  const detailedEventType = getDetailedArticleEventType(article);
+  const { systems = [], actions = [] } = context;
+
+  if (systems.includes("ees")) {
+    return "ees_event";
+  }
+
+  if (systems.includes("etias")) {
+    return "etias_event";
+  }
+
+  if (textMatchesKeyword(text, "identity theft")) {
+    return "identity_theft";
+  }
+
+  if (
+    detailedEventType === "passport_fraud" ||
+    systems.includes("passport-fraud") ||
+    textMatchesKeyword(text, "passport fraud")
+  ) {
+    return textMatchesKeyword(text, "forged passport") || textMatchesKeyword(text, "fake passport")
+      ? "forged_document"
+      : "passport_fraud";
+  }
+
+  if (textMatchesKeyword(text, "passport revocation") || actions.includes("revocation") || textMatchesKeyword(text, "child support")) {
+    return "passport_revocation";
+  }
+
+  if (systems.includes("citizenship-law") || textMatchesKeyword(text, "citizenship law") || textMatchesKeyword(text, "nationality law")) {
+    return "citizenship_law";
+  }
+
+  if (systems.includes("visa-waiver") || textMatchesKeyword(text, "visa policy") || textMatchesKeyword(text, "visa requirement")) {
+    return "visa_policy";
+  }
+
+  if (actions.includes("delay") || actions.includes("rollout-delay") || textMatchesKeyword(text, "border delay")) {
+    return "border_delay";
+  }
+
+  if (actions.includes("rollout") && (systems.includes("biometric-checks") || systems.includes("border-checks") || systems.includes("digital-id"))) {
+    return "border_rollout";
+  }
+
+  if (systems.includes("biometric-checks") || textMatchesKeyword(text, "biometric border checks")) {
+    return "biometric_border_check";
+  }
+
+  if (actions.includes("issuance") || systems.includes("passport-issuance")) {
+    return "passport_issuance";
+  }
+
+  if (actions.includes("renewal")) {
+    return "passport_renewal";
+  }
+
+  if (textMatchesKeyword(text, "travel advisory") || textMatchesKeyword(text, "entry requirements")) {
+    return "travel_advisory";
+  }
+
+  if ((textMatchesKeyword(text, "digital id") || textMatchesKeyword(text, "eid") || textMatchesKeyword(text, "kyc")) && actions.includes("law-update")) {
+    return "digital_id_regulation";
+  }
+
+  if (systems.includes("digital-id") || systems.includes("eid") || systems.includes("kyc") || systems.includes("national-id")) {
+    return "identity_infrastructure";
+  }
+
+  if (systems.includes("icao") || systems.includes("document-verification") || textMatchesKeyword(text, "mrz")) {
+    return "document_security_technology";
+  }
+
+  return "other";
+}
+
+function resolveBanknoteCanonicalEventType(article, context) {
+  const text = getArticleSignalText(article);
+  const detailedEventType = getDetailedArticleEventType(article);
+  const { actions = [], authorities = [] } = context;
+
+  if (detailedEventType === "banknote_auction_noise") {
+    return "collector_noise";
+  }
+
+  if (detailedEventType === "counterfeit_banknotes" || actions.includes("counterfeit")) {
+    return "counterfeit_banknotes";
+  }
+
+  if (detailedEventType === "banknote_withdrawal" || actions.includes("withdrawal")) {
+    return actions.includes("demonetisation") || textMatchesKeyword(text, "demonetisation") || textMatchesKeyword(text, "demonetization")
+      ? "demonetisation"
+      : "banknote_withdrawal";
+  }
+
+  if (detailedEventType === "banknote_new_design") {
+    return "banknote_redesign";
+  }
+
+  if (detailedEventType === "banknote_new_series") {
+    return "new_banknote_series";
+  }
+
+  if (detailedEventType === "commemorative_note") {
+    return "commemorative_issue";
+  }
+
+  if (detailedEventType === "polymer_transition") {
+    return textMatchesKeyword(text, "polymer") || textMatchesKeyword(text, "substrate") || actions.includes("migration")
+      ? "polymer_migration"
+      : "security_feature_update";
+  }
+
+  if (
+    authorities.some((authority) => authority.includes("bank")) &&
+    (actions.includes("warning") || textMatchesKeyword(text, "central bank warning") || textMatchesKeyword(text, "warned the public"))
+  ) {
+    return "central_bank_warning";
+  }
+
+  if (
+    textMatchesKeyword(text, "circulation") ||
+    textMatchesKeyword(text, "legal tender") ||
+    textMatchesKeyword(text, "replacement series")
+  ) {
+    return "circulation_policy";
+  }
+
+  if (
+    actions.includes("production") ||
+    authorities.some((authority) =>
+      ["de-la-rue", "giesecke-devrient", "crane-currency", "oberthur", "sicpa"].some((keyword) => authority.includes(keyword))
+    )
+  ) {
+    return "banknote_production";
+  }
+
+  return "other";
+}
+
+function getNormalizedEventConfidence(normalizedEvent) {
+  let score = 0;
+
+  if (normalizedEvent.domain && normalizedEvent.domain !== "other") {
+    score += 1;
+  }
+  if (normalizedEvent.canonicalEventType && normalizedEvent.canonicalEventType !== "other" && normalizedEvent.canonicalEventType !== "collector_noise") {
+    score += 2;
+  }
+  if (normalizedEvent.primaryEntity) {
+    score += 1;
+  }
+  if (normalizedEvent.country || normalizedEvent.currency) {
+    score += 1;
+  }
+  if (normalizedEvent.authority || normalizedEvent.secondaryEntities.length) {
+    score += 1;
+  }
+  if (normalizedEvent.action) {
+    score += 1;
+  }
+  if (normalizedEvent.operationalContext) {
+    score += 1;
+  }
+
+  if (score >= 6) {
+    return "high";
+  }
+  if (score >= 4) {
+    return "medium";
+  }
+  return "low";
+}
+
+function normalizeIntelligenceEvent(article) {
+  return getCachedArticleValue(article, "normalizedIntelligenceEvent", () => {
+    const topicType = getArticleTopicType(article);
+    const countries = extractCountries(article);
+    const authorities = extractAuthorities(article);
+    const systems = extractDocumentSystems(article);
+    const actions = extractActionTerms(article);
+    const currencies = extractCurrencies(article);
+    const denominations = extractDenominations(article);
+    const detailedEventType = getDetailedArticleEventType(article);
+    let domain = "other";
+
+    if (topicType === "banknote") {
+      domain = "banknote";
+    } else if (systems.includes("ees") || systems.includes("etias") || systems.includes("biometric-border-checks") || systems.includes("border-checks") || systems.includes("airport-disruption")) {
+      domain = "border_system";
+    } else if (topicType === "travel_passport") {
+      domain = "passport";
+    } else if (topicType === "digital_identity") {
+      domain = "digital_identity";
+    } else if (topicType === "identity_document" || topicType === "dmv_driver_license") {
+      domain = "identity_document";
+    } else if (detailedEventType === "passport_fraud" || detailedEventType === "counterfeit_banknotes") {
+      domain = "fraud_security";
+    }
+
+    const documentType = getNormalizedDocumentType(article, domain);
+    const canonicalEventType = domain === "banknote"
+      ? resolveBanknoteCanonicalEventType(article, { actions, authorities, countries, currencies, denominations })
+      : resolveIdentityCanonicalEventType(article, { systems, actions, authorities, countries });
+    const action = getNormalizedAction(article, { actions, canonicalEventType });
+    const operationalContext = getNormalizedOperationalContext(article, {
+      systems,
+      actions,
+      authorities,
+      countries,
+    });
+    const country = countries[0] || "";
+    const region = getNormalizedEventRegion(article, countries);
+    const authority = authorities[0] || "";
+    const currency = currencies[0] || "";
+    const denomination = denominations[0] || "";
+    const primaryEntity = getNormalizedPrimaryEntity(domain, {
+      countries,
+      authorities,
+      systems,
+      currencies,
+      denominations,
+      documentType,
+    });
+    const secondaryEntities = Array.from(new Set([
+      ...countries,
+      ...authorities,
+      ...systems,
+      ...currencies,
+      ...denominations,
+    ].filter((value) => value && value !== primaryEntity))).slice(0, 6);
+
+    const normalizedEvent = {
+      domain,
+      canonicalEventType,
+      primaryEntity,
+      secondaryEntities,
+      country,
+      region,
+      authority,
+      documentType,
+      currency,
+      denomination,
+      action,
+      operationalContext,
+      timeBucket: getNormalizedEventTimeBucket(article),
+      confidence: "low",
+    };
+
+    normalizedEvent.confidence = getNormalizedEventConfidence(normalizedEvent);
+    return normalizedEvent;
+  });
+}
+
+function getCanonicalEventClusterKey(article) {
+  return getCachedArticleValue(article, "canonicalEventClusterKey", () => {
+    const normalizedEvent = normalizeIntelligenceEvent(article);
+    if (
+      !normalizedEvent ||
+      normalizedEvent.confidence === "low" ||
+      !normalizedEvent.domain ||
+      normalizedEvent.domain === "other" ||
+      !normalizedEvent.canonicalEventType ||
+      normalizedEvent.canonicalEventType === "other"
+    ) {
+      return "";
+    }
+
+    const entity = normalizedEvent.primaryEntity || normalizedEvent.country || normalizedEvent.currency || "generic";
+    const anchor = normalizedEvent.authority
+      || normalizedEvent.secondaryEntities.find((value) => value !== entity)
+      || normalizedEvent.documentType
+      || "generic";
+    const action = normalizedEvent.action || normalizedEvent.operationalContext || "generic";
+    const timeBucket = normalizedEvent.timeBucket || "undated";
+
+    return [
+      normalizedEvent.domain,
+      normalizedEvent.canonicalEventType,
+      entity,
+      anchor,
+      action,
+      timeBucket,
+    ].join(":");
+  });
+}
+
 function extractEventEntities(article) {
   return getCachedArticleValue(article, "eventEntities", () => {
     const text = getNormalizedGroupingText(article);
+    const normalizedEvent = normalizeIntelligenceEvent(article);
     const countries = Array.from(new Set([
+      normalizedEvent.country,
       getDetectedEventEntity(article),
-      ...getMatchingFingerprintKeys(text, GROUPING_EVENT_ENTITY_KEYWORDS),
+      ...extractCountries(article),
     ].filter(Boolean)));
-    const agencies = Array.from(new Set(getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_AGENCY_KEYWORDS)));
-    const systems = Array.from(new Set(getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_SYSTEM_KEYWORDS)));
+    const agencies = Array.from(new Set([
+      normalizedEvent.authority,
+      ...extractAuthorities(article),
+    ].filter(Boolean)));
+    const systems = Array.from(new Set([
+      ...extractDocumentSystems(article),
+      ...getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_SYSTEM_KEYWORDS),
+    ]));
     const subjects = Array.from(new Set(getMatchingFingerprintKeys(text, INTELLIGENCE_EVENT_SUBJECT_KEYWORDS)));
-    const currencies = Array.from(new Set(getMatchingFingerprintKeys(text, INTELLIGENCE_CURRENCY_KEYWORDS)));
-    const denominationMatches = Array.from(new Set(
-      (text.match(/\b\d{1,4}(?:[.,]\d{1,2})?\s*(?:euro|euros|lev|leva|rupee|rupees|pound|pounds|dollar|dollars|hryvnia|rial|rials|peso|pesos|taka|naira)\b/gi) || [])
-        .map((value) => value.toLowerCase())
-    ));
+    const currencies = Array.from(new Set([
+      normalizedEvent.currency,
+      ...extractCurrencies(article),
+    ].filter(Boolean)));
+    const denominationMatches = Array.from(new Set([
+      normalizedEvent.denomination,
+      ...extractDenominations(article),
+    ].filter(Boolean)));
 
     return {
       countries,
@@ -7827,54 +8562,7 @@ function extractEventEntities(article) {
 
 function getEventClusterKey(article) {
   return getCachedArticleValue(article, "eventClusterKey", () => {
-    const topicFamily = getArticleGroupingTopicFamily(article);
-    const eventType = getDetailedArticleEventType(article) || "other";
-    const entities = extractEventEntities(article);
-    const timeBucket = getEventFingerprintTimeBucket(article) || "undated";
-    const primaryCountry = entities.countries[0] || "generic";
-    const primaryAgency = entities.agencies[0] || "";
-    const primarySystem = entities.systems[0] || "";
-    const primarySubject = entities.subjects[0] || "";
-    const primaryCurrency = entities.currencies[0] || entities.denominations[0] || "";
-
-    if (primarySubject === "child-support-revocation") {
-      return `${topicFamily}-child-support-revocation-${primaryAgency || primaryCountry}-${timeBucket}`;
-    }
-
-    if (primarySubject === "khargosh-fake-passport") {
-      return `${topicFamily}-khargosh-fake-passport-${timeBucket}`;
-    }
-
-    if (primarySystem === "ees" || primarySystem === "etias") {
-      return `${topicFamily}-${primarySystem}-${primarySubject || eventType}-${primaryCountry}-${timeBucket}`;
-    }
-
-    if (topicFamily === "banknote") {
-      if (eventType === "banknote_withdrawal" || primarySubject === "banknote-withdrawal") {
-        return `${topicFamily}-withdrawal-${primaryCountry}-${primaryCurrency || "generic"}-${timeBucket}`;
-      }
-
-      if (eventType === "counterfeit_banknotes" || primarySubject === "banknote-counterfeit") {
-        return `${topicFamily}-counterfeit-${primaryCountry}-${primaryAgency || primaryCurrency || "generic"}-${timeBucket}`;
-      }
-
-      if (
-        eventType === "banknote_new_design" ||
-        eventType === "banknote_new_series" ||
-        primarySubject === "banknote-redesign" ||
-        primarySubject === "polymer-transition"
-      ) {
-        return `${topicFamily}-${primarySubject || eventType}-${primaryCountry}-${primaryCurrency || "generic"}-${timeBucket}`;
-      }
-    }
-
-    if (topicFamily === "travel_passport" || topicFamily === "identity_document") {
-      if (primarySubject) {
-        return `${topicFamily}-${primarySubject}-${primaryCountry}-${primaryAgency || primarySystem || "generic"}-${timeBucket}`;
-      }
-    }
-
-    return "";
+    return getCanonicalEventClusterKey(article);
   });
 }
 
@@ -7893,17 +8581,33 @@ function getGroupingConfidenceLevel({ score = 0, strongAnchorCount = 0, sharedKe
 function extractEventFingerprint(article) {
   return getCachedArticleValue(article, "eventFingerprint", () => {
     const text = getNormalizedGroupingText(article);
+    const normalizedEvent = normalizeIntelligenceEvent(article);
     const countries = Array.from(new Set([
+      normalizedEvent.country,
+      ...extractCountries(article),
       getDetectedEventEntity(article),
-      ...getMatchingFingerprintKeys(text, GROUPING_EVENT_ENTITY_KEYWORDS),
     ].filter(Boolean)));
-    const agencies = Array.from(new Set(getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_AGENCY_KEYWORDS)));
-    const systems = Array.from(new Set(getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_SYSTEM_KEYWORDS)));
-    const actionType = getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_ACTION_KEYWORDS)[0] || getDetailedArticleEventType(article) || "";
-    const subjectType = getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_SUBJECT_KEYWORDS)[0]
+    const agencies = Array.from(new Set([
+      normalizedEvent.authority,
+      ...extractAuthorities(article),
+    ].filter(Boolean)));
+    const systems = Array.from(new Set([
+      ...extractDocumentSystems(article),
+      ...getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_SYSTEM_KEYWORDS),
+    ]));
+    const actionType = normalizedEvent.action
+      || extractActionTerms(article)[0]
+      || getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_ACTION_KEYWORDS)[0]
+      || getDetailedArticleEventType(article)
+      || "";
+    const subjectType = normalizedEvent.canonicalEventType
+      || getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_SUBJECT_KEYWORDS)[0]
       || (getPrimaryPassportSubject(article) !== "unrelated" ? getPrimaryPassportSubject(article) : getDetailedArticleEventType(article) || "");
-    const timeBucket = getEventFingerprintTimeBucket(article);
-    const keywords = getEventSpecificTerms(article, countries[0] || agencies[0] || "", 4);
+    const timeBucket = normalizedEvent.timeBucket || getEventFingerprintTimeBucket(article);
+    const keywords = Array.from(new Set([
+      ...getEventSpecificTerms(article, normalizedEvent.primaryEntity || countries[0] || agencies[0] || "", 4),
+      ...normalizedEvent.secondaryEntities.slice(0, 2),
+    ])).filter(Boolean).slice(0, 4);
 
     const fingerprint = {
       countries,
@@ -7936,7 +8640,17 @@ function getEventFingerprintMatch(leftArticle, rightArticle) {
   return getCachedArticlePairValue(leftArticle, rightArticle, "eventFingerprintMatch", () => {
     const leftFingerprint = extractEventFingerprint(leftArticle);
     const rightFingerprint = extractEventFingerprint(rightArticle);
+    const leftNormalizedEvent = normalizeIntelligenceEvent(leftArticle);
+    const rightNormalizedEvent = normalizeIntelligenceEvent(rightArticle);
     let score = 0;
+
+    if (leftNormalizedEvent.domain && rightNormalizedEvent.domain) {
+      score += leftNormalizedEvent.domain === rightNormalizedEvent.domain ? 4 : -8;
+    }
+
+    if (leftNormalizedEvent.canonicalEventType && rightNormalizedEvent.canonicalEventType) {
+      score += leftNormalizedEvent.canonicalEventType === rightNormalizedEvent.canonicalEventType ? 6 : -10;
+    }
 
     const sharedCountries = getFingerprintIntersection(leftFingerprint.countries, rightFingerprint.countries);
     if (sharedCountries.length) {
@@ -7972,11 +8686,29 @@ function getEventFingerprintMatch(leftArticle, rightArticle) {
       score -= 2;
     }
 
+    if (leftNormalizedEvent.primaryEntity && rightNormalizedEvent.primaryEntity) {
+      score += leftNormalizedEvent.primaryEntity === rightNormalizedEvent.primaryEntity ? 4 : -5;
+    }
+
+    if (leftNormalizedEvent.authority && rightNormalizedEvent.authority) {
+      score += leftNormalizedEvent.authority === rightNormalizedEvent.authority ? 3 : -4;
+    }
+
+    if (leftNormalizedEvent.currency && rightNormalizedEvent.currency) {
+      score += leftNormalizedEvent.currency === rightNormalizedEvent.currency ? 3 : -4;
+    }
+
+    if (leftNormalizedEvent.denomination && rightNormalizedEvent.denomination) {
+      score += leftNormalizedEvent.denomination === rightNormalizedEvent.denomination ? 3 : -4;
+    }
+
     const leftDate = toDate(leftArticle?.pubDate);
     const rightDate = toDate(rightArticle?.pubDate);
     if (!Number.isNaN(leftDate.getTime()) && !Number.isNaN(rightDate.getTime())) {
       const dayDiff = Math.abs(leftDate.getTime() - rightDate.getTime()) / (1000 * 60 * 60 * 24);
-      if (leftFingerprint.timeBucket && rightFingerprint.timeBucket && leftFingerprint.timeBucket === rightFingerprint.timeBucket) {
+      if (leftNormalizedEvent.timeBucket && rightNormalizedEvent.timeBucket && leftNormalizedEvent.timeBucket === rightNormalizedEvent.timeBucket) {
+        score += 3;
+      } else if (leftFingerprint.timeBucket && rightFingerprint.timeBucket && leftFingerprint.timeBucket === rightFingerprint.timeBucket) {
         score += 2;
       } else if (dayDiff <= 10) {
         score += 2;
@@ -7990,7 +8722,8 @@ function getEventFingerprintMatch(leftArticle, rightArticle) {
     const strongAnchorCount =
       Number(Boolean(sharedCountries.length)) +
       Number(Boolean(sharedAgencies.length)) +
-      Number(Boolean(sharedSystems.length));
+      Number(Boolean(sharedSystems.length)) +
+      Number(Boolean(leftNormalizedEvent.primaryEntity && leftNormalizedEvent.primaryEntity === rightNormalizedEvent.primaryEntity));
     const confidence = getGroupingConfidenceLevel({
       score,
       strongAnchorCount,
@@ -8029,6 +8762,24 @@ function isSameIntelligenceEvent(leftArticle, rightArticle) {
 
     const conflictReason = getConflictReason(leftArticle, rightArticle);
     if (conflictReason) {
+      return false;
+    }
+
+    const leftNormalizedEvent = normalizeIntelligenceEvent(leftArticle);
+    const rightNormalizedEvent = normalizeIntelligenceEvent(rightArticle);
+    if (
+      leftNormalizedEvent.domain &&
+      rightNormalizedEvent.domain &&
+      leftNormalizedEvent.domain !== rightNormalizedEvent.domain
+    ) {
+      return false;
+    }
+
+    if (
+      leftNormalizedEvent.canonicalEventType &&
+      rightNormalizedEvent.canonicalEventType &&
+      leftNormalizedEvent.canonicalEventType !== rightNormalizedEvent.canonicalEventType
+    ) {
       return false;
     }
 
@@ -8140,22 +8891,24 @@ function getBanknoteSignatureGroupingTerms(article, entity = "") {
 }
 
 function getBanknoteGroupingAnchors(article) {
+  const normalizedEvent = normalizeIntelligenceEvent(article);
   const text = getNormalizedGroupingText(article);
-  const entity = getBanknoteEventCountry(article) || getDetectedEventEntity(article) || "";
+  const entity = normalizedEvent.country || getBanknoteEventCountry(article) || getDetectedEventEntity(article) || "";
   const denominationMatch = text.match(/\b(\d{1,4}(?:[.,]\d{1,2})?)\s*(peso|pesos|taka|rupee|rupees|dollar|dollars|euro|euros|quetzal|quetzales|dinar|dinars|leu|lei|naira|pound|pounds|rand|lev|leva)\b/i);
   const yearMatches = Array.from(new Set(text.match(/\b20\d{2}\b/g) || [])).slice(0, 2);
   return {
     entity,
-    denomination: denominationMatch ? `${denominationMatch[1]}-${String(denominationMatch[2]).toLowerCase()}` : "",
+    denomination: normalizedEvent.denomination || (denominationMatch ? `${denominationMatch[1]}-${String(denominationMatch[2]).toLowerCase()}` : ""),
     yearFamily: yearMatches.join("-"),
-    eventType: getDetailedArticleEventType(article),
+    eventType: normalizedEvent.canonicalEventType || getDetailedArticleEventType(article),
   };
 }
 
 function getIdentityGroupingAnchors(article) {
+  const normalizedEvent = normalizeIntelligenceEvent(article);
   return {
-    entity: getDetectedEventEntity(article) || "",
-    eventType: getDetailedArticleEventType(article),
+    entity: normalizedEvent.country || normalizedEvent.primaryEntity || getDetectedEventEntity(article) || "",
+    eventType: normalizedEvent.canonicalEventType || getDetailedArticleEventType(article),
   };
 }
 
@@ -8166,14 +8919,28 @@ function getConflictReason(leftArticle, rightArticle) {
     return "";
   }
 
+  const leftNormalizedEvent = normalizeIntelligenceEvent(leftArticle);
+  const rightNormalizedEvent = normalizeIntelligenceEvent(rightArticle);
+  if (leftNormalizedEvent.domain !== rightNormalizedEvent.domain) {
+    return "different normalized domain";
+  }
+
+  if (leftNormalizedEvent.canonicalEventType !== rightNormalizedEvent.canonicalEventType) {
+    return "different canonical event type";
+  }
+
+  if (leftNormalizedEvent.action && rightNormalizedEvent.action && leftNormalizedEvent.action !== rightNormalizedEvent.action) {
+    return "different normalized action";
+  }
+
   const leftTopicFamily = getArticleGroupingTopicFamily(leftArticle);
   const rightTopicFamily = getArticleGroupingTopicFamily(rightArticle);
   if (leftTopicFamily !== rightTopicFamily) {
     return "different topic family";
   }
 
-  const leftEventType = getDetailedArticleEventType(leftArticle);
-  const rightEventType = getDetailedArticleEventType(rightArticle);
+  const leftEventType = leftNormalizedEvent.canonicalEventType || getDetailedArticleEventType(leftArticle);
+  const rightEventType = rightNormalizedEvent.canonicalEventType || getDetailedArticleEventType(rightArticle);
   if (leftEventType !== rightEventType) {
     return "different event type";
   }
@@ -8633,8 +9400,8 @@ function groupArticlesByEvent(articles) {
         intelligenceDebug("[grouping conflict]", {
           leftTitle: primary?.title || "Untitled article",
           rightTitle: article?.title || "Untitled article",
-          leftEventType: getDetailedArticleEventType(primary),
-          rightEventType: getDetailedArticleEventType(article),
+          leftEventType: normalizeIntelligenceEvent(primary)?.canonicalEventType || getDetailedArticleEventType(primary),
+          rightEventType: normalizeIntelligenceEvent(article)?.canonicalEventType || getDetailedArticleEventType(article),
           reason: conflictReason,
         });
         return false;
@@ -8655,10 +9422,11 @@ function groupArticlesByEvent(articles) {
     const primary = group[0];
     if (group.length > 1) {
       const firstMatch = group[1] ? getEventFingerprintMatch(primary, group[1]) : null;
+      const normalizedEvent = normalizeIntelligenceEvent(primary);
       intelligenceDebug("[grouping]", {
         title: primary?.title || "Untitled article",
-        eventType: getDetailedArticleEventType(primary),
-        entity: getDetectedEventEntity(primary),
+        eventType: normalizedEvent?.canonicalEventType || getDetailedArticleEventType(primary),
+        entity: normalizedEvent?.primaryEntity || getDetectedEventEntity(primary),
         fingerprint: extractEventFingerprint(primary),
         confidence: firstMatch?.confidence || "high",
         groupedWith: group.slice(1).map((item) => item?.title || "Untitled article"),
