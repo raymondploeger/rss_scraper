@@ -20,9 +20,51 @@ import * as cheerio from "cheerio";
 
 const parser = new Parser({ timeout: env.requestTimeoutMs });
 
+function normalizeSourceType(value) {
+  const normalizedValue = String(value || "rss").trim().toLowerCase();
+  if (normalizedValue === "rss feed") {
+    return "rss";
+  }
+  if (normalizedValue === "site") {
+    return "website";
+  }
+  if (normalizedValue === "link only") {
+    return "link-only";
+  }
+  return normalizedValue || "rss";
+}
+
+async function parseFeedFromUrl(url) {
+  try {
+    return await parser.parseURL(url);
+  } catch (initialError) {
+    const response = await axios.get(url, {
+      timeout: env.requestTimeoutMs,
+      responseType: "text",
+      maxRedirects: 5,
+      headers: {
+        "User-Agent": "RSS Monitor Dashboard/2.0",
+        Accept: "application/rss+xml,application/atom+xml,application/xml,text/xml,text/html"
+      },
+      validateStatus: (status) => status >= 200 && status < 400
+    });
+
+    const body = String(response.data || "").trim();
+    if (!body) {
+      throw initialError;
+    }
+
+    try {
+      return await parser.parseString(body);
+    } catch {
+      throw initialError;
+    }
+  }
+}
+
 async function discoverFeedUrl(inputUrl) {
   try {
-    await parser.parseURL(inputUrl);
+    await parseFeedFromUrl(inputUrl);
     return inputUrl;
   } catch {
     const response = await axios.get(inputUrl, {
@@ -58,7 +100,7 @@ async function discoverFeedUrl(inputUrl) {
 
     for (const candidate of candidates) {
       try {
-        await parser.parseURL(candidate);
+        await parseFeedFromUrl(candidate);
         return candidate;
       } catch {
         continue;
@@ -125,7 +167,7 @@ export async function listFeeds(request, response) {
 export async function createFeed(request, response) {
   try {
     const { name, topic, rssUrl, sourceType = "rss", isActive = true } = request.body;
-    const normalizedSourceType = String(sourceType || "rss").trim().toLowerCase();
+    const normalizedSourceType = normalizeSourceType(sourceType);
 
     if (!rssUrl) {
       return response.status(400).json({ error: "Source URL is required." });
@@ -144,7 +186,7 @@ export async function createFeed(request, response) {
       return response.status(409).json({ error: "This source is already in the dashboard." });
     }
 
-    const parsed = normalizedSourceType === "rss" ? await parser.parseURL(resolvedFeedUrl) : null;
+    const parsed = normalizedSourceType === "rss" ? await parseFeedFromUrl(resolvedFeedUrl) : null;
     const feed = await createFeedRecord({
       name: name || parsed?.title || "Untitled Source",
       topic: topic || name || parsed?.title || "General",
@@ -174,7 +216,10 @@ export async function updateFeed(request, response) {
     if (typeof name === "string") nextValues.name = name;
     if (typeof topic === "string") nextValues.topic = topic;
     if (typeof rssUrl === "string") {
-      const resolvedFeedUrl = await resolveSourceUrl(rssUrl, typeof sourceType === "string" ? sourceType : feed.sourceType || "rss");
+      const resolvedFeedUrl = await resolveSourceUrl(
+        rssUrl,
+        normalizeSourceType(typeof sourceType === "string" ? sourceType : feed.sourceType || "rss")
+      );
       const duplicate = await findFeedByRssUrl(resolvedFeedUrl);
       if (duplicate && duplicate.id !== feedId) {
         return response.status(409).json({ error: "This source is already in the dashboard." });
@@ -182,7 +227,7 @@ export async function updateFeed(request, response) {
       nextValues.rssUrl = resolvedFeedUrl;
     }
     if (typeof isActive === "boolean") nextValues.isActive = isActive;
-    if (typeof sourceType === "string") nextValues.sourceType = sourceType;
+    if (typeof sourceType === "string") nextValues.sourceType = normalizeSourceType(sourceType);
 
     const updatedFeed = await updateFeedRecord(feedId, nextValues);
     broadcast("feed:update", { type: "feed:update", action: "updated", feed: toFeedDto(updatedFeed) });

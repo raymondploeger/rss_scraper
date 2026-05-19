@@ -14,6 +14,26 @@ const DEBUG_INTELLIGENCE = false;
 const MAX_RSS_FEEDS = 150;
 const MAX_RSS_FEEDS_MESSAGE = `Maximum of ${MAX_RSS_FEEDS} RSS feeds reached`;
 const FEED_FORM_HELPER_TEXT = `Monitor up to ${MAX_RSS_FEEDS} RSS feeds and websites.`;
+
+function debugIntelligenceLog(label, payload) {
+  if (DEBUG_INTELLIGENCE) {
+    console.info(label, payload);
+  }
+}
+
+function normalizeFeedSourceTypeValue(value) {
+  const normalizedValue = String(value || "rss").trim().toLowerCase();
+  if (normalizedValue === "rss feed") {
+    return "rss";
+  }
+  if (normalizedValue === "website" || normalizedValue === "site") {
+    return "website";
+  }
+  if (normalizedValue === "link-only" || normalizedValue === "link only") {
+    return "link-only";
+  }
+  return normalizedValue || "rss";
+}
 const APP_BUILD = "pagination-feed-debug-v1";
 const SHOW_FEED_INSIGHTS = false;
 const SHOW_RECENT_ALERTS = false;
@@ -6260,7 +6280,7 @@ function syncSourceGroupTabs() {
 
 function syncFeedFormMode() {
   const isEditing = Boolean(state.editingFeedId);
-  const selectedSourceType = String(elements.feedSourceType?.value || "rss").trim().toLowerCase();
+  const selectedSourceType = normalizeFeedSourceTypeValue(elements.feedSourceType?.value || "rss");
   const rssFeedCount = getRssBackedFeedCount();
   const rssLimitReached = !isEditing && selectedSourceType === "rss" && rssFeedCount >= MAX_RSS_FEEDS;
 
@@ -11181,7 +11201,7 @@ function bindEvents() {
 
   elements.feedForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const selectedSourceType = String(elements.feedSourceType?.value || "rss").trim().toLowerCase();
+    const selectedSourceType = normalizeFeedSourceTypeValue(elements.feedSourceType?.value || "rss");
     if (!state.editingFeedId && selectedSourceType === "rss" && getRssBackedFeedCount() >= MAX_RSS_FEEDS) {
       elements.feedFormStatus.textContent = MAX_RSS_FEEDS_MESSAGE;
       syncFeedFormMode();
@@ -11197,27 +11217,67 @@ function bindEvents() {
         name: elements.feedName.value.trim(),
         topic: elements.feedTopic.value.trim(),
         rssUrl: elements.feedUrl.value.trim(),
-        sourceType: elements.feedSourceType?.value || "rss",
+        sourceType: selectedSourceType,
       };
+
+      debugIntelligenceLog("[add-source]", {
+        sourceName: payload.name,
+        topic: payload.topic,
+        sourceType: selectedSourceType,
+        sourceUrl: payload.rssUrl,
+        requestPayload: payload,
+      });
 
       if (isEditing) {
         await updateFeed(state.editingFeedId, payload);
-        elements.feedFormStatus.textContent = "Feed updated successfully.";
+        elements.feedFormStatus.textContent = "Source updated.";
+        showNotification({
+          title: "Source updated",
+          message: payload.name || "Source updated successfully.",
+          type: "success",
+        });
       } else {
-        await apiRequest("/api/feeds", {
+        const responseBody = await apiRequest("/api/feeds", {
           method: "POST",
           body: JSON.stringify({
             ...payload,
             isActive: true,
           }),
         });
-        elements.feedFormStatus.textContent = "Feed added successfully.";
+        debugIntelligenceLog("[add-source-response]", {
+          sourceName: payload.name,
+          topic: payload.topic,
+          sourceType: selectedSourceType,
+          sourceUrl: payload.rssUrl,
+          responseStatus: 201,
+          responseBody,
+        });
+        elements.feedFormStatus.textContent = "Source added.";
+        showNotification({
+          title: "Source added",
+          message: payload.name || "Source added successfully.",
+          type: "success",
+        });
       }
 
       resetFeedForm({ preserveStatus: true });
       await loadSnapshot();
     } catch (error) {
-      elements.feedFormStatus.textContent = error.message;
+      const errorMessage = error?.message || "Could not add source.";
+      debugIntelligenceLog("[add-source-error]", {
+        sourceName: elements.feedName.value.trim(),
+        topic: elements.feedTopic.value.trim(),
+        sourceType: selectedSourceType,
+        sourceUrl: elements.feedUrl.value.trim(),
+        responseStatus: "error",
+        responseBody: errorMessage,
+      });
+      elements.feedFormStatus.textContent = `Could not add source: ${errorMessage}`;
+      showNotification({
+        title: "Could not add source",
+        message: errorMessage,
+        type: "warning",
+      });
     } finally {
       syncFeedFormMode();
     }
