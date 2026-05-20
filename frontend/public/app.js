@@ -909,6 +909,8 @@ const runtime = {
   duplicateSourceIds: new Set(),
   selectedFeedResolutionCache: new Map(),
   articlesByFeedId: new Map(),
+  groupedFeedCache: new Map(),
+  articleDataRevision: 0,
   paginationContextKey: "",
   scheduledRenderFrame: 0,
   scheduledRenderTimeout: 0,
@@ -1273,6 +1275,59 @@ function rebuildArticleFeedIndexes() {
     items.push(article);
     runtime.articlesByFeedId.set(feedId, items);
   });
+}
+
+function clearFeedRenderCaches() {
+  runtime.groupedFeedCache = new Map();
+}
+
+function getFeedRenderFilterSignature() {
+  return JSON.stringify({
+    search: state.filters.search || "",
+    topic: state.filters.topic || "",
+    tag: state.filters.tag || "",
+    signalCategory: state.filters.signalCategory || "",
+    date: state.filters.date || "",
+    articleIds: Array.isArray(state.filters.articleIds) ? state.filters.articleIds.slice().sort() : [],
+    alertLabel: state.filters.alertLabel || "",
+    sourceGroup: state.filters.sourceGroup || "all",
+    dashboardMode: state.dashboardMode || "normal",
+    includeKeywords: Array.isArray(state.keywordFilters?.include) ? state.keywordFilters.include.slice().sort() : [],
+    excludeKeywords: Array.isArray(state.keywordFilters?.exclude) ? state.keywordFilters.exclude.slice().sort() : [],
+  });
+}
+
+function getGroupedFeedCacheKey(feedIdentity) {
+  return [
+    `revision:${runtime.articleDataRevision}`,
+    `feed:${String(feedIdentity || "").trim()}`,
+    `filters:${getFeedRenderFilterSignature()}`,
+  ].join("|");
+}
+
+function getCachedGroupedFeedResult(feedIdentity) {
+  const cacheKey = getGroupedFeedCacheKey(feedIdentity);
+  if (runtime.groupedFeedCache.has(cacheKey)) {
+    return runtime.groupedFeedCache.get(cacheKey);
+  }
+
+  const selectedFeedResolution = getSelectedFeedResolution(feedIdentity);
+  const candidateArticles = selectedFeedResolution?.selectedFeedId
+    ? (runtime.articlesByFeedId.get(selectedFeedResolution.selectedFeedId) || [])
+    : state.articles.filter((article) => articleMatchesSelectedFeed(article, feedIdentity));
+  const rawMatches = candidateArticles.slice().sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+  const filteredMatches = candidateArticles
+    .filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
+    .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+  const groupedArticles = groupArticlesByEvent(filteredMatches);
+  const result = {
+    selectedFeedResolution,
+    rawMatches,
+    filteredMatches,
+    groupedArticles,
+  };
+  runtime.groupedFeedCache.set(cacheKey, result);
+  return result;
 }
 
 function rebuildFeedLookupCaches() {
@@ -10559,8 +10614,14 @@ function renderArticlesFallback(error) {
 
 function renderArticles() {
   const shouldDebugFeedRender = DEBUG_FEED_FILTER;
+  const feedRenderStartedAt = shouldDebugFeedRender ? performance.now() : 0;
+  let feedRenderGroupedCount = 0;
+  let feedRenderFilteredCount = 0;
   if (shouldDebugFeedRender) {
-    console.time("feed-render");
+    debugFeedFilterLog("[feed-render-start]", {
+      selectedFeed: state.filters.feedId || "",
+      page: state.pagination.page,
+    });
   }
   intelligenceTime("renderArticles");
   try {
@@ -10578,16 +10639,14 @@ function renderArticles() {
     let feedDebugAfterRelevanceMatches = [];
 
     if (activeFeedId && !state.filters.date) {
-      const candidateArticles = activeFeedResolution?.selectedFeedId
-        ? (runtime.articlesByFeedId.get(activeFeedResolution.selectedFeedId) || [])
-        : state.articles.filter((article) => articleMatchesSelectedFeed(article, activeFeedId));
-      feedDebugRawMatches = candidateArticles.slice().sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
-      feedDebugAfterRelevanceMatches = candidateArticles
-        .filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
-        .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
-      filteredRawArticles = feedDebugAfterRelevanceMatches;
-      const groupedArticles = groupArticlesByEvent(feedDebugAfterRelevanceMatches);
+      const cachedFeedResult = getCachedGroupedFeedResult(activeFeedId);
+      feedDebugRawMatches = cachedFeedResult.rawMatches;
+      feedDebugAfterRelevanceMatches = cachedFeedResult.filteredMatches;
+      filteredRawArticles = cachedFeedResult.filteredMatches;
+      const groupedArticles = cachedFeedResult.groupedArticles;
       groupedArticlesCount = groupedArticles.length;
+      feedRenderFilteredCount = filteredRawArticles.length;
+      feedRenderGroupedCount = groupedArticlesCount;
       articles = groupedArticles;
     } else if (state.filters.date) {
       filteredRawArticles = state.articles
@@ -10595,11 +10654,15 @@ function renderArticles() {
         .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
       articles = filteredRawArticles;
       groupedArticlesCount = articles.length;
+      feedRenderFilteredCount = filteredRawArticles.length;
+      feedRenderGroupedCount = groupedArticlesCount;
     } else {
       const visibleArticles = getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping });
       filteredRawArticles = visibleArticles;
       const groupedArticles = groupArticlesByEvent(visibleArticles);
       groupedArticlesCount = groupedArticles.length;
+      feedRenderFilteredCount = filteredRawArticles.length;
+      feedRenderGroupedCount = groupedArticlesCount;
       articles = shouldIgnoreFeedIdForGrouping
         ? groupedArticles.filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
         : groupedArticles;
@@ -10860,7 +10923,12 @@ function renderArticles() {
   } finally {
     intelligenceTimeEnd("renderArticles");
     if (shouldDebugFeedRender) {
-      console.timeEnd("feed-render");
+      debugFeedFilterLog("[feed-render-end]", {
+        selectedFeed: state.filters.feedId || "",
+        durationMs: Math.round(performance.now() - feedRenderStartedAt),
+        articleCount: feedRenderFilteredCount,
+        groupedCount: feedRenderGroupedCount,
+      });
     }
   }
 }
@@ -10924,7 +10992,9 @@ async function loadSnapshot() {
   const normalizedArticles = articles.map(normalizeLoadedArticle);
 
   state.articles = normalizedArticles;
+  runtime.articleDataRevision += 1;
   rebuildArticleFeedIndexes();
+  clearFeedRenderCaches();
   state.dmvCatalog = Array.isArray(dmvCatalog) ? dmvCatalog : [];
   restoreExactArticleFilterFromSession();
   syncDashboardAlerts(feeds, normalizedArticles);
@@ -10939,6 +11009,7 @@ async function refreshFeedsOnly() {
   const feeds = await apiRequest("/api/feeds");
   state.feeds = Array.isArray(feeds) ? feeds : [];
   rebuildFeedLookupCaches();
+  clearFeedRenderCaches();
   renderSummary();
   renderFeedOptions();
   renderFeedList();
@@ -11502,6 +11573,7 @@ function bindEvents() {
         const updatedFeed = await updateFeed(state.editingFeedId, payload);
         state.feeds = state.feeds.map((feed) => (feed.id === updatedFeed.id ? updatedFeed : feed));
         rebuildFeedLookupCaches();
+        clearFeedRenderCaches();
         renderSummary();
         renderFeedOptions();
         renderFeedList();
@@ -11521,6 +11593,7 @@ function bindEvents() {
         });
         state.feeds = [responseBody].concat(state.feeds.filter((feed) => feed.id !== responseBody.id));
         rebuildFeedLookupCaches();
+        clearFeedRenderCaches();
         renderSummary();
         renderFeedOptions();
         renderFeedList();
