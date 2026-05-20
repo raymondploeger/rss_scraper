@@ -8,14 +8,6 @@ import {
   getDmvCatalogEntry,
 } from "./dmvCatalogService.js";
 
-function isNotafiliaUrl(value) {
-  try {
-    return new URL(String(value || "")).hostname === "news.notafilia.pl";
-  } catch {
-    return false;
-  }
-}
-
 function resolveCanonicalLink(canonicalLink, link) {
   if (!canonicalLink) {
     return link;
@@ -94,10 +86,6 @@ export function toArticleDto(article) {
     language: article.language || "unknown",
     fetchStatus: article.fetchStatus || "pending"
   };
-
-  if (isNotafiliaUrl(dto.link) || isNotafiliaUrl(dto.canonicalLink) || isNotafiliaUrl(dto.thumbnail)) {
-    console.log(`[notafilia][api] articleUrl=${dto.canonicalLink || dto.link} returnedThumbnail=${dto.thumbnail || ""}`);
-  }
 
   return dto;
 }

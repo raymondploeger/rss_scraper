@@ -12,6 +12,9 @@ const ARTICLE_PAGE_SIZE = 400;
 const NOTIFICATION_TIMEOUT_MS = 7000;
 const DEBUG_INTELLIGENCE = false;
 const DEBUG_FEED_FILTER = false;
+const DEBUG_PERFORMANCE = false;
+const MAX_ARTICLES_IN_MEMORY = 1500;
+const MAX_VISIBLE_SOURCES_IN_LIST = 100;
 const MAX_RSS_FEEDS = 150;
 const MAX_RSS_FEEDS_MESSAGE = `Maximum of ${MAX_RSS_FEEDS} RSS feeds reached`;
 const FEED_FORM_HELPER_TEXT = `Monitor up to ${MAX_RSS_FEEDS} RSS feeds and websites.`;
@@ -31,6 +34,12 @@ function debugFeedFilterLog(label, payload) {
 function debugFeedFilterWarn(label, payload) {
   if (DEBUG_FEED_FILTER) {
     console.warn(label, payload);
+  }
+}
+
+function debugPerformanceLog(label, payload) {
+  if (DEBUG_PERFORMANCE) {
+    console.info(label, payload);
   }
 }
 
@@ -5205,11 +5214,41 @@ function isRealTravelDocumentArticle(article) {
 }
 
 function normalizeLoadedArticle(article) {
-  const topicType = getArticleTopicType(article);
+  const trimmedArticle = {
+    id: article?.id || "",
+    title: article?.title || "",
+    normalizedTitle: article?.normalizedTitle || "",
+    link: article?.link || "",
+    canonicalLink: article?.canonicalLink || article?.link || "",
+    pubDate: article?.pubDate || "",
+    source: article?.source || "",
+    sourceName: article?.sourceName || article?.source || "",
+    feedTitle: article?.feedTitle || "",
+    feedId: article?.feedId || "",
+    feedUrl: article?.feedUrl || article?.rssUrl || "",
+    sourceId: article?.sourceId || "",
+    topic: article?.topic || "",
+    thumbnail: article?.thumbnail || "",
+    summary: article?.summary || "",
+    summaryShort: article?.summaryShort || "",
+    contentSnippet: article?.contentSnippet || "",
+    author: article?.author || "",
+    tags: Array.isArray(article?.tags) ? article.tags : [],
+    keywords: Array.isArray(article?.keywords) ? article.keywords : [],
+    clusterId: article?.clusterId || null,
+    duplicateGroupId: article?.duplicateGroupId || null,
+    isDuplicate: article?.isDuplicate === true,
+    duplicateOf: article?.duplicateOf || null,
+    language: article?.language || "unknown",
+    fetchStatus: article?.fetchStatus || "pending",
+    createdAt: article?.createdAt || "",
+    updatedAt: article?.updatedAt || "",
+  };
+  const topicType = getArticleTopicType(trimmedArticle);
   const normalizedArticle = {
-    ...article,
+    ...trimmedArticle,
     topicType,
-    eventType: getArticleEventTypeForTopic(article, topicType),
+    eventType: getArticleEventTypeForTopic(trimmedArticle, topicType),
   };
   primeArticleIntelligence(normalizedArticle);
   return normalizedArticle;
@@ -6763,6 +6802,7 @@ function renderFeedItem(feed) {
 function renderFeedList() {
   syncSourceGroupTabs();
   const visibleFeeds = getVisibleFeeds();
+  const renderedFeeds = visibleFeeds.slice(0, MAX_VISIBLE_SOURCES_IN_LIST);
   const activeGroup = state.filters.sourceGroup || "all";
 
   elements.feedCount.textContent = String(visibleFeeds.length);
@@ -6779,11 +6819,11 @@ function renderFeedList() {
   const fragment = document.createDocumentFragment();
   const groups =
     activeGroup === "all"
-      ? getSourceGroupLabels(visibleFeeds).map((label) => ({
+      ? getSourceGroupLabels(renderedFeeds).map((label) => ({
           label,
-          feeds: visibleFeeds.filter((feed) => getFeedGroupName(feed) === label),
+          feeds: renderedFeeds.filter((feed) => getFeedGroupName(feed) === label),
         }))
-      : [{ label: activeGroup, feeds: visibleFeeds }];
+      : [{ label: activeGroup, feeds: renderedFeeds }];
 
   groups.forEach((group) => {
     if (!group.feeds.length) {
@@ -10324,7 +10364,7 @@ function renderPaginationControls(pagination) {
     };
   }
 
-  console.warn("PAGINATION UI RENDERED", {
+  debugPerformanceLog("[pagination-ui-rendered]", {
     page,
     totalPages,
     totalItems,
@@ -10344,7 +10384,7 @@ function logFeedFilterDiagnostics(selectedFeedId, selectedFeedLabel, rawMatches,
     .slice(0, 10)
     .map((article) => article?.title || "Untitled article");
 
-  console.info("[feed-filter-diagnostics]", {
+  debugFeedFilterLog("[feed-filter-diagnostics]", {
     selectedFeedId,
     selectedFeedLabel,
     rawMatchesBeforeRelevance: rawMatches.length,
@@ -10363,17 +10403,12 @@ function finalizeRenderDiagnostics(payload = {}) {
   const pageSize = Number(payload.pageSize) || 30;
   const totalPages = Number(payload.totalPages) || 1;
 
-  console.warn("cards rendered", renderedCardCount);
-  console.warn("pagination", {
+  debugPerformanceLog("[pagination]", {
     total,
     page,
     pageSize,
     rendered: renderedCardCount,
-  });
-  console.warn("pagination rendered", {
-    page,
     totalPages,
-    renderedCards: renderedCardCount,
   });
 
   if (renderedCardCount > maxRenderedCards) {
@@ -10383,10 +10418,19 @@ function finalizeRenderDiagnostics(payload = {}) {
       maxRenderedCards,
     });
   }
+
+  debugPerformanceLog("[render-metrics]", {
+    articleCountInMemory: state.articles.length,
+    renderDurationHint: payload.durationMs || 0,
+    articleCacheSize: runtime.articleComputationCache.size,
+    articlePairCacheSize: runtime.articlePairComputationCache.size,
+    groupedFeedCacheSize: runtime.groupedFeedCache.size,
+    domCardCount: renderedCardCount,
+  });
 }
 
 function logRenderingPageArticlesOnly(groupedArticlesCount, pageArticles) {
-  console.warn("RENDERING PAGE ARTICLES ONLY", {
+  debugPerformanceLog("[rendering-page-articles-only]", {
     groupedArticlesCount,
     pageArticlesCount: Array.isArray(pageArticles) ? pageArticles.length : 0,
   });
@@ -10597,16 +10641,12 @@ function renderArticlesFallback(error) {
   renderPaginationControls(fallbackPagination);
 
   const renderedCards = document.querySelectorAll(".article-card").length;
-  console.warn("pagination", {
+  debugPerformanceLog("[pagination-fallback]", {
     total: fallbackAllArticles.length,
     page: fallbackPagination.currentPage,
     pageSize: fallbackPagination.pageSize,
     rendered: renderedCards,
-  });
-  console.warn("pagination rendered", {
-    page: fallbackPagination.currentPage,
     totalPages: fallbackPagination.totalPages,
-    renderedCards,
   });
   if (renderedCards > 30) {
     console.error("HARD CAP FAILED", renderedCards);
@@ -10976,21 +11016,14 @@ async function apiRequest(path, options = {}) {
 }
 
 async function loadAllArticles() {
-  const articles = [];
-  let page = 1;
-  let totalPages = 1;
-
-  while (page <= totalPages) {
-    const response = await apiRequest(
-      `/api/articles?includePagination=true&showDuplicates=true&limit=${ARTICLE_PAGE_SIZE}&page=${page}`
-    );
-    const items = Array.isArray(response?.items) ? response.items : [];
-    articles.push(...items);
-    totalPages = Math.max(1, Number(response?.pagination?.totalPages) || 1);
-    page += 1;
-  }
-
-  return articles;
+  const response = await apiRequest(
+    `/api/articles?includePagination=true&showDuplicates=true&limit=${MAX_ARTICLES_IN_MEMORY}&page=1`
+  );
+  const items = Array.isArray(response?.items) ? response.items : [];
+  return items
+    .slice()
+    .sort((a, b) => new Date(b?.pubDate || 0) - new Date(a?.pubDate || 0))
+    .slice(0, MAX_ARTICLES_IN_MEMORY);
 }
 
 async function loadSnapshot() {
@@ -11003,12 +11036,21 @@ async function loadSnapshot() {
   runtime.articlePairComputationCache.clear();
   state.feeds = feeds;
   rebuildFeedLookupCaches();
-  const normalizedArticles = articles.map(normalizeLoadedArticle);
+  const normalizedArticles = articles
+    .slice(0, MAX_ARTICLES_IN_MEMORY)
+    .map(normalizeLoadedArticle);
 
   state.articles = normalizedArticles;
   runtime.articleDataRevision += 1;
   rebuildArticleFeedIndexes();
   clearFeedRenderCaches();
+  debugPerformanceLog("[memory]", {
+    articleCountInMemory: state.articles.length,
+    feedCount: state.feeds.length,
+    articleCacheSize: runtime.articleComputationCache.size,
+    articlePairCacheSize: runtime.articlePairComputationCache.size,
+    groupedFeedCacheSize: runtime.groupedFeedCache.size,
+  });
   state.dmvCatalog = Array.isArray(dmvCatalog) ? dmvCatalog : [];
   restoreExactArticleFilterFromSession();
   syncDashboardAlerts(feeds, normalizedArticles);
