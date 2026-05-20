@@ -11,6 +11,7 @@ const POLLING_INTERVAL_MS = 30000;
 const ARTICLE_PAGE_SIZE = 400;
 const NOTIFICATION_TIMEOUT_MS = 7000;
 const DEBUG_INTELLIGENCE = false;
+const DEBUG_FEED_FILTER = true;
 const MAX_RSS_FEEDS = 150;
 const MAX_RSS_FEEDS_MESSAGE = `Maximum of ${MAX_RSS_FEEDS} RSS feeds reached`;
 const FEED_FORM_HELPER_TEXT = `Monitor up to ${MAX_RSS_FEEDS} RSS feeds and websites.`;
@@ -18,6 +19,18 @@ const FEED_FORM_HELPER_TEXT = `Monitor up to ${MAX_RSS_FEEDS} RSS feeds and webs
 function debugIntelligenceLog(label, payload) {
   if (DEBUG_INTELLIGENCE) {
     console.info(label, payload);
+  }
+}
+
+function debugFeedFilterLog(label, payload) {
+  if (DEBUG_FEED_FILTER) {
+    console.info(label, payload);
+  }
+}
+
+function debugFeedFilterWarn(label, payload) {
+  if (DEBUG_FEED_FILTER) {
+    console.warn(label, payload);
   }
 }
 
@@ -1166,6 +1179,49 @@ function getFeedName(feedId) {
 
 function getFeedTopic(feedId) {
   return state.feeds.find((feed) => feed.id === feedId)?.topic || "";
+}
+
+function getStableFeedIdentity(feed) {
+  if (!feed || typeof feed !== "object") {
+    return "";
+  }
+
+  return String(feed.id || feed.sourceId || feed.uuid || "").trim()
+    || normalizeFeedMatchValue(feed.rssUrl || feed.url || feed.officialUrl || feed.siteUrl || feed.homepage || "")
+    || normalizeFeedMatchValue(feed.name || feed.title || feed.feedTitle || feed.source || feed.sourceName || "");
+}
+
+function getFeedDiagnosticDomain(feed) {
+  if (!feed || typeof feed !== "object") {
+    return "";
+  }
+
+  return getFeedMatchDomain(
+    feed.rssUrl || feed.url || feed.officialUrl || feed.siteUrl || feed.homepage || feed.name || ""
+  );
+}
+
+function resolveFeedForDiagnostics(value) {
+  const rawValue = String(value || "").trim();
+  if (!rawValue) {
+    return null;
+  }
+
+  const normalizedValue = normalizeFeedMatchValue(rawValue);
+  const domainValue = getFeedMatchDomain(rawValue);
+
+  return state.feeds.find((feed) => {
+    const stableIdentity = getStableFeedIdentity(feed);
+    const feedDomain = getFeedDiagnosticDomain(feed);
+    return (
+      String(feed.id || "").trim() === rawValue
+      || stableIdentity === rawValue
+      || stableIdentity === normalizedValue
+      || (domainValue && feedDomain === domainValue)
+      || normalizeFeedMatchValue(feed.name || "") === normalizedValue
+      || normalizeFeedMatchValue(feed.sourceName || "") === normalizedValue
+    );
+  }) || null;
 }
 
 function getNonDmvFeeds() {
@@ -5902,6 +5958,8 @@ function renderFeedOptions() {
     .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")));
   const usDmvCatalogEntries = getUsDmvCatalogEntries();
   const canadaCatalogEntries = getCanadaDmvCatalogEntries();
+  const seenFeedOptionValues = new Map();
+  const seenFeedOptionDomains = new Map();
 
   if (
     state.filters.feedId &&
@@ -5962,7 +6020,78 @@ function renderFeedOptions() {
 
   elements.feedFilter.innerHTML = [`<option value="">All feeds</option>`]
     .concat(
-      nonDmvFeeds.map((feed) => `<option value="${feed.id}">${feed.name || "Untitled Feed"}</option>`)
+      nonDmvFeeds.map((feed, index) => {
+        const optionLabel = feed.name || "Untitled Feed";
+        const optionValue = String(feed.id || "").trim();
+        const domain = getFeedDiagnosticDomain(feed);
+
+        debugFeedFilterLog("[feed-option]", {
+          label: optionLabel,
+          value: optionValue,
+          feedId: String(feed.id || "").trim(),
+          sourceId: String(feed.sourceId || "").trim(),
+          domain,
+          index,
+        });
+
+        if (!optionValue) {
+          debugFeedFilterWarn("[feed-option-missing-id]", {
+            label: optionLabel,
+            feedId: String(feed.id || "").trim(),
+            sourceId: String(feed.sourceId || "").trim(),
+            domain,
+            index,
+          });
+        }
+
+        if (seenFeedOptionValues.has(optionValue)) {
+          debugFeedFilterWarn("[feed-option-duplicate-value]", {
+            value: optionValue,
+            first: seenFeedOptionValues.get(optionValue),
+            duplicate: {
+              label: optionLabel,
+              feedId: String(feed.id || "").trim(),
+              sourceId: String(feed.sourceId || "").trim(),
+              domain,
+              index,
+            },
+          });
+        } else {
+          seenFeedOptionValues.set(optionValue, {
+            label: optionLabel,
+            feedId: String(feed.id || "").trim(),
+            sourceId: String(feed.sourceId || "").trim(),
+            domain,
+            index,
+          });
+        }
+
+        if (domain) {
+          if (seenFeedOptionDomains.has(domain)) {
+            debugFeedFilterWarn("[feed-option-domain-collision]", {
+              domain,
+              first: seenFeedOptionDomains.get(domain),
+              duplicate: {
+                label: optionLabel,
+                value: optionValue,
+                feedId: String(feed.id || "").trim(),
+                sourceId: String(feed.sourceId || "").trim(),
+                index,
+              },
+            });
+          } else {
+            seenFeedOptionDomains.set(domain, {
+              label: optionLabel,
+              value: optionValue,
+              feedId: String(feed.id || "").trim(),
+              sourceId: String(feed.sourceId || "").trim(),
+              index,
+            });
+          }
+        }
+
+        return `<option value="${optionValue}">${optionLabel}</option>`;
+      })
     )
     .join("");
   elements.feedFilter.value = state.filters.feedId;
@@ -9480,6 +9609,17 @@ function groupArticlesByEvent(articles) {
 
   const groupedArticles = Object.values(grouped).flatMap((bucket) => bucket).map((group) => {
     const primary = group[0];
+    debugFeedFilterLog("[group-primary]", {
+      selectedFeed: state.filters.feedId || "",
+      chosenPrimaryTitle: primary?.title || "Untitled article",
+      chosenPrimaryFeed: primary?.source || primary?.sourceName || getFeedName(primary?.feedId) || "",
+      allFeedsInGroup: group.map((item) => ({
+        title: item?.title || "Untitled article",
+        feed: item?.source || item?.sourceName || getFeedName(item?.feedId) || "",
+        feedId: String(item?.feedId || "").trim(),
+        domain: getFeedMatchDomain(item?.url || item?.link || item?.canonicalLink || ""),
+      })),
+    });
     if (group.length > 1) {
       const firstMatch = group[1] ? getEventFingerprintMatch(primary, group[1]) : null;
       const normalizedEvent = normalizeIntelligenceEvent(primary);
@@ -10218,12 +10358,22 @@ function articleMatchesSelectedFeed(article, feedId) {
 
   const selectedTokens = getSelectedFeedMatchTokens(feedId);
   const articleTokens = getArticleFeedMatchTokens(article);
+  const articleDomain = getFeedMatchDomain(article?.url || article?.link || article?.canonicalLink || "");
 
   if (!selectedTokens.size || !articleTokens.size) {
-    return article?.feedId === feedId;
+    const matched = article?.feedId === feedId;
+    debugFeedFilterLog("[feed-filter-check]", {
+      selectedFeed: feedId,
+      articleTitle: article?.title || "Untitled article",
+      articleFeed: article?.source || article?.sourceName || "",
+      articleFeedId: String(article?.feedId || "").trim(),
+      articleDomain,
+      matched,
+    });
+    return matched;
   }
 
-  return Array.from(selectedTokens).some((selectedToken) => {
+  const matched = Array.from(selectedTokens).some((selectedToken) => {
     return Array.from(articleTokens).some((articleToken) => {
       if (!selectedToken || !articleToken) {
         return false;
@@ -10236,6 +10386,17 @@ function articleMatchesSelectedFeed(article, feedId) {
       );
     });
   });
+
+  debugFeedFilterLog("[feed-filter-check]", {
+    selectedFeed: feedId,
+    articleTitle: article?.title || "Untitled article",
+    articleFeed: article?.source || article?.sourceName || "",
+    articleFeedId: String(article?.feedId || "").trim(),
+    articleDomain,
+    matched,
+  });
+
+  return matched;
 }
 
 function groupedArticleMatchesFeedFilter(article, feedId) {
@@ -10328,6 +10489,10 @@ function renderArticlesFallback(error) {
 }
 
 function renderArticles() {
+  const shouldDebugFeedRender = DEBUG_FEED_FILTER;
+  if (shouldDebugFeedRender) {
+    console.time("feed-render");
+  }
   intelligenceTime("renderArticles");
   try {
     intelligenceTime("renderArticles:filter-group");
@@ -10623,6 +10788,9 @@ function renderArticles() {
     renderArticlesFallback(error);
   } finally {
     intelligenceTimeEnd("renderArticles");
+    if (shouldDebugFeedRender) {
+      console.timeEnd("feed-render");
+    }
   }
 }
 
@@ -10937,7 +11105,16 @@ function bindEvents() {
 
   elements.feedFilter.addEventListener("change", (event) => {
     clearExactArticleFilter();
-    state.filters.feedId = event.target.value;
+    const rawValue = String(event.target.value || "").trim();
+    state.filters.feedId = rawValue;
+    const resolvedFeed = resolveFeedForDiagnostics(rawValue);
+    debugFeedFilterLog("[selected-feed-change]", {
+      rawValue,
+      selectedFeedState: state.filters.feedId,
+      resolvedFeed: resolvedFeed?.name || "",
+      resolvedFeedId: String(resolvedFeed?.id || "").trim(),
+      resolvedDomain: getFeedDiagnosticDomain(resolvedFeed),
+    });
     state.filters.dmvFeedId = "";
     state.filters.canadaDmvFeedPath = "";
     state.filters.canadaDmvAll = false;
