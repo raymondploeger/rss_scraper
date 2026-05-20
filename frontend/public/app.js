@@ -11,7 +11,7 @@ const POLLING_INTERVAL_MS = 30000;
 const ARTICLE_PAGE_SIZE = 400;
 const NOTIFICATION_TIMEOUT_MS = 7000;
 const DEBUG_INTELLIGENCE = false;
-const DEBUG_FEED_FILTER = true;
+const DEBUG_FEED_FILTER = false;
 const MAX_RSS_FEEDS = 150;
 const MAX_RSS_FEEDS_MESSAGE = `Maximum of ${MAX_RSS_FEEDS} RSS feeds reached`;
 const FEED_FORM_HELPER_TEXT = `Monitor up to ${MAX_RSS_FEEDS} RSS feeds and websites.`;
@@ -908,6 +908,7 @@ const runtime = {
   duplicateFeedIds: new Set(),
   duplicateSourceIds: new Set(),
   selectedFeedResolutionCache: new Map(),
+  articlesByFeedId: new Map(),
   paginationContextKey: "",
   scheduledRenderFrame: 0,
   scheduledRenderTimeout: 0,
@@ -1234,7 +1235,7 @@ function getUniqueFeedIdentity(feed) {
   }
 
   const normalizedHostFallback = normalizeFeedMatchValue(
-    feed.rssUrl || feed.url || feed.officialUrl || feed.siteUrl || feed.homepage || feed.name || feed.sourceName || ""
+    feed.rssUrl || feed.url || feed.officialUrl || feed.siteUrl || feed.homepage || ""
   );
   return normalizedHostFallback ? `feed-host-fallback:${normalizedHostFallback}` : "";
 }
@@ -1257,6 +1258,21 @@ function getFeedLookupKey() {
       normalizeFeedExactUrl(feed?.rssUrl || feed?.url || feed?.officialUrl || feed?.siteUrl || feed?.homepage || ""),
     ].join("|"))
     .join(";");
+}
+
+function rebuildArticleFeedIndexes() {
+  runtime.articlesByFeedId = new Map();
+
+  state.articles.forEach((article) => {
+    const feedId = String(article?.feedId || "").trim();
+    if (!feedId) {
+      return;
+    }
+
+    const items = runtime.articlesByFeedId.get(feedId) || [];
+    items.push(article);
+    runtime.articlesByFeedId.set(feedId, items);
+  });
 }
 
 function rebuildFeedLookupCaches() {
@@ -9723,17 +9739,6 @@ function groupArticlesByEvent(articles) {
 
   const groupedArticles = Object.values(grouped).flatMap((bucket) => bucket).map((group) => {
     const primary = group[0];
-    debugFeedFilterLog("[group-primary]", {
-      selectedFeed: state.filters.feedId || "",
-      chosenPrimaryTitle: primary?.title || "Untitled article",
-      chosenPrimaryFeed: primary?.source || primary?.sourceName || getFeedName(primary?.feedId) || "",
-      allFeedsInGroup: group.map((item) => ({
-        title: item?.title || "Untitled article",
-        feed: item?.source || item?.sourceName || getFeedName(item?.feedId) || "",
-        feedId: String(item?.feedId || "").trim(),
-        domain: getFeedMatchDomain(item?.url || item?.link || item?.canonicalLink || ""),
-      })),
-    });
     if (group.length > 1) {
       const firstMatch = group[1] ? getEventFingerprintMatch(primary, group[1]) : null;
       const normalizedEvent = normalizeIntelligenceEvent(primary);
@@ -10441,26 +10446,12 @@ function articleBelongsToSelectedFeed(article, selectedFeed) {
   } else if (selectedResolution.selectedExactUrl && articleInfo.exactFeedUrl === selectedResolution.selectedExactUrl) {
     matched = true;
     matchReason = "feed-url";
-  } else if (
-    !selectedResolution.selectedFeedId &&
-    !selectedResolution.selectedSourceId &&
-    !selectedResolution.selectedExactUrl &&
-    selectedResolution.selectedDomain &&
-    articleInfo.feedDomain &&
-    articleInfo.feedDomain === selectedResolution.selectedDomain
-  ) {
-    matched = true;
-    matchReason = "exact-hostname-fallback";
   }
 
-  debugFeedFilterLog("[feed-filter-check]", {
-    selectedFeed: selectedResolution.feedIdentity,
-    articleTitle: article?.title || "Untitled article",
-    articleFeed: articleInfo.articleFeed,
+  debugFeedFilterLog(matched ? "[selected-feed-match]" : "[selected-feed-reject]", {
+    selectedFeedId: selectedResolution.selectedFeedId || selectedResolution.feedIdentity,
     articleFeedId: articleInfo.feedId,
-    articleDomain: articleInfo.articleDomain || articleInfo.feedDomain,
-    matched,
-    matchReason,
+    reason: matchReason,
   });
 
   return { matched, matchReason };
@@ -10478,65 +10469,6 @@ function groupedArticleMatchesFeedFilter(article, feedId) {
   return articleMatchesSelectedFeed(article, feedId);
 }
 
-function getFeedMatchedPrimaryArticle(groupArticle, feedId) {
-  if (!feedId || !Array.isArray(groupArticle?.sources) || !groupArticle.sources.length) {
-    return groupArticle;
-  }
-
-  const matchingSources = groupArticle.sources.filter((sourceArticle) =>
-    articleBelongsToSelectedFeed(sourceArticle, feedId).matched
-  );
-  if (!matchingSources.length) {
-    return groupArticle;
-  }
-
-  const sortedMatchingSources = matchingSources.slice().sort((left, right) => {
-    const operationalDiff = getOperationalRelevance(right).score - getOperationalRelevance(left).score;
-    if (operationalDiff !== 0) {
-      return operationalDiff;
-    }
-
-    const authorityDiff = getSourceAuthority(right).score - getSourceAuthority(left).score;
-    if (authorityDiff !== 0) {
-      return authorityDiff;
-    }
-
-    const confidenceDiff =
-      getConfidenceRank(normalizeIntelligenceEvent(right)?.confidence) -
-      getConfidenceRank(normalizeIntelligenceEvent(left)?.confidence);
-    if (confidenceDiff !== 0) {
-      return confidenceDiff;
-    }
-
-    const relevanceDiff = getArticleSoftRelevanceScore(right) - getArticleSoftRelevanceScore(left);
-    if (relevanceDiff !== 0) {
-      return relevanceDiff;
-    }
-
-    return toDate(right.pubDate).getTime() - toDate(left.pubDate).getTime();
-  });
-
-  const primary = sortedMatchingSources[0];
-  debugFeedFilterLog("[group-primary]", {
-    selectedFeed: feedId,
-    chosenPrimaryTitle: primary?.title || "Untitled article",
-    chosenPrimaryFeed: primary?.source || primary?.sourceName || getFeedName(primary?.feedId) || "",
-    allFeedsInGroup: groupArticle.sources.map((item) => ({
-      title: item?.title || "Untitled article",
-      feed: item?.source || item?.sourceName || getFeedName(item?.feedId) || "",
-      feedId: String(item?.feedId || "").trim(),
-      domain: getFeedMatchDomain(item?.url || item?.link || item?.canonicalLink || ""),
-    })),
-  });
-
-  return {
-    ...primary,
-    sources: groupArticle.sources,
-    sourceCount: groupArticle.sourceCount,
-    groupedArticlesCount: groupArticle.groupedArticlesCount,
-  };
-}
-
 function renderArticlesFallback(error) {
   console.warn("[render-articles-fallback]", {
     message: error instanceof Error ? error.message : String(error),
@@ -10551,21 +10483,20 @@ function renderArticlesFallback(error) {
       ? state.articles.filter(articleMatchesFilters).sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate))
       : state.filters?.feedId
         ? (() => {
-            const rawFeedMatches = state.articles
-              .filter((article) => articleMatchesSelectedFeed(article, state.filters.feedId))
+            const selectedFeedResolution = getSelectedFeedResolution(state.filters.feedId);
+            const candidateArticles = selectedFeedResolution.selectedFeedId
+              ? (runtime.articlesByFeedId.get(selectedFeedResolution.selectedFeedId) || [])
+              : state.articles.filter((article) => articleMatchesSelectedFeed(article, state.filters.feedId));
+            const rawFeedMatches = candidateArticles
               .filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
               .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
-            return groupArticlesByEvent(rawFeedMatches).map((article) =>
-              getFeedMatchedPrimaryArticle(article, state.filters.feedId)
-            );
+            return groupArticlesByEvent(rawFeedMatches);
           })()
         : (() => {
           const visibleArticles = getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping });
           const groupedArticles = groupArticlesByEvent(visibleArticles);
           return shouldIgnoreFeedIdForGrouping
-            ? groupedArticles
-              .filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
-              .map((article) => getFeedMatchedPrimaryArticle(article, state.filters.feedId))
+            ? groupedArticles.filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
             : groupedArticles;
         })();
   } catch (innerError) {
@@ -10641,21 +10572,21 @@ function renderArticles() {
     let filteredRawArticles = [];
     let groupedArticlesCount = 0;
     const activeFeedId = state.filters.feedId || "";
+    const activeFeedResolution = activeFeedId ? getSelectedFeedResolution(activeFeedId) : null;
     const activeFeedLabel = getSelectedFeedLabel();
     let feedDebugRawMatches = [];
     let feedDebugAfterRelevanceMatches = [];
 
     if (activeFeedId && !state.filters.date) {
-      feedDebugRawMatches = state.articles
-        .filter((article) => articleMatchesSelectedFeed(article, activeFeedId))
+      const candidateArticles = activeFeedResolution?.selectedFeedId
+        ? (runtime.articlesByFeedId.get(activeFeedResolution.selectedFeedId) || [])
+        : state.articles.filter((article) => articleMatchesSelectedFeed(article, activeFeedId));
+      feedDebugRawMatches = candidateArticles.slice().sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+      feedDebugAfterRelevanceMatches = candidateArticles
         .filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
         .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
-      feedDebugAfterRelevanceMatches = getVisibleArticles({ ignoreFeedId: true })
-        .filter((article) => articleMatchesSelectedFeed(article, activeFeedId));
-      filteredRawArticles = feedDebugRawMatches;
-      const groupedArticles = groupArticlesByEvent(feedDebugRawMatches).map((article) =>
-        getFeedMatchedPrimaryArticle(article, activeFeedId)
-      );
+      filteredRawArticles = feedDebugAfterRelevanceMatches;
+      const groupedArticles = groupArticlesByEvent(feedDebugAfterRelevanceMatches);
       groupedArticlesCount = groupedArticles.length;
       articles = groupedArticles;
     } else if (state.filters.date) {
@@ -10670,9 +10601,7 @@ function renderArticles() {
       const groupedArticles = groupArticlesByEvent(visibleArticles);
       groupedArticlesCount = groupedArticles.length;
       articles = shouldIgnoreFeedIdForGrouping
-        ? groupedArticles
-          .filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
-          .map((article) => getFeedMatchedPrimaryArticle(article, state.filters.feedId))
+        ? groupedArticles.filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
         : groupedArticles;
     }
 
@@ -10995,6 +10924,7 @@ async function loadSnapshot() {
   const normalizedArticles = articles.map(normalizeLoadedArticle);
 
   state.articles = normalizedArticles;
+  rebuildArticleFeedIndexes();
   state.dmvCatalog = Array.isArray(dmvCatalog) ? dmvCatalog : [];
   restoreExactArticleFilterFromSession();
   syncDashboardAlerts(feeds, normalizedArticles);
