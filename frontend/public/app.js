@@ -915,6 +915,7 @@ const runtime = {
   scheduledRenderFrame: 0,
   scheduledRenderTimeout: 0,
   scheduledRenderReason: "",
+  lastRenderedReason: "",
 };
 
 const elements = {
@@ -1002,6 +1003,7 @@ function flushScheduledRender() {
 
   const reason = runtime.scheduledRenderReason || "scheduled";
   runtime.scheduledRenderReason = "";
+  runtime.lastRenderedReason = reason;
   intelligenceDebug("[scheduleRenderArticles:flush]", { reason });
   renderArticles();
 }
@@ -5698,10 +5700,7 @@ function getPrimaryArticleSignalLabel(primarySignalCategory) {
     return "";
   }
 
-  const confidenceLabel = getSignalConfidenceLabel(primarySignalCategory.confidence);
-  return confidenceLabel
-    ? `${primarySignalCategory.badgeLabel || primarySignalCategory.label} (${confidenceLabel})`
-    : primarySignalCategory.badgeLabel || primarySignalCategory.label;
+  return primarySignalCategory.badgeLabel || primarySignalCategory.label;
 }
 
 function getNormalizedEventSignalMatch(article) {
@@ -5866,30 +5865,32 @@ function isUiRelevantIntelligenceArticle(article) {
 }
 
 function getPrimaryArticleSignalCategory(article) {
-  const [primarySignalMatch] = getArticleSignalMatches(article);
-  if (!primarySignalMatch) {
-    return null;
-  }
+  return getCachedArticleValue(article, "primaryArticleSignalCategory", () => {
+    const [primarySignalMatch] = getArticleSignalMatches(article);
+    if (!primarySignalMatch) {
+      return null;
+    }
 
-  const category = getSignalCategoryById(primarySignalMatch.id);
-  if (!category) {
-    return null;
-  }
+    const category = getSignalCategoryById(primarySignalMatch.id);
+    if (!category) {
+      return null;
+    }
 
-  const primarySignalCategory = {
-    ...category,
-    confidence: primarySignalMatch.confidence,
-  };
+    const primarySignalCategory = {
+      ...category,
+      confidence: primarySignalMatch.confidence,
+    };
 
-  intelligenceDebug("[classification]", {
-    title: article?.title || "Untitled article",
-    signalType: primarySignalCategory.id,
-    entity: getDetectedEventEntity(article),
-    eventType: normalizeIntelligenceEvent(article)?.canonicalEventType || getDetailedArticleEventType(article),
-    confidence: primarySignalCategory.confidence,
+    intelligenceDebug("[classification]", {
+      title: article?.title || "Untitled article",
+      signalType: primarySignalCategory.id,
+      entity: getDetectedEventEntity(article),
+      eventType: normalizeIntelligenceEvent(article)?.canonicalEventType || getDetailedArticleEventType(article),
+      confidence: primarySignalCategory.confidence,
+    });
+
+    return primarySignalCategory;
   });
-
-  return primarySignalCategory;
 }
 
 function isKeywordRuleFalsePositive(article, rule) {
@@ -10617,10 +10618,12 @@ function renderArticles() {
   const feedRenderStartedAt = shouldDebugFeedRender ? performance.now() : 0;
   let feedRenderGroupedCount = 0;
   let feedRenderFilteredCount = 0;
+  const renderReason = runtime.lastRenderedReason || "render";
   if (shouldDebugFeedRender) {
     debugFeedFilterLog("[feed-render-start]", {
       selectedFeed: state.filters.feedId || "",
       page: state.pagination.page,
+      reason: renderReason,
     });
   }
   intelligenceTime("renderArticles");
@@ -10923,12 +10926,23 @@ function renderArticles() {
   } finally {
     intelligenceTimeEnd("renderArticles");
     if (shouldDebugFeedRender) {
+      const durationMs = Math.round(performance.now() - feedRenderStartedAt);
       debugFeedFilterLog("[feed-render-end]", {
         selectedFeed: state.filters.feedId || "",
-        durationMs: Math.round(performance.now() - feedRenderStartedAt),
+        durationMs,
         articleCount: feedRenderFilteredCount,
         groupedCount: feedRenderGroupedCount,
+        reason: renderReason,
       });
+      debugFeedFilterLog(
+        renderReason.includes("feed-filter") ? "[feed-switch-duration]" : "[article-render-duration]",
+        {
+          durationMs,
+          articleCount: feedRenderFilteredCount,
+          groupedCount: feedRenderGroupedCount,
+          reason: renderReason,
+        }
+      );
     }
   }
 }
@@ -11270,10 +11284,7 @@ function bindEvents() {
     if (elements.canadaDmvFilter) {
       elements.canadaDmvFilter.value = "";
     }
-    renderFeedList();
-    renderDmvOfficialLink();
-    renderDmvModeIndicator();
-    scheduleRenderArticles("feed-filter", { mode: "frame" });
+    scheduleRenderArticles("feed-filter", { mode: "timeout" });
   });
 
   if (elements.dmvFeedFilter) {
