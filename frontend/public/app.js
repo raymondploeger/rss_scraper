@@ -901,6 +901,13 @@ const runtime = {
   fullyExpandedGroupedSourceKeys: new Set(),
   articleComputationCache: new Map(),
   articlePairComputationCache: new Map(),
+  feedLookupKey: "",
+  feedByUniqueIdentity: new Map(),
+  feedById: new Map(),
+  feedBySourceId: new Map(),
+  duplicateFeedIds: new Set(),
+  duplicateSourceIds: new Set(),
+  selectedFeedResolutionCache: new Map(),
   paginationContextKey: "",
   scheduledRenderFrame: 0,
   scheduledRenderTimeout: 0,
@@ -1174,21 +1181,62 @@ function isFeedPanelCollapsed() {
 }
 
 function getFeedName(feedId) {
-  return state.feeds.find((feed) => feed.id === feedId)?.name || "Unknown feed";
+  return resolveFeedByIdentity(feedId)?.name || "Unknown feed";
 }
 
 function getFeedTopic(feedId) {
-  return state.feeds.find((feed) => feed.id === feedId)?.topic || "";
+  return resolveFeedByIdentity(feedId)?.topic || "";
 }
 
-function getStableFeedIdentity(feed) {
+function normalizeFeedExactUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  try {
+    const normalizedUrl = /^[a-z]+:\/\//i.test(raw) ? raw : `https://${raw}`;
+    const parsed = new URL(normalizedUrl);
+    const pathname = parsed.pathname === "/" ? "/" : parsed.pathname.replace(/\/+$/, "");
+    return `${parsed.protocol.toLowerCase()}//${parsed.hostname.toLowerCase()}${pathname}${parsed.search}`;
+  } catch {
+    return raw;
+  }
+}
+
+function getUniqueFeedIdentity(feed) {
   if (!feed || typeof feed !== "object") {
     return "";
   }
 
-  return String(feed.id || feed.sourceId || feed.uuid || "").trim()
-    || normalizeFeedMatchValue(feed.rssUrl || feed.url || feed.officialUrl || feed.siteUrl || feed.homepage || "")
-    || normalizeFeedMatchValue(feed.name || feed.title || feed.feedTitle || feed.source || feed.sourceName || "");
+  const feedId = String(feed.id || "").trim();
+  if (feedId) {
+    return `feed-id:${feedId}`;
+  }
+
+  const sourceId = String(feed.sourceId || feed.uuid || "").trim();
+  if (sourceId) {
+    return `source-id:${sourceId}`;
+  }
+
+  const exactUrl = normalizeFeedExactUrl(
+    feed.rssUrl || feed.url || feed.officialUrl || feed.siteUrl || feed.homepage || ""
+  );
+  if (exactUrl) {
+    return `feed-url:${exactUrl}`;
+  }
+
+  const exactHost = getFeedMatchDomain(
+    feed.rssUrl || feed.url || feed.officialUrl || feed.siteUrl || feed.homepage || ""
+  );
+  if (exactHost) {
+    return `feed-host:${exactHost}`;
+  }
+
+  const normalizedHostFallback = normalizeFeedMatchValue(
+    feed.rssUrl || feed.url || feed.officialUrl || feed.siteUrl || feed.homepage || feed.name || feed.sourceName || ""
+  );
+  return normalizedHostFallback ? `feed-host-fallback:${normalizedHostFallback}` : "";
 }
 
 function getFeedDiagnosticDomain(feed) {
@@ -1201,27 +1249,92 @@ function getFeedDiagnosticDomain(feed) {
   );
 }
 
-function resolveFeedForDiagnostics(value) {
+function getFeedLookupKey() {
+  return state.feeds
+    .map((feed) => [
+      String(feed?.id || "").trim(),
+      String(feed?.sourceId || "").trim(),
+      normalizeFeedExactUrl(feed?.rssUrl || feed?.url || feed?.officialUrl || feed?.siteUrl || feed?.homepage || ""),
+    ].join("|"))
+    .join(";");
+}
+
+function rebuildFeedLookupCaches() {
+  runtime.feedByUniqueIdentity = new Map();
+  runtime.feedById = new Map();
+  runtime.feedBySourceId = new Map();
+  runtime.duplicateFeedIds = new Set();
+  runtime.duplicateSourceIds = new Set();
+  runtime.selectedFeedResolutionCache = new Map();
+  runtime.feedLookupKey = getFeedLookupKey();
+
+  state.feeds.forEach((feed) => {
+    const uniqueIdentity = getUniqueFeedIdentity(feed);
+    const feedId = String(feed?.id || "").trim();
+    const sourceId = String(feed?.sourceId || "").trim();
+
+    if (uniqueIdentity && !runtime.feedByUniqueIdentity.has(uniqueIdentity)) {
+      runtime.feedByUniqueIdentity.set(uniqueIdentity, feed);
+    }
+
+    if (feedId) {
+      if (runtime.feedById.has(feedId)) {
+        runtime.duplicateFeedIds.add(feedId);
+      } else {
+        runtime.feedById.set(feedId, feed);
+      }
+    }
+
+    if (sourceId) {
+      if (runtime.feedBySourceId.has(sourceId)) {
+        runtime.duplicateSourceIds.add(sourceId);
+      } else {
+        runtime.feedBySourceId.set(sourceId, feed);
+      }
+    }
+  });
+}
+
+function ensureFeedLookupCaches() {
+  const nextLookupKey = getFeedLookupKey();
+  if (runtime.feedLookupKey !== nextLookupKey) {
+    rebuildFeedLookupCaches();
+  }
+}
+
+function resolveFeedByIdentity(value) {
   const rawValue = String(value || "").trim();
   if (!rawValue) {
     return null;
   }
 
-  const normalizedValue = normalizeFeedMatchValue(rawValue);
-  const domainValue = getFeedMatchDomain(rawValue);
+  ensureFeedLookupCaches();
 
-  return state.feeds.find((feed) => {
-    const stableIdentity = getStableFeedIdentity(feed);
-    const feedDomain = getFeedDiagnosticDomain(feed);
-    return (
-      String(feed.id || "").trim() === rawValue
-      || stableIdentity === rawValue
-      || stableIdentity === normalizedValue
-      || (domainValue && feedDomain === domainValue)
-      || normalizeFeedMatchValue(feed.name || "") === normalizedValue
-      || normalizeFeedMatchValue(feed.sourceName || "") === normalizedValue
-    );
-  }) || null;
+  if (runtime.feedByUniqueIdentity.has(rawValue)) {
+    return runtime.feedByUniqueIdentity.get(rawValue) || null;
+  }
+
+  if (runtime.feedById.has(rawValue)) {
+    return runtime.feedById.get(rawValue) || null;
+  }
+
+  if (runtime.feedBySourceId.has(rawValue)) {
+    return runtime.feedBySourceId.get(rawValue) || null;
+  }
+
+  const normalizedExactUrl = normalizeFeedExactUrl(rawValue);
+  if (normalizedExactUrl) {
+    const urlIdentity = `feed-url:${normalizedExactUrl}`;
+    if (runtime.feedByUniqueIdentity.has(urlIdentity)) {
+      return runtime.feedByUniqueIdentity.get(urlIdentity) || null;
+    }
+  }
+
+  return null;
+}
+
+function resolveFeedForDiagnostics(value) {
+  return resolveFeedByIdentity(value);
 }
 
 function getNonDmvFeeds() {
@@ -3881,7 +3994,7 @@ function applyAnalyticsFeedFilter({ feedId, todayOnly = false }) {
   } else if (canadaDmvEntry?.feedPath) {
     state.filters.canadaDmvFeedPath = canadaDmvEntry.feedPath;
   } else {
-    state.filters.feedId = selectedFeed.id;
+    state.filters.feedId = getUniqueFeedIdentity(selectedFeed);
   }
 
   elements.searchFilter.value = "";
@@ -5934,6 +6047,7 @@ function clearActiveFilter(filterKey) {
 }
 
 function renderFeedOptions() {
+  ensureFeedLookupCaches();
   const topics = Array.from(
     new Set(state.feeds.map((feed) => String(feed.topic || "").trim()).filter(Boolean))
   ).sort();
@@ -5959,11 +6073,10 @@ function renderFeedOptions() {
   const usDmvCatalogEntries = getUsDmvCatalogEntries();
   const canadaCatalogEntries = getCanadaDmvCatalogEntries();
   const seenFeedOptionValues = new Map();
-  const seenFeedOptionDomains = new Map();
 
   if (
     state.filters.feedId &&
-    !nonDmvFeeds.some((feed) => feed.id === state.filters.feedId)
+    !nonDmvFeeds.some((feed) => getUniqueFeedIdentity(feed) === state.filters.feedId)
   ) {
     state.filters.feedId = "";
   }
@@ -6022,14 +6135,16 @@ function renderFeedOptions() {
     .concat(
       nonDmvFeeds.map((feed, index) => {
         const optionLabel = feed.name || "Untitled Feed";
-        const optionValue = String(feed.id || "").trim();
+        const optionValue = getUniqueFeedIdentity(feed);
         const domain = getFeedDiagnosticDomain(feed);
+        const feedId = String(feed.id || "").trim();
+        const sourceId = String(feed.sourceId || "").trim();
 
         debugFeedFilterLog("[feed-option]", {
           label: optionLabel,
           value: optionValue,
-          feedId: String(feed.id || "").trim(),
-          sourceId: String(feed.sourceId || "").trim(),
+          feedId,
+          sourceId,
           domain,
           index,
         });
@@ -6037,8 +6152,8 @@ function renderFeedOptions() {
         if (!optionValue) {
           debugFeedFilterWarn("[feed-option-missing-id]", {
             label: optionLabel,
-            feedId: String(feed.id || "").trim(),
-            sourceId: String(feed.sourceId || "").trim(),
+            feedId,
+            sourceId,
             domain,
             index,
           });
@@ -6050,8 +6165,8 @@ function renderFeedOptions() {
             first: seenFeedOptionValues.get(optionValue),
             duplicate: {
               label: optionLabel,
-              feedId: String(feed.id || "").trim(),
-              sourceId: String(feed.sourceId || "").trim(),
+              feedId,
+              sourceId,
               domain,
               index,
             },
@@ -6059,38 +6174,36 @@ function renderFeedOptions() {
         } else {
           seenFeedOptionValues.set(optionValue, {
             label: optionLabel,
-            feedId: String(feed.id || "").trim(),
-            sourceId: String(feed.sourceId || "").trim(),
+            feedId,
+            sourceId,
             domain,
             index,
           });
         }
 
-        if (domain) {
-          if (seenFeedOptionDomains.has(domain)) {
-            debugFeedFilterWarn("[feed-option-domain-collision]", {
-              domain,
-              first: seenFeedOptionDomains.get(domain),
-              duplicate: {
-                label: optionLabel,
-                value: optionValue,
-                feedId: String(feed.id || "").trim(),
-                sourceId: String(feed.sourceId || "").trim(),
-                index,
-              },
-            });
-          } else {
-            seenFeedOptionDomains.set(domain, {
-              label: optionLabel,
-              value: optionValue,
-              feedId: String(feed.id || "").trim(),
-              sourceId: String(feed.sourceId || "").trim(),
-              index,
-            });
-          }
+        if (feedId && runtime.duplicateFeedIds.has(feedId)) {
+          debugFeedFilterWarn("[feed-option-duplicate-feed-id]", {
+            label: optionLabel,
+            value: optionValue,
+            feedId,
+            sourceId,
+            domain,
+            index,
+          });
         }
 
-        return `<option value="${optionValue}">${optionLabel}</option>`;
+        if (sourceId && runtime.duplicateSourceIds.has(sourceId)) {
+          debugFeedFilterWarn("[feed-option-duplicate-source-id]", {
+            label: optionLabel,
+            value: optionValue,
+            feedId,
+            sourceId,
+            domain,
+            index,
+          });
+        }
+
+        return `<option value="${escapeHtml(optionValue)}">${escapeHtml(optionLabel)}</option>`;
       })
     )
     .join("");
@@ -6244,6 +6357,7 @@ function renderDmvModeIndicator() {
 }
 
 function getVisibleFeeds() {
+  ensureFeedLookupCaches();
   const sourceListMode = getSourceListMode();
   let feeds = state.feeds.slice();
   const canadaCatalogOnlySources = getCanadaCatalogOnlySources();
@@ -6255,7 +6369,7 @@ function getVisibleFeeds() {
   if (sourceListMode === "dmv-only") {
     feeds = getUsDmvFeeds().slice();
   } else if (sourceListMode === "normal-feed") {
-    feeds = feeds.filter((feed) => feed.id === state.filters.feedId);
+    feeds = feeds.filter((feed) => getUniqueFeedIdentity(feed) === state.filters.feedId);
   } else if (sourceListMode === "canada-entry") {
     const selectedCanadaFeed = getSelectedCanadaFeed();
     const selectedCanadaEntry = getSelectedCanadaCatalogEntry();
@@ -10264,91 +10378,92 @@ function addFeedMatchTokens(tokenSet, value) {
   }
 }
 
-function getSelectedFeedMatchTokens(feedId) {
-  const tokens = new Set();
-  const selectedFeed = state.feeds.find((feed) => feed.id === feedId);
-
-  [
-    feedId,
-    selectedFeed?.id,
-    selectedFeed?.name,
-    selectedFeed?.title,
-    selectedFeed?.feedTitle,
-    selectedFeed?.source,
-    selectedFeed?.sourceName,
-    selectedFeed?.rssUrl,
-    selectedFeed?.officialUrl,
-    selectedFeed?.url,
-    selectedFeed?.siteUrl,
-    selectedFeed?.homepage,
-  ].forEach((value) => addFeedMatchTokens(tokens, value));
-
-  const combined = Array.from(tokens).join(" ");
-  if (combined.includes("banknotenews")) {
-    ["banknotenews", "banknotenews.com", "owen linzmayer"].forEach((value) =>
-      addFeedMatchTokens(tokens, value)
-    );
+function getSelectedFeedResolution(feedIdentity) {
+  ensureFeedLookupCaches();
+  const cacheKey = String(feedIdentity || "").trim();
+  if (runtime.selectedFeedResolutionCache.has(cacheKey)) {
+    return runtime.selectedFeedResolutionCache.get(cacheKey);
   }
 
-  if (combined.includes("notafilia")) {
-    ["news.notafilia.pl", "notafilia.pl", "notafilia"].forEach((value) => addFeedMatchTokens(tokens, value));
-  }
-
-  return tokens;
+  const selectedFeed = resolveFeedByIdentity(feedIdentity);
+  const resolution = {
+    feedIdentity: cacheKey,
+    selectedFeed,
+    selectedFeedId: String(selectedFeed?.id || "").trim(),
+    selectedSourceId: String(selectedFeed?.sourceId || "").trim(),
+    selectedExactUrl: normalizeFeedExactUrl(
+      selectedFeed?.rssUrl || selectedFeed?.url || selectedFeed?.officialUrl || selectedFeed?.siteUrl || selectedFeed?.homepage || ""
+    ),
+    selectedDomain: getFeedDiagnosticDomain(selectedFeed),
+  };
+  runtime.selectedFeedResolutionCache.set(cacheKey, resolution);
+  return resolution;
 }
 
-function getArticleFeedMatchTokens(article) {
-  const tokens = new Set();
+function getArticleFeedIdentityInfo(article) {
+  return getCachedArticleValue(article, "articleFeedIdentityInfo", () => {
+    const derivedFeed = resolveFeedByIdentity(article?.feedId);
+    return {
+      feedId: String(article?.feedId || "").trim(),
+      sourceId: String(article?.sourceId || derivedFeed?.sourceId || "").trim(),
+      exactFeedUrl: normalizeFeedExactUrl(
+        article?.feedUrl
+          || article?.rssUrl
+          || derivedFeed?.rssUrl
+          || derivedFeed?.url
+          || derivedFeed?.officialUrl
+          || derivedFeed?.siteUrl
+          || derivedFeed?.homepage
+          || ""
+      ),
+      articleDomain: getFeedMatchDomain(article?.url || article?.link || article?.canonicalLink || ""),
+      feedDomain: getFeedDiagnosticDomain(derivedFeed),
+      articleFeed: article?.source || article?.sourceName || derivedFeed?.name || "",
+    };
+  });
+}
 
-  const addArticleTokens = (item) => {
-    if (!item || typeof item !== "object") {
-      return;
-    }
+function articleBelongsToSelectedFeed(article, selectedFeed) {
+  const selectedResolution = typeof selectedFeed === "string"
+    ? getSelectedFeedResolution(selectedFeed)
+    : getSelectedFeedResolution(getUniqueFeedIdentity(selectedFeed));
+  const articleInfo = getArticleFeedIdentityInfo(article);
 
-    [
-      item.feedId,
-      item.feed,
-      item.source,
-      item.sourceName,
-      item.feedTitle,
-      item.link,
-      item.url,
-      item.canonicalLink,
-    ].forEach((value) => addFeedMatchTokens(tokens, value));
+  let matched = false;
+  let matchReason = "no-match";
 
-    const derivedFeed = item.feedId ? state.feeds.find((feed) => feed.id === item.feedId) : null;
-    [
-      derivedFeed?.id,
-      derivedFeed?.name,
-      derivedFeed?.title,
-      derivedFeed?.feedTitle,
-      derivedFeed?.source,
-      derivedFeed?.sourceName,
-      derivedFeed?.rssUrl,
-      derivedFeed?.officialUrl,
-      derivedFeed?.url,
-      derivedFeed?.siteUrl,
-      derivedFeed?.homepage,
-    ].forEach((value) => addFeedMatchTokens(tokens, value));
-  };
-
-  addArticleTokens(article);
-  if (Array.isArray(article?.sources)) {
-    article.sources.forEach(addArticleTokens);
+  if (selectedResolution.selectedFeedId && articleInfo.feedId === selectedResolution.selectedFeedId) {
+    matched = true;
+    matchReason = "feed-id";
+  } else if (selectedResolution.selectedSourceId && articleInfo.sourceId === selectedResolution.selectedSourceId) {
+    matched = true;
+    matchReason = "source-id";
+  } else if (selectedResolution.selectedExactUrl && articleInfo.exactFeedUrl === selectedResolution.selectedExactUrl) {
+    matched = true;
+    matchReason = "feed-url";
+  } else if (
+    !selectedResolution.selectedFeedId &&
+    !selectedResolution.selectedSourceId &&
+    !selectedResolution.selectedExactUrl &&
+    selectedResolution.selectedDomain &&
+    articleInfo.feedDomain &&
+    articleInfo.feedDomain === selectedResolution.selectedDomain
+  ) {
+    matched = true;
+    matchReason = "exact-hostname-fallback";
   }
 
-  const combined = Array.from(tokens).join(" ");
-  if (combined.includes("banknotenews")) {
-    ["banknotenews", "banknotenews.com", "owen linzmayer"].forEach((value) =>
-      addFeedMatchTokens(tokens, value)
-    );
-  }
+  debugFeedFilterLog("[feed-filter-check]", {
+    selectedFeed: selectedResolution.feedIdentity,
+    articleTitle: article?.title || "Untitled article",
+    articleFeed: articleInfo.articleFeed,
+    articleFeedId: articleInfo.feedId,
+    articleDomain: articleInfo.articleDomain || articleInfo.feedDomain,
+    matched,
+    matchReason,
+  });
 
-  if (combined.includes("notafilia")) {
-    ["news.notafilia.pl", "notafilia.pl", "notafilia"].forEach((value) => addFeedMatchTokens(tokens, value));
-  }
-
-  return tokens;
+  return { matched, matchReason };
 }
 
 function articleMatchesSelectedFeed(article, feedId) {
@@ -10356,51 +10471,70 @@ function articleMatchesSelectedFeed(article, feedId) {
     return true;
   }
 
-  const selectedTokens = getSelectedFeedMatchTokens(feedId);
-  const articleTokens = getArticleFeedMatchTokens(article);
-  const articleDomain = getFeedMatchDomain(article?.url || article?.link || article?.canonicalLink || "");
-
-  if (!selectedTokens.size || !articleTokens.size) {
-    const matched = article?.feedId === feedId;
-    debugFeedFilterLog("[feed-filter-check]", {
-      selectedFeed: feedId,
-      articleTitle: article?.title || "Untitled article",
-      articleFeed: article?.source || article?.sourceName || "",
-      articleFeedId: String(article?.feedId || "").trim(),
-      articleDomain,
-      matched,
-    });
-    return matched;
-  }
-
-  const matched = Array.from(selectedTokens).some((selectedToken) => {
-    return Array.from(articleTokens).some((articleToken) => {
-      if (!selectedToken || !articleToken) {
-        return false;
-      }
-
-      return (
-        selectedToken === articleToken ||
-        articleToken.includes(selectedToken) ||
-        selectedToken.includes(articleToken)
-      );
-    });
-  });
-
-  debugFeedFilterLog("[feed-filter-check]", {
-    selectedFeed: feedId,
-    articleTitle: article?.title || "Untitled article",
-    articleFeed: article?.source || article?.sourceName || "",
-    articleFeedId: String(article?.feedId || "").trim(),
-    articleDomain,
-    matched,
-  });
-
-  return matched;
+  return articleBelongsToSelectedFeed(article, feedId).matched;
 }
 
 function groupedArticleMatchesFeedFilter(article, feedId) {
   return articleMatchesSelectedFeed(article, feedId);
+}
+
+function getFeedMatchedPrimaryArticle(groupArticle, feedId) {
+  if (!feedId || !Array.isArray(groupArticle?.sources) || !groupArticle.sources.length) {
+    return groupArticle;
+  }
+
+  const matchingSources = groupArticle.sources.filter((sourceArticle) =>
+    articleBelongsToSelectedFeed(sourceArticle, feedId).matched
+  );
+  if (!matchingSources.length) {
+    return groupArticle;
+  }
+
+  const sortedMatchingSources = matchingSources.slice().sort((left, right) => {
+    const operationalDiff = getOperationalRelevance(right).score - getOperationalRelevance(left).score;
+    if (operationalDiff !== 0) {
+      return operationalDiff;
+    }
+
+    const authorityDiff = getSourceAuthority(right).score - getSourceAuthority(left).score;
+    if (authorityDiff !== 0) {
+      return authorityDiff;
+    }
+
+    const confidenceDiff =
+      getConfidenceRank(normalizeIntelligenceEvent(right)?.confidence) -
+      getConfidenceRank(normalizeIntelligenceEvent(left)?.confidence);
+    if (confidenceDiff !== 0) {
+      return confidenceDiff;
+    }
+
+    const relevanceDiff = getArticleSoftRelevanceScore(right) - getArticleSoftRelevanceScore(left);
+    if (relevanceDiff !== 0) {
+      return relevanceDiff;
+    }
+
+    return toDate(right.pubDate).getTime() - toDate(left.pubDate).getTime();
+  });
+
+  const primary = sortedMatchingSources[0];
+  debugFeedFilterLog("[group-primary]", {
+    selectedFeed: feedId,
+    chosenPrimaryTitle: primary?.title || "Untitled article",
+    chosenPrimaryFeed: primary?.source || primary?.sourceName || getFeedName(primary?.feedId) || "",
+    allFeedsInGroup: groupArticle.sources.map((item) => ({
+      title: item?.title || "Untitled article",
+      feed: item?.source || item?.sourceName || getFeedName(item?.feedId) || "",
+      feedId: String(item?.feedId || "").trim(),
+      domain: getFeedMatchDomain(item?.url || item?.link || item?.canonicalLink || ""),
+    })),
+  });
+
+  return {
+    ...primary,
+    sources: groupArticle.sources,
+    sourceCount: groupArticle.sourceCount,
+    groupedArticlesCount: groupArticle.groupedArticlesCount,
+  };
 }
 
 function renderArticlesFallback(error) {
@@ -10421,13 +10555,17 @@ function renderArticlesFallback(error) {
               .filter((article) => articleMatchesSelectedFeed(article, state.filters.feedId))
               .filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
               .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
-            return groupArticlesByEvent(rawFeedMatches);
+            return groupArticlesByEvent(rawFeedMatches).map((article) =>
+              getFeedMatchedPrimaryArticle(article, state.filters.feedId)
+            );
           })()
         : (() => {
           const visibleArticles = getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping });
           const groupedArticles = groupArticlesByEvent(visibleArticles);
           return shouldIgnoreFeedIdForGrouping
-            ? groupedArticles.filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
+            ? groupedArticles
+              .filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
+              .map((article) => getFeedMatchedPrimaryArticle(article, state.filters.feedId))
             : groupedArticles;
         })();
   } catch (innerError) {
@@ -10515,7 +10653,9 @@ function renderArticles() {
       feedDebugAfterRelevanceMatches = getVisibleArticles({ ignoreFeedId: true })
         .filter((article) => articleMatchesSelectedFeed(article, activeFeedId));
       filteredRawArticles = feedDebugRawMatches;
-      const groupedArticles = groupArticlesByEvent(feedDebugRawMatches);
+      const groupedArticles = groupArticlesByEvent(feedDebugRawMatches).map((article) =>
+        getFeedMatchedPrimaryArticle(article, activeFeedId)
+      );
       groupedArticlesCount = groupedArticles.length;
       articles = groupedArticles;
     } else if (state.filters.date) {
@@ -10530,7 +10670,9 @@ function renderArticles() {
       const groupedArticles = groupArticlesByEvent(visibleArticles);
       groupedArticlesCount = groupedArticles.length;
       articles = shouldIgnoreFeedIdForGrouping
-        ? groupedArticles.filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
+        ? groupedArticles
+          .filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
+          .map((article) => getFeedMatchedPrimaryArticle(article, state.filters.feedId))
         : groupedArticles;
     }
 
@@ -10849,6 +10991,7 @@ async function loadSnapshot() {
   runtime.articleComputationCache.clear();
   runtime.articlePairComputationCache.clear();
   state.feeds = feeds;
+  rebuildFeedLookupCaches();
   const normalizedArticles = articles.map(normalizeLoadedArticle);
 
   state.articles = normalizedArticles;
@@ -10865,6 +11008,7 @@ async function loadSnapshot() {
 async function refreshFeedsOnly() {
   const feeds = await apiRequest("/api/feeds");
   state.feeds = Array.isArray(feeds) ? feeds : [];
+  rebuildFeedLookupCaches();
   renderSummary();
   renderFeedOptions();
   renderFeedList();
@@ -11106,8 +11250,8 @@ function bindEvents() {
   elements.feedFilter.addEventListener("change", (event) => {
     clearExactArticleFilter();
     const rawValue = String(event.target.value || "").trim();
-    state.filters.feedId = rawValue;
     const resolvedFeed = resolveFeedForDiagnostics(rawValue);
+    state.filters.feedId = resolvedFeed ? getUniqueFeedIdentity(resolvedFeed) : rawValue;
     debugFeedFilterLog("[selected-feed-change]", {
       rawValue,
       selectedFeedState: state.filters.feedId,
@@ -11427,6 +11571,7 @@ function bindEvents() {
       if (isEditing) {
         const updatedFeed = await updateFeed(state.editingFeedId, payload);
         state.feeds = state.feeds.map((feed) => (feed.id === updatedFeed.id ? updatedFeed : feed));
+        rebuildFeedLookupCaches();
         renderSummary();
         renderFeedOptions();
         renderFeedList();
@@ -11445,6 +11590,7 @@ function bindEvents() {
           }),
         });
         state.feeds = [responseBody].concat(state.feeds.filter((feed) => feed.id !== responseBody.id));
+        rebuildFeedLookupCaches();
         renderSummary();
         renderFeedOptions();
         renderFeedList();
