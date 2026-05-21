@@ -4,6 +4,7 @@ import { mapArticleRecord, toIsoString } from "./helpers.js";
 
 function buildArticleWhere(filters = {}) {
   const where = {};
+  const andConditions = [];
 
   if (filters.topic) {
     where.topic = filters.topic;
@@ -41,13 +42,41 @@ function buildArticleWhere(filters = {}) {
   }
 
   if (filters.search) {
-    where.OR = [
+    andConditions.push({
+      OR: [
       { title: { contains: filters.search, mode: "insensitive" } },
       { source: { contains: filters.search, mode: "insensitive" } },
       { topic: { contains: filters.search, mode: "insensitive" } },
       { feedName: { contains: filters.search, mode: "insensitive" } },
       { contentSnippet: { contains: filters.search, mode: "insensitive" } },
-    ];
+      ],
+    });
+  }
+
+  if (filters.tag) {
+    where.keywords = {
+      has: String(filters.tag).trim(),
+    };
+  }
+
+  if (filters.signalKeywords?.length) {
+    andConditions.push({
+      OR: filters.signalKeywords.map((keyword) => ({
+        OR: [
+          { title: { contains: keyword, mode: "insensitive" } },
+          { source: { contains: keyword, mode: "insensitive" } },
+          { feedName: { contains: keyword, mode: "insensitive" } },
+          { summary: { contains: keyword, mode: "insensitive" } },
+          { summaryShort: { contains: keyword, mode: "insensitive" } },
+          { contentSnippet: { contains: keyword, mode: "insensitive" } },
+          { normalizedTitle: { contains: keyword, mode: "insensitive" } },
+        ],
+      })),
+    });
+  }
+
+  if (andConditions.length) {
+    where.AND = andConditions;
   }
 
   return where;

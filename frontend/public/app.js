@@ -894,6 +894,12 @@ const state = {
     totalAvailable: 0,
     loadedInFrontend: 0,
   },
+  remoteQuery: {
+    activeKey: "",
+    totalCount: 0,
+    page: 1,
+    limit: MAX_ARTICLES_IN_MEMORY,
+  },
 };
 
 const runtime = {
@@ -924,6 +930,10 @@ const runtime = {
   articlesByFeedId: new Map(),
   groupedFeedCache: new Map(),
   articleDataRevision: 0,
+  backendArticleQueryCache: new Map(),
+  backendArticleQueryRequestId: 0,
+  backendArticleQueryActiveRequestId: 0,
+  backendArticleQueryLoading: false,
   paginationContextKey: "",
   scheduledRenderFrame: 0,
   scheduledRenderTimeout: 0,
@@ -1294,6 +1304,7 @@ function rebuildArticleFeedIndexes() {
 
 function clearFeedRenderCaches() {
   runtime.groupedFeedCache = new Map();
+  runtime.backendArticleQueryCache = new Map();
 }
 
 function getFeedRenderFilterSignature() {
@@ -10242,6 +10253,119 @@ function renderSkeletons() {
     .join("");
 }
 
+function shouldUseBackendArticleQuery() {
+  return Boolean(
+    !state.filters.articleIds?.length &&
+    !state.filters.dmvFeedId &&
+    !state.filters.canadaDmvFeedPath &&
+    !state.filters.canadaDmvAll &&
+    (
+      state.filters.feedId ||
+      state.filters.topic ||
+      state.filters.tag ||
+      state.filters.signalCategory ||
+      state.filters.search ||
+      state.filters.date
+    )
+  );
+}
+
+function getBackendArticleQueryKey() {
+  return JSON.stringify({
+    feedId: state.filters.feedId || "",
+    topic: state.filters.topic || "",
+    tag: state.filters.tag || "",
+    signal: state.filters.signalCategory || "",
+    search: state.filters.search || "",
+    date: state.filters.date || "",
+  });
+}
+
+function getBackendArticleQueryParams() {
+  const params = new URLSearchParams();
+  params.set("includePagination", "true");
+  params.set("showDuplicates", "true");
+  params.set("limit", String(MAX_ARTICLES_IN_MEMORY));
+  params.set("page", "1");
+
+  const resolvedFeed = state.filters.feedId ? resolveFeedByIdentity(state.filters.feedId) : null;
+  if (resolvedFeed?.id) {
+    params.set("feedId", String(resolvedFeed.id));
+  } else if (state.filters.feedId) {
+    params.set("feed", state.filters.feedId);
+  }
+
+  if (state.filters.topic) {
+    params.set("topic", state.filters.topic);
+  }
+  if (state.filters.tag) {
+    params.set("tag", state.filters.tag);
+  }
+  if (state.filters.signalCategory) {
+    params.set("signal", state.filters.signalCategory);
+  }
+  if (state.filters.search) {
+    params.set("search", state.filters.search);
+  }
+  if (state.filters.date) {
+    params.set("date", state.filters.date);
+  }
+
+  return params;
+}
+
+async function ensureBackendArticleQueryData() {
+  if (!shouldUseBackendArticleQuery()) {
+    runtime.backendArticleQueryLoading = false;
+    state.remoteQuery.activeKey = "";
+    return null;
+  }
+
+  const queryKey = getBackendArticleQueryKey();
+  if (runtime.backendArticleQueryCache.has(queryKey)) {
+    const cached = runtime.backendArticleQueryCache.get(queryKey);
+    state.remoteQuery = {
+      activeKey: queryKey,
+      totalCount: cached.totalCount,
+      page: 1,
+      limit: MAX_ARTICLES_IN_MEMORY,
+    };
+    return cached;
+  }
+
+  const requestId = ++runtime.backendArticleQueryRequestId;
+  runtime.backendArticleQueryActiveRequestId = requestId;
+  runtime.backendArticleQueryLoading = true;
+  renderSkeletons();
+  if (elements.resultsCount) {
+    elements.resultsCount.textContent = "Loading articles...";
+  }
+
+  const response = await apiRequest(`/api/articles?${getBackendArticleQueryParams().toString()}`);
+  if (requestId !== runtime.backendArticleQueryActiveRequestId) {
+    return null;
+  }
+
+  const normalizedArticles = (Array.isArray(response?.items) ? response.items : Array.isArray(response?.articles) ? response.articles : [])
+    .slice(0, MAX_ARTICLES_IN_MEMORY)
+    .map(normalizeLoadedArticle);
+  const totalCount = Number(response?.pagination?.total ?? response?.totalCount) || normalizedArticles.length;
+  const payload = {
+    queryKey,
+    articles: normalizedArticles,
+    totalCount,
+  };
+  runtime.backendArticleQueryCache.set(queryKey, payload);
+  state.remoteQuery = {
+    activeKey: queryKey,
+    totalCount,
+    page: 1,
+    limit: MAX_ARTICLES_IN_MEMORY,
+  };
+  runtime.backendArticleQueryLoading = false;
+  return payload;
+}
+
 function getPaginationContextKey() {
   return JSON.stringify({
     dashboardMode: state.dashboardMode,
@@ -10674,6 +10798,26 @@ function renderArticles() {
   try {
     intelligenceTime("renderArticles:filter-group");
     syncPaginationContext();
+    const useBackendQuery = shouldUseBackendArticleQuery();
+    if (useBackendQuery) {
+      const queryKey = getBackendArticleQueryKey();
+      const cachedQuery = runtime.backendArticleQueryCache.get(queryKey);
+      if (!cachedQuery) {
+        if (!runtime.backendArticleQueryLoading) {
+          void ensureBackendArticleQueryData()
+            .then((result) => {
+              if (result) {
+                scheduleRenderArticles("backend-article-query-ready", { mode: "frame" });
+              }
+            })
+            .catch((error) => {
+              runtime.backendArticleQueryLoading = false;
+              elements.resultsCount.textContent = error?.message || "Failed to load filtered articles.";
+            });
+        }
+        return;
+      }
+    }
     let articles;
     const shouldIgnoreFeedIdForGrouping = Boolean(state.filters.feedId) && !state.filters.date;
     const totalRawArticles = Array.isArray(state.articles) ? state.articles.length : 0;
@@ -10685,7 +10829,18 @@ function renderArticles() {
     let feedDebugRawMatches = [];
     let feedDebugAfterRelevanceMatches = [];
 
-    if (activeFeedId && !state.filters.date) {
+    if (useBackendQuery) {
+      const cachedQuery = runtime.backendArticleQueryCache.get(getBackendArticleQueryKey()) || {
+        articles: [],
+        totalCount: 0,
+      };
+      filteredRawArticles = cachedQuery.articles
+        .filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
+        .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+      const groupedArticles = groupArticlesByEvent(filteredRawArticles);
+      groupedArticlesCount = groupedArticles.length;
+      articles = groupedArticles;
+    } else if (activeFeedId && !state.filters.date) {
       const cachedFeedResult = getCachedGroupedFeedResult(activeFeedId);
       feedDebugRawMatches = cachedFeedResult.rawMatches;
       feedDebugAfterRelevanceMatches = cachedFeedResult.filteredMatches;
@@ -10728,6 +10883,10 @@ function renderArticles() {
     syncFilterUx();
     updateArticleFilterContext(articles);
     const articlePagination = getPaginatedItems(articles);
+    if (useBackendQuery && Number(state.remoteQuery.totalCount) > articlePagination.totalCount) {
+      articlePagination.totalCount = Number(state.remoteQuery.totalCount);
+      articlePagination.totalPages = Math.max(1, Math.ceil(articlePagination.totalCount / articlePagination.pageSize));
+    }
     const pageArticles = Array.isArray(articlePagination.items)
       ? articlePagination.items.slice(0, ARTICLE_RENDER_PAGE_SIZE)
       : [];
