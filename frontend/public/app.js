@@ -890,6 +890,10 @@ const state = {
     page: 1,
     pageSize: ARTICLE_RENDER_PAGE_SIZE,
   },
+  articleStats: {
+    totalAvailable: 0,
+    loadedInFrontend: 0,
+  },
 };
 
 const runtime = {
@@ -1984,7 +1988,7 @@ function getSummaryMetrics() {
       state.feeds.map((feed) => String(feed.topic || "").trim()).filter(Boolean)
     ).size,
     articlesToday: realArticles.filter((article) => toDate(article.pubDate) >= startOfToday).length,
-    totalArticles: realArticles.length,
+    totalArticles: Number(state.articleStats.totalAvailable) || realArticles.length,
   };
 }
 
@@ -11020,14 +11024,17 @@ async function loadAllArticles() {
     `/api/articles?includePagination=true&showDuplicates=true&limit=${MAX_ARTICLES_IN_MEMORY}&page=1`
   );
   const items = Array.isArray(response?.items) ? response.items : [];
-  return items
-    .slice()
-    .sort((a, b) => new Date(b?.pubDate || 0) - new Date(a?.pubDate || 0))
-    .slice(0, MAX_ARTICLES_IN_MEMORY);
+  return {
+    totalCount: Number(response?.pagination?.total) || items.length,
+    items: items
+      .slice()
+      .sort((a, b) => new Date(b?.pubDate || 0) - new Date(a?.pubDate || 0))
+      .slice(0, MAX_ARTICLES_IN_MEMORY),
+  };
 }
 
 async function loadSnapshot() {
-  const [feeds, articles, dmvCatalog] = await Promise.all([
+  const [feeds, articleResponse, dmvCatalog] = await Promise.all([
     apiRequest("/api/feeds"),
     loadAllArticles(),
     apiRequest("/api/dmv-catalog"),
@@ -11036,15 +11043,20 @@ async function loadSnapshot() {
   runtime.articlePairComputationCache.clear();
   state.feeds = feeds;
   rebuildFeedLookupCaches();
-  const normalizedArticles = articles
+  const normalizedArticles = (articleResponse?.items || [])
     .slice(0, MAX_ARTICLES_IN_MEMORY)
     .map(normalizeLoadedArticle);
 
   state.articles = normalizedArticles;
+  state.articleStats = {
+    totalAvailable: Number(articleResponse?.totalCount) || normalizedArticles.length,
+    loadedInFrontend: normalizedArticles.length,
+  };
   runtime.articleDataRevision += 1;
   rebuildArticleFeedIndexes();
   clearFeedRenderCaches();
   debugPerformanceLog("[memory]", {
+    totalArticlesAvailable: state.articleStats.totalAvailable,
     articleCountInMemory: state.articles.length,
     feedCount: state.feeds.length,
     articleCacheSize: runtime.articleComputationCache.size,
