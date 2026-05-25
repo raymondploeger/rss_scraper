@@ -85,6 +85,9 @@ const PERSONAL_DASHBOARD_MODES = [
 const PERSONAL_DASHBOARD_MODE_MAP = new Map(
   PERSONAL_DASHBOARD_MODES.map((mode) => [mode.id, mode])
 );
+const SPECIALIST_SOURCE_INTERESTS = {
+  banknotes: ["banknotenews", "notafilia", "mriguide"],
+};
 const BANKNOTE_PERSONAL_EXCLUDES = [
   "digital identity",
   "digital id",
@@ -135,7 +138,18 @@ const PERSONAL_DASHBOARD_GROUPS = [
     label: "Banknote Intelligence",
     baseExclude: BANKNOTE_PERSONAL_EXCLUDES,
     interests: [
-      { id: "banknotes", label: "Banknotes", strong: ["banknote", "banknotes", "currency note", "note issuance"], weak: ["cash", "payment"], topicTypes: ["banknote"], eventTypes: ["new_banknote_series", "banknote_redesign", "banknote_withdrawal"] },
+      {
+        id: "banknotes",
+        label: "Banknotes",
+        strong: ["banknote", "banknotes", "currency note", "note issuance"],
+        weak: ["cash", "payment"],
+        topicSignals: ["banknotes"],
+        tagSignals: ["banknotes"],
+        sourceSignals: ["banknotenews", "notafilia", "mriguide"],
+        specialistSources: SPECIALIST_SOURCE_INTERESTS.banknotes,
+        topicTypes: ["banknote"],
+        eventTypes: ["new_banknote_series", "banknote_redesign", "banknote_withdrawal"],
+      },
       { id: "polymer", label: "Polymer", strong: ["polymer note", "polymer banknote", "polymer substrate"], weak: ["polymer", "substrate"], exclude: ["polycarbonate id card"], topicTypes: ["banknote"], eventTypes: ["polymer_migration", "banknote_redesign"] },
       { id: "substrate", label: "Substrate", strong: ["substrate migration", "polymer substrate", "paper substrate"], weak: ["substrate"], topicTypes: ["banknote"], eventTypes: ["polymer_migration", "security_feature_update"] },
       { id: "security_features", label: "Security features", strong: ["security thread", "watermark", "hologram", "uv feature", "anti-counterfeit feature"], weak: ["security feature", "security features"], topicTypes: ["banknote"], eventTypes: ["security_feature_update", "banknote_redesign"], signalIds: ["security-features", "counterfeit"] },
@@ -6761,6 +6775,25 @@ function getPersonalInterestContext(article) {
       .map((signalId) => getSignalCategoryById(signalId)?.label || signalId)
       .join(" ")
       .toLowerCase();
+    const articleDomain = getFeedMatchDomain(
+      article?.canonicalLink || article?.link || article?.feedUrl || ""
+    ).toLowerCase();
+    const sourceIdentityText = [
+      article?.source,
+      article?.sourceName,
+      article?.feedTitle,
+      getFeedName(article?.feedId),
+      articleDomain,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    const normalizedTopic = normalizeFilterTag(article?.topic || "");
+    const normalizedTags = normalizeKeywordList([
+      ...(Array.isArray(article?.tags) ? article.tags : []),
+      ...(Array.isArray(article?.keywords) ? article.keywords : []),
+      ...getArticleFilterTags(article),
+    ]);
 
     return {
       titleText: [article?.title, article?.normalizedTitle].filter(Boolean).join(" ").toLowerCase(),
@@ -6792,6 +6825,10 @@ function getPersonalInterestContext(article) {
         .join(" ")
         .toLowerCase(),
       bodyText: [article?.summary, article?.summaryShort, article?.contentSnippet].filter(Boolean).join(" ").toLowerCase(),
+      sourceIdentityText,
+      articleDomain,
+      normalizedTopic,
+      normalizedTags,
       topicType: String(article?.topicType || ""),
       signalIds,
       eventType: String(normalizedEvent?.canonicalEventType || ""),
@@ -6802,6 +6839,11 @@ function getPersonalInterestContext(article) {
 
 function countPersonalInterestMatches(text, keywords = []) {
   return keywords.filter((keyword) => textMatchesKeyword(text, keyword)).length;
+}
+
+function countPersonalInterestListMatches(values = [], keywords = []) {
+  const normalizedValues = new Set((Array.isArray(values) ? values : []).map(normalizeFilterTag).filter(Boolean));
+  return keywords.filter((keyword) => normalizedValues.has(normalizeFilterTag(keyword))).length;
 }
 
 function getPersonalInterestRelevance(article, interestId) {
@@ -6831,11 +6873,15 @@ function getPersonalInterestRelevance(article, interestId) {
     const titleExcludeHits = countPersonalInterestMatches(context.titleText, excludeKeywords);
     const metadataExcludeHits = countPersonalInterestMatches(context.metadataText, excludeKeywords);
     const bodyExcludeHits = countPersonalInterestMatches(context.bodyText, excludeKeywords);
+    const sourceStrongHits = countPersonalInterestMatches(context.sourceIdentityText, Array.isArray(interest.sourceSignals) ? interest.sourceSignals : []);
+    const topicStrongHits = countPersonalInterestMatches(context.normalizedTopic, Array.isArray(interest.topicSignals) ? interest.topicSignals : []);
+    const tagStrongListHits = countPersonalInterestListMatches(context.normalizedTags, Array.isArray(interest.tagSignals) ? interest.tagSignals : []);
     const strongHits = titleStrongHits + tagStrongHits + metadataStrongHits + bodyStrongHits;
     let score = 0;
 
     score += (titleStrongHits * 6) + (tagStrongHits * 5) + (metadataStrongHits * 4) + (bodyStrongHits * 2);
     score += (titleWeakHits * 2) + (tagWeakHits * 2) + (metadataWeakHits * 1) + (bodyWeakHits * 1);
+    score += (sourceStrongHits * 7) + (topicStrongHits * 7) + (tagStrongListHits * 6);
     score -= (titleExcludeHits * 10) + (metadataExcludeHits * 8) + (bodyExcludeHits * 4);
 
     if (Array.isArray(interest.topicTypes) && interest.topicTypes.includes(context.topicType)) {
@@ -6859,10 +6905,18 @@ function getPersonalInterestRelevance(article, interestId) {
     if (interest.groupId === "security_printing" && ["banknote", "identity_document", "fraud_security"].includes(context.domain)) {
       score += 3;
     }
+    if (Array.isArray(interest.specialistSources) && interest.specialistSources.some((sourceKey) =>
+      textMatchesKeyword(context.sourceIdentityText, sourceKey) || context.articleDomain.includes(sourceKey)
+    )) {
+      score += 9;
+    }
+    if (interest.id === "banknotes" && (context.normalizedTopic === "banknotes" || context.normalizedTags.includes("banknotes"))) {
+      score += 10;
+    }
 
     return {
       score,
-      strongHits,
+      strongHits: strongHits + sourceStrongHits + topicStrongHits + tagStrongListHits,
       level: score >= 12 ? "strong" : score >= 7 ? "moderate" : score > 0 ? "weak" : "none",
     };
   });
