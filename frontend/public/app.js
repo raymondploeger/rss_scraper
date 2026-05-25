@@ -75,71 +75,128 @@ const ARTICLE_RENDER_PAGE_SIZE = 30;
 const TAG_LIST_STORAGE_KEY = "dashboardTagList";
 const KEYWORD_FILTER_STORAGE_KEY = "dashboardKeywordFilters";
 const PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY = "personalDashboardInterests";
+const PERSONAL_DASHBOARD_MODE_STORAGE_KEY = "personalDashboardMode";
 const NOISE_KEYWORDS_EXPANDED_STORAGE_KEY = "noiseKeywordsExpanded";
+const PERSONAL_DASHBOARD_MODES = [
+  { id: "strict", label: "Strict", threshold: 12, requireStrongMatch: true },
+  { id: "balanced", label: "Balanced", threshold: 7, requireStrongMatch: false },
+  { id: "broad", label: "Broad", threshold: 3, requireStrongMatch: false },
+];
+const PERSONAL_DASHBOARD_MODE_MAP = new Map(
+  PERSONAL_DASHBOARD_MODES.map((mode) => [mode.id, mode])
+);
+const BANKNOTE_PERSONAL_EXCLUDES = [
+  "digital identity",
+  "digital id",
+  "eid",
+  "biometric",
+  "biometrics",
+  "passport",
+  "passports",
+  "id card",
+  "identity card",
+  "residence permit",
+  "kyc",
+  "wallet onboarding",
+  "identity verification",
+  "authentication",
+];
+const IDENTITY_DOCUMENT_PERSONAL_EXCLUDES = [
+  "banknote",
+  "banknotes",
+  "currency redesign",
+  "central bank",
+  "commemorative note",
+  "polymer note",
+  "security thread",
+  "cryptocurrency",
+  "digital token",
+];
+const DIGITAL_ID_PERSONAL_EXCLUDES = [
+  "commemorative banknote",
+  "currency redesign",
+  "central bank issuance",
+  "banknote withdrawal",
+  "demonetisation",
+  "demonetization",
+  "counterfeit banknotes",
+  "security thread",
+];
+const SECURITY_PRINTING_PERSONAL_EXCLUDES = [
+  "tourist guide",
+  "seo travel",
+  "travel hacks",
+  "wallet onboarding",
+  "stock market",
+];
 const PERSONAL_DASHBOARD_GROUPS = [
   {
     id: "banknote_intelligence",
     label: "Banknote Intelligence",
+    baseExclude: BANKNOTE_PERSONAL_EXCLUDES,
     interests: [
-      { id: "banknotes", label: "Banknotes", keywords: ["banknote", "banknotes", "currency note", "notes"] },
-      { id: "polymer", label: "Polymer", keywords: ["polymer", "polymer note", "polymer banknote"] },
-      { id: "substrate", label: "Substrate", keywords: ["substrate", "paper substrate", "polymer substrate"] },
-      { id: "security_features", label: "Security features", keywords: ["security feature", "security features", "watermark", "hologram", "uv feature"] },
-      { id: "security_printing", label: "Security printing", keywords: ["security printing", "security printer", "secure print"] },
-      { id: "redesign", label: "Redesign", keywords: ["redesign", "new design", "new portrait", "new artwork"] },
-      { id: "rollout", label: "Rollout", keywords: ["rollout", "launch", "introduction", "implementation"] },
-      { id: "release", label: "Release", keywords: ["release", "issued", "issue", "launch"] },
-      { id: "withdrawal", label: "Withdrawal", keywords: ["withdrawal", "withdrawn", "demonetisation", "demonetization", "legal tender deadline", "withdrawn from circulation"] },
-      { id: "counterfeit", label: "Counterfeit", keywords: ["counterfeit", "fake note", "forged banknote", "forged note", "counterfeit banknote"] },
-      { id: "central_bank", label: "Central bank", keywords: ["central bank", "national bank", "reserve bank", "issuer bank"] },
+      { id: "banknotes", label: "Banknotes", strong: ["banknote", "banknotes", "currency note", "note issuance"], weak: ["cash", "payment"], topicTypes: ["banknote"], eventTypes: ["new_banknote_series", "banknote_redesign", "banknote_withdrawal"] },
+      { id: "polymer", label: "Polymer", strong: ["polymer note", "polymer banknote", "polymer substrate"], weak: ["polymer", "substrate"], exclude: ["polycarbonate id card"], topicTypes: ["banknote"], eventTypes: ["polymer_migration", "banknote_redesign"] },
+      { id: "substrate", label: "Substrate", strong: ["substrate migration", "polymer substrate", "paper substrate"], weak: ["substrate"], topicTypes: ["banknote"], eventTypes: ["polymer_migration", "security_feature_update"] },
+      { id: "security_features", label: "Security features", strong: ["security thread", "watermark", "hologram", "uv feature", "anti-counterfeit feature"], weak: ["security feature", "security features"], topicTypes: ["banknote"], eventTypes: ["security_feature_update", "banknote_redesign"], signalIds: ["security-features", "counterfeit"] },
+      { id: "security_printing", label: "Security printing", strong: ["security printing", "security printer", "banknote printing"], weak: ["secure print"], topicTypes: ["banknote"], eventTypes: ["banknote_production", "security_feature_update"] },
+      { id: "redesign", label: "Redesign", strong: ["banknote redesign", "new banknote design", "new family", "new portrait", "new artwork"], weak: ["redesign", "new design"], topicTypes: ["banknote"], eventTypes: ["banknote_redesign", "new_banknote_series"], signalIds: ["redesign"] },
+      { id: "rollout", label: "Rollout", strong: ["new banknote launch", "banknote rollout", "central bank launch", "new series launch", "circulation rollout"], weak: ["rollout", "launch", "introduction"], topicTypes: ["banknote"], eventTypes: ["new_banknote_series", "banknote_redesign"], signalIds: ["rollout", "new-releases"] },
+      { id: "release", label: "Release", strong: ["new banknote released", "issued new banknote", "new note issue", "commemorative note issue"], weak: ["release", "issued", "issue"], topicTypes: ["banknote"], eventTypes: ["new_banknote_series", "commemorative_issue"], signalIds: ["new-releases", "commemorative"] },
+      { id: "withdrawal", label: "Withdrawal", strong: ["withdrawn from circulation", "legal tender deadline", "cease legal tender", "demonetisation", "demonetization"], weak: ["withdrawal", "withdrawn", "retired"], topicTypes: ["banknote"], eventTypes: ["banknote_withdrawal", "demonetisation"], signalIds: ["withdrawal"] },
+      { id: "counterfeit", label: "Counterfeit", strong: ["counterfeit banknote", "counterfeit notes", "fake note", "forged banknote", "police warning"], weak: ["counterfeit", "forged note"], topicTypes: ["banknote"], eventTypes: ["counterfeit_banknotes", "central_bank_warning"], signalIds: ["counterfeit"] },
+      { id: "central_bank", label: "Central bank", strong: ["central bank", "national bank", "reserve bank", "bank of england", "rbi", "ecb"], weak: ["issuer bank"], topicTypes: ["banknote"], eventTypes: ["central_bank_warning", "banknote_withdrawal", "new_banknote_series"] },
     ],
   },
   {
     id: "identity_documents",
     label: "Identity Documents",
+    baseExclude: IDENTITY_DOCUMENT_PERSONAL_EXCLUDES,
     interests: [
-      { id: "passports", label: "Passports", keywords: ["passport", "passports", "travel document"] },
-      { id: "id_cards", label: "ID cards", keywords: ["id card", "identity card", "national id"] },
-      { id: "residence_permits", label: "Residence permits", keywords: ["residence permit", "residence permits", "permit card"] },
-      { id: "drivers_licenses", label: "Driver's licenses", keywords: ["driver license", "driver's license", "driving licence", "driving license"] },
-      { id: "visas", label: "Visas", keywords: ["visa", "visas", "visa policy"] },
-      { id: "laminate", label: "Laminate", keywords: ["laminate", "laminated document"] },
-      { id: "polycarbonate", label: "Polycarbonate", keywords: ["polycarbonate", "pc datapage", "id card substrate"] },
-      { id: "issuance", label: "Issuance", keywords: ["issuance", "issued", "renewal", "passport office", "document issuance"] },
-      { id: "fraud", label: "Fraud", keywords: ["fraud", "fake passport", "forged passport", "forged document", "document fraud", "counterfeit document"] },
-      { id: "icao", label: "ICAO", keywords: ["icao", "mrz", "doc 9303", "passport verification"] },
-      { id: "border_control", label: "Border control", keywords: ["border control", "border checks", "immigration control", "customs", "entry exit"] },
+      { id: "passports", label: "Passports", strong: ["passport", "passports", "travel document"], weak: ["passport office"], topicTypes: ["travel_passport", "identity_document"], eventTypes: ["passport_issuance", "passport_renewal", "passport_revocation", "passport_fraud"] },
+      { id: "id_cards", label: "ID cards", strong: ["id card", "identity card", "national id"], weak: ["card issuance"], topicTypes: ["identity_document", "digital_identity"], eventTypes: ["identity_infrastructure"] },
+      { id: "residence_permits", label: "Residence permits", strong: ["residence permit", "residence permits", "permit card"], weak: ["permit issuance"], topicTypes: ["identity_document"], eventTypes: ["identity_infrastructure"] },
+      { id: "drivers_licenses", label: "Driver's licenses", strong: ["driver license", "driver's license", "driving licence", "driving license"], weak: ["license card"], topicTypes: ["dmv_driver_license"], eventTypes: ["identity_infrastructure"] },
+      { id: "visas", label: "Visas", strong: ["visa", "visas", "visa policy"], weak: ["travel authorization"], topicTypes: ["travel_passport", "identity_document"], eventTypes: ["visa_policy", "etias_event"] },
+      { id: "laminate", label: "Laminate", strong: ["laminate", "laminated document", "security laminate"], weak: ["laminated"], topicTypes: ["identity_document"], eventTypes: ["document_security_technology"] },
+      { id: "polycarbonate", label: "Polycarbonate", strong: ["polycarbonate", "pc datapage", "polycarbonate card", "laser engraved polycarbonate"], weak: ["datapage", "card substrate"], topicTypes: ["identity_document"], eventTypes: ["document_security_technology", "identity_infrastructure"] },
+      { id: "issuance", label: "Issuance", strong: ["document issuance", "passport issuance", "passport renewal", "passport office", "issuance disruption"], weak: ["issuance", "renewal", "issued"], topicTypes: ["travel_passport", "identity_document"], eventTypes: ["passport_issuance", "passport_renewal"], signalIds: ["regulations", "delay"] },
+      { id: "fraud", label: "Fraud", strong: ["fake passport", "forged passport", "forged document", "document fraud", "counterfeit document"], weak: ["fraud", "passport fraud"], topicTypes: ["travel_passport", "identity_document"], eventTypes: ["passport_fraud", "forged_document", "identity_theft"], signalIds: ["fraud", "criminal-misuse", "identity-theft"] },
+      { id: "icao", label: "ICAO", strong: ["icao", "doc 9303", "mrz", "passport verification"], weak: ["travel document security"], topicTypes: ["travel_passport", "identity_document"], eventTypes: ["document_security_technology"], signalIds: ["technology"] },
+      { id: "border_control", label: "Border control", strong: ["border control", "border checks", "immigration control", "entry exit system", "border agency"], weak: ["customs", "entry exit"], topicTypes: ["travel_passport", "identity_document"], eventTypes: ["border_delay", "border_rollout", "ees_event", "etias_event"], signalIds: ["border-control", "delay", "rollout"] },
     ],
   },
   {
     id: "digital_identity_biometrics",
     label: "Digital Identity & Biometrics",
+    baseExclude: DIGITAL_ID_PERSONAL_EXCLUDES,
     interests: [
-      { id: "digital_identity", label: "Digital identity", keywords: ["digital identity", "digital id", "mobile id", "identity wallet"] },
-      { id: "biometrics", label: "Biometrics", keywords: ["biometric", "biometrics", "face match", "fingerprint"] },
-      { id: "eid", label: "eID", keywords: ["eid", "e-id", "electronic identity"] },
-      { id: "digital_wallet", label: "Digital wallet", keywords: ["digital wallet", "identity wallet", "wallet"] },
-      { id: "kyc", label: "KYC", keywords: ["kyc", "know your customer", "customer due diligence"] },
-      { id: "onboarding", label: "Onboarding", keywords: ["onboarding", "remote onboarding", "digital onboarding"] },
-      { id: "liveness", label: "Liveness", keywords: ["liveness", "liveness detection", "presentation attack"] },
-      { id: "artificial_intelligence", label: "Artificial intelligence", keywords: ["artificial intelligence", "ai", "machine learning"] },
-      { id: "identity_verification", label: "Identity verification", keywords: ["identity verification", "document verification", "id verification"] },
-      { id: "authentication", label: "Authentication", keywords: ["authentication", "authenticator", "login verification"] },
+      { id: "digital_identity", label: "Digital identity", strong: ["digital identity", "digital id", "mobile id", "identity wallet"], weak: ["identity platform"], topicTypes: ["digital_identity"], eventTypes: ["digital_id_regulation", "identity_infrastructure"], signalIds: ["technology", "regulations"] },
+      { id: "biometrics", label: "Biometrics", strong: ["biometric", "biometrics", "face match", "fingerprint"], weak: ["biometric check"], topicTypes: ["digital_identity", "travel_passport"], eventTypes: ["biometric_border_check", "identity_infrastructure"], signalIds: ["biometric"] },
+      { id: "eid", label: "eID", strong: ["eid", "e-id", "electronic identity", "electronic id"], weak: ["digital id"], topicTypes: ["digital_identity"], eventTypes: ["digital_id_regulation", "identity_infrastructure"] },
+      { id: "digital_wallet", label: "Digital wallet", strong: ["digital wallet", "identity wallet", "wallet framework"], weak: ["wallet"], exclude: ["crypto wallet"], topicTypes: ["digital_identity"], eventTypes: ["digital_id_regulation", "identity_infrastructure"] },
+      { id: "kyc", label: "KYC", strong: ["kyc", "know your customer", "customer due diligence"], weak: ["onboarding checks"], topicTypes: ["digital_identity"], eventTypes: ["digital_id_regulation"], signalIds: ["regulations"] },
+      { id: "onboarding", label: "Onboarding", strong: ["remote onboarding", "digital onboarding", "identity onboarding"], weak: ["onboarding"], topicTypes: ["digital_identity"], eventTypes: ["identity_infrastructure"] },
+      { id: "liveness", label: "Liveness", strong: ["liveness detection", "presentation attack detection", "liveness"], weak: ["face match"], topicTypes: ["digital_identity"], eventTypes: ["identity_infrastructure"], signalIds: ["technology"] },
+      { id: "artificial_intelligence", label: "Artificial intelligence", strong: ["artificial intelligence", "ai-assisted identity", "machine learning"], weak: ["ai", "machine learning"], topicTypes: ["digital_identity"], eventTypes: ["identity_infrastructure"] },
+      { id: "identity_verification", label: "Identity verification", strong: ["identity verification", "document verification", "id verification"], weak: ["verification platform"], topicTypes: ["digital_identity", "identity_document"], eventTypes: ["identity_infrastructure", "document_security_technology"] },
+      { id: "authentication", label: "Authentication", strong: ["authentication", "multi-factor authentication", "login verification"], weak: ["authenticator"], topicTypes: ["digital_identity"], eventTypes: ["identity_infrastructure"] },
     ],
   },
   {
     id: "security_printing",
     label: "Security Printing",
+    baseExclude: SECURITY_PRINTING_PERSONAL_EXCLUDES,
     interests: [
-      { id: "security_printing_core", label: "Security printing", keywords: ["security printing", "secure printing", "security printer"] },
-      { id: "security_inks", label: "Security inks", keywords: ["security ink", "security inks", "optically variable ink"] },
-      { id: "micro_optics", label: "Micro optics", keywords: ["micro optics", "micro-optics", "micro optical"] },
-      { id: "holography", label: "Holography", keywords: ["holography", "holographic", "hologram"] },
-      { id: "ovd", label: "OVD", keywords: ["ovd", "optically variable device"] },
-      { id: "intaglio", label: "Intaglio", keywords: ["intaglio", "engraved printing"] },
-      { id: "anti_counterfeit", label: "Anti-counterfeit", keywords: ["anti-counterfeit", "anti counterfeit", "counterfeit prevention"] },
-      { id: "personalization", label: "Personalization", keywords: ["personalization", "secure personalization", "card personalization"] },
-      { id: "secure_documents", label: "Secure documents", keywords: ["secure documents", "document security", "secure document"] },
+      { id: "security_printing_core", label: "Security printing", strong: ["security printing", "secure printing", "security printer"], weak: ["document printing"], eventTypes: ["banknote_production", "document_security_technology"] },
+      { id: "security_inks", label: "Security inks", strong: ["security ink", "security inks", "optically variable ink"], weak: ["specialty ink"], eventTypes: ["security_feature_update", "document_security_technology"] },
+      { id: "micro_optics", label: "Micro optics", strong: ["micro optics", "micro-optics", "micro optical"], weak: ["optical security"], eventTypes: ["security_feature_update"] },
+      { id: "holography", label: "Holography", strong: ["holography", "holographic", "hologram"], weak: ["diffractive"], eventTypes: ["security_feature_update", "document_security_technology"] },
+      { id: "ovd", label: "OVD", strong: ["ovd", "optically variable device"], weak: ["optically variable"], eventTypes: ["security_feature_update", "document_security_technology"] },
+      { id: "intaglio", label: "Intaglio", strong: ["intaglio", "engraved printing"], weak: ["engraved"], eventTypes: ["banknote_production", "security_feature_update"] },
+      { id: "anti_counterfeit", label: "Anti-counterfeit", strong: ["anti-counterfeit", "anti counterfeit", "counterfeit prevention"], weak: ["authentication feature"], eventTypes: ["security_feature_update", "document_security_technology"], signalIds: ["counterfeit", "security-features"] },
+      { id: "personalization", label: "Personalization", strong: ["secure personalization", "card personalization", "document personalization"], weak: ["personalization"], eventTypes: ["document_security_technology", "identity_infrastructure"] },
+      { id: "secure_documents", label: "Secure documents", strong: ["secure documents", "document security", "secure document"], weak: ["travel document security"], eventTypes: ["document_security_technology"] },
     ],
   },
 ];
@@ -946,6 +1003,7 @@ const state = {
   personalDashboard: {
     interests: [],
     expandedGroups: PERSONAL_DASHBOARD_GROUPS.map((group) => group.id),
+    mode: "balanced",
   },
   filters: {
     search: "",
@@ -1036,6 +1094,7 @@ const elements = {
   tagManagerContent: document.getElementById("tag-manager-content"),
   tagManagerList: document.getElementById("tag-manager-list"),
   personalDashboard: document.getElementById("personal-dashboard"),
+  personalDashboardMode: document.getElementById("personal-dashboard-mode"),
   personalDashboardGroups: document.getElementById("personal-dashboard-groups"),
   personalDashboardInterests: document.getElementById("personal-dashboard-interests"),
   personalDashboardClear: document.getElementById("personal-dashboard-clear"),
@@ -1288,6 +1347,11 @@ function normalizePersonalDashboardInterestId(value) {
   return PERSONAL_DASHBOARD_INTEREST_MAP.has(normalizedValue) ? normalizedValue : "";
 }
 
+function normalizePersonalDashboardMode(value) {
+  const normalizedValue = String(value || "").trim().toLowerCase();
+  return PERSONAL_DASHBOARD_MODE_MAP.has(normalizedValue) ? normalizedValue : "balanced";
+}
+
 function normalizePersonalDashboardInterests(interests) {
   return Array.from(
     new Set((Array.isArray(interests) ? interests : []).map(normalizePersonalDashboardInterestId).filter(Boolean))
@@ -1295,7 +1359,9 @@ function normalizePersonalDashboardInterests(interests) {
 }
 
 function savePersonalDashboardPreferences() {
+  state.personalDashboard.mode = normalizePersonalDashboardMode(state.personalDashboard.mode);
   state.personalDashboard.interests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  window.localStorage.setItem(PERSONAL_DASHBOARD_MODE_STORAGE_KEY, state.personalDashboard.mode);
   window.localStorage.setItem(
     PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY,
     JSON.stringify(state.personalDashboard.interests)
@@ -1303,6 +1369,9 @@ function savePersonalDashboardPreferences() {
 }
 
 function loadPersonalDashboardPreferences() {
+  state.personalDashboard.mode = normalizePersonalDashboardMode(
+    window.localStorage.getItem(PERSONAL_DASHBOARD_MODE_STORAGE_KEY) || "balanced"
+  );
   try {
     const storedInterests = JSON.parse(
       window.localStorage.getItem(PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY) || "[]"
@@ -1315,6 +1384,8 @@ function loadPersonalDashboardPreferences() {
 
 function clearPersonalDashboardPreferences() {
   state.personalDashboard.interests = [];
+  state.personalDashboard.mode = "balanced";
+  window.localStorage.removeItem(PERSONAL_DASHBOARD_MODE_STORAGE_KEY);
   window.localStorage.removeItem(PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY);
 }
 
@@ -5495,6 +5566,12 @@ function primeArticleIntelligence(article) {
       governmentDocumentConfidence: getGovernmentDocumentConfidence(article),
       passportNoiseArticle: isPassportNoiseArticle(article),
       realTravelDocumentArticle: isRealTravelDocumentArticle(article),
+      personalInterestContext: getPersonalInterestContext(article),
+      personalInterestScores: Object.fromEntries(
+        PERSONAL_DASHBOARD_GROUPS.flatMap((group) =>
+          group.interests.map((interest) => [interest.id, getPersonalInterestRelevance(article, interest.id)])
+        )
+      ),
     };
 
     article._intelligence = intelligence;
@@ -6492,12 +6569,23 @@ function renderFeedOptions() {
 }
 
 function renderPersonalDashboard() {
-  if (!elements.personalDashboardGroups || !elements.personalDashboardInterests || !elements.personalDashboardClear) {
+  if (!elements.personalDashboardMode || !elements.personalDashboardGroups || !elements.personalDashboardInterests || !elements.personalDashboardClear) {
     return;
   }
 
+  state.personalDashboard.mode = normalizePersonalDashboardMode(state.personalDashboard.mode);
   state.personalDashboard.interests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const activeInterests = new Set(state.personalDashboard.interests);
+  elements.personalDashboardMode.innerHTML = PERSONAL_DASHBOARD_MODES.map((mode) => `
+    <button
+      type="button"
+      class="personal-dashboard-mode-button${state.personalDashboard.mode === mode.id ? " is-active" : ""}"
+      data-personal-mode="${escapeHtml(mode.id)}"
+      aria-pressed="${state.personalDashboard.mode === mode.id ? "true" : "false"}"
+    >
+      ${escapeHtml(mode.label)}
+    </button>
+  `).join("");
 
   elements.personalDashboardGroups.innerHTML = PERSONAL_DASHBOARD_GROUPS.map((group) => {
     const expanded = isPersonalDashboardGroupExpanded(group.id);
@@ -6579,6 +6667,18 @@ function setPersonalDashboardInterest(interestId, enabled) {
   scheduleRenderArticles("personal-dashboard-interest", { mode: "frame" });
 }
 
+function setPersonalDashboardMode(modeId) {
+  const normalizedMode = normalizePersonalDashboardMode(modeId);
+  if (state.personalDashboard.mode === normalizedMode) {
+    return;
+  }
+
+  state.personalDashboard.mode = normalizedMode;
+  savePersonalDashboardPreferences();
+  renderPersonalDashboard();
+  scheduleRenderArticles("personal-dashboard-mode", { mode: "frame" });
+}
+
 function getPersonalDashboardArticleText(article) {
   return getCachedArticleValue(article, "personalDashboardText", () =>
     [
@@ -6610,6 +6710,121 @@ function getPersonalDashboardArticleText(article) {
   );
 }
 
+function getPersonalInterestContext(article) {
+  return getCachedArticleValue(article, "personalInterestContext", () => {
+    const normalizedEvent = article?._intelligence?.normalizedEvent || normalizeIntelligenceEvent(article);
+    const signalIds = getArticleSignalCategories(article);
+    const signalLabels = signalIds
+      .map((signalId) => getSignalCategoryById(signalId)?.label || signalId)
+      .join(" ")
+      .toLowerCase();
+
+    return {
+      titleText: [article?.title, article?.normalizedTitle].filter(Boolean).join(" ").toLowerCase(),
+      tagText: [
+        Array.isArray(article?.tags) ? article.tags.join(" ") : "",
+        Array.isArray(article?.keywords) ? article.keywords.join(" ") : "",
+        getArticleFilterTags(article).join(" "),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase(),
+      metadataText: [
+        article?.topic,
+        article?.source,
+        article?.sourceName,
+        article?.feedTitle,
+        getFeedName(article?.feedId),
+        signalLabels,
+        normalizedEvent?.canonicalEventType,
+        normalizedEvent?.domain,
+        normalizedEvent?.action,
+        normalizedEvent?.documentType,
+        normalizedEvent?.currency,
+        normalizedEvent?.primaryEntity,
+        normalizedEvent?.authority,
+        normalizedEvent?.operationalContext,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase(),
+      bodyText: [article?.summary, article?.summaryShort, article?.contentSnippet].filter(Boolean).join(" ").toLowerCase(),
+      topicType: String(article?.topicType || ""),
+      signalIds,
+      eventType: String(normalizedEvent?.canonicalEventType || ""),
+      domain: String(normalizedEvent?.domain || ""),
+    };
+  });
+}
+
+function countPersonalInterestMatches(text, keywords = []) {
+  return keywords.filter((keyword) => textMatchesKeyword(text, keyword)).length;
+}
+
+function getPersonalInterestRelevance(article, interestId) {
+  return getCachedArticleValue(article, `personalInterestRelevance:${interestId}`, () => {
+    const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
+    if (!interest) {
+      return {
+        score: 0,
+        strongHits: 0,
+        level: "none",
+      };
+    }
+
+    const group = PERSONAL_DASHBOARD_GROUPS.find((item) => item.id === interest.groupId);
+    const context = getPersonalInterestContext(article);
+    const strongKeywords = Array.isArray(interest.strong) ? interest.strong : [];
+    const weakKeywords = Array.isArray(interest.weak) ? interest.weak : [];
+    const excludeKeywords = [...(Array.isArray(group?.baseExclude) ? group.baseExclude : []), ...(Array.isArray(interest.exclude) ? interest.exclude : [])];
+    const titleStrongHits = countPersonalInterestMatches(context.titleText, strongKeywords);
+    const tagStrongHits = countPersonalInterestMatches(context.tagText, strongKeywords);
+    const metadataStrongHits = countPersonalInterestMatches(context.metadataText, strongKeywords);
+    const bodyStrongHits = countPersonalInterestMatches(context.bodyText, strongKeywords);
+    const titleWeakHits = countPersonalInterestMatches(context.titleText, weakKeywords);
+    const tagWeakHits = countPersonalInterestMatches(context.tagText, weakKeywords);
+    const metadataWeakHits = countPersonalInterestMatches(context.metadataText, weakKeywords);
+    const bodyWeakHits = countPersonalInterestMatches(context.bodyText, weakKeywords);
+    const titleExcludeHits = countPersonalInterestMatches(context.titleText, excludeKeywords);
+    const metadataExcludeHits = countPersonalInterestMatches(context.metadataText, excludeKeywords);
+    const bodyExcludeHits = countPersonalInterestMatches(context.bodyText, excludeKeywords);
+    const strongHits = titleStrongHits + tagStrongHits + metadataStrongHits + bodyStrongHits;
+    let score = 0;
+
+    score += (titleStrongHits * 6) + (tagStrongHits * 5) + (metadataStrongHits * 4) + (bodyStrongHits * 2);
+    score += (titleWeakHits * 2) + (tagWeakHits * 2) + (metadataWeakHits * 1) + (bodyWeakHits * 1);
+    score -= (titleExcludeHits * 10) + (metadataExcludeHits * 8) + (bodyExcludeHits * 4);
+
+    if (Array.isArray(interest.topicTypes) && interest.topicTypes.includes(context.topicType)) {
+      score += 4;
+    }
+    if (Array.isArray(interest.eventTypes) && interest.eventTypes.includes(context.eventType)) {
+      score += 5;
+    }
+    if (Array.isArray(interest.signalIds) && interest.signalIds.some((signalId) => context.signalIds.includes(signalId))) {
+      score += 3;
+    }
+    if (interest.groupId === "banknote_intelligence" && context.domain === "banknote") {
+      score += 4;
+    }
+    if (interest.groupId === "identity_documents" && ["passport", "identity_document", "border_system"].includes(context.domain)) {
+      score += 4;
+    }
+    if (interest.groupId === "digital_identity_biometrics" && ["digital_identity", "identity_document"].includes(context.domain)) {
+      score += 4;
+    }
+    if (interest.groupId === "security_printing" && ["banknote", "identity_document", "fraud_security"].includes(context.domain)) {
+      score += 3;
+    }
+
+    return {
+      score,
+      strongHits,
+      level: score >= 12 ? "strong" : score >= 7 ? "moderate" : score > 0 ? "weak" : "none",
+    };
+  });
+}
+
 function articleMatchesPersonalInterests(article) {
   if (!hasActivePersonalDashboardPreferences()) {
     return true;
@@ -6620,13 +6835,10 @@ function articleMatchesPersonalInterests(article) {
     return true;
   }
 
-  const articleText = getPersonalDashboardArticleText(article);
+  const mode = PERSONAL_DASHBOARD_MODE_MAP.get(normalizePersonalDashboardMode(state.personalDashboard.mode)) || PERSONAL_DASHBOARD_MODE_MAP.get("balanced");
   return activeInterests.some((interestId) => {
-    const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
-    if (!interest) {
-      return false;
-    }
-    return interest.keywords.some((keyword) => textMatchesKeyword(articleText, keyword));
+    const relevance = article?._intelligence?.personalInterestScores?.[interestId] || getPersonalInterestRelevance(article, interestId);
+    return relevance.score >= mode.threshold && (!mode.requireStrongMatch || relevance.strongHits >= 1);
   });
 }
 
@@ -10647,6 +10859,7 @@ function getPaginationContextKey() {
     dashboardMode: state.dashboardMode,
     filters: state.filters,
     personalDashboardInterests: state.personalDashboard.interests,
+    personalDashboardMode: state.personalDashboard.mode,
     analyticsScope: state.analyticsScope,
     analyticsQualityFilter: state.analyticsQualityFilter,
   });
@@ -11778,6 +11991,19 @@ function bindEvents() {
       }
 
       setPersonalDashboardInterest(target.dataset.personalInterest || "", target.checked);
+    });
+  }
+
+  if (elements.personalDashboardMode) {
+    elements.personalDashboardMode.addEventListener("click", (event) => {
+      const target = event.target instanceof Element
+        ? event.target.closest("[data-personal-mode]")
+        : null;
+      if (!target) {
+        return;
+      }
+
+      setPersonalDashboardMode(target.dataset.personalMode || "");
     });
   }
 
