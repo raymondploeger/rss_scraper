@@ -74,7 +74,79 @@ const TAG_FILTER_MIN_COUNT = 0;
 const ARTICLE_RENDER_PAGE_SIZE = 30;
 const TAG_LIST_STORAGE_KEY = "dashboardTagList";
 const KEYWORD_FILTER_STORAGE_KEY = "dashboardKeywordFilters";
+const PERSONAL_DASHBOARD_PROFILES_STORAGE_KEY = "personalDashboardProfiles";
+const PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY = "personalDashboardInterests";
 const NOISE_KEYWORDS_EXPANDED_STORAGE_KEY = "noiseKeywordsExpanded";
+const PERSONAL_DASHBOARD_PROFILES = [
+  {
+    id: "banknote_intelligence",
+    label: "Banknote Intelligence",
+    interests: [
+      "banknotes",
+      "polymer",
+      "substrate",
+      "security features",
+      "security printing",
+      "redesign",
+      "rollout",
+      "release",
+      "withdrawal",
+      "counterfeit",
+      "central bank",
+    ],
+  },
+  {
+    id: "identity_documents",
+    label: "Identity Documents",
+    interests: [
+      "passports",
+      "id cards",
+      "residence permits",
+      "driver's licenses",
+      "visas",
+      "laminate",
+      "polycarbonate",
+      "issuance",
+      "fraud",
+      "icao",
+      "border control",
+    ],
+  },
+  {
+    id: "digital_identity_biometrics",
+    label: "Digital Identity & Biometrics",
+    interests: [
+      "digital identity",
+      "biometrics",
+      "eid",
+      "digital wallet",
+      "kyc",
+      "onboarding",
+      "liveness",
+      "artificial intelligence",
+      "identity verification",
+      "authentication",
+    ],
+  },
+  {
+    id: "security_printing",
+    label: "Security Printing",
+    interests: [
+      "security printing",
+      "security inks",
+      "micro optics",
+      "holography",
+      "ovd",
+      "intaglio",
+      "anti-counterfeit",
+      "personalization",
+      "secure documents",
+    ],
+  },
+];
+const PERSONAL_DASHBOARD_PROFILE_MAP = new Map(
+  PERSONAL_DASHBOARD_PROFILES.map((profile) => [profile.id, profile])
+);
 const DEFAULT_TAGS = [
   "identity",
   "identity verification",
@@ -872,6 +944,10 @@ const state = {
     include: [],
     exclude: [],
   },
+  personalDashboard: {
+    profiles: [],
+    interests: [],
+  },
   filters: {
     search: "",
     topic: "",
@@ -960,6 +1036,10 @@ const elements = {
   tagManagerToggle: document.getElementById("tag-manager-toggle"),
   tagManagerContent: document.getElementById("tag-manager-content"),
   tagManagerList: document.getElementById("tag-manager-list"),
+  personalDashboard: document.getElementById("personal-dashboard"),
+  personalDashboardProfiles: document.getElementById("personal-dashboard-profiles"),
+  personalDashboardInterests: document.getElementById("personal-dashboard-interests"),
+  personalDashboardClear: document.getElementById("personal-dashboard-clear"),
   feedFilter: document.getElementById("feed-filter"),
   dmvFeedFilter: document.getElementById("dmv-feed-filter"),
   canadaDmvFilter: document.getElementById("canada-dmv-filter"),
@@ -1202,6 +1282,80 @@ function applyTheme(theme) {
 
 function loadTheme() {
   applyTheme(window.localStorage.getItem(THEME_STORAGE_KEY) || "light");
+}
+
+function normalizePersonalDashboardProfileId(value) {
+  const normalizedValue = String(value || "").trim().toLowerCase();
+  return PERSONAL_DASHBOARD_PROFILE_MAP.has(normalizedValue) ? normalizedValue : "";
+}
+
+function normalizePersonalDashboardInterest(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getPersonalDashboardInterestSet(profileIds = state.personalDashboard.profiles) {
+  return new Set(
+    (Array.isArray(profileIds) ? profileIds : [])
+      .map(normalizePersonalDashboardProfileId)
+      .filter(Boolean)
+      .flatMap((profileId) => PERSONAL_DASHBOARD_PROFILE_MAP.get(profileId)?.interests || [])
+      .map(normalizePersonalDashboardInterest)
+      .filter(Boolean)
+  );
+}
+
+function syncPersonalDashboardInterests() {
+  state.personalDashboard.profiles = Array.from(
+    new Set((state.personalDashboard.profiles || []).map(normalizePersonalDashboardProfileId).filter(Boolean))
+  );
+  state.personalDashboard.interests = Array.from(getPersonalDashboardInterestSet(state.personalDashboard.profiles));
+}
+
+function savePersonalDashboardPreferences() {
+  syncPersonalDashboardInterests();
+  window.localStorage.setItem(
+    PERSONAL_DASHBOARD_PROFILES_STORAGE_KEY,
+    JSON.stringify(state.personalDashboard.profiles)
+  );
+  window.localStorage.setItem(
+    PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY,
+    JSON.stringify(state.personalDashboard.interests)
+  );
+}
+
+function loadPersonalDashboardPreferences() {
+  try {
+    const storedProfiles = JSON.parse(
+      window.localStorage.getItem(PERSONAL_DASHBOARD_PROFILES_STORAGE_KEY) || "[]"
+    );
+    state.personalDashboard.profiles = Array.isArray(storedProfiles) ? storedProfiles : [];
+  } catch {
+    state.personalDashboard.profiles = [];
+  }
+
+  try {
+    const storedInterests = JSON.parse(
+      window.localStorage.getItem(PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY) || "[]"
+    );
+    state.personalDashboard.interests = Array.isArray(storedInterests)
+      ? storedInterests.map(normalizePersonalDashboardInterest).filter(Boolean)
+      : [];
+  } catch {
+    state.personalDashboard.interests = [];
+  }
+
+  syncPersonalDashboardInterests();
+}
+
+function clearPersonalDashboardPreferences() {
+  state.personalDashboard.profiles = [];
+  state.personalDashboard.interests = [];
+  window.localStorage.removeItem(PERSONAL_DASHBOARD_PROFILES_STORAGE_KEY);
+  window.localStorage.removeItem(PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY);
+}
+
+function hasActivePersonalDashboardPreferences() {
+  return Array.isArray(state.personalDashboard.profiles) && state.personalDashboard.profiles.length > 0;
 }
 
 function isFeedPanelCollapsed() {
@@ -6358,6 +6512,101 @@ function renderFeedOptions() {
   }
 }
 
+function renderPersonalDashboard() {
+  if (!elements.personalDashboardProfiles || !elements.personalDashboardInterests || !elements.personalDashboardClear) {
+    return;
+  }
+
+  syncPersonalDashboardInterests();
+  const activeProfiles = new Set(state.personalDashboard.profiles);
+
+  elements.personalDashboardProfiles.innerHTML = PERSONAL_DASHBOARD_PROFILES.map((profile) => {
+    const isActive = activeProfiles.has(profile.id);
+    return `
+      <button
+        type="button"
+        class="personal-dashboard-profile${isActive ? " is-active" : ""}"
+        data-personal-profile="${escapeHtml(profile.id)}"
+        aria-pressed="${isActive ? "true" : "false"}"
+      >
+        ${escapeHtml(profile.label)}
+      </button>
+    `;
+  }).join("");
+
+  if (state.personalDashboard.interests.length) {
+    elements.personalDashboardInterests.innerHTML = state.personalDashboard.interests
+      .map((interest) => `<span class="personal-dashboard-interest">${escapeHtml(interest)}</span>`)
+      .join("");
+  } else {
+    elements.personalDashboardInterests.innerHTML =
+      `<p class="personal-dashboard-empty">No personal dashboard profiles selected. The dashboard behaves normally until you choose one.</p>`;
+  }
+
+  elements.personalDashboardClear.disabled = !state.personalDashboard.profiles.length;
+}
+
+function togglePersonalDashboardProfile(profileId) {
+  const normalizedProfileId = normalizePersonalDashboardProfileId(profileId);
+  if (!normalizedProfileId) {
+    return;
+  }
+
+  const activeProfiles = new Set(state.personalDashboard.profiles);
+  if (activeProfiles.has(normalizedProfileId)) {
+    activeProfiles.delete(normalizedProfileId);
+  } else {
+    activeProfiles.add(normalizedProfileId);
+  }
+
+  state.personalDashboard.profiles = Array.from(activeProfiles);
+  savePersonalDashboardPreferences();
+  renderPersonalDashboard();
+  scheduleRenderArticles("personal-dashboard-profile", { mode: "frame" });
+}
+
+function getPersonalDashboardArticleText(article) {
+  return getCachedArticleValue(article, "personalDashboardText", () =>
+    [
+      article?.title,
+      article?.topic,
+      article?.source,
+      article?.sourceName,
+      article?.feedTitle,
+      getFeedName(article?.feedId),
+      article?.summary,
+      article?.summaryShort,
+      article?.contentSnippet,
+      Array.isArray(article?.tags) ? article.tags.join(" ") : "",
+      Array.isArray(article?.keywords) ? article.keywords.join(" ") : "",
+      getArticleFilterTags(article).join(" "),
+      getArticleSignalCategories(article).join(" "),
+      article?._intelligence?.normalizedEvent?.canonicalEventType,
+      article?._intelligence?.normalizedEvent?.domain,
+      article?._intelligence?.normalizedEvent?.action,
+      article?._intelligence?.normalizedEvent?.documentType,
+      article?._intelligence?.normalizedEvent?.currency,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+  );
+}
+
+function articleMatchesPersonalDashboard(article) {
+  if (!hasActivePersonalDashboardPreferences()) {
+    return true;
+  }
+
+  const activeInterests = state.personalDashboard.interests || [];
+  if (!activeInterests.length) {
+    return true;
+  }
+
+  const articleText = getPersonalDashboardArticleText(article);
+  return activeInterests.some((interest) => textMatchesKeyword(articleText, interest));
+}
+
 function refreshTagControls() {
   const selectedTag = normalizeFilterTag(state.filters.tag);
   if (selectedTag && !getActiveTagSet().has(selectedTag)) {
@@ -6940,6 +7189,10 @@ function articleMatchesFilters(article, options = {}) {
     if (!haystack.includes(state.filters.search.toLowerCase())) {
       return false;
     }
+  }
+
+  if (!articleMatchesPersonalDashboard(article)) {
+    return false;
   }
 
   return true;
@@ -10370,6 +10623,7 @@ function getPaginationContextKey() {
   return JSON.stringify({
     dashboardMode: state.dashboardMode,
     filters: state.filters,
+    personalDashboardProfiles: state.personalDashboard.profiles,
     analyticsScope: state.analyticsScope,
     analyticsQualityFilter: state.analyticsQualityFilter,
   });
@@ -10883,7 +11137,11 @@ function renderArticles() {
     syncFilterUx();
     updateArticleFilterContext(articles);
     const articlePagination = getPaginatedItems(articles);
-    if (useBackendQuery && Number(state.remoteQuery.totalCount) > articlePagination.totalCount) {
+    if (
+      useBackendQuery &&
+      !hasActivePersonalDashboardPreferences() &&
+      Number(state.remoteQuery.totalCount) > articlePagination.totalCount
+    ) {
       articlePagination.totalCount = Number(state.remoteQuery.totalCount);
       articlePagination.totalPages = Math.max(1, Math.ceil(articlePagination.totalCount / articlePagination.pageSize));
     }
@@ -11152,6 +11410,7 @@ function renderArticles() {
 
 function renderDashboard() {
   renderSummary();
+  renderPersonalDashboard();
   renderFeedOptions();
   renderTagManager();
   renderDmvOfficialLink();
@@ -11472,6 +11731,25 @@ function bindEvents() {
     elements.keywordResetButton.addEventListener("click", () => {
       resetKeywordFilters();
       scheduleRenderArticles("keyword-reset", { mode: "frame" });
+    });
+  }
+
+  if (elements.personalDashboardProfiles) {
+    elements.personalDashboardProfiles.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target.closest("[data-personal-profile]") : null;
+      if (!target) {
+        return;
+      }
+
+      togglePersonalDashboardProfile(target.dataset.personalProfile || "");
+    });
+  }
+
+  if (elements.personalDashboardClear) {
+    elements.personalDashboardClear.addEventListener("click", () => {
+      clearPersonalDashboardPreferences();
+      renderPersonalDashboard();
+      scheduleRenderArticles("personal-dashboard-clear", { mode: "frame" });
     });
   }
 
@@ -12011,6 +12289,7 @@ async function init() {
   loadTheme();
   loadActiveTags();
   loadKeywordFilters();
+  loadPersonalDashboardPreferences();
   runtime.activityLog = SHOW_ACTIVITY_LOG ? loadStoredActivityLog() : [];
   runtime.activityLogId = SHOW_ACTIVITY_LOG
     ? runtime.activityLog.reduce((maxId, entry) => Math.max(maxId, Number(entry.id) || 0), 0)

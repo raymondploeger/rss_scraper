@@ -38,6 +38,20 @@
               <button id="clear-filters" class="ghost-button" type="button">Reset</button>
             </div>
 
+            <section id="personal-dashboard" class="personal-dashboard-panel" aria-label="Personal dashboard preferences">
+              <div class="personal-dashboard-head">
+                <div>
+                  <span class="personal-dashboard-title">Personal dashboard</span>
+                  <p class="personal-dashboard-copy">Choose one or more intelligence profiles to tailor this dashboard locally.</p>
+                </div>
+                <button id="personal-dashboard-clear" class="ghost-button personal-dashboard-clear" type="button">
+                  Clear personal dashboard
+                </button>
+              </div>
+              <div id="personal-dashboard-profiles" class="personal-dashboard-profiles" aria-live="polite"></div>
+              <div id="personal-dashboard-interests" class="personal-dashboard-interests" aria-live="polite"></div>
+            </section>
+
             <div class="filter-grid">
               <label class="field field-full" data-filter-field="search">
                 <span>Search</span>
