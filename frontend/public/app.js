@@ -1393,6 +1393,46 @@ function hasActivePersonalDashboardPreferences() {
   return Array.isArray(state.personalDashboard.interests) && state.personalDashboard.interests.length > 0;
 }
 
+function ensurePersonalDashboardElements() {
+  if (!elements.personalDashboard) {
+    return false;
+  }
+
+  if (!elements.personalDashboardMode) {
+    const mode = document.createElement("div");
+    mode.id = "personal-dashboard-mode";
+    mode.className = "personal-dashboard-mode";
+    mode.setAttribute("aria-label", "Personal dashboard relevance mode");
+    elements.personalDashboard.appendChild(mode);
+    elements.personalDashboardMode = mode;
+  }
+
+  if (!elements.personalDashboardGroups) {
+    const groups = document.createElement("div");
+    groups.id = "personal-dashboard-groups";
+    groups.className = "personal-dashboard-groups";
+    groups.setAttribute("aria-live", "polite");
+    elements.personalDashboard.appendChild(groups);
+    elements.personalDashboardGroups = groups;
+  }
+
+  if (!elements.personalDashboardInterests) {
+    const interests = document.createElement("div");
+    interests.id = "personal-dashboard-interests";
+    interests.className = "personal-dashboard-interests";
+    interests.setAttribute("aria-live", "polite");
+    elements.personalDashboard.appendChild(interests);
+    elements.personalDashboardInterests = interests;
+  }
+
+  return Boolean(
+    elements.personalDashboardMode &&
+      elements.personalDashboardGroups &&
+      elements.personalDashboardInterests &&
+      elements.personalDashboardClear
+  );
+}
+
 function isPersonalDashboardGroupExpanded(groupId) {
   return (state.personalDashboard.expandedGroups || []).includes(groupId);
 }
@@ -6569,12 +6609,15 @@ function renderFeedOptions() {
 }
 
 function renderPersonalDashboard() {
-  if (!elements.personalDashboardMode || !elements.personalDashboardGroups || !elements.personalDashboardInterests || !elements.personalDashboardClear) {
+  if (!ensurePersonalDashboardElements()) {
     return;
   }
 
   state.personalDashboard.mode = normalizePersonalDashboardMode(state.personalDashboard.mode);
   state.personalDashboard.interests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  if (!Array.isArray(state.personalDashboard.expandedGroups) || !state.personalDashboard.expandedGroups.length) {
+    state.personalDashboard.expandedGroups = PERSONAL_DASHBOARD_GROUPS.map((group) => group.id);
+  }
   const activeInterests = new Set(state.personalDashboard.interests);
   elements.personalDashboardMode.innerHTML = PERSONAL_DASHBOARD_MODES.map((mode) => `
     <button
@@ -12565,6 +12608,7 @@ async function init() {
   loadActiveTags();
   loadKeywordFilters();
   loadPersonalDashboardPreferences();
+  ensurePersonalDashboardElements();
   runtime.activityLog = SHOW_ACTIVITY_LOG ? loadStoredActivityLog() : [];
   runtime.activityLogId = SHOW_ACTIVITY_LOG
     ? runtime.activityLog.reduce((maxId, entry) => Math.max(maxId, Number(entry.id) || 0), 0)
