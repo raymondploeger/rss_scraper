@@ -74,7 +74,80 @@ const TAG_FILTER_MIN_COUNT = 0;
 const ARTICLE_RENDER_PAGE_SIZE = 30;
 const TAG_LIST_STORAGE_KEY = "dashboardTagList";
 const KEYWORD_FILTER_STORAGE_KEY = "dashboardKeywordFilters";
+const PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY = "personalDashboardInterests";
 const NOISE_KEYWORDS_EXPANDED_STORAGE_KEY = "noiseKeywordsExpanded";
+const PERSONAL_DASHBOARD_GROUPS = [
+  {
+    id: "banknote_intelligence",
+    label: "Banknote Intelligence",
+    interests: [
+      { id: "banknotes", label: "Banknotes" },
+      { id: "polymer", label: "Polymer" },
+      { id: "substrate", label: "Substrate" },
+      { id: "security_features", label: "Security features" },
+      { id: "security_printing", label: "Security printing" },
+      { id: "redesign", label: "Redesign" },
+      { id: "rollout", label: "Rollout" },
+      { id: "release", label: "Release" },
+      { id: "withdrawal", label: "Withdrawal" },
+      { id: "counterfeit", label: "Counterfeit" },
+      { id: "central_bank", label: "Central bank" },
+    ],
+  },
+  {
+    id: "identity_documents",
+    label: "Identity Documents",
+    interests: [
+      { id: "passports", label: "Passports" },
+      { id: "id_cards", label: "ID cards" },
+      { id: "residence_permits", label: "Residence permits" },
+      { id: "drivers_licenses", label: "Driver's licenses" },
+      { id: "visas", label: "Visas" },
+      { id: "laminate", label: "Laminate" },
+      { id: "polycarbonate", label: "Polycarbonate" },
+      { id: "issuance", label: "Issuance" },
+      { id: "fraud", label: "Fraud" },
+      { id: "icao", label: "ICAO" },
+      { id: "border_control", label: "Border control" },
+    ],
+  },
+  {
+    id: "digital_identity_biometrics",
+    label: "Digital Identity & Biometrics",
+    interests: [
+      { id: "digital_identity", label: "Digital identity" },
+      { id: "biometrics", label: "Biometrics" },
+      { id: "eid", label: "eID" },
+      { id: "digital_wallet", label: "Digital wallet" },
+      { id: "kyc", label: "KYC" },
+      { id: "onboarding", label: "Onboarding" },
+      { id: "liveness", label: "Liveness" },
+      { id: "artificial_intelligence", label: "Artificial intelligence" },
+      { id: "identity_verification", label: "Identity verification" },
+      { id: "authentication", label: "Authentication" },
+    ],
+  },
+  {
+    id: "security_printing",
+    label: "Security Printing",
+    interests: [
+      { id: "security_printing_core", label: "Security printing" },
+      { id: "security_inks", label: "Security inks" },
+      { id: "micro_optics", label: "Micro optics" },
+      { id: "holography", label: "Holography" },
+      { id: "ovd", label: "OVD" },
+      { id: "intaglio", label: "Intaglio" },
+      { id: "anti_counterfeit", label: "Anti-counterfeit" },
+      { id: "personalization", label: "Personalization" },
+      { id: "secure_documents", label: "Secure documents" },
+    ],
+  },
+];
+const PERSONAL_DASHBOARD_INTEREST_MAP = new Map(
+  PERSONAL_DASHBOARD_GROUPS.flatMap((group) =>
+    group.interests.map((interest) => [interest.id, { ...interest, groupId: group.id }])
+  )
+);
 const DEFAULT_TAGS = [
   "identity",
   "identity verification",
@@ -872,6 +945,10 @@ const state = {
     include: [],
     exclude: [],
   },
+  personalDashboard: {
+    interests: [],
+    expandedGroups: PERSONAL_DASHBOARD_GROUPS.map((group) => group.id),
+  },
   filters: {
     search: "",
     topic: "",
@@ -960,6 +1037,10 @@ const elements = {
   tagManagerToggle: document.getElementById("tag-manager-toggle"),
   tagManagerContent: document.getElementById("tag-manager-content"),
   tagManagerList: document.getElementById("tag-manager-list"),
+  personalDashboard: document.getElementById("personal-dashboard"),
+  personalDashboardGroups: document.getElementById("personal-dashboard-groups"),
+  personalDashboardInterests: document.getElementById("personal-dashboard-interests"),
+  personalDashboardClear: document.getElementById("personal-dashboard-clear"),
   feedFilter: document.getElementById("feed-filter"),
   dmvFeedFilter: document.getElementById("dmv-feed-filter"),
   canadaDmvFilter: document.getElementById("canada-dmv-filter"),
@@ -1202,6 +1283,173 @@ function applyTheme(theme) {
 
 function loadTheme() {
   applyTheme(window.localStorage.getItem(THEME_STORAGE_KEY) || "light");
+}
+
+function normalizePersonalDashboardInterestId(value) {
+  const normalizedValue = String(value || "").trim().toLowerCase();
+  return PERSONAL_DASHBOARD_INTEREST_MAP.has(normalizedValue) ? normalizedValue : "";
+}
+
+function normalizePersonalDashboardInterests(interests) {
+  return Array.from(
+    new Set((Array.isArray(interests) ? interests : []).map(normalizePersonalDashboardInterestId).filter(Boolean))
+  );
+}
+
+function loadPersonalDashboardPreferences() {
+  try {
+    const storedInterests = JSON.parse(
+      window.localStorage.getItem(PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY) || "[]"
+    );
+    state.personalDashboard.interests = normalizePersonalDashboardInterests(storedInterests);
+  } catch {
+    state.personalDashboard.interests = [];
+  }
+}
+
+function savePersonalDashboardPreferences() {
+  state.personalDashboard.interests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  window.localStorage.setItem(
+    PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY,
+    JSON.stringify(state.personalDashboard.interests)
+  );
+}
+
+function clearPersonalDashboardPreferences() {
+  state.personalDashboard.interests = [];
+  window.localStorage.removeItem(PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY);
+}
+
+function ensurePersonalDashboardElements() {
+  if (!elements.personalDashboard) {
+    return false;
+  }
+
+  if (!elements.personalDashboardGroups) {
+    const groups = document.createElement("div");
+    groups.id = "personal-dashboard-groups";
+    groups.className = "personal-dashboard-groups";
+    groups.setAttribute("aria-live", "polite");
+    elements.personalDashboard.appendChild(groups);
+    elements.personalDashboardGroups = groups;
+  }
+
+  if (!elements.personalDashboardInterests) {
+    const interests = document.createElement("div");
+    interests.id = "personal-dashboard-interests";
+    interests.className = "personal-dashboard-interests";
+    interests.setAttribute("aria-live", "polite");
+    elements.personalDashboard.appendChild(interests);
+    elements.personalDashboardInterests = interests;
+  }
+
+  return Boolean(
+    elements.personalDashboardGroups &&
+      elements.personalDashboardInterests &&
+      elements.personalDashboardClear
+  );
+}
+
+function isPersonalDashboardGroupExpanded(groupId) {
+  return (state.personalDashboard.expandedGroups || []).includes(groupId);
+}
+
+function togglePersonalDashboardGroup(groupId) {
+  const nextExpandedGroups = new Set(state.personalDashboard.expandedGroups || []);
+  if (nextExpandedGroups.has(groupId)) {
+    nextExpandedGroups.delete(groupId);
+  } else {
+    nextExpandedGroups.add(groupId);
+  }
+  state.personalDashboard.expandedGroups = Array.from(nextExpandedGroups);
+  renderPersonalDashboard();
+}
+
+function renderPersonalDashboard() {
+  if (!ensurePersonalDashboardElements()) {
+    return;
+  }
+
+  const activeInterests = new Set(normalizePersonalDashboardInterests(state.personalDashboard.interests));
+  if (!Array.isArray(state.personalDashboard.expandedGroups) || !state.personalDashboard.expandedGroups.length) {
+    state.personalDashboard.expandedGroups = PERSONAL_DASHBOARD_GROUPS.map((group) => group.id);
+  }
+
+  elements.personalDashboardGroups.innerHTML = PERSONAL_DASHBOARD_GROUPS.map((group) => {
+    const expanded = isPersonalDashboardGroupExpanded(group.id);
+    const selectedCount = group.interests.filter((interest) => activeInterests.has(interest.id)).length;
+    return `
+      <section class="personal-dashboard-group">
+        <button
+          type="button"
+          class="personal-dashboard-group-toggle"
+          data-personal-group-toggle="${escapeHtml(group.id)}"
+          aria-expanded="${expanded ? "true" : "false"}"
+        >
+          <span>${escapeHtml(group.label)}</span>
+          <span class="personal-dashboard-group-count">${selectedCount ? `${selectedCount} selected` : "Select interests"}</span>
+        </button>
+        <div class="personal-dashboard-group-options" ${expanded ? "" : "hidden"}>
+          ${group.interests.map((interest) => `
+            <label class="personal-dashboard-checkbox">
+              <input
+                type="checkbox"
+                data-personal-interest="${escapeHtml(interest.id)}"
+                ${activeInterests.has(interest.id) ? "checked" : ""}
+              />
+              <span class="personal-dashboard-checkbox-label">${escapeHtml(interest.label)}</span>
+            </label>
+          `).join("")}
+        </div>
+      </section>
+    `;
+  }).join("");
+
+  if (activeInterests.size) {
+    elements.personalDashboardInterests.innerHTML = Array.from(activeInterests)
+      .map((interestId) => {
+        const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
+        if (!interest) {
+          return "";
+        }
+        return `
+          <span class="personal-dashboard-interest">
+            <span>${escapeHtml(interest.label)}</span>
+            <button
+              type="button"
+              class="personal-dashboard-interest-remove"
+              data-remove-personal-interest="${escapeHtml(interest.id)}"
+              aria-label="Remove ${escapeHtml(interest.label)}"
+            ></button>
+          </span>
+        `;
+      })
+      .filter(Boolean)
+      .join("");
+  } else {
+    elements.personalDashboardInterests.innerHTML =
+      `<p class="personal-dashboard-empty">No personal interests selected yet. Results stay unchanged until filtering is added in a later phase.</p>`;
+  }
+
+  elements.personalDashboardClear.disabled = !activeInterests.size;
+}
+
+function setPersonalDashboardInterest(interestId, enabled) {
+  const normalizedInterestId = normalizePersonalDashboardInterestId(interestId);
+  if (!normalizedInterestId) {
+    return;
+  }
+
+  const nextInterests = new Set(state.personalDashboard.interests || []);
+  if (enabled) {
+    nextInterests.add(normalizedInterestId);
+  } else {
+    nextInterests.delete(normalizedInterestId);
+  }
+
+  state.personalDashboard.interests = Array.from(nextInterests);
+  savePersonalDashboardPreferences();
+  renderPersonalDashboard();
 }
 
 function isFeedPanelCollapsed() {
@@ -11152,6 +11400,7 @@ function renderArticles() {
 
 function renderDashboard() {
   renderSummary();
+  renderPersonalDashboard();
   renderFeedOptions();
   renderTagManager();
   renderDmvOfficialLink();
@@ -11472,6 +11721,56 @@ function bindEvents() {
     elements.keywordResetButton.addEventListener("click", () => {
       resetKeywordFilters();
       scheduleRenderArticles("keyword-reset", { mode: "frame" });
+    });
+  }
+
+  if (elements.personalDashboardGroups) {
+    elements.personalDashboardGroups.addEventListener("click", (event) => {
+      const groupToggle = event.target instanceof Element
+        ? event.target.closest("[data-personal-group-toggle]")
+        : null;
+      if (groupToggle) {
+        togglePersonalDashboardGroup(groupToggle.dataset.personalGroupToggle || "");
+        return;
+      }
+
+      const removeInterest = event.target instanceof Element
+        ? event.target.closest("[data-remove-personal-interest]")
+        : null;
+      if (removeInterest) {
+        setPersonalDashboardInterest(removeInterest.dataset.removePersonalInterest || "", false);
+      }
+    });
+
+    elements.personalDashboardGroups.addEventListener("change", (event) => {
+      const checkbox = event.target instanceof Element
+        ? event.target.closest("[data-personal-interest]")
+        : null;
+      if (!(checkbox instanceof HTMLInputElement)) {
+        return;
+      }
+
+      setPersonalDashboardInterest(checkbox.dataset.personalInterest || "", checkbox.checked);
+    });
+  }
+
+  if (elements.personalDashboardInterests) {
+    elements.personalDashboardInterests.addEventListener("click", (event) => {
+      const removeInterest = event.target instanceof Element
+        ? event.target.closest("[data-remove-personal-interest]")
+        : null;
+      if (!removeInterest) {
+        return;
+      }
+
+      setPersonalDashboardInterest(removeInterest.dataset.removePersonalInterest || "", false);
+    });
+  }
+
+  if (elements.personalDashboardClear) {
+    elements.personalDashboardClear.addEventListener("click", () => {
+      clearPersonalDashboardPreferences();
+      renderPersonalDashboard();
     });
   }
 
@@ -12011,6 +12310,8 @@ async function init() {
   loadTheme();
   loadActiveTags();
   loadKeywordFilters();
+  loadPersonalDashboardPreferences();
+  ensurePersonalDashboardElements();
   runtime.activityLog = SHOW_ACTIVITY_LOG ? loadStoredActivityLog() : [];
   runtime.activityLogId = SHOW_ACTIVITY_LOG
     ? runtime.activityLog.reduce((maxId, entry) => Math.max(maxId, Number(entry.id) || 0), 0)
