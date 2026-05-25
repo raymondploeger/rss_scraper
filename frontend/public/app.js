@@ -74,78 +74,77 @@ const TAG_FILTER_MIN_COUNT = 0;
 const ARTICLE_RENDER_PAGE_SIZE = 30;
 const TAG_LIST_STORAGE_KEY = "dashboardTagList";
 const KEYWORD_FILTER_STORAGE_KEY = "dashboardKeywordFilters";
-const PERSONAL_DASHBOARD_PROFILES_STORAGE_KEY = "personalDashboardProfiles";
 const PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY = "personalDashboardInterests";
 const NOISE_KEYWORDS_EXPANDED_STORAGE_KEY = "noiseKeywordsExpanded";
-const PERSONAL_DASHBOARD_PROFILES = [
+const PERSONAL_DASHBOARD_GROUPS = [
   {
     id: "banknote_intelligence",
     label: "Banknote Intelligence",
     interests: [
-      "banknotes",
-      "polymer",
-      "substrate",
-      "security features",
-      "security printing",
-      "redesign",
-      "rollout",
-      "release",
-      "withdrawal",
-      "counterfeit",
-      "central bank",
+      { id: "banknotes", label: "Banknotes", keywords: ["banknote", "banknotes", "currency note", "notes"] },
+      { id: "polymer", label: "Polymer", keywords: ["polymer", "polymer note", "polymer banknote"] },
+      { id: "substrate", label: "Substrate", keywords: ["substrate", "paper substrate", "polymer substrate"] },
+      { id: "security_features", label: "Security features", keywords: ["security feature", "security features", "watermark", "hologram", "uv feature"] },
+      { id: "security_printing", label: "Security printing", keywords: ["security printing", "security printer", "secure print"] },
+      { id: "redesign", label: "Redesign", keywords: ["redesign", "new design", "new portrait", "new artwork"] },
+      { id: "rollout", label: "Rollout", keywords: ["rollout", "launch", "introduction", "implementation"] },
+      { id: "release", label: "Release", keywords: ["release", "issued", "issue", "launch"] },
+      { id: "withdrawal", label: "Withdrawal", keywords: ["withdrawal", "withdrawn", "demonetisation", "demonetization", "legal tender deadline", "withdrawn from circulation"] },
+      { id: "counterfeit", label: "Counterfeit", keywords: ["counterfeit", "fake note", "forged banknote", "forged note", "counterfeit banknote"] },
+      { id: "central_bank", label: "Central bank", keywords: ["central bank", "national bank", "reserve bank", "issuer bank"] },
     ],
   },
   {
     id: "identity_documents",
     label: "Identity Documents",
     interests: [
-      "passports",
-      "id cards",
-      "residence permits",
-      "driver's licenses",
-      "visas",
-      "laminate",
-      "polycarbonate",
-      "issuance",
-      "fraud",
-      "icao",
-      "border control",
+      { id: "passports", label: "Passports", keywords: ["passport", "passports", "travel document"] },
+      { id: "id_cards", label: "ID cards", keywords: ["id card", "identity card", "national id"] },
+      { id: "residence_permits", label: "Residence permits", keywords: ["residence permit", "residence permits", "permit card"] },
+      { id: "drivers_licenses", label: "Driver's licenses", keywords: ["driver license", "driver's license", "driving licence", "driving license"] },
+      { id: "visas", label: "Visas", keywords: ["visa", "visas", "visa policy"] },
+      { id: "laminate", label: "Laminate", keywords: ["laminate", "laminated document"] },
+      { id: "polycarbonate", label: "Polycarbonate", keywords: ["polycarbonate", "pc datapage", "id card substrate"] },
+      { id: "issuance", label: "Issuance", keywords: ["issuance", "issued", "renewal", "passport office", "document issuance"] },
+      { id: "fraud", label: "Fraud", keywords: ["fraud", "fake passport", "forged passport", "forged document", "document fraud", "counterfeit document"] },
+      { id: "icao", label: "ICAO", keywords: ["icao", "mrz", "doc 9303", "passport verification"] },
+      { id: "border_control", label: "Border control", keywords: ["border control", "border checks", "immigration control", "customs", "entry exit"] },
     ],
   },
   {
     id: "digital_identity_biometrics",
     label: "Digital Identity & Biometrics",
     interests: [
-      "digital identity",
-      "biometrics",
-      "eid",
-      "digital wallet",
-      "kyc",
-      "onboarding",
-      "liveness",
-      "artificial intelligence",
-      "identity verification",
-      "authentication",
+      { id: "digital_identity", label: "Digital identity", keywords: ["digital identity", "digital id", "mobile id", "identity wallet"] },
+      { id: "biometrics", label: "Biometrics", keywords: ["biometric", "biometrics", "face match", "fingerprint"] },
+      { id: "eid", label: "eID", keywords: ["eid", "e-id", "electronic identity"] },
+      { id: "digital_wallet", label: "Digital wallet", keywords: ["digital wallet", "identity wallet", "wallet"] },
+      { id: "kyc", label: "KYC", keywords: ["kyc", "know your customer", "customer due diligence"] },
+      { id: "onboarding", label: "Onboarding", keywords: ["onboarding", "remote onboarding", "digital onboarding"] },
+      { id: "liveness", label: "Liveness", keywords: ["liveness", "liveness detection", "presentation attack"] },
+      { id: "artificial_intelligence", label: "Artificial intelligence", keywords: ["artificial intelligence", "ai", "machine learning"] },
+      { id: "identity_verification", label: "Identity verification", keywords: ["identity verification", "document verification", "id verification"] },
+      { id: "authentication", label: "Authentication", keywords: ["authentication", "authenticator", "login verification"] },
     ],
   },
   {
     id: "security_printing",
     label: "Security Printing",
     interests: [
-      "security printing",
-      "security inks",
-      "micro optics",
-      "holography",
-      "ovd",
-      "intaglio",
-      "anti-counterfeit",
-      "personalization",
-      "secure documents",
+      { id: "security_printing_core", label: "Security printing", keywords: ["security printing", "secure printing", "security printer"] },
+      { id: "security_inks", label: "Security inks", keywords: ["security ink", "security inks", "optically variable ink"] },
+      { id: "micro_optics", label: "Micro optics", keywords: ["micro optics", "micro-optics", "micro optical"] },
+      { id: "holography", label: "Holography", keywords: ["holography", "holographic", "hologram"] },
+      { id: "ovd", label: "OVD", keywords: ["ovd", "optically variable device"] },
+      { id: "intaglio", label: "Intaglio", keywords: ["intaglio", "engraved printing"] },
+      { id: "anti_counterfeit", label: "Anti-counterfeit", keywords: ["anti-counterfeit", "anti counterfeit", "counterfeit prevention"] },
+      { id: "personalization", label: "Personalization", keywords: ["personalization", "secure personalization", "card personalization"] },
+      { id: "secure_documents", label: "Secure documents", keywords: ["secure documents", "document security", "secure document"] },
     ],
   },
 ];
-const PERSONAL_DASHBOARD_PROFILE_MAP = new Map(
-  PERSONAL_DASHBOARD_PROFILES.map((profile) => [profile.id, profile])
+const PERSONAL_DASHBOARD_INTEREST_MAP = new Map(
+  PERSONAL_DASHBOARD_GROUPS.flatMap((group) => group.interests.map((interest) => [interest.id, { ...interest, groupId: group.id }]))
 );
 const DEFAULT_TAGS = [
   "identity",
@@ -945,8 +944,8 @@ const state = {
     exclude: [],
   },
   personalDashboard: {
-    profiles: [],
     interests: [],
+    expandedGroups: PERSONAL_DASHBOARD_GROUPS.map((group) => group.id),
   },
   filters: {
     search: "",
@@ -1037,7 +1036,7 @@ const elements = {
   tagManagerContent: document.getElementById("tag-manager-content"),
   tagManagerList: document.getElementById("tag-manager-list"),
   personalDashboard: document.getElementById("personal-dashboard"),
-  personalDashboardProfiles: document.getElementById("personal-dashboard-profiles"),
+  personalDashboardGroups: document.getElementById("personal-dashboard-groups"),
   personalDashboardInterests: document.getElementById("personal-dashboard-interests"),
   personalDashboardClear: document.getElementById("personal-dashboard-clear"),
   feedFilter: document.getElementById("feed-filter"),
@@ -1284,39 +1283,19 @@ function loadTheme() {
   applyTheme(window.localStorage.getItem(THEME_STORAGE_KEY) || "light");
 }
 
-function normalizePersonalDashboardProfileId(value) {
+function normalizePersonalDashboardInterestId(value) {
   const normalizedValue = String(value || "").trim().toLowerCase();
-  return PERSONAL_DASHBOARD_PROFILE_MAP.has(normalizedValue) ? normalizedValue : "";
+  return PERSONAL_DASHBOARD_INTEREST_MAP.has(normalizedValue) ? normalizedValue : "";
 }
 
-function normalizePersonalDashboardInterest(value) {
-  return String(value || "").trim().toLowerCase();
-}
-
-function getPersonalDashboardInterestSet(profileIds = state.personalDashboard.profiles) {
-  return new Set(
-    (Array.isArray(profileIds) ? profileIds : [])
-      .map(normalizePersonalDashboardProfileId)
-      .filter(Boolean)
-      .flatMap((profileId) => PERSONAL_DASHBOARD_PROFILE_MAP.get(profileId)?.interests || [])
-      .map(normalizePersonalDashboardInterest)
-      .filter(Boolean)
+function normalizePersonalDashboardInterests(interests) {
+  return Array.from(
+    new Set((Array.isArray(interests) ? interests : []).map(normalizePersonalDashboardInterestId).filter(Boolean))
   );
-}
-
-function syncPersonalDashboardInterests() {
-  state.personalDashboard.profiles = Array.from(
-    new Set((state.personalDashboard.profiles || []).map(normalizePersonalDashboardProfileId).filter(Boolean))
-  );
-  state.personalDashboard.interests = Array.from(getPersonalDashboardInterestSet(state.personalDashboard.profiles));
 }
 
 function savePersonalDashboardPreferences() {
-  syncPersonalDashboardInterests();
-  window.localStorage.setItem(
-    PERSONAL_DASHBOARD_PROFILES_STORAGE_KEY,
-    JSON.stringify(state.personalDashboard.profiles)
-  );
+  state.personalDashboard.interests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   window.localStorage.setItem(
     PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY,
     JSON.stringify(state.personalDashboard.interests)
@@ -1325,37 +1304,37 @@ function savePersonalDashboardPreferences() {
 
 function loadPersonalDashboardPreferences() {
   try {
-    const storedProfiles = JSON.parse(
-      window.localStorage.getItem(PERSONAL_DASHBOARD_PROFILES_STORAGE_KEY) || "[]"
-    );
-    state.personalDashboard.profiles = Array.isArray(storedProfiles) ? storedProfiles : [];
-  } catch {
-    state.personalDashboard.profiles = [];
-  }
-
-  try {
     const storedInterests = JSON.parse(
       window.localStorage.getItem(PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY) || "[]"
     );
-    state.personalDashboard.interests = Array.isArray(storedInterests)
-      ? storedInterests.map(normalizePersonalDashboardInterest).filter(Boolean)
-      : [];
+    state.personalDashboard.interests = normalizePersonalDashboardInterests(storedInterests);
   } catch {
     state.personalDashboard.interests = [];
   }
-
-  syncPersonalDashboardInterests();
 }
 
 function clearPersonalDashboardPreferences() {
-  state.personalDashboard.profiles = [];
   state.personalDashboard.interests = [];
-  window.localStorage.removeItem(PERSONAL_DASHBOARD_PROFILES_STORAGE_KEY);
   window.localStorage.removeItem(PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY);
 }
 
 function hasActivePersonalDashboardPreferences() {
-  return Array.isArray(state.personalDashboard.profiles) && state.personalDashboard.profiles.length > 0;
+  return Array.isArray(state.personalDashboard.interests) && state.personalDashboard.interests.length > 0;
+}
+
+function isPersonalDashboardGroupExpanded(groupId) {
+  return (state.personalDashboard.expandedGroups || []).includes(groupId);
+}
+
+function togglePersonalDashboardGroup(groupId) {
+  const nextExpandedGroups = new Set(state.personalDashboard.expandedGroups || []);
+  if (nextExpandedGroups.has(groupId)) {
+    nextExpandedGroups.delete(groupId);
+  } else {
+    nextExpandedGroups.add(groupId);
+  }
+  state.personalDashboard.expandedGroups = Array.from(nextExpandedGroups);
+  renderPersonalDashboard();
 }
 
 function isFeedPanelCollapsed() {
@@ -6513,56 +6492,91 @@ function renderFeedOptions() {
 }
 
 function renderPersonalDashboard() {
-  if (!elements.personalDashboardProfiles || !elements.personalDashboardInterests || !elements.personalDashboardClear) {
+  if (!elements.personalDashboardGroups || !elements.personalDashboardInterests || !elements.personalDashboardClear) {
     return;
   }
 
-  syncPersonalDashboardInterests();
-  const activeProfiles = new Set(state.personalDashboard.profiles);
+  state.personalDashboard.interests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const activeInterests = new Set(state.personalDashboard.interests);
 
-  elements.personalDashboardProfiles.innerHTML = PERSONAL_DASHBOARD_PROFILES.map((profile) => {
-    const isActive = activeProfiles.has(profile.id);
+  elements.personalDashboardGroups.innerHTML = PERSONAL_DASHBOARD_GROUPS.map((group) => {
+    const expanded = isPersonalDashboardGroupExpanded(group.id);
+    const selectedCount = group.interests.filter((interest) => activeInterests.has(interest.id)).length;
     return `
-      <button
-        type="button"
-        class="personal-dashboard-profile${isActive ? " is-active" : ""}"
-        data-personal-profile="${escapeHtml(profile.id)}"
-        aria-pressed="${isActive ? "true" : "false"}"
-      >
-        ${escapeHtml(profile.label)}
-      </button>
+      <section class="personal-dashboard-group">
+        <button
+          type="button"
+          class="personal-dashboard-group-toggle"
+          data-personal-group-toggle="${escapeHtml(group.id)}"
+          aria-expanded="${expanded ? "true" : "false"}"
+        >
+          <span>${escapeHtml(group.label)}</span>
+          <span class="personal-dashboard-group-count">${selectedCount ? `${selectedCount} selected` : "Select interests"}</span>
+        </button>
+        <div class="personal-dashboard-group-options" ${expanded ? "" : "hidden"}>
+          ${group.interests.map((interest) => `
+            <label class="personal-dashboard-checkbox">
+              <input
+                type="checkbox"
+                data-personal-interest="${escapeHtml(interest.id)}"
+                ${activeInterests.has(interest.id) ? "checked" : ""}
+              />
+              <span class="personal-dashboard-checkbox-label">${escapeHtml(interest.label)}</span>
+            </label>
+          `).join("")}
+        </div>
+      </section>
     `;
   }).join("");
 
   if (state.personalDashboard.interests.length) {
     elements.personalDashboardInterests.innerHTML = state.personalDashboard.interests
-      .map((interest) => `<span class="personal-dashboard-interest">${escapeHtml(interest)}</span>`)
+      .map((interestId) => {
+        const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
+        if (!interest) {
+          return "";
+        }
+        return `
+          <span class="personal-dashboard-interest">
+            <span>${escapeHtml(interest.label)}</span>
+            <button
+              type="button"
+              class="personal-dashboard-interest-remove"
+              data-remove-personal-interest="${escapeHtml(interest.id)}"
+              aria-label="Remove ${escapeHtml(interest.label)}"
+            >
+              ×
+            </button>
+          </span>
+        `;
+      })
+      .filter(Boolean)
       .join("");
   } else {
     elements.personalDashboardInterests.innerHTML =
-      `<p class="personal-dashboard-empty">No personal dashboard profiles selected. The dashboard behaves normally until you choose one.</p>`;
+      `<p class="personal-dashboard-empty">No personal interests selected. The dashboard behaves normally until you tick one or more interests.</p>`;
   }
 
-  elements.personalDashboardClear.disabled = !state.personalDashboard.profiles.length;
+  elements.personalDashboardClear.disabled = !state.personalDashboard.interests.length;
 }
 
-function togglePersonalDashboardProfile(profileId) {
-  const normalizedProfileId = normalizePersonalDashboardProfileId(profileId);
-  if (!normalizedProfileId) {
+function setPersonalDashboardInterest(interestId, enabled) {
+  const normalizedInterestId = normalizePersonalDashboardInterestId(interestId);
+  if (!normalizedInterestId) {
     return;
   }
 
-  const activeProfiles = new Set(state.personalDashboard.profiles);
-  if (activeProfiles.has(normalizedProfileId)) {
-    activeProfiles.delete(normalizedProfileId);
+  const activeInterests = new Set(state.personalDashboard.interests);
+  if (enabled) {
+    activeInterests.add(normalizedInterestId);
   } else {
-    activeProfiles.add(normalizedProfileId);
+    activeInterests.delete(normalizedInterestId);
   }
 
-  state.personalDashboard.profiles = Array.from(activeProfiles);
+  state.personalDashboard.interests = Array.from(activeInterests);
   savePersonalDashboardPreferences();
   renderPersonalDashboard();
-  scheduleRenderArticles("personal-dashboard-profile", { mode: "frame" });
+  scheduleRenderArticles("personal-dashboard-interest", { mode: "frame" });
 }
 
 function getPersonalDashboardArticleText(article) {
@@ -6581,6 +6595,9 @@ function getPersonalDashboardArticleText(article) {
       Array.isArray(article?.keywords) ? article.keywords.join(" ") : "",
       getArticleFilterTags(article).join(" "),
       getArticleSignalCategories(article).join(" "),
+      getArticleSignalCategories(article)
+        .map((signalId) => getSignalCategoryById(signalId)?.label || signalId)
+        .join(" "),
       article?._intelligence?.normalizedEvent?.canonicalEventType,
       article?._intelligence?.normalizedEvent?.domain,
       article?._intelligence?.normalizedEvent?.action,
@@ -6593,7 +6610,7 @@ function getPersonalDashboardArticleText(article) {
   );
 }
 
-function articleMatchesPersonalDashboard(article) {
+function articleMatchesPersonalInterests(article) {
   if (!hasActivePersonalDashboardPreferences()) {
     return true;
   }
@@ -6604,7 +6621,13 @@ function articleMatchesPersonalDashboard(article) {
   }
 
   const articleText = getPersonalDashboardArticleText(article);
-  return activeInterests.some((interest) => textMatchesKeyword(articleText, interest));
+  return activeInterests.some((interestId) => {
+    const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
+    if (!interest) {
+      return false;
+    }
+    return interest.keywords.some((keyword) => textMatchesKeyword(articleText, keyword));
+  });
 }
 
 function refreshTagControls() {
@@ -7191,7 +7214,7 @@ function articleMatchesFilters(article, options = {}) {
     }
   }
 
-  if (!articleMatchesPersonalDashboard(article)) {
+  if (!articleMatchesPersonalInterests(article)) {
     return false;
   }
 
@@ -10623,7 +10646,7 @@ function getPaginationContextKey() {
   return JSON.stringify({
     dashboardMode: state.dashboardMode,
     filters: state.filters,
-    personalDashboardProfiles: state.personalDashboard.profiles,
+    personalDashboardInterests: state.personalDashboard.interests,
     analyticsScope: state.analyticsScope,
     analyticsQualityFilter: state.analyticsQualityFilter,
   });
@@ -11734,14 +11757,40 @@ function bindEvents() {
     });
   }
 
-  if (elements.personalDashboardProfiles) {
-    elements.personalDashboardProfiles.addEventListener("click", (event) => {
-      const target = event.target instanceof Element ? event.target.closest("[data-personal-profile]") : null;
+  if (elements.personalDashboardGroups) {
+    elements.personalDashboardGroups.addEventListener("click", (event) => {
+      const target = event.target instanceof Element
+        ? event.target.closest("[data-personal-group-toggle]")
+        : null;
       if (!target) {
         return;
       }
 
-      togglePersonalDashboardProfile(target.dataset.personalProfile || "");
+      togglePersonalDashboardGroup(target.dataset.personalGroupToggle || "");
+    });
+
+    elements.personalDashboardGroups.addEventListener("change", (event) => {
+      const target = event.target instanceof Element
+        ? event.target.closest("[data-personal-interest]")
+        : null;
+      if (!(target instanceof HTMLInputElement)) {
+        return;
+      }
+
+      setPersonalDashboardInterest(target.dataset.personalInterest || "", target.checked);
+    });
+  }
+
+  if (elements.personalDashboardInterests) {
+    elements.personalDashboardInterests.addEventListener("click", (event) => {
+      const target = event.target instanceof Element
+        ? event.target.closest("[data-remove-personal-interest]")
+        : null;
+      if (!target) {
+        return;
+      }
+
+      setPersonalDashboardInterest(target.dataset.removePersonalInterest || "", false);
     });
   }
 
