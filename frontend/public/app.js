@@ -85,9 +85,9 @@ const PERSONAL_DASHBOARD_MODES = {
 const PERSONAL_DASHBOARD_GENERIC_INTEREST_IDS = new Set(["rollout", "release", "issuance", "redesign"]);
 const SPECIALIST_SOURCE_INTERESTS = {
   banknotes: ["banknotenews", "notafilia", "mriguide", "reform.news"],
-  identity_documents: [],
-  digital_identity_biometrics: [],
-  security_printing: [],
+  identity_documents: ["icao", "passport office", "state department", "immigration authority", "ministry of interior", "secure document"],
+  digital_identity_biometrics: ["biometric update", "digital identity", "authentication", "identity verification"],
+  security_printing: ["security printing", "security printer", "secure documents", "holography"],
 };
 const PERSONAL_DASHBOARD_DOMAIN_CONTEXTS = {
   banknote_intelligence: {
