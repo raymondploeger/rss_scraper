@@ -1822,9 +1822,142 @@ function getEffectivePersonalDashboardDomains() {
   const selectedDomains = Array.from(mainDomainSelections.keys());
   return selectedDomains.length
     ? selectedDomains
-    : sharedInterestSelections.length
-      ? ["banknote_intelligence", "identity_documents"]
-      : [];
+      : sharedInterestSelections.length
+        ? ["banknote_intelligence", "identity_documents"]
+        : [];
+}
+
+function mapPersonalDashboardGroupToMainDomain(groupId) {
+  if (groupId === "banknote_intelligence") {
+    return "banknotes";
+  }
+  if (groupId === "identity_documents") {
+    return "identity_documents";
+  }
+  if (groupId === "digital_identity_biometrics") {
+    return "digital_identity";
+  }
+  if (groupId === PERSONAL_DASHBOARD_SHARED_GROUP_ID) {
+    return "shared_security";
+  }
+  return "unknown";
+}
+
+function getSelectedMainDomains(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  const mainDomains = new Set();
+
+  normalizedInterests.forEach((interestId) => {
+    const groupId = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId || "";
+    const mappedDomain = mapPersonalDashboardGroupToMainDomain(groupId);
+    if (mappedDomain === "banknotes" || mappedDomain === "identity_documents" || mappedDomain === "digital_identity") {
+      mainDomains.add(mappedDomain);
+    }
+  });
+
+  return Array.from(mainDomains);
+}
+
+function getArticleDominantDomain(article) {
+  return getCachedArticleValue(article, "personalDominantDomain", () => {
+    const context = getPersonalBoostContext(article);
+    const banknoteSignals = getPersonalDomainContextProfile(context, "banknote_intelligence");
+    const identitySignals = getPersonalDomainContextProfile(context, "identity_documents");
+    const digitalSignals = getPersonalDomainContextProfile(context, "digital_identity_biometrics");
+    const sharedSignals = getPersonalDomainContextProfile(context, PERSONAL_DASHBOARD_SHARED_GROUP_ID);
+
+    const banknoteScore =
+      banknoteSignals.score
+      + (context.topicType === "banknote" || context.domain === "banknote" || context.topic === "banknotes" ? 18 : 0)
+      + (contextMatchesSpecialistSource(context, "banknote_intelligence") ? 24 : 0);
+    const identityScore =
+      identitySignals.score
+      + (["travel_passport", "identity_document", "dmv_driver_license"].includes(context.topicType) ? 18 : 0)
+      + (contextMatchesSpecialistSource(context, "identity_documents") ? 14 : 0);
+    const digitalScore =
+      digitalSignals.score
+      + (context.topicType === "digital_identity" || context.domain === "digital_identity" ? 20 : 0)
+      + (contextMatchesSpecialistSource(context, "digital_identity_biometrics") ? 14 : 0);
+    const sharedScore =
+      sharedSignals.score
+      + (contextMatchesSpecialistSource(context, PERSONAL_DASHBOARD_SHARED_GROUP_ID) ? 12 : 0);
+
+    if (sharedScore >= 12 && banknoteScore < 12 && identityScore < 12 && digitalScore < 12) {
+      return "shared_security";
+    }
+
+    const candidates = [
+      { domain: "banknotes", score: banknoteScore },
+      { domain: "identity_documents", score: identityScore },
+      { domain: "digital_identity", score: digitalScore },
+    ].sort((left, right) => right.score - left.score);
+
+    if (!candidates.length || candidates[0].score < 8) {
+      return sharedScore >= 10 ? "shared_security" : "unknown";
+    }
+
+    return candidates[0].domain;
+  });
+}
+
+function hasSelectedDomainContext(article, selectedMainDomain) {
+  const context = getPersonalBoostContext(article);
+  if (selectedMainDomain === "banknotes") {
+    return getPersonalDomainContextProfile(context, "banknote_intelligence").score >= 8;
+  }
+  if (selectedMainDomain === "identity_documents") {
+    return getPersonalDomainContextProfile(context, "identity_documents").score >= 7;
+  }
+  if (selectedMainDomain === "digital_identity") {
+    return getPersonalDomainContextProfile(context, "digital_identity_biometrics").score >= 7;
+  }
+  return false;
+}
+
+function getDomainDecayMultiplier(article, selectedMainDomains) {
+  if (!Array.isArray(selectedMainDomains) || !selectedMainDomains.length) {
+    return 1;
+  }
+
+  const dominantDomain = getArticleDominantDomain(article);
+
+  if (selectedMainDomains.length === 1) {
+    const selected = selectedMainDomains[0];
+
+    if (dominantDomain === selected) {
+      return 1.0;
+    }
+    if (dominantDomain === "shared_security") {
+      return hasSelectedDomainContext(article, selected) ? 0.85 : 0.45;
+    }
+    if (selected === "banknotes" && dominantDomain === "identity_documents") {
+      return 0.35;
+    }
+    if (selected === "banknotes" && dominantDomain === "digital_identity") {
+      return 0.15;
+    }
+    if (selected === "identity_documents" && dominantDomain === "banknotes") {
+      return 0.35;
+    }
+    if (selected === "identity_documents" && dominantDomain === "digital_identity") {
+      return 0.45;
+    }
+    if (selected === "digital_identity" && dominantDomain === "banknotes") {
+      return 0.15;
+    }
+    if (selected === "digital_identity" && dominantDomain === "identity_documents") {
+      return 0.45;
+    }
+    return 0.75;
+  }
+
+  if (selectedMainDomains.includes(dominantDomain)) {
+    return 1.0;
+  }
+  if (dominantDomain === "shared_security") {
+    return selectedMainDomains.some((selected) => hasSelectedDomainContext(article, selected)) ? 0.85 : 0.5;
+  }
+  return 0.45;
 }
 
 function calculatePersonalDomainScore(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
@@ -1842,6 +1975,7 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
     }
 
     const context = getPersonalBoostContext(article);
+    const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
     const effectiveDomains = getEffectivePersonalDashboardDomains();
     const { mainDomainSelections, sharedInterestSelections } = getPersonalDashboardSelectedDomainConfig();
 
@@ -1944,8 +2078,9 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
     });
 
     const modeMultiplier = PERSONAL_DASHBOARD_MODES[mode] || 1;
-    const domainScore = Math.round(Math.max(-120, bestScore) * modeMultiplier);
-    const relevanceBand = domainScore >= 250 ? "high" : domainScore >= 120 ? "relevant" : domainScore >= 40 ? "related" : "";
+    const decayMultiplier = getDomainDecayMultiplier(article, selectedMainDomains);
+    const domainScore = Math.round(Math.max(-120, bestScore) * modeMultiplier * decayMultiplier);
+    const relevanceBand = domainScore >= 320 ? "high" : domainScore >= 180 ? "relevant" : domainScore >= 80 ? "related" : "";
 
     return {
       domainScore,
