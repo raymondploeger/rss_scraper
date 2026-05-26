@@ -1765,16 +1765,12 @@ function computePersonalBoost(article) {
       };
     }
 
-    const baseScore = selectedInterests.reduce((maxScore, interestId) => {
-      const interestBoost = computePersonalInterestBoost(article, interestId);
-      return Math.max(maxScore, interestBoost.score);
-    }, 0);
-    const modeMultiplier = PERSONAL_DASHBOARD_MODES[mode] || 1;
-    const score = Math.round(baseScore * modeMultiplier);
+    const personalDomainScore = calculatePersonalDomainScore(article, selectedInterests);
+    const score = personalDomainScore.domainScore;
 
     return {
       score,
-      level: score >= 24 ? "high" : score >= 12 ? "related" : score >= 5 ? "peripheral" : "",
+      level: personalDomainScore.relevanceBand,
     };
   });
 }
@@ -1819,6 +1815,144 @@ function getPersonalDashboardSelectedDomainConfig() {
     mainDomainSelections,
     sharedInterestSelections,
   };
+}
+
+function getEffectivePersonalDashboardDomains() {
+  const { mainDomainSelections, sharedInterestSelections } = getPersonalDashboardSelectedDomainConfig();
+  const selectedDomains = Array.from(mainDomainSelections.keys());
+  return selectedDomains.length
+    ? selectedDomains
+    : sharedInterestSelections.length
+      ? ["banknote_intelligence", "identity_documents"]
+      : [];
+}
+
+function calculatePersonalDomainScore(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  const mode = normalizePersonalDashboardMode(state.personalDashboard.mode);
+  const cacheKey = `personalDomainScore:${mode}:${normalizedInterests.join("|")}`;
+
+  return getCachedArticleValue(article, cacheKey, () => {
+    if (!normalizedInterests.length) {
+      return {
+        domainScore: 0,
+        domain: "",
+        relevanceBand: "",
+      };
+    }
+
+    const context = getPersonalBoostContext(article);
+    const effectiveDomains = getEffectivePersonalDashboardDomains();
+    const { mainDomainSelections, sharedInterestSelections } = getPersonalDashboardSelectedDomainConfig();
+
+    let bestDomain = "";
+    let bestScore = -120;
+
+    effectiveDomains.forEach((groupId) => {
+      const domainContext = getPersonalDomainContextProfile(context, groupId);
+      const selectedDomainInterests = mainDomainSelections.get(groupId) || [];
+      const specialistSourceMatch = contextMatchesSpecialistSource(context, groupId);
+      const selectedInterestBoost = selectedDomainInterests.reduce((maxScore, interestId) => {
+        return Math.max(maxScore, computePersonalInterestBoost(article, interestId).score);
+      }, 0);
+      const sharedInterestBoost = sharedInterestSelections.reduce((maxScore, interestId) => {
+        return Math.max(maxScore, computePersonalInterestBoost(article, interestId).score);
+      }, 0);
+
+      let score = 0;
+
+      if (groupId === "banknote_intelligence") {
+        if (specialistSourceMatch) {
+          score += 300;
+        }
+        if (context.topicType === "banknote" || context.domain === "banknote" || context.topic === "banknotes") {
+          score += 170;
+        }
+        if (domainContext.score >= 10) {
+          score += 130;
+        } else if (domainContext.score >= 6) {
+          score += 70;
+        }
+        if (selectedInterestBoost) {
+          score += Math.min(250, selectedInterestBoost * 5);
+        }
+        if (sharedInterestBoost && domainContext.score >= 7) {
+          score += Math.min(120, sharedInterestBoost * 3);
+        }
+        if (countBoostKeywordMatches(`${context.titleText} ${context.tagText} ${context.metadataText}`, ["banknote", "banknotes", "currency", "cash", "note", "central bank", "circulation", "mint"]) >= 2) {
+          score += 55;
+        }
+        score -= countBoostKeywordMatches(
+          `${context.titleText} ${context.tagText} ${context.metadataText}`,
+          ["kyc", "onboarding", "wallet", "eid", "digital identity", "authentication", "liveness", "biometric", "biometrics"]
+        ) * 35;
+      } else if (groupId === "identity_documents") {
+        if (["travel_passport", "identity_document", "dmv_driver_license"].includes(context.topicType)) {
+          score += 170;
+        }
+        if (domainContext.score >= 10) {
+          score += 125;
+        } else if (domainContext.score >= 6) {
+          score += 65;
+        }
+        if (selectedInterestBoost) {
+          score += Math.min(240, selectedInterestBoost * 5);
+        }
+        if (sharedInterestBoost && domainContext.score >= 7) {
+          score += Math.min(110, sharedInterestBoost * 3);
+        }
+        if (countBoostKeywordMatches(`${context.titleText} ${context.tagText} ${context.metadataText}`, ["passport", "visa", "residence permit", "identity card", "id card", "border control", "polycarbonate", "laminate"]) >= 2) {
+          score += 50;
+        }
+        score -= countBoostKeywordMatches(
+          `${context.titleText} ${context.tagText} ${context.metadataText}`,
+          ["banknote", "banknotes", "central bank", "currency", "commemorative note", "cash circulation"]
+        ) * 32;
+      } else if (groupId === "digital_identity_biometrics") {
+        if (context.topicType === "digital_identity" || context.domain === "digital_identity") {
+          score += 175;
+        }
+        if (domainContext.score >= 10) {
+          score += 130;
+        } else if (domainContext.score >= 6) {
+          score += 70;
+        }
+        if (selectedInterestBoost) {
+          score += Math.min(240, selectedInterestBoost * 5);
+        }
+        if (countBoostKeywordMatches(`${context.titleText} ${context.tagText} ${context.metadataText}`, ["digital identity", "biometric", "biometrics", "eid", "wallet", "kyc", "authentication", "liveness", "identity verification"]) >= 2) {
+          score += 55;
+        }
+        score -= countBoostKeywordMatches(
+          `${context.titleText} ${context.tagText} ${context.metadataText}`,
+          ["banknote", "banknotes", "central bank", "currency", "cash", "commemorative note", "demonetisation"]
+        ) * 35;
+      }
+
+      if (domainContext.excludedHits > 0 && !specialistSourceMatch) {
+        score -= domainContext.excludedHits * 24;
+      }
+
+      if (domainContext.score < 4 && !specialistSourceMatch && selectedInterestBoost < 20) {
+        score = Math.min(score, 28);
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestDomain = groupId;
+      }
+    });
+
+    const modeMultiplier = PERSONAL_DASHBOARD_MODES[mode] || 1;
+    const domainScore = Math.round(Math.max(-120, bestScore) * modeMultiplier);
+    const relevanceBand = domainScore >= 250 ? "high" : domainScore >= 120 ? "relevant" : domainScore >= 40 ? "related" : "";
+
+    return {
+      domainScore,
+      domain: bestDomain,
+      relevanceBand,
+    };
+  });
 }
 
 function getPersonalDashboardDomainThreshold() {
@@ -1918,11 +2052,7 @@ function getPersonalDashboardDomainMatch(article) {
 }
 
 function articleMatchesPersonalDashboardSelection(article) {
-  if (!hasPersonalDashboardSelections()) {
-    return true;
-  }
-
-  return getPersonalDashboardDomainMatch(article).matched;
+  return true;
 }
 
 function getPersonalIntelligenceLane(article) {
@@ -2058,17 +2188,30 @@ function renderPersonalLaneSections(container, articles, laneCounts) {
 }
 
 function compareArticlesForDisplay(left, right) {
-  const leftBoost = computePersonalBoost(left).score;
-  const rightBoost = computePersonalBoost(right).score;
+  const leftBoost = calculatePersonalDomainScore(left).domainScore;
+  const rightBoost = calculatePersonalDomainScore(right).domainScore;
+  if (rightBoost !== leftBoost) {
+    return rightBoost - leftBoost;
+  }
+
+  const leftIntelligence = left?._intelligence || primeArticleIntelligence(left) || {};
+  const rightIntelligence = right?._intelligence || primeArticleIntelligence(right) || {};
+  const leftBaseScore =
+    (Number(left?.sourceCount) || 0) * 8
+    + (leftIntelligence.normalizedEvent?.confidence === "high" ? 40 : leftIntelligence.normalizedEvent?.confidence === "medium" ? 20 : 0)
+    + Math.round(Number(leftIntelligence.identityDocumentRelevance || 0))
+    + Math.round(Number(leftIntelligence.banknoteIntelligenceRelevance?.score || 0) * 0.35);
+  const rightBaseScore =
+    (Number(right?.sourceCount) || 0) * 8
+    + (rightIntelligence.normalizedEvent?.confidence === "high" ? 40 : rightIntelligence.normalizedEvent?.confidence === "medium" ? 20 : 0)
+    + Math.round(Number(rightIntelligence.identityDocumentRelevance || 0))
+    + Math.round(Number(rightIntelligence.banknoteIntelligenceRelevance?.score || 0) * 0.35);
+  if (rightBaseScore !== leftBaseScore) {
+    return rightBaseScore - leftBaseScore;
+  }
+
   const leftDate = toDate(left?.pubDate).getTime() || 0;
   const rightDate = toDate(right?.pubDate).getTime() || 0;
-  const hourMs = 60 * 60 * 1000;
-  const leftRank = leftDate + (leftBoost * 3 * hourMs);
-  const rightRank = rightDate + (rightBoost * 3 * hourMs);
-
-  if (rightRank !== leftRank) {
-    return rightRank - leftRank;
-  }
 
   if (rightDate !== leftDate) {
     return rightDate - leftDate;
@@ -10975,9 +11118,9 @@ function renderArticleCard(article) {
       personalBadge.textContent =
         personalBoost.level === "high"
           ? "High relevance"
-          : personalBoost.level === "related"
-            ? "Related"
-            : "Peripheral";
+          : personalBoost.level === "relevant"
+            ? "Relevant"
+            : "Related";
       meta.appendChild(personalBadge);
     }
   }
