@@ -1773,6 +1773,203 @@ function computePersonalBoost(article) {
   });
 }
 
+function getPersonalInterestSignature() {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const mode = normalizePersonalDashboardMode(state.personalDashboard.mode);
+  return `${mode}:${selectedInterests.join("|")}`;
+}
+
+function contextMatchesSpecialistSource(context, groupId) {
+  return Array.isArray(SPECIALIST_SOURCE_INTERESTS[groupId]) && SPECIALIST_SOURCE_INTERESTS[groupId].some((specialistSource) =>
+    context.sourceText.includes(specialistSource) || context.domainText.includes(specialistSource)
+  );
+}
+
+function getPersonalIntelligenceLane(article) {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const signature = getPersonalInterestSignature();
+  const cacheKey = `personalLane:${signature}`;
+
+  return getCachedArticleValue(article, cacheKey, () => {
+    if (!selectedInterests.length) {
+      return {
+        lane: "broader",
+        score: 0,
+        reasons: [],
+      };
+    }
+
+    const context = getPersonalBoostContext(article);
+    let bestInterest = null;
+    let bestScore = 0;
+
+    selectedInterests.forEach((interestId) => {
+      const interestBoost = computePersonalInterestBoost(article, interestId);
+      if (interestBoost.score > bestScore) {
+        bestScore = interestBoost.score;
+        bestInterest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId) || null;
+      }
+    });
+
+    if (!bestInterest) {
+      return {
+        lane: "broader",
+        score: 0,
+        reasons: [],
+      };
+    }
+
+    const domainContext = getPersonalDomainContextProfile(context, bestInterest.groupId);
+    const specialistSourceMatch = contextMatchesSpecialistSource(context, bestInterest.groupId);
+    const hasTopicSignal = Array.isArray(bestInterest.topicSignals) && bestInterest.topicSignals.includes(context.topic);
+    const hasEventSignal = Array.isArray(bestInterest.eventTypes) && bestInterest.eventTypes.includes(context.eventType);
+    const hasSignalMatch = Array.isArray(bestInterest.signalIds) && bestInterest.signalIds.some((signalId) => context.signalIds.includes(signalId));
+    const reasons = [];
+
+    if (specialistSourceMatch) {
+      reasons.push("specialist-source");
+    }
+    if (hasTopicSignal) {
+      reasons.push("topic-match");
+    }
+    if (hasEventSignal) {
+      reasons.push("event-match");
+    }
+    if (hasSignalMatch) {
+      reasons.push("signal-match");
+    }
+    if (domainContext.score >= 10) {
+      reasons.push("strong-domain-context");
+    } else if (domainContext.score >= 5) {
+      reasons.push("domain-context");
+    }
+
+    let lane = "broader";
+    if (
+      bestScore >= 26 ||
+      specialistSourceMatch ||
+      hasTopicSignal ||
+      (domainContext.score >= 14 && (hasEventSignal || hasSignalMatch))
+    ) {
+      lane = "primary";
+    } else if (
+      bestScore >= 11 ||
+      domainContext.score >= 7 ||
+      hasEventSignal ||
+      hasSignalMatch
+    ) {
+      lane = "related";
+    }
+
+    if (domainContext.excludedHits > 0 && bestScore < 24 && !specialistSourceMatch && !hasTopicSignal) {
+      lane = lane === "primary" ? "related" : "broader";
+    }
+
+    return {
+      lane,
+      score: bestScore,
+      reasons,
+    };
+  });
+}
+
+function getPersonalLaneRenderPlan(articles) {
+  if (!hasPersonalDashboardSelections() || !Array.isArray(articles) || !articles.length) {
+    return {
+      orderedArticles: Array.isArray(articles) ? articles : [],
+      laneCounts: null,
+      hasLanes: false,
+    };
+  }
+
+  const laneBuckets = {
+    primary: [],
+    related: [],
+    broader: [],
+  };
+
+  articles.forEach((article) => {
+    const laneResult = getPersonalIntelligenceLane(article);
+    const bucket = laneBuckets[laneResult.lane] || laneBuckets.broader;
+    bucket.push({
+      article,
+      laneScore: Number(laneResult.score) || 0,
+    });
+  });
+
+  const sortLaneEntries = (left, right) => {
+    if (right.laneScore !== left.laneScore) {
+      return right.laneScore - left.laneScore;
+    }
+    return compareArticlesForDisplay(left.article, right.article);
+  };
+
+  laneBuckets.primary.sort(sortLaneEntries);
+  laneBuckets.related.sort(sortLaneEntries);
+  laneBuckets.broader.sort(sortLaneEntries);
+
+  return {
+    orderedArticles: [
+      ...laneBuckets.primary.map((entry) => entry.article),
+      ...laneBuckets.related.map((entry) => entry.article),
+      ...laneBuckets.broader.map((entry) => entry.article),
+    ],
+    laneCounts: {
+      primary: laneBuckets.primary.length,
+      related: laneBuckets.related.length,
+      broader: laneBuckets.broader.length,
+    },
+    hasLanes: true,
+  };
+}
+
+function renderPersonalLaneSections(container, articles, laneCounts) {
+  if (!container || !Array.isArray(articles) || !articles.length) {
+    return;
+  }
+
+  const laneSections = {
+    primary: [],
+    related: [],
+    broader: [],
+  };
+
+  articles.forEach((article) => {
+    const laneResult = getPersonalIntelligenceLane(article);
+    (laneSections[laneResult.lane] || laneSections.broader).push(article);
+  });
+
+  const laneDefinitions = [
+    { key: "primary", title: "Primary intelligence" },
+    { key: "related", title: "Related intelligence" },
+    { key: "broader", title: "Broader intelligence" },
+  ];
+
+  laneDefinitions.forEach(({ key, title }) => {
+    const laneArticles = laneSections[key];
+    if (!Array.isArray(laneArticles) || !laneArticles.length) {
+      return;
+    }
+
+    const section = document.createElement("section");
+    section.className = "intelligence-lane-section";
+
+    const header = document.createElement("div");
+    header.className = "intelligence-lane-header";
+    header.textContent = `${title} · ${Number(laneCounts?.[key]) || laneArticles.length}`;
+    section.appendChild(header);
+
+    const cardsGrid = document.createElement("div");
+    cardsGrid.className = "intelligence-lane-cards";
+    laneArticles.forEach((article) => {
+      cardsGrid.appendChild(renderArticleCard(article));
+    });
+    section.appendChild(cardsGrid);
+
+    container.appendChild(section);
+  });
+}
+
 function compareArticlesForDisplay(left, right) {
   const leftBoost = computePersonalBoost(left).score;
   const rightBoost = computePersonalBoost(right).score;
@@ -11348,7 +11545,9 @@ function renderArticlesFallback(error) {
       .sort(compareArticlesForDisplay);
   }
 
-  const fallbackPagination = getPaginatedItems(fallbackAllArticles);
+  const fallbackLanePlan = getPersonalLaneRenderPlan(fallbackAllArticles);
+  const fallbackOrderedArticles = fallbackLanePlan.hasLanes ? fallbackLanePlan.orderedArticles : fallbackAllArticles;
+  const fallbackPagination = getPaginatedItems(fallbackOrderedArticles);
   const MAX_RENDERED_ARTICLES = 30;
   const fallbackPageArticles = Array.isArray(fallbackPagination.items) ? fallbackPagination.items : [];
   const articlesToRender = fallbackPageArticles.slice(0, MAX_RENDERED_ARTICLES);
@@ -11359,16 +11558,21 @@ function renderArticlesFallback(error) {
 
   if (elements.articlesGrid) {
     elements.articlesGrid.classList.remove("is-grouped-feed-view");
+    elements.articlesGrid.classList.toggle("has-personal-lanes", Boolean(fallbackLanePlan.hasLanes));
     elements.articlesGrid.innerHTML = "";
 
     if (!articlesToRender.length) {
       elements.articlesGrid.innerHTML = `<div class="empty-state">No articles match the active filters.</div>`;
     } else {
-      const fragment = document.createDocumentFragment();
-      articlesToRender.forEach((article) => {
-        fragment.appendChild(renderArticleCard(article));
-      });
-      elements.articlesGrid.appendChild(fragment);
+      if (fallbackLanePlan.hasLanes) {
+        renderPersonalLaneSections(elements.articlesGrid, articlesToRender, fallbackLanePlan.laneCounts);
+      } else {
+        const fragment = document.createDocumentFragment();
+        articlesToRender.forEach((article) => {
+          fragment.appendChild(renderArticleCard(article));
+        });
+        elements.articlesGrid.appendChild(fragment);
+      }
     }
   }
 
@@ -11486,9 +11690,12 @@ function renderArticles() {
         ""
     ).trim();
 
+    const lanePlan = getPersonalLaneRenderPlan(articles);
+    const orderedArticles = lanePlan.hasLanes ? lanePlan.orderedArticles : articles;
+
     syncFilterUx();
-    updateArticleFilterContext(articles);
-    const articlePagination = getPaginatedItems(articles);
+    updateArticleFilterContext(orderedArticles);
+    const articlePagination = getPaginatedItems(orderedArticles);
     if (useBackendQuery && Number(state.remoteQuery.totalCount) > articlePagination.totalCount) {
       articlePagination.totalCount = Number(state.remoteQuery.totalCount);
       articlePagination.totalPages = Math.max(1, Math.ceil(articlePagination.totalCount / articlePagination.pageSize));
@@ -11525,6 +11732,7 @@ function renderArticles() {
     if (state.filters.feedId) {
       intelligenceTime("renderArticles:dom-update");
       elements.articlesGrid.classList.remove("is-grouped-feed-view");
+      elements.articlesGrid.classList.toggle("has-personal-lanes", Boolean(lanePlan.hasLanes));
       elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
       elements.articlesGrid.innerHTML = "";
 
@@ -11537,12 +11745,16 @@ function renderArticles() {
         return;
       }
 
-      const fragment = document.createDocumentFragment();
       logRenderingPageArticlesOnly(groupedArticlesCount, articlesToRender);
-      articlesToRender.forEach((article) => {
-        fragment.appendChild(renderArticleCard(article));
-      });
-      elements.articlesGrid.appendChild(fragment);
+      if (lanePlan.hasLanes) {
+        renderPersonalLaneSections(elements.articlesGrid, articlesToRender, lanePlan.laneCounts);
+      } else {
+        const fragment = document.createDocumentFragment();
+        articlesToRender.forEach((article) => {
+          fragment.appendChild(renderArticleCard(article));
+        });
+        elements.articlesGrid.appendChild(fragment);
+      }
       renderPaginationControls(articlePagination);
       intelligenceTimeEnd("renderArticles:dom-update");
       finalizeRenderDiagnostics(renderDiagnostics);
@@ -11552,6 +11764,7 @@ function renderArticles() {
     if ((selectedUsDmvEntry || selectedCanadaEntry) && !state.filters.feedId) {
       intelligenceTime("renderArticles:dom-update");
       elements.articlesGrid.classList.remove("is-grouped-feed-view");
+      elements.articlesGrid.classList.toggle("has-personal-lanes", Boolean(lanePlan.hasLanes));
       elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
       elements.articlesGrid.innerHTML = "";
 
@@ -11569,12 +11782,16 @@ function renderArticles() {
         return;
       }
 
-      const fragment = document.createDocumentFragment();
       logRenderingPageArticlesOnly(groupedArticlesCount, articlesToRender);
-      articlesToRender.forEach((article) => {
-        fragment.appendChild(renderArticleCard(article));
-      });
-      elements.articlesGrid.appendChild(fragment);
+      if (lanePlan.hasLanes) {
+        renderPersonalLaneSections(elements.articlesGrid, articlesToRender, lanePlan.laneCounts);
+      } else {
+        const fragment = document.createDocumentFragment();
+        articlesToRender.forEach((article) => {
+          fragment.appendChild(renderArticleCard(article));
+        });
+        elements.articlesGrid.appendChild(fragment);
+      }
       renderPaginationControls(articlePagination);
       intelligenceTimeEnd("renderArticles:dom-update");
       renderDiagnostics.branchName = "selected-dmv";
@@ -11585,6 +11802,7 @@ function renderArticles() {
     if (state.dashboardMode === "usa" && !getActiveArticleFeedId()) {
       intelligenceTime("renderArticles:dom-update");
       elements.articlesGrid.classList.add("is-grouped-feed-view");
+      elements.articlesGrid.classList.remove("has-personal-lanes");
       const dmvFeeds = getUsDmvFeeds();
       const articlesByFeedId = new Map();
 
@@ -11630,6 +11848,7 @@ function renderArticles() {
     if (state.dashboardMode === "canada" && !state.filters.canadaDmvFeedPath) {
       intelligenceTime("renderArticles:dom-update");
       elements.articlesGrid.classList.add("is-grouped-feed-view");
+      elements.articlesGrid.classList.remove("has-personal-lanes");
       const canadaEntries = getCanadaDmvCatalogEntries();
       const articlesByFeedId = new Map();
 
@@ -11693,6 +11912,7 @@ function renderArticles() {
     intelligenceTime("renderArticles:dom-update");
     elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
     elements.articlesGrid.classList.remove("is-grouped-feed-view");
+    elements.articlesGrid.classList.toggle("has-personal-lanes", Boolean(lanePlan.hasLanes));
     elements.articlesGrid.innerHTML = "";
 
     if (!articlePagination.totalCount) {
@@ -11718,14 +11938,16 @@ function renderArticles() {
       return;
     }
 
-    const fragment = document.createDocumentFragment();
-
     logRenderingPageArticlesOnly(groupedArticlesCount, articlesToRender);
-    articlesToRender.forEach((article) => {
-      fragment.appendChild(renderArticleCard(article));
-    });
-
-    elements.articlesGrid.appendChild(fragment);
+    if (lanePlan.hasLanes) {
+      renderPersonalLaneSections(elements.articlesGrid, articlesToRender, lanePlan.laneCounts);
+    } else {
+      const fragment = document.createDocumentFragment();
+      articlesToRender.forEach((article) => {
+        fragment.appendChild(renderArticleCard(article));
+      });
+      elements.articlesGrid.appendChild(fragment);
+    }
     renderPaginationControls(articlePagination);
     intelligenceTimeEnd("renderArticles:dom-update");
     renderDiagnostics.branchName = state.filters.feedId ? "feed-filter" : "default";
