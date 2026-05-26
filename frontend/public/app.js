@@ -166,6 +166,12 @@ const PERSONAL_DASHBOARD_DOMAIN_CONTEXTS = {
     excluded: ["wallet onboarding", "digital identity platform"],
   },
 };
+const PERSONAL_DASHBOARD_MAIN_DOMAIN_GROUP_IDS = new Set([
+  "banknote_intelligence",
+  "identity_documents",
+  "digital_identity_biometrics",
+]);
+const PERSONAL_DASHBOARD_SHARED_GROUP_ID = "security_printing";
 const PERSONAL_DASHBOARD_GROUPS = [
   {
     id: "banknote_intelligence",
@@ -219,7 +225,7 @@ const PERSONAL_DASHBOARD_GROUPS = [
   },
   {
     id: "security_printing",
-    label: "Security Printing",
+    label: "Shared Security Printing",
     interests: [
       { id: "security_printing_core", label: "Security printing", strong: ["security printing", "secure printing", "security printer"], weak: ["document printing"] },
       { id: "security_inks", label: "Security inks", strong: ["security ink", "security inks", "optically variable ink"], weak: ["specialty ink"] },
@@ -1785,92 +1791,173 @@ function contextMatchesSpecialistSource(context, groupId) {
   );
 }
 
-function getPersonalIntelligenceLane(article) {
+function getPersonalDashboardSelectedDomainConfig() {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const mainDomainSelections = new Map();
+  const sharedInterestSelections = [];
+
+  selectedInterests.forEach((interestId) => {
+    const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
+    if (!interest) {
+      return;
+    }
+
+    if (PERSONAL_DASHBOARD_MAIN_DOMAIN_GROUP_IDS.has(interest.groupId)) {
+      const existing = mainDomainSelections.get(interest.groupId) || [];
+      existing.push(interestId);
+      mainDomainSelections.set(interest.groupId, existing);
+      return;
+    }
+
+    if (interest.groupId === PERSONAL_DASHBOARD_SHARED_GROUP_ID) {
+      sharedInterestSelections.push(interestId);
+    }
+  });
+
+  return {
+    selectedInterests,
+    mainDomainSelections,
+    sharedInterestSelections,
+  };
+}
+
+function getPersonalDashboardDomainThreshold() {
+  const mode = normalizePersonalDashboardMode(state.personalDashboard.mode);
+  if (mode === "strict") {
+    return 20;
+  }
+  if (mode === "broad") {
+    return 8;
+  }
+  return 12;
+}
+
+function getPersonalDashboardDomainMatch(article) {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const signature = getPersonalInterestSignature();
-  const cacheKey = `personalLane:${signature}`;
+  const cacheKey = `personalDomainMatch:${signature}`;
 
   return getCachedArticleValue(article, cacheKey, () => {
     if (!selectedInterests.length) {
       return {
-        lane: "broader",
-        score: 0,
-        reasons: [],
+        matched: true,
+        matchedDomains: [],
+        selectedDomains: [],
+        domainScores: {},
       };
     }
 
+    const { mainDomainSelections, sharedInterestSelections } = getPersonalDashboardSelectedDomainConfig();
     const context = getPersonalBoostContext(article);
-    let bestInterest = null;
-    let bestScore = 0;
+    const selectedDomains = Array.from(mainDomainSelections.keys());
+    const effectiveDomains = selectedDomains.length
+      ? selectedDomains
+      : sharedInterestSelections.length
+        ? ["banknote_intelligence", "identity_documents"]
+        : [];
+    const domainScores = {};
 
-    selectedInterests.forEach((interestId) => {
-      const interestBoost = computePersonalInterestBoost(article, interestId);
-      if (interestBoost.score > bestScore) {
-        bestScore = interestBoost.score;
-        bestInterest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId) || null;
+    effectiveDomains.forEach((groupId) => {
+      const domainContext = getPersonalDomainContextProfile(context, groupId);
+      const specialistSourceScore = contextMatchesSpecialistSource(context, groupId)
+        ? (groupId === "banknote_intelligence" ? 18 : 10)
+        : 0;
+      const selectedDomainInterests = mainDomainSelections.get(groupId) || [];
+      const directInterestScore = selectedDomainInterests.reduce((maxScore, interestId) => {
+        const interestScore = computePersonalInterestBoost(article, interestId).score;
+        return Math.max(maxScore, interestScore);
+      }, 0);
+      const sharedInterestScore = sharedInterestSelections.reduce((maxScore, interestId) => {
+        const interestScore = computePersonalInterestBoost(article, interestId).score;
+        return Math.max(maxScore, interestScore);
+      }, 0);
+
+      let score = Math.max(
+        directInterestScore,
+        specialistSourceScore + domainContext.score,
+      );
+
+      if (sharedInterestScore && domainContext.score >= 8) {
+        score = Math.max(score, Math.round(sharedInterestScore * 0.85) + domainContext.score);
       }
+
+      if (!selectedDomainInterests.length && !sharedInterestSelections.length) {
+        score = domainContext.score;
+      }
+
+      const hasExplicitDomainAffinity =
+        specialistSourceScore > 0
+        || (groupId === "banknote_intelligence" && (domainContext.score >= 8 || context.topicType === "banknote" || context.domain === "banknote"))
+        || (groupId === "identity_documents" && (domainContext.score >= 7 || ["travel_passport", "identity_document", "dmv_driver_license"].includes(context.topicType)))
+        || (groupId === "digital_identity_biometrics" && (domainContext.score >= 7 || context.topicType === "digital_identity"))
+        || (groupId === PERSONAL_DASHBOARD_SHARED_GROUP_ID && domainContext.score >= 7);
+
+      if (!hasExplicitDomainAffinity) {
+        score = Math.min(score, Math.round(domainContext.score * 0.75));
+      }
+
+      if (domainContext.excludedHits > 0 && directInterestScore < 18 && specialistSourceScore === 0) {
+        score -= domainContext.excludedHits * 10;
+      }
+
+      domainScores[groupId] = Math.max(0, Math.round(score));
     });
 
-    if (!bestInterest) {
-      return {
-        lane: "broader",
-        score: 0,
-        reasons: [],
-      };
-    }
+    const threshold = getPersonalDashboardDomainThreshold();
+    const matchedDomains = effectiveDomains.filter((groupId) => Number(domainScores[groupId]) >= threshold);
 
-    const domainContext = getPersonalDomainContextProfile(context, bestInterest.groupId);
-    const specialistSourceMatch = contextMatchesSpecialistSource(context, bestInterest.groupId);
-    const hasTopicSignal = Array.isArray(bestInterest.topicSignals) && bestInterest.topicSignals.includes(context.topic);
-    const hasEventSignal = Array.isArray(bestInterest.eventTypes) && bestInterest.eventTypes.includes(context.eventType);
-    const hasSignalMatch = Array.isArray(bestInterest.signalIds) && bestInterest.signalIds.some((signalId) => context.signalIds.includes(signalId));
-    const reasons = [];
-
-    if (specialistSourceMatch) {
-      reasons.push("specialist-source");
-    }
-    if (hasTopicSignal) {
-      reasons.push("topic-match");
-    }
-    if (hasEventSignal) {
-      reasons.push("event-match");
-    }
-    if (hasSignalMatch) {
-      reasons.push("signal-match");
-    }
-    if (domainContext.score >= 10) {
-      reasons.push("strong-domain-context");
-    } else if (domainContext.score >= 5) {
-      reasons.push("domain-context");
-    }
-
-    let lane = "broader";
-    if (
-      bestScore >= 26 ||
-      specialistSourceMatch ||
-      hasTopicSignal ||
-      (domainContext.score >= 14 && (hasEventSignal || hasSignalMatch))
-    ) {
-      lane = "primary";
-    } else if (
-      bestScore >= 11 ||
-      domainContext.score >= 7 ||
-      hasEventSignal ||
-      hasSignalMatch
-    ) {
-      lane = "related";
-    }
-
-    if (domainContext.excludedHits > 0 && bestScore < 24 && !specialistSourceMatch && !hasTopicSignal) {
-      lane = lane === "primary" ? "related" : "broader";
-    }
+    const matched = effectiveDomains.length ? matchedDomains.length > 0 : true;
 
     return {
-      lane,
-      score: bestScore,
-      reasons,
+      matched,
+      matchedDomains,
+      selectedDomains: effectiveDomains,
+      domainScores,
     };
   });
+}
+
+function articleMatchesPersonalDashboardSelection(article) {
+  if (!hasPersonalDashboardSelections()) {
+    return true;
+  }
+
+  return getPersonalDashboardDomainMatch(article).matched;
+}
+
+function getPersonalIntelligenceLane(article) {
+  const domainMatch = getPersonalDashboardDomainMatch(article);
+  const score = computePersonalBoost(article).score;
+
+  if (!domainMatch.matched) {
+    return {
+      lane: "broader",
+      score,
+      reasons: ["outside-selected-domain"],
+    };
+  }
+
+  if (score >= 26) {
+    return {
+      lane: "primary",
+      score,
+      reasons: ["strong-selected-domain"],
+    };
+  }
+
+  if (score >= 12) {
+    return {
+      lane: "related",
+      score,
+      reasons: ["selected-domain"],
+    };
+  }
+
+  return {
+    lane: "broader",
+    score,
+    reasons: ["selected-domain"],
+  };
 }
 
 function getPersonalLaneRenderPlan(articles) {
@@ -7730,6 +7817,10 @@ function articleMatchesFilters(article, options = {}) {
     }
   }
 
+  if (!articleMatchesPersonalDashboardSelection(article)) {
+    return false;
+  }
+
   return true;
 }
 
@@ -11545,9 +11636,7 @@ function renderArticlesFallback(error) {
       .sort(compareArticlesForDisplay);
   }
 
-  const fallbackLanePlan = getPersonalLaneRenderPlan(fallbackAllArticles);
-  const fallbackOrderedArticles = fallbackLanePlan.hasLanes ? fallbackLanePlan.orderedArticles : fallbackAllArticles;
-  const fallbackPagination = getPaginatedItems(fallbackOrderedArticles);
+  const fallbackPagination = getPaginatedItems(fallbackAllArticles);
   const MAX_RENDERED_ARTICLES = 30;
   const fallbackPageArticles = Array.isArray(fallbackPagination.items) ? fallbackPagination.items : [];
   const articlesToRender = fallbackPageArticles.slice(0, MAX_RENDERED_ARTICLES);
@@ -11558,21 +11647,17 @@ function renderArticlesFallback(error) {
 
   if (elements.articlesGrid) {
     elements.articlesGrid.classList.remove("is-grouped-feed-view");
-    elements.articlesGrid.classList.toggle("has-personal-lanes", Boolean(fallbackLanePlan.hasLanes));
+    elements.articlesGrid.classList.remove("has-personal-lanes");
     elements.articlesGrid.innerHTML = "";
 
     if (!articlesToRender.length) {
       elements.articlesGrid.innerHTML = `<div class="empty-state">No articles match the active filters.</div>`;
     } else {
-      if (fallbackLanePlan.hasLanes) {
-        renderPersonalLaneSections(elements.articlesGrid, articlesToRender, fallbackLanePlan.laneCounts);
-      } else {
-        const fragment = document.createDocumentFragment();
-        articlesToRender.forEach((article) => {
-          fragment.appendChild(renderArticleCard(article));
-        });
-        elements.articlesGrid.appendChild(fragment);
-      }
+      const fragment = document.createDocumentFragment();
+      articlesToRender.forEach((article) => {
+        fragment.appendChild(renderArticleCard(article));
+      });
+      elements.articlesGrid.appendChild(fragment);
     }
   }
 
@@ -11690,12 +11775,9 @@ function renderArticles() {
         ""
     ).trim();
 
-    const lanePlan = getPersonalLaneRenderPlan(articles);
-    const orderedArticles = lanePlan.hasLanes ? lanePlan.orderedArticles : articles;
-
     syncFilterUx();
-    updateArticleFilterContext(orderedArticles);
-    const articlePagination = getPaginatedItems(orderedArticles);
+    updateArticleFilterContext(articles);
+    const articlePagination = getPaginatedItems(articles);
     if (useBackendQuery && Number(state.remoteQuery.totalCount) > articlePagination.totalCount) {
       articlePagination.totalCount = Number(state.remoteQuery.totalCount);
       articlePagination.totalPages = Math.max(1, Math.ceil(articlePagination.totalCount / articlePagination.pageSize));
@@ -11732,7 +11814,7 @@ function renderArticles() {
     if (state.filters.feedId) {
       intelligenceTime("renderArticles:dom-update");
       elements.articlesGrid.classList.remove("is-grouped-feed-view");
-      elements.articlesGrid.classList.toggle("has-personal-lanes", Boolean(lanePlan.hasLanes));
+      elements.articlesGrid.classList.remove("has-personal-lanes");
       elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
       elements.articlesGrid.innerHTML = "";
 
@@ -11746,15 +11828,11 @@ function renderArticles() {
       }
 
       logRenderingPageArticlesOnly(groupedArticlesCount, articlesToRender);
-      if (lanePlan.hasLanes) {
-        renderPersonalLaneSections(elements.articlesGrid, articlesToRender, lanePlan.laneCounts);
-      } else {
-        const fragment = document.createDocumentFragment();
-        articlesToRender.forEach((article) => {
-          fragment.appendChild(renderArticleCard(article));
-        });
-        elements.articlesGrid.appendChild(fragment);
-      }
+      const fragment = document.createDocumentFragment();
+      articlesToRender.forEach((article) => {
+        fragment.appendChild(renderArticleCard(article));
+      });
+      elements.articlesGrid.appendChild(fragment);
       renderPaginationControls(articlePagination);
       intelligenceTimeEnd("renderArticles:dom-update");
       finalizeRenderDiagnostics(renderDiagnostics);
@@ -11764,7 +11842,7 @@ function renderArticles() {
     if ((selectedUsDmvEntry || selectedCanadaEntry) && !state.filters.feedId) {
       intelligenceTime("renderArticles:dom-update");
       elements.articlesGrid.classList.remove("is-grouped-feed-view");
-      elements.articlesGrid.classList.toggle("has-personal-lanes", Boolean(lanePlan.hasLanes));
+      elements.articlesGrid.classList.remove("has-personal-lanes");
       elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
       elements.articlesGrid.innerHTML = "";
 
@@ -11783,15 +11861,11 @@ function renderArticles() {
       }
 
       logRenderingPageArticlesOnly(groupedArticlesCount, articlesToRender);
-      if (lanePlan.hasLanes) {
-        renderPersonalLaneSections(elements.articlesGrid, articlesToRender, lanePlan.laneCounts);
-      } else {
-        const fragment = document.createDocumentFragment();
-        articlesToRender.forEach((article) => {
-          fragment.appendChild(renderArticleCard(article));
-        });
-        elements.articlesGrid.appendChild(fragment);
-      }
+      const fragment = document.createDocumentFragment();
+      articlesToRender.forEach((article) => {
+        fragment.appendChild(renderArticleCard(article));
+      });
+      elements.articlesGrid.appendChild(fragment);
       renderPaginationControls(articlePagination);
       intelligenceTimeEnd("renderArticles:dom-update");
       renderDiagnostics.branchName = "selected-dmv";
@@ -11912,7 +11986,7 @@ function renderArticles() {
     intelligenceTime("renderArticles:dom-update");
     elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
     elements.articlesGrid.classList.remove("is-grouped-feed-view");
-    elements.articlesGrid.classList.toggle("has-personal-lanes", Boolean(lanePlan.hasLanes));
+    elements.articlesGrid.classList.remove("has-personal-lanes");
     elements.articlesGrid.innerHTML = "";
 
     if (!articlePagination.totalCount) {
@@ -11939,15 +12013,11 @@ function renderArticles() {
     }
 
     logRenderingPageArticlesOnly(groupedArticlesCount, articlesToRender);
-    if (lanePlan.hasLanes) {
-      renderPersonalLaneSections(elements.articlesGrid, articlesToRender, lanePlan.laneCounts);
-    } else {
-      const fragment = document.createDocumentFragment();
-      articlesToRender.forEach((article) => {
-        fragment.appendChild(renderArticleCard(article));
-      });
-      elements.articlesGrid.appendChild(fragment);
-    }
+    const fragment = document.createDocumentFragment();
+    articlesToRender.forEach((article) => {
+      fragment.appendChild(renderArticleCard(article));
+    });
+    elements.articlesGrid.appendChild(fragment);
     renderPaginationControls(articlePagination);
     intelligenceTimeEnd("renderArticles:dom-update");
     renderDiagnostics.branchName = state.filters.feedId ? "feed-filter" : "default";
