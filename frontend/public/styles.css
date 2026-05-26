@@ -1784,6 +1784,18 @@ h3 {
   color: color-mix(in srgb, var(--accent) 88%, var(--text));
 }
 
+.article-personal-badge--related {
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: color-mix(in srgb, var(--accent) 78%, var(--text));
+}
+
+.article-personal-badge--peripheral {
+  border-color: color-mix(in srgb, var(--muted) 22%, var(--line));
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
+  color: var(--muted);
+}
+
 .article-duplicate-badge {
   display: inline-flex;
   align-items: center;

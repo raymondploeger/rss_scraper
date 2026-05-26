@@ -82,11 +82,89 @@ const PERSONAL_DASHBOARD_MODES = {
   balanced: 1.0,
   broad: 0.5,
 };
+const PERSONAL_DASHBOARD_GENERIC_INTEREST_IDS = new Set(["rollout", "release", "issuance", "redesign"]);
 const SPECIALIST_SOURCE_INTERESTS = {
   banknotes: ["banknotenews", "notafilia", "mriguide", "reform.news"],
   identity_documents: [],
   digital_identity_biometrics: [],
   security_printing: [],
+};
+const PERSONAL_DASHBOARD_DOMAIN_CONTEXTS = {
+  banknote_intelligence: {
+    strong: [
+      "banknote",
+      "banknotes",
+      "currency note",
+      "note issuance",
+      "commemorative note",
+      "polymer note",
+      "polymer banknote",
+      "central bank",
+      "security thread",
+      "intaglio",
+      "denomination",
+      "new series",
+      "counterfeit note",
+      "counterfeit currency",
+      "currency redesign",
+      "banknote redesign",
+    ],
+    weak: ["currency", "cash circulation", "note", "banknote family"],
+    excluded: ["digital identity", "eid", "passport", "passports", "biometric", "biometrics", "kyc", "wallet onboarding", "identity wallet"],
+  },
+  identity_documents: {
+    strong: [
+      "passport",
+      "passports",
+      "icao",
+      "visa",
+      "visas",
+      "identity card",
+      "id card",
+      "residence permit",
+      "border control",
+      "travel document",
+      "polycarbonate",
+      "driver license",
+      "driver's license",
+    ],
+    weak: ["issuance office", "document issuance", "immigration authority", "passport office"],
+    excluded: ["banknote", "banknotes", "central bank", "currency redesign", "polymer note", "commemorative note"],
+  },
+  digital_identity_biometrics: {
+    strong: [
+      "biometric",
+      "biometrics",
+      "digital identity",
+      "digital id",
+      "eid",
+      "e-id",
+      "authentication",
+      "kyc",
+      "liveness",
+      "wallet",
+      "identity verification",
+      "ai verification",
+      "onboarding",
+    ],
+    weak: ["identity platform", "mobile id", "document verification", "verification platform"],
+    excluded: ["commemorative banknote", "currency redesign", "central bank issuance", "banknote withdrawal", "demonetisation"],
+  },
+  security_printing: {
+    strong: [
+      "security printing",
+      "security inks",
+      "micro optics",
+      "holography",
+      "ovd",
+      "intaglio",
+      "anti-counterfeit",
+      "secure documents",
+      "personalization",
+    ],
+    weak: ["document security", "secure print", "specialty ink"],
+    excluded: ["wallet onboarding", "digital identity platform"],
+  },
 };
 const PERSONAL_DASHBOARD_GROUPS = [
   {
@@ -1550,8 +1628,56 @@ function countBoostKeywordMatches(text, keywords = []) {
   return keywords.filter((keyword) => textMatchesKeyword(text, keyword)).length;
 }
 
-function getPersonalDashboardGroupIdForInterest(interestId) {
-  return PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId || "";
+function getPersonalDomainContextProfile(context, groupId) {
+  const config = PERSONAL_DASHBOARD_DOMAIN_CONTEXTS[groupId];
+  if (!config) {
+    return { score: 0, excludedHits: 0 };
+  }
+
+  const strongKeywords = Array.isArray(config.strong) ? config.strong : [];
+  const weakKeywords = Array.isArray(config.weak) ? config.weak : [];
+  const excludedKeywords = Array.isArray(config.excluded) ? config.excluded : [];
+
+  const strongTitleHits = countBoostKeywordMatches(context.titleText, strongKeywords);
+  const strongTagHits = countBoostKeywordMatches(context.tagText, strongKeywords);
+  const strongMetaHits = countBoostKeywordMatches(context.metadataText, strongKeywords);
+  const strongBodyHits = countBoostKeywordMatches(context.bodyText, strongKeywords);
+  const weakTitleHits = countBoostKeywordMatches(context.titleText, weakKeywords);
+  const weakTagHits = countBoostKeywordMatches(context.tagText, weakKeywords);
+  const weakMetaHits = countBoostKeywordMatches(context.metadataText, weakKeywords);
+  const weakBodyHits = countBoostKeywordMatches(context.bodyText, weakKeywords);
+  const excludedHits =
+    countBoostKeywordMatches(context.titleText, excludedKeywords) +
+    countBoostKeywordMatches(context.tagText, excludedKeywords) +
+    countBoostKeywordMatches(context.metadataText, excludedKeywords);
+
+  let score =
+    (strongTitleHits * 5) +
+    (strongTagHits * 4) +
+    (strongMetaHits * 3.5) +
+    (strongBodyHits * 1.25) +
+    (weakTitleHits * 2) +
+    (weakTagHits * 1.5) +
+    (weakMetaHits * 1.25) +
+    (weakBodyHits * 0.35);
+
+  if (groupId === "banknote_intelligence" && (context.topicType === "banknote" || context.domain === "banknote")) {
+    score += 12;
+  }
+  if (groupId === "identity_documents" && ["travel_passport", "identity_document", "dmv_driver_license"].includes(context.topicType)) {
+    score += 10;
+  }
+  if (groupId === "digital_identity_biometrics" && context.topicType === "digital_identity") {
+    score += 10;
+  }
+  if (groupId === "security_printing" && (context.domain === "banknote" || context.topicType === "identity_document")) {
+    score += 4;
+  }
+
+  return {
+    score,
+    excludedHits,
+  };
 }
 
 function computePersonalInterestBoost(article, interestId) {
@@ -1563,6 +1689,7 @@ function computePersonalInterestBoost(article, interestId) {
 
     const groupId = interest.groupId;
     const context = getPersonalBoostContext(article);
+    const domainContext = getPersonalDomainContextProfile(context, groupId);
     const strongKeywords = Array.isArray(interest.strong) ? interest.strong : [];
     const weakKeywords = Array.isArray(interest.weak) ? interest.weak : [];
     const titleStrongHits = countBoostKeywordMatches(context.titleText, strongKeywords);
@@ -1574,9 +1701,21 @@ function computePersonalInterestBoost(article, interestId) {
     const metaWeakHits = countBoostKeywordMatches(context.metadataText, weakKeywords);
     const bodyWeakHits = countBoostKeywordMatches(context.bodyText, weakKeywords);
     let score = 0;
+    const hasDomainContext = domainContext.score >= 6;
+    const isGenericInterest = PERSONAL_DASHBOARD_GENERIC_INTEREST_IDS.has(interest.id);
 
-    score += (titleStrongHits * 5) + (tagStrongHits * 4) + (metaStrongHits * 3) + (bodyStrongHits * 1.5);
-    score += (titleWeakHits * 1.5) + (tagWeakHits * 1.5) + (metaWeakHits * 1) + (bodyWeakHits * 0.5);
+    if (interest.id === "banknotes") {
+      score += domainContext.score * 1.9;
+    } else {
+      score += domainContext.score * 0.65;
+    }
+
+    if (!isGenericInterest || hasDomainContext) {
+      score += (titleStrongHits * 5.5) + (tagStrongHits * 4.5) + (metaStrongHits * 3.5) + (bodyStrongHits * 1.5);
+      score += (titleWeakHits * 1.5) + (tagWeakHits * 1.5) + (metaWeakHits * 1) + (bodyWeakHits * 0.35);
+    } else {
+      score += (titleStrongHits * 1.25) + (tagStrongHits * 1) + (metaStrongHits * 0.75);
+    }
 
     if (Array.isArray(interest.topicSignals) && interest.topicSignals.includes(context.topic)) {
       score += 10;
@@ -1590,20 +1729,16 @@ function computePersonalInterestBoost(article, interestId) {
     if (Array.isArray(interest.eventTypes) && interest.eventTypes.includes(context.eventType)) {
       score += 5;
     }
-    if (groupId === "banknote_intelligence" && (context.topicType === "banknote" || context.domain === "banknote")) {
-      score += 6;
-    }
-    if (groupId === "identity_documents" && ["travel_passport", "identity_document", "dmv_driver_license"].includes(context.topicType)) {
-      score += 6;
-    }
-    if (groupId === "digital_identity_biometrics" && context.topicType === "digital_identity") {
-      score += 6;
+    if (isGenericInterest && !hasDomainContext) {
+      score *= 0.2;
     }
     if (Array.isArray(SPECIALIST_SOURCE_INTERESTS[groupId]) && SPECIALIST_SOURCE_INTERESTS[groupId].some((specialistSource) =>
       context.sourceText.includes(specialistSource) || context.domainText.includes(specialistSource)
     )) {
-      score += 8;
+      score += groupId === "banknote_intelligence" ? 18 : 10;
     }
+    score -= domainContext.excludedHits * 10;
+    score = Math.max(0, Math.round(score));
 
     return {
       score,
@@ -1633,7 +1768,7 @@ function computePersonalBoost(article) {
 
     return {
       score,
-      level: score >= 18 ? "high" : score >= 8 ? "relevant" : "",
+      level: score >= 24 ? "high" : score >= 12 ? "related" : score >= 5 ? "peripheral" : "",
     };
   });
 }
@@ -1644,8 +1779,8 @@ function compareArticlesForDisplay(left, right) {
   const leftDate = toDate(left?.pubDate).getTime() || 0;
   const rightDate = toDate(right?.pubDate).getTime() || 0;
   const hourMs = 60 * 60 * 1000;
-  const leftRank = leftDate + (leftBoost * 2 * hourMs);
-  const rightRank = rightDate + (rightBoost * 2 * hourMs);
+  const leftRank = leftDate + (leftBoost * 3 * hourMs);
+  const rightRank = rightDate + (rightBoost * 3 * hourMs);
 
   if (rightRank !== leftRank) {
     return rightRank - leftRank;
@@ -10549,7 +10684,12 @@ function renderArticleCard(article) {
     if (personalBoost.level) {
       const personalBadge = document.createElement("span");
       personalBadge.className = `article-personal-badge article-personal-badge--${personalBoost.level}`;
-      personalBadge.textContent = personalBoost.level === "high" ? "High relevance" : "Relevant";
+      personalBadge.textContent =
+        personalBoost.level === "high"
+          ? "High relevance"
+          : personalBoost.level === "related"
+            ? "Related"
+            : "Peripheral";
       meta.appendChild(personalBadge);
     }
   }
