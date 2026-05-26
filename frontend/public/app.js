@@ -75,71 +75,83 @@ const ARTICLE_RENDER_PAGE_SIZE = 30;
 const TAG_LIST_STORAGE_KEY = "dashboardTagList";
 const KEYWORD_FILTER_STORAGE_KEY = "dashboardKeywordFilters";
 const PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY = "personalDashboardInterests";
+const PERSONAL_DASHBOARD_MODE_STORAGE_KEY = "personalDashboardMode";
 const NOISE_KEYWORDS_EXPANDED_STORAGE_KEY = "noiseKeywordsExpanded";
+const PERSONAL_DASHBOARD_MODES = {
+  strict: 1.8,
+  balanced: 1.0,
+  broad: 0.5,
+};
+const SPECIALIST_SOURCE_INTERESTS = {
+  banknotes: ["banknotenews", "notafilia", "mriguide", "reform.news"],
+  identity_documents: [],
+  digital_identity_biometrics: [],
+  security_printing: [],
+};
 const PERSONAL_DASHBOARD_GROUPS = [
   {
     id: "banknote_intelligence",
     label: "Banknote Intelligence",
     interests: [
-      { id: "banknotes", label: "Banknotes" },
-      { id: "polymer", label: "Polymer" },
-      { id: "substrate", label: "Substrate" },
-      { id: "security_features", label: "Security features" },
-      { id: "security_printing", label: "Security printing" },
-      { id: "redesign", label: "Redesign" },
-      { id: "rollout", label: "Rollout" },
-      { id: "release", label: "Release" },
-      { id: "withdrawal", label: "Withdrawal" },
-      { id: "counterfeit", label: "Counterfeit" },
-      { id: "central_bank", label: "Central bank" },
+      { id: "banknotes", label: "Banknotes", strong: ["banknote", "banknotes", "currency note", "commemorative note", "note issuance"], weak: ["cash", "payment"], topicSignals: ["banknotes"], tagSignals: ["banknotes"], eventTypes: ["banknote_withdrawal", "new_banknote_series", "banknote_redesign", "commemorative_issue"] },
+      { id: "polymer", label: "Polymer", strong: ["polymer note", "polymer banknote", "polymer substrate"], weak: ["polymer"], eventTypes: ["polymer_migration", "banknote_redesign"] },
+      { id: "substrate", label: "Substrate", strong: ["substrate", "polymer substrate", "paper substrate"], weak: ["substrate migration"], eventTypes: ["polymer_migration", "security_feature_update"] },
+      { id: "security_features", label: "Security features", strong: ["security feature", "security features", "security thread", "watermark", "hologram"], weak: ["uv feature"], signalIds: ["security-features", "counterfeit"] },
+      { id: "security_printing", label: "Security printing", strong: ["security printing", "security printer", "banknote printing"], weak: ["secure print"], eventTypes: ["banknote_production", "security_feature_update"] },
+      { id: "redesign", label: "Redesign", strong: ["redesign", "new design", "new family", "new portrait", "new artwork"], weak: ["design refresh"], signalIds: ["redesign"] },
+      { id: "rollout", label: "Rollout", strong: ["new banknote launch", "banknote rollout", "circulation rollout", "new series launch"], weak: ["rollout", "launch", "introduction"], signalIds: ["rollout", "new-releases"] },
+      { id: "release", label: "Release", strong: ["release", "issued", "issue", "commemorative note issue", "new banknote released"], weak: ["launch"], signalIds: ["new-releases", "commemorative"] },
+      { id: "withdrawal", label: "Withdrawal", strong: ["withdrawn from circulation", "withdrawal", "demonetisation", "demonetization", "legal tender deadline"], weak: ["withdrawn", "retired"], eventTypes: ["banknote_withdrawal", "demonetisation"], signalIds: ["withdrawal"] },
+      { id: "counterfeit", label: "Counterfeit", strong: ["counterfeit", "counterfeit notes", "counterfeit banknote", "fake note", "forged banknote"], weak: ["forged note"], eventTypes: ["counterfeit_banknotes", "central_bank_warning"], signalIds: ["counterfeit"] },
+      { id: "central_bank", label: "Central bank", strong: ["central bank", "national bank", "reserve bank", "issuer bank", "bank of england", "ecb", "rbi"], weak: ["bank notice"], eventTypes: ["central_bank_warning", "banknote_withdrawal", "new_banknote_series"] },
     ],
   },
   {
     id: "identity_documents",
     label: "Identity Documents",
     interests: [
-      { id: "passports", label: "Passports" },
-      { id: "id_cards", label: "ID cards" },
-      { id: "residence_permits", label: "Residence permits" },
-      { id: "drivers_licenses", label: "Driver's licenses" },
-      { id: "visas", label: "Visas" },
-      { id: "laminate", label: "Laminate" },
-      { id: "polycarbonate", label: "Polycarbonate" },
-      { id: "issuance", label: "Issuance" },
-      { id: "fraud", label: "Fraud" },
-      { id: "icao", label: "ICAO" },
-      { id: "border_control", label: "Border control" },
+      { id: "passports", label: "Passports", strong: ["passport", "passports", "travel document"], weak: ["passport office"], topicSignals: ["passport"], eventTypes: ["passport_issuance", "passport_renewal", "passport_revocation", "passport_fraud"] },
+      { id: "id_cards", label: "ID cards", strong: ["id card", "identity card", "national id"], weak: ["id issuance"], topicSignals: ["id card"] },
+      { id: "residence_permits", label: "Residence permits", strong: ["residence permit", "residence permits"], weak: ["permit card"] },
+      { id: "drivers_licenses", label: "Driver's licenses", strong: ["driver license", "driver's license", "driving licence"], weak: ["license card"] },
+      { id: "visas", label: "Visas", strong: ["visa", "visas", "visa policy"], weak: ["travel authorization"], eventTypes: ["visa_policy", "etias_event"] },
+      { id: "laminate", label: "Laminate", strong: ["laminate", "laminated document", "security laminate"], weak: ["laminated"] },
+      { id: "polycarbonate", label: "Polycarbonate", strong: ["polycarbonate", "pc datapage", "polycarbonate card"], weak: ["datapage", "card substrate"] },
+      { id: "issuance", label: "Issuance", strong: ["issuance", "passport issuance", "passport renewal", "document issuance"], weak: ["issued", "renewal"], signalIds: ["regulations", "delay"] },
+      { id: "fraud", label: "Fraud", strong: ["fraud", "fake passport", "forged passport", "forged document", "document fraud"], weak: ["counterfeit document"], signalIds: ["fraud", "criminal-misuse", "identity-theft"] },
+      { id: "icao", label: "ICAO", strong: ["icao", "doc 9303", "mrz", "passport verification"], weak: ["travel document security"], signalIds: ["technology"] },
+      { id: "border_control", label: "Border control", strong: ["border control", "border checks", "immigration control", "entry exit system"], weak: ["customs"], signalIds: ["border-control", "delay", "rollout"] },
     ],
   },
   {
     id: "digital_identity_biometrics",
     label: "Digital Identity & Biometrics",
     interests: [
-      { id: "digital_identity", label: "Digital identity" },
-      { id: "biometrics", label: "Biometrics" },
-      { id: "eid", label: "eID" },
-      { id: "digital_wallet", label: "Digital wallet" },
-      { id: "kyc", label: "KYC" },
-      { id: "onboarding", label: "Onboarding" },
-      { id: "liveness", label: "Liveness" },
-      { id: "artificial_intelligence", label: "Artificial intelligence" },
-      { id: "identity_verification", label: "Identity verification" },
-      { id: "authentication", label: "Authentication" },
+      { id: "digital_identity", label: "Digital identity", strong: ["digital identity", "digital id", "mobile id"], weak: ["identity platform"] },
+      { id: "biometrics", label: "Biometrics", strong: ["biometric", "biometrics", "face match", "fingerprint"], weak: ["biometric check"], signalIds: ["biometric"] },
+      { id: "eid", label: "eID", strong: ["eid", "e-id", "electronic identity"], weak: ["electronic id"] },
+      { id: "digital_wallet", label: "Digital wallet", strong: ["digital wallet", "identity wallet", "wallet framework"], weak: ["wallet"] },
+      { id: "kyc", label: "KYC", strong: ["kyc", "know your customer", "customer due diligence"], weak: ["due diligence"] },
+      { id: "onboarding", label: "Onboarding", strong: ["onboarding", "remote onboarding", "digital onboarding"], weak: ["identity onboarding"] },
+      { id: "liveness", label: "Liveness", strong: ["liveness", "liveness detection", "presentation attack"], weak: ["face match"] },
+      { id: "artificial_intelligence", label: "Artificial intelligence", strong: ["artificial intelligence", "ai identity", "ai-assisted identity"], weak: ["machine learning", "ai"] },
+      { id: "identity_verification", label: "Identity verification", strong: ["identity verification", "document verification", "id verification"], weak: ["verification platform"] },
+      { id: "authentication", label: "Authentication", strong: ["authentication", "login verification", "multi-factor authentication"], weak: ["authenticator"] },
     ],
   },
   {
     id: "security_printing",
     label: "Security Printing",
     interests: [
-      { id: "security_printing_core", label: "Security printing" },
-      { id: "security_inks", label: "Security inks" },
-      { id: "micro_optics", label: "Micro optics" },
-      { id: "holography", label: "Holography" },
-      { id: "ovd", label: "OVD" },
-      { id: "intaglio", label: "Intaglio" },
-      { id: "anti_counterfeit", label: "Anti-counterfeit" },
-      { id: "personalization", label: "Personalization" },
-      { id: "secure_documents", label: "Secure documents" },
+      { id: "security_printing_core", label: "Security printing", strong: ["security printing", "secure printing", "security printer"], weak: ["document printing"] },
+      { id: "security_inks", label: "Security inks", strong: ["security ink", "security inks", "optically variable ink"], weak: ["specialty ink"] },
+      { id: "micro_optics", label: "Micro optics", strong: ["micro optics", "micro-optics", "micro optical"], weak: ["optical security"] },
+      { id: "holography", label: "Holography", strong: ["holography", "holographic", "hologram"], weak: ["diffractive"] },
+      { id: "ovd", label: "OVD", strong: ["ovd", "optically variable device"], weak: ["optically variable"] },
+      { id: "intaglio", label: "Intaglio", strong: ["intaglio", "engraved printing"], weak: ["engraved"] },
+      { id: "anti_counterfeit", label: "Anti-counterfeit", strong: ["anti-counterfeit", "anti counterfeit", "counterfeit prevention"], weak: ["authentication feature"] },
+      { id: "personalization", label: "Personalization", strong: ["personalization", "secure personalization", "card personalization"], weak: ["document personalization"] },
+      { id: "secure_documents", label: "Secure documents", strong: ["secure documents", "document security", "secure document"], weak: ["travel document security"] },
     ],
   },
 ];
@@ -948,6 +960,7 @@ const state = {
   personalDashboard: {
     interests: [],
     expandedGroups: PERSONAL_DASHBOARD_GROUPS.map((group) => group.id),
+    mode: "balanced",
   },
   filters: {
     search: "",
@@ -1296,7 +1309,17 @@ function normalizePersonalDashboardInterests(interests) {
   );
 }
 
+function normalizePersonalDashboardMode(value) {
+  const normalizedValue = String(value || "").trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(PERSONAL_DASHBOARD_MODES, normalizedValue)
+    ? normalizedValue
+    : "balanced";
+}
+
 function loadPersonalDashboardPreferences() {
+  state.personalDashboard.mode = normalizePersonalDashboardMode(
+    window.localStorage.getItem(PERSONAL_DASHBOARD_MODE_STORAGE_KEY) || "balanced"
+  );
   try {
     const storedInterests = JSON.parse(
       window.localStorage.getItem(PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY) || "[]"
@@ -1308,7 +1331,9 @@ function loadPersonalDashboardPreferences() {
 }
 
 function savePersonalDashboardPreferences() {
+  state.personalDashboard.mode = normalizePersonalDashboardMode(state.personalDashboard.mode);
   state.personalDashboard.interests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  window.localStorage.setItem(PERSONAL_DASHBOARD_MODE_STORAGE_KEY, state.personalDashboard.mode);
   window.localStorage.setItem(
     PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY,
     JSON.stringify(state.personalDashboard.interests)
@@ -1317,6 +1342,8 @@ function savePersonalDashboardPreferences() {
 
 function clearPersonalDashboardPreferences() {
   state.personalDashboard.interests = [];
+  state.personalDashboard.mode = "balanced";
+  window.localStorage.removeItem(PERSONAL_DASHBOARD_MODE_STORAGE_KEY);
   window.localStorage.removeItem(PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY);
 }
 
@@ -1428,7 +1455,7 @@ function renderPersonalDashboard() {
       .join("");
   } else {
     elements.personalDashboardInterests.innerHTML =
-      `<p class="personal-dashboard-empty">No personal interests selected yet. Results stay unchanged until filtering is added in a later phase.</p>`;
+      `<p class="personal-dashboard-empty">No personal interests selected yet. Select interests to gently prioritize matching intelligence topics.</p>`;
   }
 
   elements.personalDashboardClear.disabled = !activeInterests.size;
@@ -1450,6 +1477,185 @@ function setPersonalDashboardInterest(interestId, enabled) {
   state.personalDashboard.interests = Array.from(nextInterests);
   savePersonalDashboardPreferences();
   renderPersonalDashboard();
+  clearFeedRenderCaches();
+  scheduleRenderArticles("personal-dashboard-boost", { mode: "frame" });
+}
+
+function hasPersonalDashboardSelections() {
+  return Array.isArray(state.personalDashboard.interests) && state.personalDashboard.interests.length > 0;
+}
+
+function getPersonalBoostContext(article) {
+  return getCachedArticleValue(article, "personalBoostContext", () => {
+    const normalizedEvent = article?._intelligence?.normalizedEvent || normalizeIntelligenceEvent(article);
+    const signalIds = getArticleSignalCategories(article);
+    const signalLabels = signalIds
+      .map((signalId) => getSignalCategoryById(signalId)?.label || signalId)
+      .join(" ")
+      .toLowerCase();
+    const sourceText = [
+      article?.source,
+      article?.sourceName,
+      article?.feedTitle,
+      getFeedName(article?.feedId),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    const domainText = [
+      getFeedMatchDomain(article?.canonicalLink || article?.link || ""),
+      getFeedMatchDomain(article?.feedUrl || ""),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    return {
+      titleText: [article?.title, article?.normalizedTitle].filter(Boolean).join(" ").toLowerCase(),
+      tagText: [
+        Array.isArray(article?.tags) ? article.tags.join(" ") : "",
+        Array.isArray(article?.keywords) ? article.keywords.join(" ") : "",
+        getArticleFilterTags(article).join(" "),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase(),
+      metadataText: [
+        article?.topic,
+        sourceText,
+        signalLabels,
+        normalizedEvent?.canonicalEventType,
+        normalizedEvent?.domain,
+        normalizedEvent?.action,
+        normalizedEvent?.documentType,
+        normalizedEvent?.currency,
+        normalizedEvent?.operationalContext,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase(),
+      bodyText: [article?.summary, article?.summaryShort, article?.contentSnippet].filter(Boolean).join(" ").toLowerCase(),
+      sourceText,
+      domainText,
+      topicType: String(article?.topicType || ""),
+      topic: normalizeFilterTag(article?.topic || ""),
+      signalIds,
+      eventType: String(normalizedEvent?.canonicalEventType || ""),
+      domain: String(normalizedEvent?.domain || ""),
+    };
+  });
+}
+
+function countBoostKeywordMatches(text, keywords = []) {
+  return keywords.filter((keyword) => textMatchesKeyword(text, keyword)).length;
+}
+
+function getPersonalDashboardGroupIdForInterest(interestId) {
+  return PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId || "";
+}
+
+function computePersonalInterestBoost(article, interestId) {
+  return getCachedArticleValue(article, `personalInterestBoost:${interestId}`, () => {
+    const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
+    if (!interest) {
+      return { score: 0, matched: false };
+    }
+
+    const groupId = interest.groupId;
+    const context = getPersonalBoostContext(article);
+    const strongKeywords = Array.isArray(interest.strong) ? interest.strong : [];
+    const weakKeywords = Array.isArray(interest.weak) ? interest.weak : [];
+    const titleStrongHits = countBoostKeywordMatches(context.titleText, strongKeywords);
+    const tagStrongHits = countBoostKeywordMatches(context.tagText, strongKeywords);
+    const metaStrongHits = countBoostKeywordMatches(context.metadataText, strongKeywords);
+    const bodyStrongHits = countBoostKeywordMatches(context.bodyText, strongKeywords);
+    const titleWeakHits = countBoostKeywordMatches(context.titleText, weakKeywords);
+    const tagWeakHits = countBoostKeywordMatches(context.tagText, weakKeywords);
+    const metaWeakHits = countBoostKeywordMatches(context.metadataText, weakKeywords);
+    const bodyWeakHits = countBoostKeywordMatches(context.bodyText, weakKeywords);
+    let score = 0;
+
+    score += (titleStrongHits * 5) + (tagStrongHits * 4) + (metaStrongHits * 3) + (bodyStrongHits * 1.5);
+    score += (titleWeakHits * 1.5) + (tagWeakHits * 1.5) + (metaWeakHits * 1) + (bodyWeakHits * 0.5);
+
+    if (Array.isArray(interest.topicSignals) && interest.topicSignals.includes(context.topic)) {
+      score += 10;
+    }
+    if (Array.isArray(interest.tagSignals) && interest.tagSignals.some((tagSignal) => textMatchesKeyword(context.tagText, tagSignal))) {
+      score += 8;
+    }
+    if (Array.isArray(interest.signalIds) && interest.signalIds.some((signalId) => context.signalIds.includes(signalId))) {
+      score += 4;
+    }
+    if (Array.isArray(interest.eventTypes) && interest.eventTypes.includes(context.eventType)) {
+      score += 5;
+    }
+    if (groupId === "banknote_intelligence" && (context.topicType === "banknote" || context.domain === "banknote")) {
+      score += 6;
+    }
+    if (groupId === "identity_documents" && ["travel_passport", "identity_document", "dmv_driver_license"].includes(context.topicType)) {
+      score += 6;
+    }
+    if (groupId === "digital_identity_biometrics" && context.topicType === "digital_identity") {
+      score += 6;
+    }
+    if (Array.isArray(SPECIALIST_SOURCE_INTERESTS[groupId]) && SPECIALIST_SOURCE_INTERESTS[groupId].some((specialistSource) =>
+      context.sourceText.includes(specialistSource) || context.domainText.includes(specialistSource)
+    )) {
+      score += 8;
+    }
+
+    return {
+      score,
+      matched: score > 0,
+    };
+  });
+}
+
+function computePersonalBoost(article) {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const mode = normalizePersonalDashboardMode(state.personalDashboard.mode);
+  const cacheKey = `personalBoost:${mode}:${selectedInterests.join("|")}`;
+  return getCachedArticleValue(article, cacheKey, () => {
+    if (!selectedInterests.length) {
+      return {
+        score: 0,
+        level: "",
+      };
+    }
+
+    const baseScore = selectedInterests.reduce((maxScore, interestId) => {
+      const interestBoost = computePersonalInterestBoost(article, interestId);
+      return Math.max(maxScore, interestBoost.score);
+    }, 0);
+    const modeMultiplier = PERSONAL_DASHBOARD_MODES[mode] || 1;
+    const score = Math.round(baseScore * modeMultiplier);
+
+    return {
+      score,
+      level: score >= 18 ? "high" : score >= 8 ? "relevant" : "",
+    };
+  });
+}
+
+function compareArticlesForDisplay(left, right) {
+  const leftBoost = computePersonalBoost(left).score;
+  const rightBoost = computePersonalBoost(right).score;
+  const leftDate = toDate(left?.pubDate).getTime() || 0;
+  const rightDate = toDate(right?.pubDate).getTime() || 0;
+  const hourMs = 60 * 60 * 1000;
+  const leftRank = leftDate + (leftBoost * 2 * hourMs);
+  const rightRank = rightDate + (rightBoost * 2 * hourMs);
+
+  if (rightRank !== leftRank) {
+    return rightRank - leftRank;
+  }
+
+  if (rightDate !== leftDate) {
+    return rightDate - leftDate;
+  }
+
+  return String(left?.title || "").localeCompare(String(right?.title || ""));
 }
 
 function isFeedPanelCollapsed() {
@@ -1568,6 +1774,8 @@ function getFeedRenderFilterSignature() {
     dashboardMode: state.dashboardMode || "normal",
     includeKeywords: Array.isArray(state.keywordFilters?.include) ? state.keywordFilters.include.slice().sort() : [],
     excludeKeywords: Array.isArray(state.keywordFilters?.exclude) ? state.keywordFilters.exclude.slice().sort() : [],
+    personalDashboardInterests: Array.isArray(state.personalDashboard?.interests) ? state.personalDashboard.interests.slice().sort() : [],
+    personalDashboardMode: normalizePersonalDashboardMode(state.personalDashboard?.mode),
   });
 }
 
@@ -1592,7 +1800,7 @@ function getCachedGroupedFeedResult(feedIdentity) {
   const rawMatches = candidateArticles.slice().sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
   const filteredMatches = candidateArticles
     .filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
-    .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+    .sort(compareArticlesForDisplay);
   const groupedArticles = groupArticlesByEvent(filteredMatches);
   const result = {
     selectedFeedResolution,
@@ -7284,7 +7492,7 @@ function getVisibleArticles(options = {}) {
     })
     .filter(isUiRelevantIntelligenceArticle)
     .filter((article) => articleMatchesFilters(article, options))
-    .sort((left, right) => toDate(right.pubDate).getTime() - toDate(left.pubDate).getTime());
+    .sort(compareArticlesForDisplay);
   intelligenceTimeEnd("getVisibleArticles");
   return visibleArticles;
 }
@@ -10336,6 +10544,16 @@ function renderArticleCard(article) {
     meta.appendChild(signalBadge);
   }
 
+  if (meta && hasPersonalDashboardSelections()) {
+    const personalBoost = computePersonalBoost(article);
+    if (personalBoost.level) {
+      const personalBadge = document.createElement("span");
+      personalBadge.className = `article-personal-badge article-personal-badge--${personalBoost.level}`;
+      personalBadge.textContent = personalBoost.level === "high" ? "High relevance" : "Relevant";
+      meta.appendChild(personalBadge);
+    }
+  }
+
   if (meta && Number(article?.sourceCount || 0) > 1) {
     const duplicateBadge = groupedSources.length ? document.createElement("button") : document.createElement("span");
     duplicateBadge.className = "article-duplicate-badge";
@@ -10956,7 +11174,7 @@ function renderArticlesFallback(error) {
   try {
     const shouldIgnoreFeedIdForGrouping = Boolean(state.filters?.feedId) && !state.filters?.date;
     fallbackAllArticles = state.filters?.date
-      ? state.articles.filter(articleMatchesFilters).sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate))
+      ? state.articles.filter(articleMatchesFilters).sort(compareArticlesForDisplay)
       : state.filters?.feedId
         ? (() => {
             const selectedFeedResolution = getSelectedFeedResolution(state.filters.feedId);
@@ -10965,7 +11183,7 @@ function renderArticlesFallback(error) {
               : state.articles.filter((article) => articleMatchesSelectedFeed(article, state.filters.feedId));
             const rawFeedMatches = candidateArticles
               .filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
-              .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+              .sort(compareArticlesForDisplay);
             return groupArticlesByEvent(rawFeedMatches);
           })()
         : (() => {
@@ -10987,7 +11205,7 @@ function renderArticlesFallback(error) {
           return true;
         }
       })
-      .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+      .sort(compareArticlesForDisplay);
   }
 
   const fallbackPagination = getPaginatedItems(fallbackAllArticles);
@@ -11084,7 +11302,7 @@ function renderArticles() {
       };
       filteredRawArticles = cachedQuery.articles
         .filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
-        .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+        .sort(compareArticlesForDisplay);
       const groupedArticles = groupArticlesByEvent(filteredRawArticles);
       groupedArticlesCount = groupedArticles.length;
       articles = groupedArticles;
@@ -11101,7 +11319,7 @@ function renderArticles() {
     } else if (state.filters.date) {
       filteredRawArticles = state.articles
         .filter(articleMatchesFilters)
-        .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+        .sort(compareArticlesForDisplay);
       articles = filteredRawArticles;
       groupedArticlesCount = articles.length;
       feedRenderFilteredCount = filteredRawArticles.length;
@@ -11771,6 +11989,8 @@ function bindEvents() {
     elements.personalDashboardClear.addEventListener("click", () => {
       clearPersonalDashboardPreferences();
       renderPersonalDashboard();
+      clearFeedRenderCaches();
+      scheduleRenderArticles("personal-dashboard-clear", { mode: "frame" });
     });
   }
 
