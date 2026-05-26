@@ -2052,7 +2052,32 @@ function getPersonalDashboardDomainMatch(article) {
 }
 
 function articleMatchesPersonalDashboardSelection(article) {
-  return true;
+  if (!hasPersonalDashboardSelections()) {
+    return true;
+  }
+
+  const domainMatch = getPersonalDashboardDomainMatch(article);
+  const effectiveDomains = Array.isArray(domainMatch.selectedDomains)
+    ? domainMatch.selectedDomains
+    : [];
+
+  if (!effectiveDomains.length) {
+    return true;
+  }
+
+  if (effectiveDomains.length === 1) {
+    const selectedDomain = effectiveDomains[0];
+    const selectedDomainScore = Number(domainMatch.domainScores?.[selectedDomain] || 0);
+    const mode = normalizePersonalDashboardMode(state.personalDashboard.mode);
+    const minimumScore = mode === "strict"
+      ? 70
+      : mode === "broad"
+        ? 28
+        : 40;
+    return selectedDomainScore >= minimumScore;
+  }
+
+  return Boolean(domainMatch.matched);
 }
 
 function getPersonalIntelligenceLane(article) {
