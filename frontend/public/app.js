@@ -1943,6 +1943,17 @@ function getSelectedMainDomains(selectedInterests = normalizePersonalDashboardIn
   return Array.from(mainDomains);
 }
 
+function isBanknotesOnlyPersonalSelection(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const selectedMainDomains = getSelectedMainDomains(selectedInterests);
+  return selectedMainDomains.length === 1 && selectedMainDomains[0] === "banknotes";
+}
+
+function isBanknoteAuthoritySource(article) {
+  return getCachedArticleValue(article, "isBanknoteAuthoritySource", () => {
+    return getBanknoteSourceAuthority(article).level === "very_high";
+  });
+}
+
 function getPersonalBucketOrder(bucket) {
   if (bucket === "primary") {
     return 0;
@@ -2009,6 +2020,47 @@ function hasSelectedDomainContext(article, selectedMainDomain) {
   return false;
 }
 
+function isBanknotePrimary(article) {
+  return getCachedArticleValue(article, "isBanknotePrimary", () => {
+    if (isBanknoteAuthoritySource(article)) {
+      return true;
+    }
+
+    const context = getPersonalBoostContext(article);
+    const primaryConcepts = [
+      "banknote",
+      "banknotes",
+      "currency note",
+      "paper money",
+      "polymer note",
+      "polymer banknote",
+      "denomination",
+      "legal tender",
+      "banknote redesign",
+      "banknote release",
+      "banknote withdrawal",
+      "commemorative banknote",
+      "counterfeit money",
+      "counterfeit currency",
+      "cash circulation",
+      "currency issuance",
+      "note issuance",
+      "note withdrawal",
+      "central bank currency",
+      "central bank note",
+    ];
+    const titleHits = countBoostKeywordMatches(context.titleText, primaryConcepts);
+    const tagHits = countBoostKeywordMatches(context.tagText, primaryConcepts);
+    const metaHits = countBoostKeywordMatches(context.metadataText, primaryConcepts);
+    const matchesBanknoteTopic =
+      context.topic === "banknotes"
+      || context.topicType === "banknote"
+      || context.domain === "banknote";
+
+    return matchesBanknoteTopic || titleHits > 0 || tagHits > 0 || metaHits > 1;
+  });
+}
+
 function isBanknoteAdjacent(article) {
   return getCachedArticleValue(article, "isBanknoteAdjacent", () => {
     const context = getPersonalBoostContext(article);
@@ -2052,9 +2104,49 @@ function isBanknoteAdjacent(article) {
     const banknoteContextHits =
       countBoostKeywordMatches(context.titleText, banknoteContextConcepts) +
       countBoostKeywordMatches(context.tagText, banknoteContextConcepts) +
-      countBoostKeywordMatches(context.metadataText, banknoteContextConcepts);
+      countBoostKeywordMatches(context.metadataText, banknoteContextConcepts) +
+      countBoostKeywordMatches(context.bodyText, banknoteContextConcepts);
 
-    return sharedHits > 0 && (banknoteContextHits > 0 || hasSelectedDomainContext(article, "banknotes"));
+    return sharedHits > 0 && banknoteContextHits > 0;
+  });
+}
+
+function isBanknoteContaminated(article) {
+  return getCachedArticleValue(article, "isBanknoteContaminated", () => {
+    if (isBanknotePrimary(article) || isBanknoteAdjacent(article)) {
+      return false;
+    }
+
+    const context = getPersonalBoostContext(article);
+    const contaminationConcepts = [
+      "digital identity",
+      "digital wallet",
+      "eid wallet",
+      "identity verification",
+      "identity proofing",
+      "kyc",
+      "onboarding",
+      "liveness",
+      "biometric",
+      "biometrics",
+      "biometric infrastructure",
+      "mosip",
+      "ees",
+      "passport child support",
+      "passport revocation",
+      "passport legal debt",
+      "passport legal-debt",
+      "antivirus",
+      "iphone security",
+      "cybersecurity",
+    ];
+    const contaminationHits =
+      countBoostKeywordMatches(context.titleText, contaminationConcepts) * 2 +
+      countBoostKeywordMatches(context.tagText, contaminationConcepts) * 2 +
+      countBoostKeywordMatches(context.metadataText, contaminationConcepts) +
+      countBoostKeywordMatches(context.bodyText, contaminationConcepts);
+
+    return contaminationHits > 0;
   });
 }
 
@@ -2066,6 +2158,16 @@ function getPersonalDomainBucket(article, selectedInterests = normalizePersonalD
   return getCachedArticleValue(article, cacheKey, () => {
     const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
     if (!selectedMainDomains.length) {
+      return "other";
+    }
+
+    if (isBanknotesOnlyPersonalSelection(normalizedInterests)) {
+      if (isBanknotePrimary(article)) {
+        return "primary";
+      }
+      if (isBanknoteAdjacent(article)) {
+        return "adjacent";
+      }
       return "other";
     }
 
@@ -2191,6 +2293,9 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         const banknoteAuthority = getBanknoteSourceAuthority(article);
         if (specialistSourceMatch) {
           score += 300;
+        }
+        if (isBanknoteAuthoritySource(article)) {
+          score += 220;
         }
         if (context.topicType === "banknote" || context.domain === "banknote" || context.topic === "banknotes") {
           score += 170;
@@ -2381,6 +2486,15 @@ function getPersonalDashboardDomainMatch(article) {
 }
 
 function articleMatchesPersonalDashboardSelection(article) {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  if (isBanknotesOnlyPersonalSelection(selectedInterests)) {
+    if (isBanknoteContaminated(article)) {
+      return false;
+    }
+
+    return isBanknotePrimary(article) || isBanknoteAdjacent(article);
+  }
+
   return true;
 }
 
@@ -2521,6 +2635,14 @@ function compareArticlesForDisplay(left, right) {
   const rightBucketOrder = getPersonalBucketOrder(getPersonalDomainBucket(right));
   if (leftBucketOrder !== rightBucketOrder) {
     return leftBucketOrder - rightBucketOrder;
+  }
+
+  if (isBanknotesOnlyPersonalSelection()) {
+    const leftAuthoritySource = isBanknoteAuthoritySource(left);
+    const rightAuthoritySource = isBanknoteAuthoritySource(right);
+    if (leftAuthoritySource !== rightAuthoritySource) {
+      return rightAuthoritySource ? 1 : -1;
+    }
   }
 
   const leftBoost = calculatePersonalDomainScore(left).domainScore;
