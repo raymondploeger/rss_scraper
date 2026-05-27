@@ -1685,6 +1685,7 @@ function hasPersonalDashboardSelections() {
 function getPersonalDashboardBackendDomainPlan() {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const selectedMainDomains = getSelectedMainDomains(selectedInterests);
+  const hasInterest = (interestId) => selectedInterests.includes(interestId);
 
   if (!selectedInterests.length || !selectedMainDomains.length) {
     return null;
@@ -1711,19 +1712,98 @@ function getPersonalDashboardBackendDomainPlan() {
   }
 
   if (selectedMainDomains.length === 1 && selectedMainDomains[0] === "identity_documents") {
+    const identitySearches = new Set([
+      "passport",
+      "passports",
+      "identity card",
+      "id card",
+      "residence permit",
+      "visa",
+      "driver license",
+      "driving licence",
+      "travel document",
+      "secure document",
+      "document issuance",
+      "passport issuance",
+      "passport personalization",
+      "polycarbonate",
+      "laminate",
+      "document security",
+      "border control",
+      "icao",
+      "mrtd",
+      "emrtd",
+    ]);
+
+    if (hasInterest("passports")) {
+      identitySearches.add("passport");
+      identitySearches.add("travel document");
+      identitySearches.add("passport issuance");
+    }
+    if (hasInterest("id_cards")) {
+      identitySearches.add("identity card");
+      identitySearches.add("id card");
+      identitySearches.add("national id");
+    }
+    if (hasInterest("residence_permits")) {
+      identitySearches.add("residence permit");
+      identitySearches.add("permit card");
+    }
+    if (hasInterest("drivers_licenses")) {
+      identitySearches.add("driver license");
+      identitySearches.add("driver's license");
+      identitySearches.add("driving licence");
+    }
+    if (hasInterest("visas")) {
+      identitySearches.add("visa");
+      identitySearches.add("visa policy");
+    }
+    if (hasInterest("laminate")) {
+      identitySearches.add("laminate");
+      identitySearches.add("security laminate");
+    }
+    if (hasInterest("polycarbonate")) {
+      identitySearches.add("polycarbonate");
+      identitySearches.add("pc datapage");
+      identitySearches.add("polycarbonate card");
+    }
+    if (hasInterest("issuance")) {
+      identitySearches.add("document issuance");
+      identitySearches.add("passport issuance");
+      identitySearches.add("secure issuance");
+    }
+    if (hasInterest("fraud")) {
+      identitySearches.add("document fraud");
+      identitySearches.add("forged document");
+      identitySearches.add("fake passport");
+    }
+    if (hasInterest("icao")) {
+      identitySearches.add("icao");
+      identitySearches.add("doc 9303");
+      identitySearches.add("mrz");
+      identitySearches.add("emrtd");
+    }
+    if (hasInterest("border_control")) {
+      identitySearches.add("border control");
+      identitySearches.add("border checks");
+      identitySearches.add("immigration control");
+      identitySearches.add("entry exit system");
+    }
+    if (hasInterest("security_printing_core")) {
+      identitySearches.add("security printing");
+      identitySearches.add("security printing for passports");
+      identitySearches.add("secure document printing");
+    }
+    if (hasInterest("personalization")) {
+      identitySearches.add("personalization");
+      identitySearches.add("passport personalization");
+      identitySearches.add("card personalization");
+    }
+
     return {
       domain: "identity_documents",
       topic: "Identity Documents",
-      searches: [
-        "passport",
-        "identity card",
-        "residence permit",
-        "visa",
-        "icao",
-        "border control",
-        "polycarbonate",
-        "document fraud",
-      ],
+      searches: Array.from(identitySearches),
     };
   }
 
@@ -12292,6 +12372,7 @@ async function ensureBackendArticleQueryData() {
 
   if (personalDomainPlan && hasPersonalDashboardSelections()) {
     logPersonalDashboardSourceStage("[personal-dashboard-backend-domain-query]", normalizedArticles, {
+      personalDashboardDomain: personalDomainPlan.domain,
       selectedInterests: normalizePersonalDashboardInterests(state.personalDashboard.interests),
       queryParamsUsed: queryParamsList.map((params) => Object.fromEntries(params.entries())),
       totalReturned: totalCount,
