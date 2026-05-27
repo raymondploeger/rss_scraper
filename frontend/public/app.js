@@ -13,6 +13,7 @@ const NOTIFICATION_TIMEOUT_MS = 7000;
 const DEBUG_INTELLIGENCE = false;
 const DEBUG_FEED_FILTER = false;
 const DEBUG_PERFORMANCE = false;
+const DEBUG_PERSONAL_DASHBOARD = false;
 const MAX_ARTICLES_IN_MEMORY = 1500;
 const MAX_VISIBLE_SOURCES_IN_LIST = 100;
 const MAX_RSS_FEEDS = 150;
@@ -39,6 +40,12 @@ function debugFeedFilterWarn(label, payload) {
 
 function debugPerformanceLog(label, payload) {
   if (DEBUG_PERFORMANCE) {
+    console.info(label, payload);
+  }
+}
+
+function debugPersonalDashboardLog(label, payload) {
+  if (DEBUG_PERSONAL_DASHBOARD) {
     console.info(label, payload);
   }
 }
@@ -1952,6 +1959,37 @@ function isBanknoteAuthoritySource(article) {
   return getCachedArticleValue(article, "isBanknoteAuthoritySource", () => {
     return getBanknoteSourceAuthority(article).level === "very_high";
   });
+}
+
+const PERSONAL_DASHBOARD_BANKNOTE_DEBUG_SOURCES = [
+  "banknotenews",
+  "notafilia",
+  "mriguide",
+];
+
+function getPersonalDashboardBanknoteSourceCounts(articles = []) {
+  const counts = {
+    total: Array.isArray(articles) ? articles.length : 0,
+    banknotenews: 0,
+    notafilia: 0,
+    mriguide: 0,
+  };
+
+  if (!Array.isArray(articles) || !articles.length) {
+    return counts;
+  }
+
+  articles.forEach((article) => {
+    const context = getPersonalBoostContext(article);
+    const fingerprint = `${context.sourceText} ${context.domainText}`;
+    PERSONAL_DASHBOARD_BANKNOTE_DEBUG_SOURCES.forEach((sourceKey) => {
+      if (textMatchesKeyword(fingerprint, sourceKey)) {
+        counts[sourceKey] += 1;
+      }
+    });
+  });
+
+  return counts;
 }
 
 function getPersonalBucketOrder(bucket) {
@@ -8519,6 +8557,7 @@ function articleMatchesFilters(article, options = {}) {
   }
 
   const ignoreFeedId = Boolean(options.ignoreFeedId);
+  const ignorePersonalDashboard = Boolean(options.ignorePersonalDashboard);
 
   const activeKeywordRule = getActiveTopicKeywordRule();
   if (activeKeywordRule && isKeywordRuleFalsePositive(article, activeKeywordRule)) {
@@ -8596,7 +8635,7 @@ function articleMatchesFilters(article, options = {}) {
     }
   }
 
-  if (!articleMatchesPersonalDashboardSelection(article)) {
+  if (!ignorePersonalDashboard && !articleMatchesPersonalDashboardSelection(article)) {
     return false;
   }
 
@@ -12023,6 +12062,12 @@ async function ensureBackendArticleQueryData() {
     .slice(0, MAX_ARTICLES_IN_MEMORY)
     .map(normalizeLoadedArticle);
   const totalCount = Number(response?.pagination?.total ?? response?.totalCount) || normalizedArticles.length;
+  debugPersonalDashboardLog("[personal-dashboard-backend-query]", {
+    queryKey,
+    totalCount,
+    loadedCount: normalizedArticles.length,
+    sourceCounts: getPersonalDashboardBanknoteSourceCounts(normalizedArticles),
+  });
   const payload = {
     queryKey,
     articles: normalizedArticles,
@@ -12457,6 +12502,7 @@ function renderArticlesFallback(error) {
 
 function renderArticles() {
   const shouldDebugFeedRender = DEBUG_FEED_FILTER;
+  const shouldDebugPersonalDashboard = DEBUG_PERSONAL_DASHBOARD && hasPersonalDashboardSelections();
   const feedRenderStartedAt = shouldDebugFeedRender ? performance.now() : 0;
   let feedRenderGroupedCount = 0;
   let feedRenderFilteredCount = 0;
@@ -12500,6 +12546,7 @@ function renderArticles() {
     const activeFeedId = state.filters.feedId || "";
     const activeFeedResolution = activeFeedId ? getSelectedFeedResolution(activeFeedId) : null;
     const activeFeedLabel = getSelectedFeedLabel();
+    let personalDashboardBasePool = Array.isArray(state.articles) ? state.articles : [];
     let feedDebugRawMatches = [];
     let feedDebugAfterRelevanceMatches = [];
 
@@ -12508,6 +12555,7 @@ function renderArticles() {
         articles: [],
         totalCount: 0,
       };
+      personalDashboardBasePool = cachedQuery.articles;
       filteredRawArticles = cachedQuery.articles
         .filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
         .sort(compareArticlesForDisplay);
@@ -12518,6 +12566,7 @@ function renderArticles() {
       const cachedFeedResult = getCachedGroupedFeedResult(activeFeedId);
       feedDebugRawMatches = cachedFeedResult.rawMatches;
       feedDebugAfterRelevanceMatches = cachedFeedResult.filteredMatches;
+      personalDashboardBasePool = cachedFeedResult.rawMatches;
       filteredRawArticles = cachedFeedResult.filteredMatches;
       const groupedArticles = cachedFeedResult.groupedArticles;
       groupedArticlesCount = groupedArticles.length;
@@ -12525,6 +12574,7 @@ function renderArticles() {
       feedRenderGroupedCount = groupedArticlesCount;
       articles = groupedArticles;
     } else if (state.filters.date) {
+      personalDashboardBasePool = state.articles;
       filteredRawArticles = state.articles
         .filter(articleMatchesFilters)
         .sort(compareArticlesForDisplay);
@@ -12533,6 +12583,7 @@ function renderArticles() {
       feedRenderFilteredCount = filteredRawArticles.length;
       feedRenderGroupedCount = groupedArticlesCount;
     } else {
+      personalDashboardBasePool = state.articles;
       const visibleArticles = getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping });
       filteredRawArticles = visibleArticles;
       const groupedArticles = groupArticlesByEvent(visibleArticles);
@@ -12570,6 +12621,27 @@ function renderArticles() {
       : Array.isArray(articles)
         ? articles.slice(0, MAX_RENDERED_ARTICLES)
         : [];
+
+    if (shouldDebugPersonalDashboard) {
+      const advancedFilterOptions =
+        useBackendQuery || (activeFeedId && !state.filters.date)
+          ? { ignoreFeedId: true, ignorePersonalDashboard: true }
+          : { ignorePersonalDashboard: true };
+      const afterAdvancedFilters = personalDashboardBasePool.filter((article) =>
+        articleMatchesFilters(article, advancedFilterOptions)
+      );
+      const afterPersonalDashboard = afterAdvancedFilters.filter((article) =>
+        articleMatchesPersonalDashboardSelection(article)
+      );
+      debugPersonalDashboardLog("[personal-dashboard-counts]", {
+        branch: useBackendQuery ? "backend-query" : activeFeedId && !state.filters.date ? "feed-filter" : state.filters.date ? "date-filter" : "default",
+        beforeFilters: getPersonalDashboardBanknoteSourceCounts(personalDashboardBasePool),
+        afterAdvancedFilters: getPersonalDashboardBanknoteSourceCounts(afterAdvancedFilters),
+        afterPersonalDashboard: getPersonalDashboardBanknoteSourceCounts(afterPersonalDashboard),
+        finalVisibleCount: Array.isArray(articles) ? articles.length : 0,
+        finalRenderedCount: Array.isArray(articlesToRender) ? articlesToRender.length : 0,
+      });
+    }
 
     if (activeFeedId) {
       logFeedFilterDiagnostics(
@@ -12857,10 +12929,16 @@ async function apiRequest(path, options = {}) {
 }
 
 async function loadAllArticles() {
+  // TODO: Personal Dashboard can only inspect this frontend working set unless another backend query path is active.
   const response = await apiRequest(
     `/api/articles?includePagination=true&showDuplicates=true&limit=${MAX_ARTICLES_IN_MEMORY}&page=1`
   );
   const items = Array.isArray(response?.items) ? response.items : [];
+  debugPersonalDashboardLog("[personal-dashboard-api-response]", {
+    source: "loadAllArticles",
+    totalItems: items.length,
+    sourceCounts: getPersonalDashboardBanknoteSourceCounts(items),
+  });
   return {
     totalCount: Number(response?.pagination?.total) || items.length,
     items: items
