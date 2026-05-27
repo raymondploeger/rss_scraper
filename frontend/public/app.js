@@ -1619,6 +1619,75 @@ function hasPersonalDashboardSelections() {
   return Array.isArray(state.personalDashboard.interests) && state.personalDashboard.interests.length > 0;
 }
 
+function getPersonalDashboardBackendDomainPlan() {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const selectedMainDomains = getSelectedMainDomains(selectedInterests);
+
+  if (!selectedInterests.length || !selectedMainDomains.length) {
+    return null;
+  }
+
+  if (selectedMainDomains.length === 1 && selectedMainDomains[0] === "banknotes") {
+    return {
+      domain: "banknotes",
+      topic: "Banknotes",
+      searches: [
+        "banknote",
+        "currency",
+        "central bank",
+        "counterfeit",
+        "polymer",
+        "substrate",
+        "security printing",
+        "banknotenews",
+        "notafilia",
+        "mriguide",
+        "reform.news",
+      ],
+    };
+  }
+
+  if (selectedMainDomains.length === 1 && selectedMainDomains[0] === "identity_documents") {
+    return {
+      domain: "identity_documents",
+      topic: "Identity Documents",
+      searches: [
+        "passport",
+        "identity card",
+        "residence permit",
+        "visa",
+        "icao",
+        "border control",
+        "polycarbonate",
+        "document fraud",
+      ],
+    };
+  }
+
+  if (selectedMainDomains.length === 1 && selectedMainDomains[0] === "digital_identity_biometrics") {
+    return {
+      domain: "digital_identity_biometrics",
+      topic: "Digital Identity & Biometrics",
+      searches: [
+        "digital identity",
+        "biometric",
+        "eid",
+        "digital wallet",
+        "kyc",
+        "onboarding",
+        "liveness",
+        "identity verification",
+      ],
+    };
+  }
+
+  return {
+    domain: selectedMainDomains.slice().sort().join("+"),
+    topic: "",
+    searches: [],
+  };
+}
+
 function getPersonalBoostContext(article) {
   return getCachedArticleValue(article, "personalBoostContext", () => {
     const normalizedEvent = article?._intelligence?.normalizedEvent || normalizeIntelligenceEvent(article);
@@ -11981,6 +12050,7 @@ function shouldUseBackendArticleQuery() {
     !state.filters.canadaDmvFeedPath &&
     !state.filters.canadaDmvAll &&
     (
+      hasPersonalDashboardSelections() ||
       state.filters.feedId ||
       state.filters.topic ||
       state.filters.tag ||
@@ -11992,6 +12062,7 @@ function shouldUseBackendArticleQuery() {
 }
 
 function getBackendArticleQueryKey() {
+  const personalDomainPlan = getPersonalDashboardBackendDomainPlan();
   return JSON.stringify({
     feedId: state.filters.feedId || "",
     topic: state.filters.topic || "",
@@ -11999,14 +12070,17 @@ function getBackendArticleQueryKey() {
     signal: state.filters.signalCategory || "",
     search: state.filters.search || "",
     date: state.filters.date || "",
+    personalDashboardInterests: Array.isArray(state.personalDashboard?.interests) ? state.personalDashboard.interests.slice().sort() : [],
+    personalDashboardMode: normalizePersonalDashboardMode(state.personalDashboard?.mode),
+    personalDashboardDomain: personalDomainPlan?.domain || "",
   });
 }
 
-function getBackendArticleQueryParams() {
+function applyBackendArticleQueryBaseParams(options = {}) {
   const params = new URLSearchParams();
   params.set("includePagination", "true");
   params.set("showDuplicates", "true");
-  params.set("limit", String(MAX_ARTICLES_IN_MEMORY));
+  params.set("limit", String(options.limit || MAX_ARTICLES_IN_MEMORY));
   params.set("page", "1");
 
   const resolvedFeed = state.filters.feedId ? resolveFeedByIdentity(state.filters.feedId) : null;
@@ -12033,6 +12107,47 @@ function getBackendArticleQueryParams() {
   }
 
   return params;
+}
+
+function getBackendArticleQueryParams() {
+  return applyBackendArticleQueryBaseParams();
+}
+
+function buildPersonalDashboardBackendQueryParamsList() {
+  const plan = getPersonalDashboardBackendDomainPlan();
+  if (!plan) {
+    return [];
+  }
+
+  const requestParamsList = [];
+  const seenKeys = new Set();
+  const perRequestLimit = Math.max(100, Math.min(250, Math.floor(MAX_ARTICLES_IN_MEMORY / 6)));
+  const hasExplicitTopicFilter = Boolean(state.filters.topic);
+
+  const addParams = (mutate, options = {}) => {
+    const params = applyBackendArticleQueryBaseParams({ limit: perRequestLimit });
+    if (options.includePlanTopic && !hasExplicitTopicFilter && plan.topic) {
+      params.set("topic", plan.topic);
+    }
+    if (typeof mutate === "function") {
+      mutate(params);
+    }
+    const key = params.toString();
+    if (seenKeys.has(key)) {
+      return;
+    }
+    seenKeys.add(key);
+    requestParamsList.push(params);
+  };
+
+  addParams(null, { includePlanTopic: true });
+  plan.searches.forEach((searchTerm) => {
+    addParams((params) => {
+      params.set("search", searchTerm);
+    });
+  });
+
+  return requestParamsList;
 }
 
 async function ensureBackendArticleQueryData() {
@@ -12062,15 +12177,51 @@ async function ensureBackendArticleQueryData() {
     elements.resultsCount.textContent = "Loading articles...";
   }
 
-  const response = await apiRequest(`/api/articles?${getBackendArticleQueryParams().toString()}`);
+  const personalDomainPlan = getPersonalDashboardBackendDomainPlan();
+  const queryParamsList =
+    personalDomainPlan && hasPersonalDashboardSelections()
+      ? buildPersonalDashboardBackendQueryParamsList()
+      : [getBackendArticleQueryParams()];
+  const responses = await Promise.all(
+    queryParamsList.map((params) => apiRequest(`/api/articles?${params.toString()}`))
+  );
   if (requestId !== runtime.backendArticleQueryActiveRequestId) {
     return null;
   }
 
-  const normalizedArticles = (Array.isArray(response?.items) ? response.items : Array.isArray(response?.articles) ? response.articles : [])
-    .slice(0, MAX_ARTICLES_IN_MEMORY)
-    .map(normalizeLoadedArticle);
-  const totalCount = Number(response?.pagination?.total ?? response?.totalCount) || normalizedArticles.length;
+  const mergedRawArticles = [];
+  responses.forEach((response) => {
+    const items = Array.isArray(response?.items) ? response.items : Array.isArray(response?.articles) ? response.articles : [];
+    items.forEach((item) => {
+      mergedRawArticles.push(item);
+    });
+  });
+
+  const dedupedRawArticleMap = new Map();
+  mergedRawArticles.forEach((article) => {
+    const dedupeKey =
+      String(article?.id || "").trim() ||
+      String(article?.canonicalLink || article?.link || "").trim().toLowerCase();
+    if (!dedupeKey || dedupedRawArticleMap.has(dedupeKey)) {
+      return;
+    }
+    dedupedRawArticleMap.set(dedupeKey, article);
+  });
+
+  const dedupedRawArticles = Array.from(dedupedRawArticleMap.values())
+    .sort((left, right) => new Date(right?.pubDate || 0) - new Date(left?.pubDate || 0))
+    .slice(0, MAX_ARTICLES_IN_MEMORY);
+  const normalizedArticles = dedupedRawArticles.map(normalizeLoadedArticle);
+  const totalCount = normalizedArticles.length;
+
+  if (personalDomainPlan && hasPersonalDashboardSelections()) {
+    logPersonalDashboardSourceStage("[personal-dashboard-backend-domain-query]", normalizedArticles, {
+      selectedInterests: normalizePersonalDashboardInterests(state.personalDashboard.interests),
+      queryParamsUsed: queryParamsList.map((params) => Object.fromEntries(params.entries())),
+      totalReturned: totalCount,
+    });
+  }
+
   logPersonalDashboardSourceStage("[personal-dashboard-backend-query]", normalizedArticles, {
     queryKey,
     totalCount,
