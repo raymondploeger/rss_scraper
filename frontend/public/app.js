@@ -2009,6 +2009,55 @@ function hasSelectedDomainContext(article, selectedMainDomain) {
   return false;
 }
 
+function isBanknoteAdjacent(article) {
+  return getCachedArticleValue(article, "isBanknoteAdjacent", () => {
+    const context = getPersonalBoostContext(article);
+    const sharedSecurityConcepts = [
+      "security printing",
+      "anti-counterfeit",
+      "anti counterfeit",
+      "holography",
+      "hologram",
+      "ovd",
+      "optically variable device",
+      "intaglio",
+      "secure documents",
+      "micro optics",
+      "micro-optics",
+      "security inks",
+      "security features",
+      "security feature",
+    ];
+    const banknoteContextConcepts = [
+      "banknote",
+      "banknotes",
+      "note",
+      "currency",
+      "cash",
+      "central bank",
+      "denomination",
+      "legal tender",
+      "circulation",
+      "counterfeit money",
+      "counterfeit currency",
+      "polymer note",
+      "paper money",
+      "mint",
+      "issuing authority",
+    ];
+    const sharedHits =
+      countBoostKeywordMatches(context.titleText, sharedSecurityConcepts) +
+      countBoostKeywordMatches(context.tagText, sharedSecurityConcepts) +
+      countBoostKeywordMatches(context.metadataText, sharedSecurityConcepts);
+    const banknoteContextHits =
+      countBoostKeywordMatches(context.titleText, banknoteContextConcepts) +
+      countBoostKeywordMatches(context.tagText, banknoteContextConcepts) +
+      countBoostKeywordMatches(context.metadataText, banknoteContextConcepts);
+
+    return sharedHits > 0 && (banknoteContextHits > 0 || hasSelectedDomainContext(article, "banknotes"));
+  });
+}
+
 function getPersonalDomainBucket(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
   const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
   const signature = `${normalizePersonalDashboardMode(state.personalDashboard.mode)}:${normalizedInterests.join("|")}`;
@@ -2030,6 +2079,9 @@ function getPersonalDomainBucket(article, selectedInterests = normalizePersonalD
     }
 
     if (dominantDomain === "shared_security") {
+      if (selectedMainDomains.length === 1 && selectedMainDomains[0] === "banknotes") {
+        return isBanknoteAdjacent(article) ? "adjacent" : "other";
+      }
       return hasAnySelectedDomainContext ? "adjacent" : "other";
     }
 
