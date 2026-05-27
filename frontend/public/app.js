@@ -1920,7 +1920,7 @@ function mapPersonalDashboardGroupToMainDomain(groupId) {
     return "identity_documents";
   }
   if (groupId === "digital_identity_biometrics") {
-    return "digital_identity";
+    return "digital_identity_biometrics";
   }
   if (groupId === PERSONAL_DASHBOARD_SHARED_GROUP_ID) {
     return "shared_security";
@@ -1935,7 +1935,7 @@ function getSelectedMainDomains(selectedInterests = normalizePersonalDashboardIn
   normalizedInterests.forEach((interestId) => {
     const groupId = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId || "";
     const mappedDomain = mapPersonalDashboardGroupToMainDomain(groupId);
-    if (mappedDomain === "banknotes" || mappedDomain === "identity_documents" || mappedDomain === "digital_identity") {
+    if (mappedDomain === "banknotes" || mappedDomain === "identity_documents" || mappedDomain === "digital_identity_biometrics") {
       mainDomains.add(mappedDomain);
     }
   });
@@ -1964,70 +1964,16 @@ function getPersonalBucketOrder(bucket) {
   return 2;
 }
 
-function getArticleDominantDomain(article) {
-  return getCachedArticleValue(article, "personalDominantDomain", () => {
+function getBanknoteInterestSignals(article) {
+  return getCachedArticleValue(article, "banknoteInterestSignals", () => {
     const context = getPersonalBoostContext(article);
-    const banknoteSignals = getPersonalDomainContextProfile(context, "banknote_intelligence");
-    const identitySignals = getPersonalDomainContextProfile(context, "identity_documents");
-    const digitalSignals = getPersonalDomainContextProfile(context, "digital_identity_biometrics");
-    const sharedSignals = getPersonalDomainContextProfile(context, PERSONAL_DASHBOARD_SHARED_GROUP_ID);
+    const weightedHits = (terms = []) =>
+      (countBoostKeywordMatches(context.titleText, terms) * 3) +
+      (countBoostKeywordMatches(context.tagText, terms) * 2) +
+      (countBoostKeywordMatches(context.metadataText, terms) * 2) +
+      countBoostKeywordMatches(context.bodyText, terms);
 
-    const banknoteScore =
-      banknoteSignals.score
-      + (context.topicType === "banknote" || context.domain === "banknote" || context.topic === "banknotes" ? 18 : 0)
-      + (contextMatchesSpecialistSource(context, "banknote_intelligence") ? 24 : 0);
-    const identityScore =
-      identitySignals.score
-      + (["travel_passport", "identity_document", "dmv_driver_license"].includes(context.topicType) ? 18 : 0)
-      + (contextMatchesSpecialistSource(context, "identity_documents") ? 14 : 0);
-    const digitalScore =
-      digitalSignals.score
-      + (context.topicType === "digital_identity" || context.domain === "digital_identity" ? 20 : 0)
-      + (contextMatchesSpecialistSource(context, "digital_identity_biometrics") ? 14 : 0);
-    const sharedScore =
-      sharedSignals.score
-      + (contextMatchesSpecialistSource(context, PERSONAL_DASHBOARD_SHARED_GROUP_ID) ? 12 : 0);
-
-    if (sharedScore >= 12 && banknoteScore < 12 && identityScore < 12 && digitalScore < 12) {
-      return "shared_security";
-    }
-
-    const candidates = [
-      { domain: "banknotes", score: banknoteScore },
-      { domain: "identity_documents", score: identityScore },
-      { domain: "digital_identity", score: digitalScore },
-    ].sort((left, right) => right.score - left.score);
-
-    if (!candidates.length || candidates[0].score < 8) {
-      return sharedScore >= 10 ? "shared_security" : "unknown";
-    }
-
-    return candidates[0].domain;
-  });
-}
-
-function hasSelectedDomainContext(article, selectedMainDomain) {
-  const context = getPersonalBoostContext(article);
-  if (selectedMainDomain === "banknotes") {
-    return getPersonalDomainContextProfile(context, "banknote_intelligence").score >= 8;
-  }
-  if (selectedMainDomain === "identity_documents") {
-    return getPersonalDomainContextProfile(context, "identity_documents").score >= 7;
-  }
-  if (selectedMainDomain === "digital_identity") {
-    return getPersonalDomainContextProfile(context, "digital_identity_biometrics").score >= 7;
-  }
-  return false;
-}
-
-function isBanknotePrimary(article) {
-  return getCachedArticleValue(article, "isBanknotePrimary", () => {
-    if (isBanknoteAuthoritySource(article)) {
-      return true;
-    }
-
-    const context = getPersonalBoostContext(article);
-    const primaryConcepts = [
+    const banknoteCoreTerms = [
       "banknote",
       "banknotes",
       "currency note",
@@ -2049,65 +1995,208 @@ function isBanknotePrimary(article) {
       "central bank currency",
       "central bank note",
     ];
-    const titleHits = countBoostKeywordMatches(context.titleText, primaryConcepts);
-    const tagHits = countBoostKeywordMatches(context.tagText, primaryConcepts);
-    const metaHits = countBoostKeywordMatches(context.metadataText, primaryConcepts);
-    const matchesBanknoteTopic =
-      context.topic === "banknotes"
-      || context.topicType === "banknote"
-      || context.domain === "banknote";
-
-    return matchesBanknoteTopic || titleHits > 0 || tagHits > 0 || metaHits > 1;
-  });
-}
-
-function isBanknoteAdjacent(article) {
-  return getCachedArticleValue(article, "isBanknoteAdjacent", () => {
-    const context = getPersonalBoostContext(article);
-    const sharedSecurityConcepts = [
-      "security printing",
-      "anti-counterfeit",
-      "anti counterfeit",
-      "holography",
-      "hologram",
-      "ovd",
-      "optically variable device",
-      "intaglio",
-      "secure documents",
-      "micro optics",
-      "micro-optics",
-      "security inks",
-      "security features",
-      "security feature",
-    ];
-    const banknoteContextConcepts = [
+    const banknoteContextTerms = [
       "banknote",
       "banknotes",
-      "note",
       "currency",
       "cash",
+      "note",
+      "paper money",
       "central bank",
       "denomination",
       "legal tender",
       "circulation",
       "counterfeit money",
       "counterfeit currency",
-      "polymer note",
-      "paper money",
       "mint",
       "issuing authority",
     ];
-    const sharedHits =
-      countBoostKeywordMatches(context.titleText, sharedSecurityConcepts) +
-      countBoostKeywordMatches(context.tagText, sharedSecurityConcepts) +
-      countBoostKeywordMatches(context.metadataText, sharedSecurityConcepts);
-    const banknoteContextHits =
-      countBoostKeywordMatches(context.titleText, banknoteContextConcepts) +
-      countBoostKeywordMatches(context.tagText, banknoteContextConcepts) +
-      countBoostKeywordMatches(context.metadataText, banknoteContextConcepts) +
-      countBoostKeywordMatches(context.bodyText, banknoteContextConcepts);
+    const securityFeatureTerms = [
+      "security feature",
+      "security features",
+      "security thread",
+      "watermark",
+      "hologram",
+      "ovd",
+      "optically variable device",
+      "intaglio",
+      "anti-counterfeit currency",
+      "counterfeit prevention",
+      "polymer substrate",
+      "windowed thread",
+    ];
+    const securityPrintingTerms = [
+      "security printing",
+      "security printer",
+      "banknote printing",
+      "print works",
+      "secure print",
+      "security inks",
+      "holography",
+      "ovd",
+      "intaglio",
+      "micro optics",
+      "micro-optics",
+    ];
+    const polymerTerms = [
+      "polymer note",
+      "polymer banknote",
+      "polymer substrate",
+      "polymer currency",
+      "guardian substrate",
+      "ccl substrate",
+      "hybrid substrate",
+      "plastic banknote",
+    ];
+    const substrateTerms = [
+      "substrate",
+      "polymer substrate",
+      "paper substrate",
+      "guardian substrate",
+      "ccl substrate",
+      "hybrid substrate",
+      "substrate migration",
+    ];
+    const releaseTerms = [
+      "issued",
+      "issue",
+      "release",
+      "released",
+      "unveiled",
+      "new note rollout",
+      "banknote rollout",
+      "circulation rollout",
+      "new series launch",
+      "new banknote launch",
+    ];
+    const redesignTerms = [
+      "redesign",
+      "new design",
+      "new family",
+      "new portrait",
+      "new artwork",
+      "currency redesign",
+      "banknote redesign",
+    ];
+    const withdrawalTerms = [
+      "withdrawn from circulation",
+      "withdrawal",
+      "demonetisation",
+      "demonetization",
+      "legal tender deadline",
+      "exchange deadline",
+      "phase-out",
+      "phase out",
+      "note retirement",
+      "old series withdrawal",
+    ];
+    const counterfeitTerms = [
+      "counterfeit money",
+      "counterfeit currency",
+      "counterfeit banknote",
+      "counterfeit banknotes",
+      "counterfeit notes",
+      "fake note",
+      "fake currency",
+      "forged notes",
+      "cash fraud",
+    ];
+    const centralBankTerms = [
+      "central bank",
+      "national bank",
+      "reserve bank",
+      "issuer bank",
+      "bank of england",
+      "ecb",
+      "rbi",
+    ];
 
-    return sharedHits > 0 && banknoteContextHits > 0;
+    return {
+      isAuthoritySource: isBanknoteAuthoritySource(article),
+      hasBanknoteTopic:
+        context.topic === "banknotes" || context.topicType === "banknote" || context.domain === "banknote",
+      coreHits: weightedHits(banknoteCoreTerms),
+      contextHits: weightedHits(banknoteContextTerms),
+      securityFeatureHits: weightedHits(securityFeatureTerms),
+      securityPrintingHits: weightedHits(securityPrintingTerms),
+      polymerHits: weightedHits(polymerTerms),
+      substrateHits: weightedHits(substrateTerms),
+      releaseHits: weightedHits(releaseTerms),
+      redesignHits: weightedHits(redesignTerms),
+      withdrawalHits: weightedHits(withdrawalTerms),
+      counterfeitHits: weightedHits(counterfeitTerms),
+      centralBankHits: weightedHits(centralBankTerms),
+    };
+  });
+}
+
+function getArticleDominantDomain(article) {
+  return getCachedArticleValue(article, "personalDominantDomain", () => {
+    const context = getPersonalBoostContext(article);
+    const banknoteSignals = getPersonalDomainContextProfile(context, "banknote_intelligence");
+    const identitySignals = getPersonalDomainContextProfile(context, "identity_documents");
+    const digitalSignals = getPersonalDomainContextProfile(context, "digital_identity_biometrics");
+    const banknoteInterestSignals = getBanknoteInterestSignals(article);
+
+    const banknoteScore =
+      banknoteSignals.score
+      + (banknoteInterestSignals.hasBanknoteTopic ? 18 : 0)
+      + (banknoteInterestSignals.isAuthoritySource ? 28 : 0)
+      + Math.min(18, Math.round(banknoteInterestSignals.contextHits / 2));
+    const identityScore =
+      identitySignals.score
+      + (["travel_passport", "identity_document", "dmv_driver_license"].includes(context.topicType) ? 18 : 0)
+      + (contextMatchesSpecialistSource(context, "identity_documents") ? 14 : 0);
+    const digitalScore =
+      digitalSignals.score
+      + (context.topicType === "digital_identity" || context.domain === "digital_identity" ? 20 : 0)
+      + (contextMatchesSpecialistSource(context, "digital_identity_biometrics") ? 14 : 0);
+
+    const candidates = [
+      { domain: "banknotes", score: banknoteScore },
+      { domain: "identity_documents", score: identityScore },
+      { domain: "digital_identity_biometrics", score: digitalScore },
+    ].sort((left, right) => right.score - left.score);
+
+    if (!candidates.length || candidates[0].score < 8) {
+      return "other";
+    }
+
+    if ((candidates[0].score - candidates[1].score) < 2 && candidates[0].score < 14) {
+      return "other";
+    }
+
+    return candidates[0].domain;
+  });
+}
+
+function hasSelectedDomainContext(article, selectedMainDomain) {
+  const context = getPersonalBoostContext(article);
+  if (selectedMainDomain === "banknotes") {
+    return getPersonalDomainContextProfile(context, "banknote_intelligence").score >= 8;
+  }
+  if (selectedMainDomain === "identity_documents") {
+    return getPersonalDomainContextProfile(context, "identity_documents").score >= 7;
+  }
+  if (selectedMainDomain === "digital_identity_biometrics") {
+    return getPersonalDomainContextProfile(context, "digital_identity_biometrics").score >= 7;
+  }
+  return false;
+}
+
+function isBanknotePrimary(article) {
+  return getCachedArticleValue(article, "isBanknotePrimary", () => {
+    const signals = getBanknoteInterestSignals(article);
+    return signals.isAuthoritySource || signals.hasBanknoteTopic || signals.coreHits >= 4;
+  });
+}
+
+function isBanknoteAdjacent(article) {
+  return getCachedArticleValue(article, "isBanknoteAdjacent", () => {
+    const signals = getBanknoteInterestSignals(article);
+    return !signals.isAuthoritySource
+      && signals.contextHits >= 3
+      && (signals.securityFeatureHits >= 3 || signals.securityPrintingHits >= 3);
   });
 }
 
@@ -2147,6 +2236,52 @@ function isBanknoteContaminated(article) {
       countBoostKeywordMatches(context.bodyText, contaminationConcepts);
 
     return contaminationHits > 0;
+  });
+}
+
+function matchesBanknoteInterest(article, interestId) {
+  return getCachedArticleValue(article, `matchesBanknoteInterest:${interestId}`, () => {
+    if (getArticleDominantDomain(article) !== "banknotes") {
+      return false;
+    }
+
+    const signals = getBanknoteInterestSignals(article);
+
+    if (interestId === "banknotes") {
+      return signals.isAuthoritySource || isBanknotePrimary(article) || signals.contextHits >= 3;
+    }
+    if (interestId === "polymer") {
+      return signals.polymerHits >= 3 || signals.substrateHits >= 4;
+    }
+    if (interestId === "substrate") {
+      return signals.substrateHits >= 4;
+    }
+    if (interestId === "security_features") {
+      return signals.contextHits >= 3 && signals.securityFeatureHits >= 3;
+    }
+    if (interestId === "security_printing") {
+      return signals.contextHits >= 3 && signals.securityPrintingHits >= 3;
+    }
+    if (interestId === "redesign") {
+      return signals.contextHits >= 3 && signals.redesignHits >= 3;
+    }
+    if (interestId === "rollout") {
+      return signals.contextHits >= 3 && signals.releaseHits >= 3;
+    }
+    if (interestId === "release") {
+      return signals.contextHits >= 3 && signals.releaseHits >= 3;
+    }
+    if (interestId === "withdrawal") {
+      return signals.contextHits >= 3 && signals.withdrawalHits >= 3;
+    }
+    if (interestId === "counterfeit") {
+      return signals.counterfeitHits >= 3;
+    }
+    if (interestId === "central_bank") {
+      return signals.contextHits >= 3 && signals.centralBankHits >= 3;
+    }
+
+    return false;
   });
 }
 
@@ -2193,12 +2328,12 @@ function getPersonalDomainBucket(article, selectedInterests = normalizePersonalD
         return "other";
       }
       if (selectedDomain === "identity_documents") {
-        return dominantDomain === "digital_identity" && hasSelectedDomainContext(article, "identity_documents")
+        return dominantDomain === "digital_identity_biometrics" && hasSelectedDomainContext(article, "identity_documents")
           ? "adjacent"
           : "other";
       }
-      if (selectedDomain === "digital_identity") {
-        return dominantDomain === "identity_documents" && hasSelectedDomainContext(article, "digital_identity")
+      if (selectedDomain === "digital_identity_biometrics") {
+        return dominantDomain === "identity_documents" && hasSelectedDomainContext(article, "digital_identity_biometrics")
           ? "adjacent"
           : "other";
       }
@@ -2227,19 +2362,19 @@ function getDomainDecayMultiplier(article, selectedMainDomains) {
     if (selected === "banknotes" && dominantDomain === "identity_documents") {
       return 0.35;
     }
-    if (selected === "banknotes" && dominantDomain === "digital_identity") {
+    if (selected === "banknotes" && dominantDomain === "digital_identity_biometrics") {
       return 0.15;
     }
     if (selected === "identity_documents" && dominantDomain === "banknotes") {
       return 0.35;
     }
-    if (selected === "identity_documents" && dominantDomain === "digital_identity") {
+    if (selected === "identity_documents" && dominantDomain === "digital_identity_biometrics") {
       return 0.45;
     }
-    if (selected === "digital_identity" && dominantDomain === "banknotes") {
+    if (selected === "digital_identity_biometrics" && dominantDomain === "banknotes") {
       return 0.15;
     }
-    if (selected === "digital_identity" && dominantDomain === "identity_documents") {
+    if (selected === "digital_identity_biometrics" && dominantDomain === "identity_documents") {
       return 0.45;
     }
     return 0.75;
@@ -2487,12 +2622,50 @@ function getPersonalDashboardDomainMatch(article) {
 
 function articleMatchesPersonalDashboardSelection(article) {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  if (!selectedInterests.length) {
+    return true;
+  }
+
+  const primaryDomain = getArticleDominantDomain(article);
+  if (primaryDomain === "other") {
+    return false;
+  }
+
+  const selectedMainDomains = getSelectedMainDomains(selectedInterests);
+  if (selectedMainDomains.length && !selectedMainDomains.includes(primaryDomain)) {
+    return false;
+  }
+
   if (isBanknotesOnlyPersonalSelection(selectedInterests)) {
     if (isBanknoteContaminated(article)) {
       return false;
     }
 
-    return isBanknotePrimary(article) || isBanknoteAdjacent(article);
+    const banknoteInterestIds = selectedInterests.filter(
+      (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "banknote_intelligence"
+    );
+
+    if (!banknoteInterestIds.length) {
+      return isBanknotePrimary(article) || isBanknoteAdjacent(article);
+    }
+
+    return banknoteInterestIds.some((interestId) => matchesBanknoteInterest(article, interestId));
+  }
+
+  if (primaryDomain === "identity_documents") {
+    const selectedIdentityInterests = selectedInterests.filter(
+      (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "identity_documents"
+    );
+    return !selectedIdentityInterests.length
+      || selectedIdentityInterests.some((interestId) => computePersonalInterestBoost(article, interestId).score >= 18);
+  }
+
+  if (primaryDomain === "digital_identity_biometrics") {
+    const selectedDigitalInterests = selectedInterests.filter(
+      (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "digital_identity_biometrics"
+    );
+    return !selectedDigitalInterests.length
+      || selectedDigitalInterests.some((interestId) => computePersonalInterestBoost(article, interestId).score >= 18);
   }
 
   return true;
