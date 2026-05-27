@@ -1992,6 +1992,13 @@ function getPersonalDashboardBanknoteSourceCounts(articles = []) {
   return counts;
 }
 
+function logPersonalDashboardSourceStage(stage, articles, extra = {}) {
+  debugPersonalDashboardLog(stage, {
+    sourceCounts: getPersonalDashboardBanknoteSourceCounts(articles),
+    ...extra,
+  });
+}
+
 function getPersonalBucketOrder(bucket) {
   if (bucket === "primary") {
     return 0;
@@ -12062,11 +12069,10 @@ async function ensureBackendArticleQueryData() {
     .slice(0, MAX_ARTICLES_IN_MEMORY)
     .map(normalizeLoadedArticle);
   const totalCount = Number(response?.pagination?.total ?? response?.totalCount) || normalizedArticles.length;
-  debugPersonalDashboardLog("[personal-dashboard-backend-query]", {
+  logPersonalDashboardSourceStage("[personal-dashboard-backend-query]", normalizedArticles, {
     queryKey,
     totalCount,
     loadedCount: normalizedArticles.length,
-    sourceCounts: getPersonalDashboardBanknoteSourceCounts(normalizedArticles),
   });
   const payload = {
     queryKey,
@@ -12633,11 +12639,25 @@ function renderArticles() {
       const afterPersonalDashboard = afterAdvancedFilters.filter((article) =>
         articleMatchesPersonalDashboardSelection(article)
       );
-      debugPersonalDashboardLog("[personal-dashboard-counts]", {
-        branch: useBackendQuery ? "backend-query" : activeFeedId && !state.filters.date ? "feed-filter" : state.filters.date ? "date-filter" : "default",
-        beforeFilters: getPersonalDashboardBanknoteSourceCounts(personalDashboardBasePool),
-        afterAdvancedFilters: getPersonalDashboardBanknoteSourceCounts(afterAdvancedFilters),
-        afterPersonalDashboard: getPersonalDashboardBanknoteSourceCounts(afterPersonalDashboard),
+      const branch =
+        useBackendQuery
+          ? "backend-query"
+          : activeFeedId && !state.filters.date
+            ? "feed-filter"
+            : state.filters.date
+              ? "date-filter"
+              : "default";
+      logPersonalDashboardSourceStage("[personal-dashboard-before-filters]", personalDashboardBasePool, {
+        branch,
+      });
+      logPersonalDashboardSourceStage("[personal-dashboard-after-advanced-filters]", afterAdvancedFilters, {
+        branch,
+      });
+      logPersonalDashboardSourceStage("[personal-dashboard-after-personal-dashboard]", afterPersonalDashboard, {
+        branch,
+      });
+      debugPersonalDashboardLog("[personal-dashboard-final-visible]", {
+        branch,
         finalVisibleCount: Array.isArray(articles) ? articles.length : 0,
         finalRenderedCount: Array.isArray(articlesToRender) ? articlesToRender.length : 0,
       });
@@ -12934,10 +12954,9 @@ async function loadAllArticles() {
     `/api/articles?includePagination=true&showDuplicates=true&limit=${MAX_ARTICLES_IN_MEMORY}&page=1`
   );
   const items = Array.isArray(response?.items) ? response.items : [];
-  debugPersonalDashboardLog("[personal-dashboard-api-response]", {
+  logPersonalDashboardSourceStage("[personal-dashboard-api-response]", items, {
     source: "loadAllArticles",
     totalItems: items.length,
-    sourceCounts: getPersonalDashboardBanknoteSourceCounts(items),
   });
   return {
     totalCount: Number(response?.pagination?.total) || items.length,
@@ -12963,6 +12982,11 @@ async function loadSnapshot() {
     .map(normalizeLoadedArticle);
 
   state.articles = normalizedArticles;
+  logPersonalDashboardSourceStage("[personal-dashboard-frontend-state]", state.articles, {
+    source: "loadSnapshot",
+    totalAvailable: Number(articleResponse?.totalCount) || normalizedArticles.length,
+    loadedInFrontend: normalizedArticles.length,
+  });
   state.articleStats = {
     totalAvailable: Number(articleResponse?.totalCount) || normalizedArticles.length,
     loadedInFrontend: normalizedArticles.length,
