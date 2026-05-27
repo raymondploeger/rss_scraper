@@ -13,7 +13,9 @@ const NOTIFICATION_TIMEOUT_MS = 7000;
 const DEBUG_INTELLIGENCE = false;
 const DEBUG_FEED_FILTER = false;
 const DEBUG_PERFORMANCE = false;
-const DEBUG_PERSONAL_DASHBOARD = false;
+const DEBUG_PERSONAL_DASHBOARD =
+  typeof localStorage !== "undefined" &&
+  localStorage.getItem("DEBUG_PERSONAL_DASHBOARD") === "true";
 const MAX_ARTICLES_IN_MEMORY = 1500;
 const MAX_VISIBLE_SOURCES_IN_LIST = 100;
 const MAX_RSS_FEEDS = 150;
