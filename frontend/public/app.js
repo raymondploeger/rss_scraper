@@ -89,6 +89,47 @@ const SPECIALIST_SOURCE_INTERESTS = {
   digital_identity_biometrics: ["biometric update", "digital identity", "authentication", "identity verification"],
   security_printing: ["security printing", "security printer", "secure documents", "holography"],
 };
+const BANKNOTE_SOURCE_AUTHORITY = {
+  veryHigh: [
+    "banknotenews",
+    "notafilia",
+    "mriguide",
+    "reform.news",
+    "central bank",
+    "national bank",
+    "reserve bank",
+    "issuer bank",
+    "bank of england",
+    "ecb",
+    "rbi",
+  ],
+  high: [
+    "currency",
+    "cash",
+    "banknote",
+    "anti-counterfeit currency",
+    "security printing",
+    "security printer",
+  ],
+  low: [
+    "generic security",
+    "techcrunch",
+    "wired",
+    "the verge",
+    "mainstream tech",
+  ],
+  veryLow: [
+    "biometric update",
+    "gizmodo",
+    "phonearena",
+    "identity verification",
+    "digital identity",
+    "kyc",
+    "onboarding",
+    "liveness",
+    "authentication",
+  ],
+};
 const PERSONAL_DASHBOARD_DOMAIN_CONTEXTS = {
   banknote_intelligence: {
     strong: [
@@ -1801,6 +1842,36 @@ function contextMatchesSpecialistSource(context, groupId) {
   );
 }
 
+function getBanknoteSourceAuthority(article) {
+  return getCachedArticleValue(article, "banknoteSourceAuthority", () => {
+    const context = getPersonalBoostContext(article);
+    const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
+    const hasAny = (values = []) => values.some((value) => textMatchesKeyword(sourceFingerprint, value));
+
+    let level = "medium";
+    let multiplier = 1.0;
+
+    if (hasAny(BANKNOTE_SOURCE_AUTHORITY.veryHigh)) {
+      level = "very_high";
+      multiplier = 2.4;
+    } else if (hasAny(BANKNOTE_SOURCE_AUTHORITY.high)) {
+      level = "high";
+      multiplier = 1.8;
+    } else if (hasAny(BANKNOTE_SOURCE_AUTHORITY.veryLow)) {
+      level = "very_low";
+      multiplier = 0.15;
+    } else if (hasAny(BANKNOTE_SOURCE_AUTHORITY.low)) {
+      level = "low";
+      multiplier = 0.45;
+    }
+
+    return {
+      level,
+      multiplier,
+    };
+  });
+}
+
 function getPersonalDashboardSelectedDomainConfig() {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const mainDomainSelections = new Map();
@@ -2065,6 +2136,7 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
       let score = 0;
 
       if (groupId === "banknote_intelligence") {
+        const banknoteAuthority = getBanknoteSourceAuthority(article);
         if (specialistSourceMatch) {
           score += 300;
         }
@@ -2089,6 +2161,7 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
           `${context.titleText} ${context.tagText} ${context.metadataText}`,
           ["kyc", "onboarding", "wallet", "eid", "digital identity", "authentication", "liveness", "biometric", "biometrics"]
         ) * 35;
+        score = Math.round(score * banknoteAuthority.multiplier);
       } else if (groupId === "identity_documents") {
         if (["travel_passport", "identity_document", "dmv_driver_license"].includes(context.topicType)) {
           score += 170;
@@ -2402,6 +2475,12 @@ function compareArticlesForDisplay(left, right) {
   const rightBoost = calculatePersonalDomainScore(right).domainScore;
   if (rightBoost !== leftBoost) {
     return rightBoost - leftBoost;
+  }
+
+  const leftAuthority = getBanknoteSourceAuthority(left);
+  const rightAuthority = getBanknoteSourceAuthority(right);
+  if (rightAuthority.multiplier !== leftAuthority.multiplier) {
+    return rightAuthority.multiplier - leftAuthority.multiplier;
   }
 
   const leftIntelligence = left?._intelligence || primeArticleIntelligence(left) || {};
