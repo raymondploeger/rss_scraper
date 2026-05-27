@@ -1767,10 +1767,24 @@ function computePersonalBoost(article) {
 
     const personalDomainScore = calculatePersonalDomainScore(article, selectedInterests);
     const score = personalDomainScore.domainScore;
+    const bucket = getPersonalDomainBucket(article, selectedInterests);
+    let level = "";
+
+    if (bucket === "primary") {
+      if (score >= 320) {
+        level = "high";
+      } else if (score >= 180) {
+        level = "relevant";
+      } else if (score >= 80) {
+        level = "related";
+      }
+    } else if (bucket === "adjacent" && score >= 80) {
+      level = "related";
+    }
 
     return {
       score,
-      level: personalDomainScore.relevanceBand,
+      level,
     };
   });
 }
@@ -1858,6 +1872,16 @@ function getSelectedMainDomains(selectedInterests = normalizePersonalDashboardIn
   return Array.from(mainDomains);
 }
 
+function getPersonalBucketOrder(bucket) {
+  if (bucket === "primary") {
+    return 0;
+  }
+  if (bucket === "adjacent") {
+    return 1;
+  }
+  return 2;
+}
+
 function getArticleDominantDomain(article) {
   return getCachedArticleValue(article, "personalDominantDomain", () => {
     const context = getPersonalBoostContext(article);
@@ -1912,6 +1936,51 @@ function hasSelectedDomainContext(article, selectedMainDomain) {
     return getPersonalDomainContextProfile(context, "digital_identity_biometrics").score >= 7;
   }
   return false;
+}
+
+function getPersonalDomainBucket(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  const signature = `${normalizePersonalDashboardMode(state.personalDashboard.mode)}:${normalizedInterests.join("|")}`;
+  const cacheKey = `personalDomainBucket:${signature}`;
+
+  return getCachedArticleValue(article, cacheKey, () => {
+    const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
+    if (!selectedMainDomains.length) {
+      return "other";
+    }
+
+    const dominantDomain = getArticleDominantDomain(article);
+    const hasAnySelectedDomainContext = selectedMainDomains.some((selectedDomain) =>
+      hasSelectedDomainContext(article, selectedDomain)
+    );
+
+    if (selectedMainDomains.includes(dominantDomain)) {
+      return "primary";
+    }
+
+    if (dominantDomain === "shared_security") {
+      return hasAnySelectedDomainContext ? "adjacent" : "other";
+    }
+
+    if (selectedMainDomains.length === 1) {
+      const selectedDomain = selectedMainDomains[0];
+      if (selectedDomain === "banknotes") {
+        return "other";
+      }
+      if (selectedDomain === "identity_documents") {
+        return dominantDomain === "digital_identity" && hasSelectedDomainContext(article, "identity_documents")
+          ? "adjacent"
+          : "other";
+      }
+      if (selectedDomain === "digital_identity") {
+        return dominantDomain === "identity_documents" && hasSelectedDomainContext(article, "digital_identity")
+          ? "adjacent"
+          : "other";
+      }
+    }
+
+    return hasAnySelectedDomainContext ? "adjacent" : "other";
+  });
 }
 
 function getDomainDecayMultiplier(article, selectedMainDomains) {
@@ -2323,6 +2392,12 @@ function renderPersonalLaneSections(container, articles, laneCounts) {
 }
 
 function compareArticlesForDisplay(left, right) {
+  const leftBucketOrder = getPersonalBucketOrder(getPersonalDomainBucket(left));
+  const rightBucketOrder = getPersonalBucketOrder(getPersonalDomainBucket(right));
+  if (leftBucketOrder !== rightBucketOrder) {
+    return leftBucketOrder - rightBucketOrder;
+  }
+
   const leftBoost = calculatePersonalDomainScore(left).domainScore;
   const rightBoost = calculatePersonalDomainScore(right).domainScore;
   if (rightBoost !== leftBoost) {
