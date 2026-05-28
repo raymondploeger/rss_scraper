@@ -8,6 +8,8 @@ const ACTIVITY_LOG_STORAGE_KEY = "dashboardActivityLog";
 const ALERT_DEDUPE_WINDOW_MS = 10 * 60 * 1000;
 const ACTIVITY_LOG_TTL_MS = 24 * 60 * 60 * 1000;
 const POLLING_INTERVAL_MS = 30000;
+const REFRESH_INTERACTION_PAUSE_MS = 6000;
+const REFRESH_SCROLL_PAUSE_MS = 5000;
 const ARTICLE_PAGE_SIZE = 400;
 const NOTIFICATION_TIMEOUT_MS = 7000;
 const DEBUG_INTELLIGENCE = false;
@@ -247,6 +249,15 @@ const IDENTITY_SUBINTEREST_INTENTS = {
       "passport modernization",
       "passport printer",
       "passport design",
+      "passport procurement",
+      "icao compliance",
+      "document authentication",
+      "chip authentication",
+      "pki",
+      "enrollment",
+      "issuance modernization",
+      "secure passport",
+      "border interoperability",
     ],
     weakPositive: ["passport", "travel document", "mrz", "icao"],
     hardNegative: [
@@ -261,6 +272,10 @@ const IDENTITY_SUBINTEREST_INTENTS = {
       "travel guide",
       "destination ranking",
       "vacation",
+      "strongest passports",
+      "most beautiful passports",
+      "most powerful passport",
+      "passport ranking",
     ],
   },
   visas: {
@@ -303,9 +318,27 @@ const IDENTITY_SUBINTEREST_INTENTS = {
       "resident permit",
       "immigration card",
       "stay permit",
+      "biometric permit",
+      "permit issuance",
+      "permit personalization",
+      "permit procurement",
+      "foreign resident card",
+      "secure permit document",
+      "digital permit system",
+      "permit verification",
+      "permit authentication",
     ],
     weakPositive: ["immigration"],
-    hardNegative: ["tourism", "visa-free", "passport ranking", "travel ranking"],
+    hardNegative: [
+      "tourism",
+      "visa-free",
+      "passport ranking",
+      "travel ranking",
+      "migration opinion",
+      "asylum politics",
+      "nationality dispute",
+      "citizenship debate",
+    ],
   },
   icao: {
     strongPositive: [
@@ -1428,12 +1461,24 @@ const runtime = {
   scheduledRenderTimeout: 0,
   scheduledRenderReason: "",
   lastRenderedReason: "",
+  lastBackgroundRefreshAt: 0,
+  lastRefreshStatusAt: 0,
+  refreshPauseUntil: 0,
+  refreshInteractionReason: "",
+  pendingBackgroundRefresh: false,
+  pendingBackgroundRefreshReason: "",
+  pendingBackgroundNewArticles: 0,
+  pendingRefreshTimer: 0,
+  articleGridHovered: false,
+  sidebarHovered: false,
+  lastSnapshotSignature: "",
 };
 
 const elements = {
   notificationRegion: document.getElementById("notification-region"),
   summaryGrid: document.getElementById("summary-grid"),
   articlesGrid: document.getElementById("articles-grid"),
+  sidebar: document.querySelector(".sidebar"),
   articleFilterContext: document.getElementById("article-filter-context"),
   paginationControls: document.getElementById("pagination-controls"),
   paginationRange: document.getElementById("pagination-range"),
@@ -1521,6 +1566,11 @@ function flushScheduledRender() {
   runtime.scheduledRenderReason = "";
   runtime.lastRenderedReason = reason;
   intelligenceDebug("[scheduleRenderArticles:flush]", { reason });
+  if (runtime.pendingBackgroundRefresh) {
+    clearPendingBackgroundRefresh();
+    runtime.lastRefreshStatusAt = runtime.lastBackgroundRefreshAt || Date.now();
+    updateRefreshStatus();
+  }
   renderArticles();
 }
 
@@ -1567,6 +1617,125 @@ function formatDate(value) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(toDate(value));
+}
+
+function formatRefreshAge(timestamp) {
+  if (!timestamp) {
+    return "Awaiting first refresh";
+  }
+
+  const deltaMs = Math.max(0, Date.now() - timestamp);
+  if (deltaMs < 10000) {
+    return "Updated just now";
+  }
+  const seconds = Math.round(deltaMs / 1000);
+  if (seconds < 60) {
+    return `Updated ${seconds}s ago`;
+  }
+  const minutes = Math.round(seconds / 60);
+  return `Updated ${minutes}m ago`;
+}
+
+function updateRefreshStatus(options = {}) {
+  if (!elements.connectionStatus) {
+    return;
+  }
+
+  if (options.message) {
+    elements.connectionStatus.textContent = options.message;
+    return;
+  }
+
+  const usingRealtime = options.realtime ?? runtime.realtimeEnabled;
+  const paused = options.paused ?? (Date.now() < runtime.refreshPauseUntil);
+  const pendingCount = Number(options.pendingCount ?? runtime.pendingBackgroundNewArticles ?? 0);
+  const lastUpdatedAt = options.lastUpdatedAt ?? runtime.lastRefreshStatusAt ?? runtime.lastBackgroundRefreshAt;
+
+  let prefix = usingRealtime ? "Background refresh active" : `Live updates every ${Math.round(POLLING_INTERVAL_MS / 1000)}s`;
+  if (paused && pendingCount > 0) {
+    prefix = `${prefix} | ${pendingCount} update${pendingCount === 1 ? "" : "s"} ready`;
+  }
+
+  elements.connectionStatus.textContent = `${prefix} | ${formatRefreshAge(lastUpdatedAt)}`;
+}
+
+function markRefreshInteraction(reason = "interaction", pauseMs = REFRESH_INTERACTION_PAUSE_MS) {
+  runtime.refreshPauseUntil = Math.max(runtime.refreshPauseUntil || 0, Date.now() + pauseMs);
+  runtime.refreshInteractionReason = reason;
+}
+
+function isBackgroundRefreshPaused() {
+  return runtime.articleGridHovered || runtime.sidebarHovered || Date.now() < runtime.refreshPauseUntil;
+}
+
+function buildArticleSnapshotSignature(articles = []) {
+  if (!Array.isArray(articles) || !articles.length) {
+    return "empty";
+  }
+
+  const identitySlice = articles
+    .slice(0, 40)
+    .map((article) => String(article?.id || article?.url || article?.title || "").trim())
+    .join("|");
+  const newestDate = String(articles[0]?.pubDate || "");
+  return `${articles.length}:${newestDate}:${identitySlice}`;
+}
+
+function countNewArticles(previousArticles = [], nextArticles = []) {
+  const previousIds = new Set(
+    (Array.isArray(previousArticles) ? previousArticles : [])
+      .map((article) => String(article?.id || "").trim())
+      .filter(Boolean)
+  );
+
+  return (Array.isArray(nextArticles) ? nextArticles : []).reduce((count, article) => {
+    const articleId = String(article?.id || "").trim();
+    return articleId && !previousIds.has(articleId) ? count + 1 : count;
+  }, 0);
+}
+
+function renderArticleRegionPreservingScroll({ updateSummary = true } = {}) {
+  const scrollY = window.scrollY;
+  if (updateSummary) {
+    renderSummary();
+  }
+  renderArticles();
+  window.requestAnimationFrame(() => {
+    window.scrollTo(0, scrollY);
+  });
+}
+
+function clearPendingBackgroundRefresh() {
+  runtime.pendingBackgroundRefresh = false;
+  runtime.pendingBackgroundRefreshReason = "";
+  runtime.pendingBackgroundNewArticles = 0;
+  if (runtime.pendingRefreshTimer) {
+    window.clearTimeout(runtime.pendingRefreshTimer);
+    runtime.pendingRefreshTimer = 0;
+  }
+}
+
+function schedulePendingBackgroundRefresh() {
+  if (!runtime.pendingBackgroundRefresh) {
+    return;
+  }
+  if (runtime.pendingRefreshTimer) {
+    window.clearTimeout(runtime.pendingRefreshTimer);
+  }
+  const delay = Math.max(250, (runtime.refreshPauseUntil || 0) - Date.now() + 250);
+  runtime.pendingRefreshTimer = window.setTimeout(() => {
+    runtime.pendingRefreshTimer = 0;
+    if (runtime.pendingBackgroundRefresh && !isBackgroundRefreshPaused()) {
+      clearPendingBackgroundRefresh();
+      renderArticleRegionPreservingScroll({ updateSummary: true });
+      runtime.lastRefreshStatusAt = Date.now();
+      updateRefreshStatus();
+      return;
+    }
+    if (runtime.pendingBackgroundRefresh) {
+      schedulePendingBackgroundRefresh();
+    }
+  }, delay);
 }
 
 function dismissNotification(notificationId) {
@@ -1961,6 +2130,13 @@ function getPersonalDashboardBackendDomainPlan() {
           "passport issuance",
           "passport security",
           "passport personalization",
+          "passport procurement",
+          "passport verification",
+          "icao compliance",
+          "document authentication",
+          "chip authentication",
+          "secure passport",
+          "border interoperability",
         ]);
       } else if (selectedSubinterest === "id_cards") {
         addTerms([
@@ -1980,6 +2156,14 @@ function getPersonalDashboardBackendDomainPlan() {
           "immigration residence document",
           "residence permit issuance",
           "residence permit card security",
+          "biometric permit",
+          "permit personalization",
+          "permit procurement",
+          "foreign resident card",
+          "secure permit document",
+          "digital permit system",
+          "permit verification",
+          "permit authentication",
         ]);
       } else if (selectedSubinterest === "drivers_licenses") {
         addTerms([
@@ -2389,7 +2573,7 @@ function computePersonalInterestBoost(article, interestId) {
       if (genericDmvNoise && selectedSubinterest && selectedSubinterest !== "drivers_licenses") {
         score -= 700;
       }
-      if (selectedSubinterest && ["passports", "visas", "residence_permits", "icao"].includes(selectedSubinterest)) {
+      if (selectedSubinterest && ["passports", "residence_permits", "icao"].includes(selectedSubinterest)) {
         score += Math.min(120, Math.round(selectedIntent.score * 1.2));
         score += getIdentityIntentAuthorityBoost(article, selectedIntent.score);
         if (subinterestScore.travelNoiseArticle) {
@@ -2736,6 +2920,15 @@ function getIdentityDocumentInterestSignals(article) {
       "travel document",
       "passport issuance",
       "passport personalization",
+      "passport procurement",
+      "passport verification",
+      "icao compliance",
+      "document authentication",
+      "chip authentication",
+      "pki",
+      "enrollment",
+      "secure passport",
+      "border interoperability",
     ];
     const idCardTerms = [
       "identity card",
@@ -2752,6 +2945,15 @@ function getIdentityDocumentInterestSignals(article) {
       "permit card",
       "immigration document issuance",
       "permit redesign",
+      "biometric permit",
+      "permit issuance",
+      "permit personalization",
+      "permit procurement",
+      "foreign resident card",
+      "secure permit document",
+      "digital permit system",
+      "permit verification",
+      "permit authentication",
     ];
     const driverLicenseTerms = [
       "driver license",
@@ -2843,6 +3045,15 @@ function getIdentityDocumentInterestSignals(article) {
       "law firm",
       "child support passport revocation",
       "passport child support",
+      "visa-free travel",
+      "strongest passports",
+      "most beautiful passports",
+      "most powerful passports",
+      "tourism journalism",
+      "destination content",
+      "generic asylum news",
+      "migration opinion",
+      "nationality dispute",
     ];
 
     return {
@@ -3139,7 +3350,7 @@ function getIdentityDocumentSubinterestScore(article, selectedInterests = normal
       };
       let score = Number(scoreByInterest[interestId] || 0) + Number(intent.score || 0);
       score += getIdentityIntentAuthorityBoost(article, intent.score);
-      if (travelNoiseArticle && ["passports", "visas", "residence_permits", "icao"].includes(interestId)) {
+      if (travelNoiseArticle && ["passports", "residence_permits", "icao"].includes(interestId)) {
         score -= 300;
       }
       return {
@@ -3161,7 +3372,7 @@ function getIdentityDocumentSubinterestScore(article, selectedInterests = normal
         };
         let nonSelectedScore = Number(score || 0) + Number(intent.score || 0);
         nonSelectedScore += getIdentityIntentAuthorityBoost(article, intent.score);
-        if (travelNoiseArticle && ["passports", "visas", "residence_permits", "icao"].includes(interestId)) {
+        if (travelNoiseArticle && ["passports", "residence_permits", "icao"].includes(interestId)) {
           nonSelectedScore -= 300;
         }
         return { interestId, score: nonSelectedScore };
@@ -3779,7 +3990,7 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         if (genericDmvNoise && selectedSubinterest && selectedSubinterest !== "drivers_licenses") {
           score -= 700;
         }
-        if (selectedSubinterest && ["passports", "visas", "residence_permits", "icao"].includes(selectedSubinterest)) {
+        if (selectedSubinterest && ["passports", "residence_permits", "icao"].includes(selectedSubinterest)) {
           score += Math.min(150, Math.round(selectedIntent.score * 1.35));
           score += getIdentityIntentAuthorityBoost(article, selectedIntent.score);
           if (identitySubinterest.travelNoiseArticle) {
@@ -14413,12 +14624,16 @@ async function loadAllArticles() {
   };
 }
 
-async function loadSnapshot() {
+async function loadSnapshot(options = {}) {
+  const background = Boolean(options.background);
+  const reason = String(options.reason || (background ? "background-refresh" : "full-refresh"));
   const [feeds, articleResponse, dmvCatalog] = await Promise.all([
     apiRequest("/api/feeds"),
     loadAllArticles(),
     apiRequest("/api/dmv-catalog"),
   ]);
+  const previousArticles = Array.isArray(state.articles) ? state.articles.slice() : [];
+  const previousSignature = runtime.lastSnapshotSignature || buildArticleSnapshotSignature(previousArticles);
   runtime.articleComputationCache.clear();
   runtime.articlePairComputationCache.clear();
   state.feeds = feeds;
@@ -14437,9 +14652,16 @@ async function loadSnapshot() {
     totalAvailable: Number(articleResponse?.totalCount) || normalizedArticles.length,
     loadedInFrontend: normalizedArticles.length,
   };
+  const nextSignature = buildArticleSnapshotSignature(normalizedArticles);
+  runtime.lastSnapshotSignature = nextSignature;
+  const newArticleCount = countNewArticles(previousArticles, normalizedArticles);
+  const snapshotChanged = previousSignature !== nextSignature;
   runtime.articleDataRevision += 1;
   rebuildArticleFeedIndexes();
   clearFeedRenderCaches();
+  if (snapshotChanged) {
+    runtime.backendArticleQueryCache.clear();
+  }
   debugPerformanceLog("[memory]", {
     totalArticlesAvailable: state.articleStats.totalAvailable,
     articleCountInMemory: state.articles.length,
@@ -14452,10 +14674,42 @@ async function loadSnapshot() {
   restoreExactArticleFilterFromSession();
   syncDashboardAlerts(feeds, normalizedArticles);
   syncActivityLog();
-  renderDashboard();
   syncNewArticleNotifications(normalizedArticles);
   syncFeedErrorNotifications();
-  syncFeedPanelVisibility();
+  runtime.lastBackgroundRefreshAt = Date.now();
+
+  if (!background) {
+    renderDashboard();
+    syncFeedPanelVisibility();
+    runtime.lastRefreshStatusAt = runtime.lastBackgroundRefreshAt;
+    updateRefreshStatus();
+    clearPendingBackgroundRefresh();
+    return;
+  }
+
+  if (!snapshotChanged) {
+    runtime.lastRefreshStatusAt = runtime.lastBackgroundRefreshAt;
+    updateRefreshStatus();
+    return;
+  }
+
+  if (isBackgroundRefreshPaused()) {
+    runtime.pendingBackgroundRefresh = true;
+    runtime.pendingBackgroundRefreshReason = reason;
+    runtime.pendingBackgroundNewArticles = newArticleCount;
+    updateRefreshStatus({
+      paused: true,
+      pendingCount: newArticleCount,
+      lastUpdatedAt: runtime.lastRefreshStatusAt || runtime.lastBackgroundRefreshAt,
+    });
+    schedulePendingBackgroundRefresh();
+    return;
+  }
+
+  clearPendingBackgroundRefresh();
+  renderArticleRegionPreservingScroll({ updateSummary: true });
+  runtime.lastRefreshStatusAt = runtime.lastBackgroundRefreshAt;
+  updateRefreshStatus();
 }
 
 async function refreshFeedsOnly() {
@@ -14476,8 +14730,9 @@ function startPolling() {
   }
 
   runtime.pollTimer = window.setInterval(() => {
-    void loadSnapshot();
+    void loadSnapshot({ background: true, reason: "polling" });
   }, POLLING_INTERVAL_MS);
+  updateRefreshStatus({ realtime: false });
 }
 
 function initRealtime() {
@@ -14487,8 +14742,8 @@ function initRealtime() {
 
   try {
     const eventSource = new EventSource("/api/stream");
-    const refreshSnapshot = debounce(() => {
-      void loadSnapshot();
+    const refreshSnapshot = debounce((snapshotOptions = {}) => {
+      void loadSnapshot({ background: true, reason: "realtime-event", ...snapshotOptions });
     });
     const refreshFeedsOnlyDebounced = debounce(() => {
       void refreshFeedsOnly();
@@ -14498,7 +14753,7 @@ function initRealtime() {
     runtime.realtimeEnabled = true;
 
     eventSource.addEventListener("ready", () => {
-      elements.connectionStatus.textContent = "Live updates enabled.";
+      updateRefreshStatus({ realtime: true });
     });
 
     eventSource.addEventListener("article:new", (event) => {
@@ -14512,7 +14767,7 @@ function initRealtime() {
         message: payload?.title || payload?.article?.title || "A new article was added to the live stream.",
         type: "info",
       });
-      refreshSnapshot();
+      refreshSnapshot({ background: true, reason: "article:new" });
     });
 
     eventSource.addEventListener("refresh:complete", () => {
@@ -14521,7 +14776,7 @@ function initRealtime() {
         message: "Latest feed data has been loaded.",
         type: "success",
       });
-      refreshSnapshot();
+      refreshSnapshot({ background: true, reason: "refresh:complete" });
     });
 
     eventSource.addEventListener("article:update", refreshSnapshot);
@@ -14529,13 +14784,13 @@ function initRealtime() {
 
     eventSource.onerror = () => {
       runtime.realtimeEnabled = false;
-      elements.connectionStatus.textContent = "Realtime unavailable. Using 30 second refresh.";
+      updateRefreshStatus({ realtime: false });
       eventSource.close();
       startPolling();
     };
   } catch {
     runtime.realtimeEnabled = false;
-    elements.connectionStatus.textContent = "Realtime unavailable. Using 30 second refresh.";
+    updateRefreshStatus({ realtime: false });
     startPolling();
   }
 }
@@ -14590,6 +14845,45 @@ async function importDmvFeeds() {
 }
 
 function bindEvents() {
+  if (elements.articlesGrid) {
+    elements.articlesGrid.addEventListener("mouseenter", () => {
+      runtime.articleGridHovered = true;
+      markRefreshInteraction("article-grid-hover");
+      updateRefreshStatus();
+    });
+    elements.articlesGrid.addEventListener("mouseleave", () => {
+      runtime.articleGridHovered = false;
+      markRefreshInteraction("article-grid-leave", 1500);
+      updateRefreshStatus();
+      if (runtime.pendingBackgroundRefresh) {
+        schedulePendingBackgroundRefresh();
+      }
+    });
+  }
+
+  if (elements.sidebar) {
+    elements.sidebar.addEventListener("mouseenter", () => {
+      runtime.sidebarHovered = true;
+      markRefreshInteraction("sidebar-hover");
+      updateRefreshStatus();
+    });
+    elements.sidebar.addEventListener("mouseleave", () => {
+      runtime.sidebarHovered = false;
+      markRefreshInteraction("sidebar-leave", 1500);
+      updateRefreshStatus();
+      if (runtime.pendingBackgroundRefresh) {
+        schedulePendingBackgroundRefresh();
+      }
+    });
+  }
+
+  window.addEventListener("scroll", () => {
+    markRefreshInteraction("scroll", REFRESH_SCROLL_PAUSE_MS);
+    if (runtime.pendingBackgroundRefresh) {
+      schedulePendingBackgroundRefresh();
+    }
+  }, { passive: true });
+
   const debouncedSearchRender = debounce((value) => {
     clearExactArticleFilter();
     state.filters.search = value;
@@ -15023,17 +15317,17 @@ function bindEvents() {
   });
 
   elements.refreshButton.addEventListener("click", async () => {
-    elements.connectionStatus.textContent = "Refreshing feeds...";
+    updateRefreshStatus({ message: "Refreshing feeds..." });
     try {
       const result = await apiRequest("/api/feeds/refresh", { method: "POST" });
-      elements.connectionStatus.textContent = result.message || "Feed refresh started.";
+      updateRefreshStatus({ message: result.message || "Feed refresh started." });
       showNotification({
         title: "Feed refresh started",
         message: result.message || "Refresh is running in the background.",
         type: "info",
       });
     } catch (error) {
-      elements.connectionStatus.textContent = error.message;
+      updateRefreshStatus({ message: error.message });
       showNotification({
         title: "Feed refresh failed",
         message: error.message,
