@@ -117,9 +117,112 @@ const SPECIALIST_SOURCE_INTERESTS = {
     "security document world",
     "securitydocumentworld",
   ],
-  identity_documents: ["icao", "passport office", "state department", "immigration authority", "ministry of interior", "secure document"],
+  identity_documents: [
+    "icao",
+    "keesing",
+    "biometric update",
+    "regula",
+    "hid",
+    "thales",
+    "entrust",
+    "veridos",
+    "bundesdruckerei",
+    "idemia",
+    "in groupe",
+    "laxton",
+    "security document world",
+    "ovd kinegram",
+    "de la rue",
+    "giesecke+devrient",
+    "crane authentication",
+    "passport office",
+    "state department",
+    "immigration authority",
+    "ministry of interior",
+    "secure document",
+    "dmv",
+    "driver license agency",
+  ],
   digital_identity_biometrics: ["biometric update", "digital identity", "authentication", "identity verification"],
   security_printing: ["security printing", "security printer", "secure documents", "holography"],
+};
+const ID_DOCUMENT_SOURCE_AUTHORITY = {
+  veryHigh: [
+    "icao",
+    "passport office",
+    "ministry of interior",
+    "immigration authority",
+    "state department",
+    "dmv",
+    "driver license agency",
+    "biometric update",
+    "keesing",
+    "regula",
+    "hid",
+    "thales",
+    "entrust",
+    "veridos",
+    "bundesdruckerei",
+    "idemia",
+    "in groupe",
+    "laxton",
+    "security document world",
+    "securitydocumentworld",
+    "ovd kinegram",
+    "de la rue",
+    "giesecke+devrient",
+    "giesecke devrient",
+    "gi-de",
+    "crane authentication",
+    "crane currency",
+  ],
+  high: [
+    "passport",
+    "travel document",
+    "identity card",
+    "residence permit",
+    "driver license",
+    "polycarbonate",
+    "secure document",
+    "document security",
+    "border control",
+    "document verification",
+  ],
+  medium: [
+    "reuters",
+    "associated press",
+    "ap news",
+    "bbc",
+    "press agency",
+    "official news agency",
+  ],
+  low: [
+    "generic travel",
+    "travel blog",
+    "visa agency",
+    "immigration law",
+    "immigration lawyer",
+    "local news",
+    "politics",
+    "celebrity",
+  ],
+  veryLow: [
+    "youtube",
+    "youtu.be",
+    "tiktok",
+    "instagram",
+    "travel tips",
+    "passport appointment",
+    "passport photo",
+    "vacation",
+    "visa requirements",
+    "visa requirement",
+    "passport renewal",
+    "seo passport",
+    "law firm",
+    "attorney",
+    "marketing",
+  ],
 };
 const BANKNOTE_SOURCE_AUTHORITY = {
   veryHigh: [
@@ -1934,6 +2037,32 @@ function getPersonalDomainContextProfile(context, groupId) {
   }
   if (groupId === "identity_documents" && ["travel_passport", "identity_document", "dmv_driver_license"].includes(context.topicType)) {
     score += 10;
+    score += countBoostKeywordMatches(context.titleText, [
+      "biometric passport",
+      "electronic passport",
+      "emrtd",
+      "mrtd",
+      "identity card",
+      "residence permit",
+      "driver license",
+      "polycarbonate",
+      "document security",
+      "document fraud",
+    ]) * 4;
+    score -= countBoostKeywordMatches(context.titleText, [
+      "passport appointment",
+      "passport photo",
+      "travel tips",
+      "vacation",
+      "visa requirements",
+      "celebrity passport",
+      "political passport",
+      "passport renewal",
+      "immigration lawyer",
+      "youtube",
+      "tiktok",
+      "instagram",
+    ]) * 5;
   }
   if (groupId === "digital_identity_biometrics" && context.topicType === "digital_identity") {
     score += 10;
@@ -2005,6 +2134,38 @@ function computePersonalInterestBoost(article, interestId) {
     )) {
       score += groupId === "banknote_intelligence" ? 18 : 10;
     }
+
+    if (groupId === "identity_documents") {
+      const signals = getIdentityDocumentInterestSignals(article);
+      const authority = getIdentityDocumentSourceAuthority(article);
+
+      score += Math.min(80, Math.round(signals.primaryContextHits * 0.9));
+      score += authority.boost;
+      score -= Math.min(90, Math.round(signals.noisyHits * 0.8));
+
+      if (interestId === "passports") {
+        score += Math.min(90, Math.round(signals.passportHits * 1.15));
+        score -= Math.min(40, Math.round((signals.idCardHits + signals.driverLicenseHits) * 0.25));
+      } else if (interestId === "id_cards") {
+        score += Math.min(90, Math.round(signals.idCardHits * 1.25));
+        score -= Math.min(45, Math.round(signals.passportHits * 0.35));
+      } else if (interestId === "residence_permits") {
+        score += Math.min(90, Math.round(signals.residencePermitHits * 1.3));
+        score -= Math.min(45, Math.round(signals.passportHits * 0.3));
+      } else if (interestId === "drivers_licenses") {
+        score += Math.min(90, Math.round(signals.driverLicenseHits * 1.35));
+        score -= Math.min(45, Math.round(signals.passportHits * 0.35));
+      } else if (interestId === "polycarbonate") {
+        score += Math.min(100, Math.round(signals.polycarbonateHits * 1.5));
+      } else if (interestId === "fraud") {
+        score += Math.min(100, Math.round(signals.fraudHits * 1.45));
+      } else if (interestId === "icao") {
+        score += Math.min(100, Math.round(signals.icaoHits * 1.45));
+      } else if (interestId === "border_control") {
+        score += Math.min(100, Math.round(signals.borderHits * 1.35));
+      }
+    }
+
     score -= domainContext.excludedHits * 10;
     score = Math.max(0, Math.round(score));
 
@@ -2172,6 +2333,184 @@ function isBanknotesOnlyPersonalSelection(selectedInterests = normalizePersonalD
 function isBanknoteAuthoritySource(article) {
   return getCachedArticleValue(article, "isBanknoteAuthoritySource", () => {
     return getBanknoteSourceAuthority(article).level === "very_high";
+  });
+}
+
+function getIdentityDocumentSourceAuthority(article) {
+  return getCachedArticleValue(article, "identityDocumentSourceAuthority", () => {
+    const context = getPersonalBoostContext(article);
+    const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
+    const hasAny = (values = []) => values.some((value) => textMatchesKeyword(sourceFingerprint, value));
+
+    let level = "medium";
+    let multiplier = 1.0;
+    let boost = 0;
+
+    if (hasAny(ID_DOCUMENT_SOURCE_AUTHORITY.veryHigh)) {
+      level = "very_high";
+      multiplier = 2.2;
+      boost = 120;
+    } else if (hasAny(ID_DOCUMENT_SOURCE_AUTHORITY.high)) {
+      level = "high";
+      multiplier = 1.6;
+      boost = 60;
+    } else if (hasAny(ID_DOCUMENT_SOURCE_AUTHORITY.veryLow)) {
+      level = "very_low";
+      multiplier = 0.2;
+      boost = -80;
+    } else if (hasAny(ID_DOCUMENT_SOURCE_AUTHORITY.low)) {
+      level = "low";
+      multiplier = 0.5;
+      boost = -35;
+    } else if (hasAny(ID_DOCUMENT_SOURCE_AUTHORITY.medium)) {
+      level = "medium";
+      multiplier = 1.1;
+      boost = 12;
+    }
+
+    return {
+      level,
+      multiplier,
+      boost,
+    };
+  });
+}
+
+function getIdentityDocumentInterestSignals(article) {
+  return getCachedArticleValue(article, "identityDocumentInterestSignals", () => {
+    const context = getPersonalBoostContext(article);
+    const weightedHits = (terms = []) =>
+      (countBoostKeywordMatches(context.titleText, terms) * 5) +
+      (countBoostKeywordMatches(context.tagText, terms) * 2.5) +
+      (countBoostKeywordMatches(context.metadataText, terms) * 2.5) +
+      countBoostKeywordMatches(context.bodyText, terms);
+
+    const primaryContextTerms = [
+      "passport rollout",
+      "new passport",
+      "biometric passport",
+      "electronic passport",
+      "emrtd",
+      "mrtd",
+      "icao",
+      "identity card",
+      "id card",
+      "residence permit",
+      "driver license",
+      "driving licence",
+      "visa document",
+      "secure document",
+      "document security",
+      "polycarbonate",
+      "laminate",
+      "personalization",
+      "chip document",
+      "border control",
+      "document verification",
+      "document fraud",
+      "fake passport",
+      "forged document",
+      "counterfeit id",
+    ];
+    const passportTerms = [
+      "passport",
+      "passports",
+      "biometric passport",
+      "electronic passport",
+      "emrtd",
+      "mrtd",
+      "travel document",
+      "passport issuance",
+      "passport personalization",
+    ];
+    const idCardTerms = [
+      "identity card",
+      "id card",
+      "national id",
+      "electronic identity card",
+      "polycarbonate id",
+      "card issuance",
+      "card design",
+    ];
+    const residencePermitTerms = [
+      "residence permit",
+      "residence permits",
+      "permit card",
+      "immigration document issuance",
+      "permit redesign",
+    ];
+    const driverLicenseTerms = [
+      "driver license",
+      "driver's license",
+      "driving licence",
+      "license card",
+      "dmv",
+    ];
+    const polycarbonateTerms = [
+      "polycarbonate",
+      "pc datapage",
+      "polycarbonate card",
+      "passport datapage",
+      "secure document material",
+    ];
+    const fraudTerms = [
+      "document fraud",
+      "fake passport",
+      "forged passport",
+      "forged document",
+      "counterfeit id",
+      "fraudulent issuance",
+    ];
+    const icaoTerms = [
+      "icao",
+      "doc 9303",
+      "mrz",
+      "mrtd",
+      "emrtd",
+      "travel document standards",
+      "compliance",
+    ];
+    const borderTerms = [
+      "border control",
+      "border verification",
+      "passport control",
+      "document checks",
+      "travel document inspection",
+      "e-gates",
+    ];
+    const noisyTerms = [
+      "passport appointment",
+      "passport photo",
+      "travel tips",
+      "vacation",
+      "visa requirements",
+      "celebrity passport",
+      "political passport",
+      "passport renewal seo",
+      "generic immigration advice",
+      "youtube",
+      "tiktok",
+      "instagram",
+      "travel blog",
+      "visa agency",
+      "immigration lawyer",
+      "law firm",
+      "child support passport revocation",
+      "passport child support",
+    ];
+
+    return {
+      primaryContextHits: weightedHits(primaryContextTerms),
+      passportHits: weightedHits(passportTerms),
+      idCardHits: weightedHits(idCardTerms),
+      residencePermitHits: weightedHits(residencePermitTerms),
+      driverLicenseHits: weightedHits(driverLicenseTerms),
+      polycarbonateHits: weightedHits(polycarbonateTerms),
+      fraudHits: weightedHits(fraudTerms),
+      icaoHits: weightedHits(icaoTerms),
+      borderHits: weightedHits(borderTerms),
+      noisyHits: weightedHits(noisyTerms),
+    };
   });
 }
 
@@ -2727,6 +3066,8 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         ) * 35;
         score = Math.round(score * banknoteAuthority.multiplier);
       } else if (groupId === "identity_documents") {
+        const identityAuthority = getIdentityDocumentSourceAuthority(article);
+        const identitySignals = getIdentityDocumentInterestSignals(article);
         if (["travel_passport", "identity_document", "dmv_driver_license"].includes(context.topicType)) {
           score += 170;
         }
@@ -2744,10 +3085,14 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         if (countBoostKeywordMatches(`${context.titleText} ${context.tagText} ${context.metadataText}`, ["passport", "visa", "residence permit", "identity card", "id card", "border control", "polycarbonate", "laminate"]) >= 2) {
           score += 50;
         }
+        score += Math.min(140, Math.round(identitySignals.primaryContextHits * 0.9));
+        score += identityAuthority.boost;
+        score -= Math.min(150, Math.round(identitySignals.noisyHits * 0.95));
         score -= countBoostKeywordMatches(
           `${context.titleText} ${context.tagText} ${context.metadataText}`,
           ["banknote", "banknotes", "central bank", "currency", "commemorative note", "cash circulation"]
         ) * 32;
+        score = Math.round(score * identityAuthority.multiplier);
       } else if (groupId === "digital_identity_biometrics") {
         if (context.topicType === "digital_identity" || context.domain === "digital_identity") {
           score += 175;
@@ -3082,11 +3427,29 @@ function compareArticlesForDisplay(left, right) {
     return leftBucketOrder - rightBucketOrder;
   }
 
+  const selectedMainDomains = getSelectedMainDomains();
+
   if (isBanknotesOnlyPersonalSelection()) {
     const leftAuthoritySource = isBanknoteAuthoritySource(left);
     const rightAuthoritySource = isBanknoteAuthoritySource(right);
     if (leftAuthoritySource !== rightAuthoritySource) {
       return rightAuthoritySource ? 1 : -1;
+    }
+  }
+
+  if (selectedMainDomains.length === 1 && selectedMainDomains[0] === "identity_documents") {
+    const leftAuthority = getIdentityDocumentSourceAuthority(left);
+    const rightAuthority = getIdentityDocumentSourceAuthority(right);
+    if (rightAuthority.multiplier !== leftAuthority.multiplier) {
+      return rightAuthority.multiplier - leftAuthority.multiplier;
+    }
+
+    const leftContext = getIdentityDocumentInterestSignals(left);
+    const rightContext = getIdentityDocumentInterestSignals(right);
+    const leftContextScore = leftContext.primaryContextHits - leftContext.noisyHits;
+    const rightContextScore = rightContext.primaryContextHits - rightContext.noisyHits;
+    if (rightContextScore !== leftContextScore) {
+      return rightContextScore - leftContextScore;
     }
   }
 
@@ -3126,6 +3489,40 @@ function compareArticlesForDisplay(left, right) {
   }
 
   return String(left?.title || "").localeCompare(String(right?.title || ""));
+}
+
+function logIdentityDocumentTopResults(articles) {
+  if (!DEBUG_PERSONAL_DASHBOARD) {
+    return;
+  }
+
+  const selectedMainDomains = getSelectedMainDomains();
+  if (selectedMainDomains.length !== 1 || selectedMainDomains[0] !== "identity_documents") {
+    return;
+  }
+
+  const selectedIdentityInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)
+    .filter((interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "identity_documents");
+
+  const topResults = (Array.isArray(articles) ? articles : []).slice(0, 10).map((article) => {
+    const authority = getIdentityDocumentSourceAuthority(article);
+    const context = getIdentityDocumentInterestSignals(article);
+    const finalScore = calculatePersonalDomainScore(article).domainScore;
+    const matchedInterests = selectedIdentityInterests.filter(
+      (interestId) => computePersonalInterestBoost(article, interestId).score >= 18
+    );
+
+    return {
+      title: article?.title || "Untitled article",
+      source: article?.source || article?.feedTitle || "",
+      sourceAuthority: `${authority.level} (${authority.multiplier})`,
+      contextScore: context.primaryContextHits - context.noisyHits,
+      finalScore,
+      detectedSubinterestMatch: matchedInterests.join(", ") || "none",
+    };
+  });
+
+  debugPersonalDashboardLog("[personal-dashboard-identity-top-results]", topResults);
 }
 
 function isFeedPanelCollapsed() {
@@ -12964,14 +13361,15 @@ function renderArticles() {
         branch,
       });
       logPersonalDashboardSourceStage("[personal-dashboard-after-personal-dashboard]", afterPersonalDashboard, {
-        branch,
-      });
+          branch,
+        });
       debugPersonalDashboardLog("[personal-dashboard-final-visible]", {
-        branch,
-        finalVisibleCount: Array.isArray(articles) ? articles.length : 0,
-        finalRenderedCount: Array.isArray(articlesToRender) ? articlesToRender.length : 0,
-      });
-    }
+          branch,
+          finalVisibleCount: Array.isArray(articles) ? articles.length : 0,
+          finalRenderedCount: Array.isArray(articlesToRender) ? articlesToRender.length : 0,
+        });
+        logIdentityDocumentTopResults(articlesToRender);
+      }
 
     if (activeFeedId) {
       logFeedFilterDiagnostics(
