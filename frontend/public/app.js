@@ -1785,6 +1785,11 @@ function hasPersonalDashboardSelections() {
   return Array.isArray(state.personalDashboard.interests) && state.personalDashboard.interests.length > 0;
 }
 
+function getSelectedIdentityDocumentSubinterests(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  return normalizePersonalDashboardInterests(selectedInterests)
+    .filter((interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "identity_documents");
+}
+
 function getPersonalDashboardBackendDomainPlan() {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const selectedMainDomains = getSelectedMainDomains(selectedInterests);
@@ -1815,7 +1820,8 @@ function getPersonalDashboardBackendDomainPlan() {
   }
 
   if (selectedMainDomains.length === 1 && selectedMainDomains[0] === "identity_documents") {
-    const identitySearches = new Set([
+    const selectedIdentitySubinterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
+    const identitySearches = new Set(selectedIdentitySubinterests.length === 1 ? [] : [
       "passport",
       "passports",
       "identity card",
@@ -1837,6 +1843,124 @@ function getPersonalDashboardBackendDomainPlan() {
       "mrtd",
       "emrtd",
     ]);
+
+    const addTerms = (terms = []) => {
+      terms.forEach((term) => identitySearches.add(term));
+    };
+
+    if (selectedIdentitySubinterests.length === 1) {
+      const selectedSubinterest = selectedIdentitySubinterests[0];
+      if (selectedSubinterest === "passports") {
+        addTerms([
+          "passport",
+          "passports",
+          "biometric passport",
+          "electronic passport",
+          "emrtd",
+          "mrtd",
+          "passport rollout",
+          "passport issuance",
+          "passport security",
+          "passport personalization",
+        ]);
+      } else if (selectedSubinterest === "id_cards") {
+        addTerms([
+          "id card",
+          "identity card",
+          "national id",
+          "electronic identity card",
+          "card issuance",
+          "polycarbonate id",
+          "identity card design",
+        ]);
+      } else if (selectedSubinterest === "residence_permits") {
+        addTerms([
+          "residence permit",
+          "residence card",
+          "permit card",
+          "immigration residence document",
+          "residence permit issuance",
+          "residence permit card security",
+        ]);
+      } else if (selectedSubinterest === "drivers_licenses") {
+        addTerms([
+          "driver license",
+          "driver's license",
+          "driving licence",
+          "driver licence",
+          "dmv",
+          "license card",
+          "real id",
+          "mobile driver license",
+          "digital driver license",
+        ]);
+      } else if (selectedSubinterest === "visas") {
+        addTerms([
+          "visa",
+          "visas",
+          "visa document",
+          "visa sticker",
+          "evisa",
+          "electronic visa",
+          "visa issuance",
+          "visa security",
+        ]);
+      } else if (selectedSubinterest === "polycarbonate") {
+        addTerms([
+          "polycarbonate",
+          "polycarbonate card",
+          "pc datapage",
+          "passport datapage",
+          "secure document material",
+          "id card substrate",
+        ]);
+      } else if (selectedSubinterest === "fraud") {
+        addTerms([
+          "document fraud",
+          "fake passport",
+          "forged passport",
+          "forged id",
+          "counterfeit id",
+          "fraudulent issuance",
+          "fake identity document",
+        ]);
+      } else if (selectedSubinterest === "icao") {
+        addTerms([
+          "icao",
+          "doc 9303",
+          "mrtd",
+          "emrtd",
+          "mrz",
+          "travel document standards",
+        ]);
+      } else if (selectedSubinterest === "border_control") {
+        addTerms([
+          "border control",
+          "passport control",
+          "document inspection",
+          "document verification",
+          "e-gates",
+          "border verification",
+        ]);
+      } else if (selectedSubinterest === "issuance") {
+        addTerms([
+          "document issuance",
+          "passport issuance",
+          "identity card issuance",
+          "residence permit issuance",
+          "visa issuance",
+          "secure issuance",
+        ]);
+      } else if (selectedSubinterest === "laminate") {
+        addTerms([
+          "laminate",
+          "security laminate",
+          "laminated document",
+          "passport laminate",
+          "id laminate",
+        ]);
+      }
+    }
 
     if (hasInterest("passports")) {
       identitySearches.add("passport");
@@ -2138,10 +2262,13 @@ function computePersonalInterestBoost(article, interestId) {
     if (groupId === "identity_documents") {
       const signals = getIdentityDocumentInterestSignals(article);
       const authority = getIdentityDocumentSourceAuthority(article);
+      const subinterestScore = getIdentityDocumentSubinterestScore(article);
 
       score += Math.min(80, Math.round(signals.primaryContextHits * 0.9));
       score += authority.boost;
       score -= Math.min(90, Math.round(signals.noisyHits * 0.8));
+      score += Math.max(-120, subinterestScore.score);
+      score -= Math.min(110, subinterestScore.mismatchPenalty);
 
       if (interestId === "passports") {
         score += Math.min(90, Math.round(signals.passportHits * 1.15));
@@ -2163,6 +2290,13 @@ function computePersonalInterestBoost(article, interestId) {
         score += Math.min(100, Math.round(signals.icaoHits * 1.45));
       } else if (interestId === "border_control") {
         score += Math.min(100, Math.round(signals.borderHits * 1.35));
+      } else if (interestId === "visas") {
+        score += Math.min(100, Math.round(signals.visaHits * 1.55));
+        score -= Math.min(65, Math.round(signals.driverLicenseHits * 0.65));
+      } else if (interestId === "issuance") {
+        score += Math.min(95, Math.round(signals.issuanceHits * 1.45));
+      } else if (interestId === "laminate") {
+        score += Math.min(95, Math.round(signals.laminateHits * 1.5));
       }
     }
 
@@ -2478,6 +2612,38 @@ function getIdentityDocumentInterestSignals(article) {
       "travel document inspection",
       "e-gates",
     ];
+    const visaTerms = [
+      "visa",
+      "visas",
+      "visa document",
+      "visa sticker",
+      "evisa",
+      "electronic visa",
+      "visa issuance",
+      "visa security",
+    ];
+    const issuanceTerms = [
+      "document issuance",
+      "passport issuance",
+      "identity card issuance",
+      "residence permit issuance",
+      "visa issuance",
+      "secure issuance",
+    ];
+    const laminateTerms = [
+      "laminate",
+      "laminated document",
+      "security laminate",
+      "passport laminate",
+      "id laminate",
+    ];
+    const personalizationTerms = [
+      "personalization",
+      "passport personalization",
+      "card personalization",
+      "secure personalization",
+      "document personalization",
+    ];
     const noisyTerms = [
       "passport appointment",
       "passport photo",
@@ -2509,7 +2675,64 @@ function getIdentityDocumentInterestSignals(article) {
       fraudHits: weightedHits(fraudTerms),
       icaoHits: weightedHits(icaoTerms),
       borderHits: weightedHits(borderTerms),
+      visaHits: weightedHits(visaTerms),
+      issuanceHits: weightedHits(issuanceTerms),
+      laminateHits: weightedHits(laminateTerms),
+      personalizationHits: weightedHits(personalizationTerms),
       noisyHits: weightedHits(noisyTerms),
+    };
+  });
+}
+
+function getIdentityDocumentSubinterestScore(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
+  const signature = selectedIdentityInterests.slice().sort().join("|");
+  const cacheKey = `identityDocumentSubinterestScore:${signature}`;
+
+  return getCachedArticleValue(article, cacheKey, () => {
+    if (!selectedIdentityInterests.length) {
+      return {
+        score: 0,
+        mismatchPenalty: 0,
+        selectedSubinterest: "",
+        matchedSubinterest: "",
+      };
+    }
+
+    const signals = getIdentityDocumentInterestSignals(article);
+    const scoreByInterest = {
+      passports: signals.passportHits * 1.4 + signals.icaoHits * 0.5 + signals.issuanceHits * 0.35 + signals.personalizationHits * 0.35,
+      id_cards: signals.idCardHits * 1.5 + signals.polycarbonateHits * 0.45 + signals.issuanceHits * 0.35,
+      residence_permits: signals.residencePermitHits * 1.6 + signals.issuanceHits * 0.35 + signals.personalizationHits * 0.2,
+      drivers_licenses: signals.driverLicenseHits * 1.7 + signals.issuanceHits * 0.35,
+      visas: signals.visaHits * 1.7 + signals.issuanceHits * 0.35 + signals.borderHits * 0.25,
+      polycarbonate: signals.polycarbonateHits * 1.8 + signals.idCardHits * 0.25 + signals.passportHits * 0.2,
+      fraud: signals.fraudHits * 1.75 + signals.primaryContextHits * 0.2,
+      icao: signals.icaoHits * 1.85 + signals.passportHits * 0.3 + signals.borderHits * 0.25,
+      border_control: signals.borderHits * 1.8 + signals.icaoHits * 0.35 + signals.passportHits * 0.2,
+      issuance: signals.issuanceHits * 1.65 + signals.passportHits * 0.2 + signals.idCardHits * 0.2 + signals.visaHits * 0.2,
+      laminate: signals.laminateHits * 1.7 + signals.polycarbonateHits * 0.3 + signals.passportHits * 0.2 + signals.idCardHits * 0.2,
+    };
+
+    const selectedScores = selectedIdentityInterests.map((interestId) => ({
+      interestId,
+      score: Number(scoreByInterest[interestId] || 0),
+    }));
+    selectedScores.sort((left, right) => right.score - left.score);
+
+    const bestSelected = selectedScores[0] || { interestId: "", score: 0 };
+    const nonSelectedScores = Object.entries(scoreByInterest)
+      .filter(([interestId]) => !selectedIdentityInterests.includes(interestId))
+      .map(([interestId, score]) => ({ interestId, score: Number(score || 0) }))
+      .sort((left, right) => right.score - left.score);
+    const strongestMismatch = nonSelectedScores[0] || { interestId: "", score: 0 };
+    const mismatchPenalty = Math.max(0, strongestMismatch.score - bestSelected.score);
+
+    return {
+      score: Math.round(bestSelected.score - (mismatchPenalty * 0.9)),
+      mismatchPenalty: Math.round(mismatchPenalty),
+      selectedSubinterest: selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : selectedIdentityInterests.join(","),
+      matchedSubinterest: bestSelected.interestId,
     };
   });
 }
@@ -3068,6 +3291,7 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
       } else if (groupId === "identity_documents") {
         const identityAuthority = getIdentityDocumentSourceAuthority(article);
         const identitySignals = getIdentityDocumentInterestSignals(article);
+        const identitySubinterest = getIdentityDocumentSubinterestScore(article, normalizedInterests);
         if (["travel_passport", "identity_document", "dmv_driver_license"].includes(context.topicType)) {
           score += 170;
         }
@@ -3087,7 +3311,9 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         }
         score += Math.min(140, Math.round(identitySignals.primaryContextHits * 0.9));
         score += identityAuthority.boost;
+        score += Math.max(-140, identitySubinterest.score);
         score -= Math.min(150, Math.round(identitySignals.noisyHits * 0.95));
+        score -= Math.min(130, identitySubinterest.mismatchPenalty);
         score -= countBoostKeywordMatches(
           `${context.titleText} ${context.tagText} ${context.metadataText}`,
           ["banknote", "banknotes", "central bank", "currency", "commemorative note", "cash circulation"]
@@ -3507,6 +3733,7 @@ function logIdentityDocumentTopResults(articles) {
   const topResults = (Array.isArray(articles) ? articles : []).slice(0, 10).map((article) => {
     const authority = getIdentityDocumentSourceAuthority(article);
     const context = getIdentityDocumentInterestSignals(article);
+    const subinterest = getIdentityDocumentSubinterestScore(article);
     const finalScore = calculatePersonalDomainScore(article).domainScore;
     const matchedInterests = selectedIdentityInterests.filter(
       (interestId) => computePersonalInterestBoost(article, interestId).score >= 18
@@ -3517,8 +3744,11 @@ function logIdentityDocumentTopResults(articles) {
       source: article?.source || article?.feedTitle || "",
       sourceAuthority: `${authority.level} (${authority.multiplier})`,
       contextScore: context.primaryContextHits - context.noisyHits,
+      selectedSubinterest: subinterest.selectedSubinterest,
+      subinterestScore: subinterest.score,
+      mismatchPenalty: subinterest.mismatchPenalty,
       finalScore,
-      detectedSubinterestMatch: matchedInterests.join(", ") || "none",
+      detectedSubinterestMatch: matchedInterests.join(", ") || subinterest.matchedSubinterest || "none",
     };
   });
 
@@ -12774,6 +13004,14 @@ async function ensureBackendArticleQueryData() {
       queryParamsUsed: queryParamsList.map((params) => Object.fromEntries(params.entries())),
       totalReturned: totalCount,
     });
+    if (personalDomainPlan.domain === "identity_documents") {
+      debugPersonalDashboardLog("[personal-dashboard-identity-subinterest-query]", {
+        selectedInterests: getSelectedIdentityDocumentSubinterests(),
+        backendQueryTermsUsed: Array.isArray(personalDomainPlan.searches) ? personalDomainPlan.searches.slice() : [],
+        queryKey,
+        totalReturned: totalCount,
+      });
+    }
   }
 
   logPersonalDashboardSourceStage("[personal-dashboard-backend-query]", normalizedArticles, {
