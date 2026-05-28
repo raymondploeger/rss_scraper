@@ -225,6 +225,104 @@ const ID_DOCUMENT_SOURCE_AUTHORITY = {
     "marketing",
   ],
 };
+const IDENTITY_SUBINTEREST_INTENTS = {
+  passports: {
+    strongPositive: [
+      "biometric passport",
+      "passport rollout",
+      "passport issuance",
+      "passport security",
+      "passport personalization",
+      "passport production",
+      "e-passport",
+      "epassport",
+      "travel document security",
+      "passport fraud",
+      "passport chip",
+      "passport verification",
+      "passport authority",
+      "passport processing",
+      "passport office",
+      "passport system",
+      "passport modernization",
+      "passport printer",
+      "passport design",
+    ],
+    weakPositive: ["passport", "travel document", "mrz", "icao"],
+    hardNegative: [
+      "visa-free",
+      "tourism",
+      "travel rankings",
+      "airport transit",
+      "holiday travel",
+      "tourist access",
+      "cheap flights",
+      "travel tips",
+      "travel guide",
+      "destination ranking",
+      "vacation",
+    ],
+  },
+  visas: {
+    strongPositive: [
+      "visa issuance",
+      "e-visa",
+      "electronic visa",
+      "visa application",
+      "visa sticker",
+      "visa fraud",
+      "consular services",
+      "visa processing",
+      "visa center",
+      "travel authorization",
+      "entry permit",
+      "visa policy",
+      "visa requirement",
+      "visa exemption",
+      "visa waiver",
+    ],
+    weakPositive: ["visa"],
+    hardNegative: [
+      "passport ranking",
+      "tourism",
+      "travel destination",
+      "passport beauty",
+      "travel lifestyle",
+      "vacation",
+      "airport hotel",
+    ],
+  },
+  residence_permits: {
+    strongPositive: [
+      "residence permit",
+      "residency card",
+      "immigration permit",
+      "temporary residence",
+      "permanent residence",
+      "residency renewal",
+      "resident permit",
+      "immigration card",
+      "stay permit",
+    ],
+    weakPositive: ["immigration"],
+    hardNegative: ["tourism", "visa-free", "passport ranking", "travel ranking"],
+  },
+  icao: {
+    strongPositive: [
+      "icao",
+      "doc 9303",
+      "mrz",
+      "emrtd",
+      "travel document standards",
+      "machine readable",
+      "border interoperability",
+      "passport chip",
+      "mrtd",
+    ],
+    weakPositive: ["border control", "travel document"],
+    hardNegative: ["tourism", "travel ranking", "vacation"],
+  },
+};
 const BANKNOTE_SOURCE_AUTHORITY = {
   veryHigh: [
     "banknotenews",
@@ -2267,6 +2365,14 @@ function computePersonalInterestBoost(article, interestId) {
       const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests();
       const selectedSubinterest = selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : "";
       const genericDmvNoise = isGenericDmvNoise(article);
+      const selectedIntent = selectedSubinterest
+        ? (subinterestScore.intentByInterest?.[selectedSubinterest] || {
+          score: 0,
+          matchedStrong: [],
+          matchedWeak: [],
+          matchedNegative: [],
+        })
+        : { score: 0, matchedStrong: [], matchedWeak: [], matchedNegative: [] };
 
       score += Math.min(80, Math.round(signals.primaryContextHits * 0.9));
       score += authority.boost;
@@ -2283,11 +2389,19 @@ function computePersonalInterestBoost(article, interestId) {
       if (genericDmvNoise && selectedSubinterest && selectedSubinterest !== "drivers_licenses") {
         score -= 700;
       }
+      if (selectedSubinterest && ["passports", "visas", "residence_permits", "icao"].includes(selectedSubinterest)) {
+        score += Math.min(120, Math.round(selectedIntent.score * 1.2));
+        score += getIdentityIntentAuthorityBoost(article, selectedIntent.score);
+        if (subinterestScore.travelNoiseArticle) {
+          score -= 300;
+        }
+      }
 
       if (interestId === "passports") {
-        score += Math.min(90, Math.round(signals.passportHits * 1.15));
+        score += Math.min(90, Math.round((signals.passportHits * 0.7) + (selectedIntent.score * 1.1)));
         score -= Math.min(40, Math.round((signals.idCardHits + signals.driverLicenseHits) * 0.25));
         score -= Math.min(160, Math.round(signals.driverLicenseHits * 0.9));
+        score -= Math.min(80, Math.round(signals.visaHits * 0.35));
         if (genericDmvNoise) {
           score -= 500;
         }
@@ -2295,9 +2409,10 @@ function computePersonalInterestBoost(article, interestId) {
         score += Math.min(90, Math.round(signals.idCardHits * 1.25));
         score -= Math.min(45, Math.round(signals.passportHits * 0.35));
       } else if (interestId === "residence_permits") {
-        score += Math.min(90, Math.round(signals.residencePermitHits * 1.3));
+        score += Math.min(110, Math.round((signals.residencePermitHits * 1.35) + (selectedIntent.score * 0.9)));
         score -= Math.min(45, Math.round(signals.passportHits * 0.3));
         score -= Math.min(180, Math.round(signals.driverLicenseHits * 1.0));
+        score -= Math.min(60, Math.round(signals.visaHits * 0.3));
       } else if (interestId === "drivers_licenses") {
         score += Math.min(90, Math.round(signals.driverLicenseHits * 1.35));
         score -= Math.min(45, Math.round(signals.passportHits * 0.35));
@@ -2308,13 +2423,14 @@ function computePersonalInterestBoost(article, interestId) {
         score += Math.min(100, Math.round(signals.fraudHits * 1.45));
         score -= Math.min(160, Math.round(signals.driverLicenseHits * 0.9));
       } else if (interestId === "icao") {
-        score += Math.min(100, Math.round(signals.icaoHits * 1.45));
+        score += Math.min(120, Math.round((signals.icaoHits * 1.5) + (selectedIntent.score * 0.9)));
         score -= Math.min(180, Math.round(signals.driverLicenseHits * 1.0));
       } else if (interestId === "border_control") {
         score += Math.min(100, Math.round(signals.borderHits * 1.35));
       } else if (interestId === "visas") {
-        score += Math.min(100, Math.round(signals.visaHits * 1.55));
+        score += Math.min(120, Math.round((signals.visaHits * 1.45) + (selectedIntent.score * 1.0)));
         score -= Math.min(200, Math.round(signals.driverLicenseHits * 1.1));
+        score -= Math.min(90, Math.round(signals.passportHits * 0.45));
       } else if (interestId === "issuance") {
         score += Math.min(95, Math.round(signals.issuanceHits * 1.45));
         score -= Math.min(140, Math.round(signals.driverLicenseHits * 0.7));
@@ -2324,11 +2440,27 @@ function computePersonalInterestBoost(article, interestId) {
       }
 
       if (DEBUG_PERSONAL_DASHBOARD && selectedSubinterest) {
+        const intentScore = selectedIntent || {
+          score: 0,
+          matchedStrong: [],
+          matchedWeak: [],
+          matchedNegative: [],
+        };
         debugPersonalDashboardLog("[identity-subinterest-hard-filter]", {
           selectedSubinterest,
           matchedSubinterest: subinterestScore.matchedSubinterest,
           mismatchPenalty: subinterestScore.mismatchPenalty,
           genericDmvNoise,
+          finalScore: Math.round(score),
+          title: article?.title || "Untitled article",
+        });
+        debugPersonalDashboardLog("[identity-intent-score]", {
+          subinterest: selectedSubinterest,
+          intentScore: intentScore.score,
+          matchedStrong: intentScore.matchedStrong,
+          matchedWeak: intentScore.matchedWeak,
+          matchedNegative: intentScore.matchedNegative,
+          travelNoiseArticle: subinterestScore.travelNoiseArticle,
           finalScore: Math.round(score),
           title: article?.title || "Untitled article",
         });
@@ -2786,6 +2918,126 @@ function isGenericDmvNoise(article) {
   return noiseKeywords.some((keyword) => text.includes(keyword));
 }
 
+function calculateIntentScore(articleText, intentProfile) {
+  const normalizedText = String(articleText || "").toLowerCase();
+  const strongPositive = Array.isArray(intentProfile?.strongPositive) ? intentProfile.strongPositive : [];
+  const weakPositive = Array.isArray(intentProfile?.weakPositive) ? intentProfile.weakPositive : [];
+  const hardNegative = Array.isArray(intentProfile?.hardNegative) ? intentProfile.hardNegative : [];
+
+  const matchedStrong = strongPositive.filter((term) => textMatchesKeyword(normalizedText, term));
+  const matchedWeak = weakPositive.filter((term) => textMatchesKeyword(normalizedText, term));
+  const matchedNegative = hardNegative.filter((term) => textMatchesKeyword(normalizedText, term));
+
+  let score = (matchedStrong.length * 15) + (matchedWeak.length * 4) - (matchedNegative.length * 20);
+  if (matchedNegative.length >= 2) {
+    score -= 500;
+  }
+
+  return {
+    score,
+    matchedStrong,
+    matchedWeak,
+    matchedNegative,
+  };
+}
+
+function getIdentityDocumentIntentText(article) {
+  const context = getPersonalBoostContext(article);
+  return [
+    context.titleText,
+    context.tagText,
+    context.metadataText,
+    context.bodyText,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+const IDENTITY_INTENT_AUTHORITY_SOURCES = [
+  "keesing",
+  "biometric update",
+  "regula",
+  "hid",
+  "entrust",
+  "veridos",
+  "bundesdruckerei",
+  "in groupe",
+  "security document world",
+];
+
+function isIdentityTravelNoiseArticle(article) {
+  return getCachedArticleValue(article, "identityTravelNoiseArticle", () => {
+    const context = getPersonalBoostContext(article);
+    const text = [
+      context.titleText,
+      context.tagText,
+      context.metadataText,
+      context.bodyText,
+      context.sourceText,
+      context.domainText,
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    const travelNoiseTerms = [
+      "visa-free",
+      "tourist",
+      "tourism",
+      "travel destination",
+      "vacation",
+      "airline",
+      "holiday",
+      "travel ranking",
+      "destination ranking",
+      "cheap flights",
+      "airport hotel",
+      "travel guide",
+      "travel tips",
+    ];
+    const secureDocumentAnchors = [
+      "issuance",
+      "biometric",
+      "verification",
+      "security",
+      "personalization",
+      "border",
+      "icao",
+      "document",
+      "passport chip",
+      "emrtd",
+      "mrtd",
+      "mrz",
+      "consular",
+    ];
+
+    const hasTravelNoise = travelNoiseTerms.some((term) => textMatchesKeyword(text, term));
+    const hasSecureDocumentAnchor = secureDocumentAnchors.some((term) => textMatchesKeyword(text, term));
+    return hasTravelNoise && !hasSecureDocumentAnchor;
+  });
+}
+
+function getIdentityIntentAuthorityBoost(article, intentScore) {
+  if (intentScore <= 10) {
+    return 0;
+  }
+
+  const context = getPersonalBoostContext(article);
+  const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
+  return IDENTITY_INTENT_AUTHORITY_SOURCES.some((value) => textMatchesKeyword(sourceFingerprint, value)) ? 20 : 0;
+}
+
+function getIdentityDocumentIntentBreakdown(article) {
+  return getCachedArticleValue(article, "identityDocumentIntentBreakdown", () => {
+    const intentText = getIdentityDocumentIntentText(article);
+    return {
+      passports: calculateIntentScore(intentText, IDENTITY_SUBINTEREST_INTENTS.passports),
+      visas: calculateIntentScore(intentText, IDENTITY_SUBINTEREST_INTENTS.visas),
+      residence_permits: calculateIntentScore(intentText, IDENTITY_SUBINTEREST_INTENTS.residence_permits),
+      icao: calculateIntentScore(intentText, IDENTITY_SUBINTEREST_INTENTS.icao),
+    };
+  });
+}
+
 function getIdentityDocumentSubinterestScore(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
   const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
   const signature = selectedIdentityInterests.slice().sort().join("|");
@@ -2802,41 +3054,131 @@ function getIdentityDocumentSubinterestScore(article, selectedInterests = normal
     }
 
     const signals = getIdentityDocumentInterestSignals(article);
+    const intentByInterest = getIdentityDocumentIntentBreakdown(article);
+    const travelNoiseArticle = isIdentityTravelNoiseArticle(article);
     const scoreByInterest = {
-      passports: signals.passportHits * 1.4 + signals.icaoHits * 0.5 + signals.issuanceHits * 0.35 + signals.personalizationHits * 0.35,
-      id_cards: signals.idCardHits * 1.5 + signals.polycarbonateHits * 0.45 + signals.issuanceHits * 0.35,
-      residence_permits: signals.residencePermitHits * 1.6 + signals.issuanceHits * 0.35 + signals.personalizationHits * 0.2,
-      drivers_licenses: signals.driverLicenseHits * 1.7 + signals.issuanceHits * 0.35,
-      visas: signals.visaHits * 1.7 + signals.issuanceHits * 0.35 + signals.borderHits * 0.25,
-      polycarbonate: signals.polycarbonateHits * 1.8 + signals.idCardHits * 0.25 + signals.passportHits * 0.2,
-      fraud: signals.fraudHits * 1.75 + signals.primaryContextHits * 0.2,
-      icao: signals.icaoHits * 1.85 + signals.passportHits * 0.3 + signals.borderHits * 0.25,
-      border_control: signals.borderHits * 1.8 + signals.icaoHits * 0.35 + signals.passportHits * 0.2,
-      issuance: signals.issuanceHits * 1.65 + signals.passportHits * 0.2 + signals.idCardHits * 0.2 + signals.visaHits * 0.2,
-      laminate: signals.laminateHits * 1.7 + signals.polycarbonateHits * 0.3 + signals.passportHits * 0.2 + signals.idCardHits * 0.2,
+      passports:
+        (signals.passportHits * 0.7) +
+        (signals.icaoHits * 0.45) +
+        (signals.issuanceHits * 0.45) +
+        (signals.personalizationHits * 0.45) -
+        (signals.driverLicenseHits * 1.05) -
+        (signals.noisyHits * 0.9) -
+        (signals.visaHits * 0.2),
+      id_cards:
+        (signals.idCardHits * 1.55) +
+        (signals.polycarbonateHits * 0.5) +
+        (signals.issuanceHits * 0.4) -
+        (signals.driverLicenseHits * 0.75) -
+        (signals.passportHits * 0.45) -
+        (signals.noisyHits * 0.4),
+      residence_permits:
+        (signals.residencePermitHits * 1.95) +
+        (signals.issuanceHits * 0.45) +
+        (signals.personalizationHits * 0.2) +
+        (signals.borderHits * 0.15) -
+        (signals.driverLicenseHits * 1.0) -
+        (signals.passportHits * 0.45) -
+        (signals.visaHits * 0.25) -
+        (signals.noisyHits * 0.55),
+      drivers_licenses:
+        (signals.driverLicenseHits * 1.8) +
+        (signals.issuanceHits * 0.4) -
+        (signals.passportHits * 0.35),
+      visas:
+        (signals.visaHits * 1.6) +
+        (signals.issuanceHits * 0.55) +
+        (signals.borderHits * 0.25) -
+        (signals.driverLicenseHits * 1.2) -
+        (signals.passportHits * 0.6) -
+        (signals.noisyHits * 0.75),
+      polycarbonate:
+        (signals.polycarbonateHits * 1.85) +
+        (signals.idCardHits * 0.3) +
+        (signals.passportHits * 0.2) -
+        (signals.driverLicenseHits * 0.8),
+      fraud:
+        (signals.fraudHits * 1.8) +
+        (signals.primaryContextHits * 0.2) -
+        (signals.driverLicenseHits * 0.95) -
+        (signals.noisyHits * 0.45),
+      icao:
+        (signals.icaoHits * 2.0) +
+        (signals.passportHits * 0.2) +
+        (signals.borderHits * 0.5) -
+        (signals.driverLicenseHits * 1.05) -
+        (signals.noisyHits * 0.85),
+      border_control:
+        (signals.borderHits * 1.85) +
+        (signals.icaoHits * 0.35) +
+        (signals.passportHits * 0.2) -
+        (signals.noisyHits * 0.6),
+      issuance:
+        (signals.issuanceHits * 1.75) +
+        (signals.passportHits * 0.2) +
+        (signals.idCardHits * 0.2) +
+        (signals.visaHits * 0.2) -
+        (signals.driverLicenseHits * 0.8) -
+        (signals.noisyHits * 0.35),
+      laminate:
+        (signals.laminateHits * 1.8) +
+        (signals.polycarbonateHits * 0.35) +
+        (signals.passportHits * 0.2) +
+        (signals.idCardHits * 0.2) -
+        (signals.driverLicenseHits * 0.8) -
+        (signals.noisyHits * 0.35),
     };
+    const selectedInterestSet = new Set(selectedIdentityInterests);
 
-    const selectedScores = selectedIdentityInterests.map((interestId) => ({
-      interestId,
-      score: Number(scoreByInterest[interestId] || 0),
-    }));
+    const selectedScores = selectedIdentityInterests.map((interestId) => {
+      const intent = intentByInterest[interestId] || {
+        score: 0,
+        matchedStrong: [],
+        matchedWeak: [],
+        matchedNegative: [],
+      };
+      let score = Number(scoreByInterest[interestId] || 0) + Number(intent.score || 0);
+      score += getIdentityIntentAuthorityBoost(article, intent.score);
+      if (travelNoiseArticle && ["passports", "visas", "residence_permits", "icao"].includes(interestId)) {
+        score -= 300;
+      }
+      return {
+        interestId,
+        score,
+      };
+    });
     selectedScores.sort((left, right) => right.score - left.score);
 
     const bestSelected = selectedScores[0] || { interestId: "", score: 0 };
     const nonSelectedScores = Object.entries(scoreByInterest)
-      .filter(([interestId]) => !selectedIdentityInterests.includes(interestId))
-      .map(([interestId, score]) => ({ interestId, score: Number(score || 0) }))
+      .filter(([interestId]) => !selectedInterestSet.has(interestId))
+      .map(([interestId, score]) => {
+        const intent = intentByInterest[interestId] || {
+          score: 0,
+          matchedStrong: [],
+          matchedWeak: [],
+          matchedNegative: [],
+        };
+        let nonSelectedScore = Number(score || 0) + Number(intent.score || 0);
+        nonSelectedScore += getIdentityIntentAuthorityBoost(article, intent.score);
+        if (travelNoiseArticle && ["passports", "visas", "residence_permits", "icao"].includes(interestId)) {
+          nonSelectedScore -= 300;
+        }
+        return { interestId, score: nonSelectedScore };
+      })
       .sort((left, right) => right.score - left.score);
     const strongestMismatch = nonSelectedScores[0] || { interestId: "", score: 0 };
     const mismatchPenalty = Math.max(0, strongestMismatch.score - bestSelected.score);
 
-    return {
-      score: Math.round(bestSelected.score - (mismatchPenalty * 0.9)),
-      bestSelectedScore: Math.round(bestSelected.score),
-      mismatchPenalty: Math.round(mismatchPenalty),
-      selectedSubinterest: selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : selectedIdentityInterests.join(","),
-      matchedSubinterest: bestSelected.interestId,
-    };
+      return {
+        score: Math.round(bestSelected.score - (mismatchPenalty * 0.9)),
+        bestSelectedScore: Math.round(bestSelected.score),
+        mismatchPenalty: Math.round(mismatchPenalty),
+        selectedSubinterest: selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : selectedIdentityInterests.join(","),
+        matchedSubinterest: bestSelected.interestId,
+        intentByInterest,
+        travelNoiseArticle,
+      };
   });
 }
 
@@ -3398,6 +3740,14 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(normalizedInterests);
         const selectedSubinterest = selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : "";
         const genericDmvNoise = isGenericDmvNoise(article);
+        const selectedIntent = selectedSubinterest
+          ? (identitySubinterest.intentByInterest?.[selectedSubinterest] || {
+            score: 0,
+            matchedStrong: [],
+            matchedWeak: [],
+            matchedNegative: [],
+          })
+          : { score: 0, matchedStrong: [], matchedWeak: [], matchedNegative: [] };
         if (["travel_passport", "identity_document", "dmv_driver_license"].includes(context.topicType)) {
           score += 170;
         }
@@ -3429,19 +3779,27 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         if (genericDmvNoise && selectedSubinterest && selectedSubinterest !== "drivers_licenses") {
           score -= 700;
         }
+        if (selectedSubinterest && ["passports", "visas", "residence_permits", "icao"].includes(selectedSubinterest)) {
+          score += Math.min(150, Math.round(selectedIntent.score * 1.35));
+          score += getIdentityIntentAuthorityBoost(article, selectedIntent.score);
+          if (identitySubinterest.travelNoiseArticle) {
+            score -= 300;
+          }
+        }
         if (selectedSubinterest === "passports") {
-          score += Math.min(130, Math.round(identitySignals.passportHits * 0.8 + identitySignals.icaoHits * 0.45));
+          score += Math.min(135, Math.round((identitySignals.passportHits * 0.45) + (identitySignals.icaoHits * 0.45) + (selectedIntent.score * 1.1)));
           score -= Math.min(220, Math.round(identitySignals.driverLicenseHits * 1.05));
+          score -= Math.min(95, Math.round(identitySignals.visaHits * 0.4));
         } else if (selectedSubinterest === "visas") {
-          score += Math.min(140, Math.round(identitySignals.visaHits * 0.95));
+          score += Math.min(145, Math.round((identitySignals.visaHits * 0.95) + (selectedIntent.score * 1.15)));
           score -= Math.min(240, Math.round(identitySignals.driverLicenseHits * 1.2));
-          score -= Math.min(90, Math.round(identitySignals.passportHits * 0.45));
+          score -= Math.min(110, Math.round(identitySignals.passportHits * 0.55));
         } else if (selectedSubinterest === "residence_permits") {
-          score += Math.min(140, Math.round(identitySignals.residencePermitHits * 0.95));
+          score += Math.min(145, Math.round((identitySignals.residencePermitHits * 1.0) + (selectedIntent.score * 1.0)));
           score -= Math.min(240, Math.round(identitySignals.driverLicenseHits * 1.2));
-          score -= Math.min(80, Math.round(identitySignals.passportHits * 0.35));
+          score -= Math.min(95, Math.round(identitySignals.passportHits * 0.45));
         } else if (selectedSubinterest === "icao") {
-          score += Math.min(150, Math.round(identitySignals.icaoHits * 1.0));
+          score += Math.min(155, Math.round((identitySignals.icaoHits * 1.0) + (selectedIntent.score * 1.0)));
           score -= Math.min(240, Math.round(identitySignals.driverLicenseHits * 1.25));
         } else if (selectedSubinterest === "fraud") {
           score += Math.min(150, Math.round(identitySignals.fraudHits * 1.0));
