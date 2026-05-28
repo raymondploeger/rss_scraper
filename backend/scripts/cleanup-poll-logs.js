@@ -64,41 +64,84 @@ async function main() {
     }
 
     const [overview] = await runQuery(
-      "Poll Logs Cleanup Preview",
+      "Poll Log Cleanup Dry Run",
       `
         WITH cutoff AS (
           SELECT NOW() - ($1::text || ' days')::interval AS cutoff_at
+        ),
+        matching AS (
+          SELECT
+            COUNT(*)::bigint AS rows_to_delete,
+            MIN(pl."startedAt") AS oldest_matching_row,
+            MAX(pl."startedAt") AS newest_matching_row,
+            COALESCE(SUM(pg_column_size(pl)), 0)::bigint AS estimated_row_bytes_to_remove_raw
+          FROM poll_logs pl
+          CROSS JOIN cutoff
+          WHERE pl."startedAt" < cutoff.cutoff_at
+        ),
+        table_size AS (
+          SELECT pg_total_relation_size('public.poll_logs') AS current_table_size_bytes
         )
         SELECT
           $1::int AS retention_days,
           cutoff.cutoff_at,
-          COUNT(*)::bigint AS rows_to_delete,
-          MIN(pl."startedAt") AS oldest_matching_row,
-          MAX(pl."startedAt") AS newest_matching_row,
-          pg_size_pretty(pg_total_relation_size('public.poll_logs')) AS current_table_size,
-          pg_total_relation_size('public.poll_logs') AS current_table_size_bytes,
-          pg_size_pretty(
-            COALESCE(
-              SUM(
-                CASE
-                  WHEN pl."startedAt" < cutoff.cutoff_at THEN pg_column_size(pl)
-                  ELSE 0
-                END
-              ),
-              0
-            )
-          ) AS estimated_row_bytes_to_remove,
-          COALESCE(
-            SUM(
-              CASE
-                WHEN pl."startedAt" < cutoff.cutoff_at THEN pg_column_size(pl)
-                ELSE 0
-              END
-            ),
-            0
-          ) AS estimated_row_bytes_to_remove_raw
-        FROM poll_logs pl
-        CROSS JOIN cutoff
+          matching.rows_to_delete,
+          matching.oldest_matching_row,
+          matching.newest_matching_row,
+          pg_size_pretty(table_size.current_table_size_bytes) AS current_table_size,
+          table_size.current_table_size_bytes,
+          pg_size_pretty(matching.estimated_row_bytes_to_remove_raw) AS estimated_row_bytes_to_remove,
+          matching.estimated_row_bytes_to_remove_raw
+        FROM cutoff
+        CROSS JOIN matching
+        CROSS JOIN table_size
+      `,
+      [retentionDays]
+    );
+
+    await runQuery(
+      "Estimated Impact",
+      `
+        WITH cutoff AS (
+          SELECT NOW() - ($1::text || ' days')::interval AS cutoff_at
+        ),
+        matching AS (
+          SELECT
+            COUNT(*)::bigint AS rows_to_delete,
+            COALESCE(SUM(pg_column_size(pl)), 0)::bigint AS estimated_row_bytes_to_remove_raw
+          FROM poll_logs pl
+          CROSS JOIN cutoff
+          WHERE pl."startedAt" < cutoff.cutoff_at
+        ),
+        totals AS (
+          SELECT
+            COUNT(*)::bigint AS total_rows,
+            pg_total_relation_size('public.poll_logs') AS current_table_size_bytes
+          FROM poll_logs
+        )
+        SELECT
+          totals.total_rows,
+          matching.rows_to_delete,
+          ROUND(
+            CASE
+              WHEN totals.total_rows > 0
+                THEN (matching.rows_to_delete::numeric / totals.total_rows::numeric) * 100
+              ELSE 0
+            END,
+            2
+          ) AS percent_of_rows_older_than_cutoff,
+          pg_size_pretty(matching.estimated_row_bytes_to_remove_raw) AS estimated_row_storage_to_remove,
+          ROUND(
+            CASE
+              WHEN totals.current_table_size_bytes > 0
+                THEN (matching.estimated_row_bytes_to_remove_raw::numeric / totals.current_table_size_bytes::numeric) * 100
+              ELSE 0
+            END,
+            2
+          ) AS estimated_percent_of_current_table_size,
+          pg_size_pretty(totals.current_table_size_bytes) AS current_table_size
+        FROM matching
+        CROSS JOIN totals
       `,
       [retentionDays]
     );
@@ -122,7 +165,7 @@ async function main() {
       [retentionDays]
     );
 
-    console.log("\n=== Mode ===");
+    console.log("\n=== Execution Mode ===");
     if (!execute) {
       console.log("Dry run only. No rows were deleted.");
       console.log("Run with --execute to perform the cleanup.");
