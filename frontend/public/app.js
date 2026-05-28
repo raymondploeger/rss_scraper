@@ -356,6 +356,244 @@ const IDENTITY_SUBINTEREST_INTENTS = {
     hardNegative: ["tourism", "travel ranking", "vacation"],
   },
 };
+const IDENTITY_INTELLIGENCE_PROFILES = {
+  passports: {
+    strongPositive: [
+      "biometric passport",
+      "e-passport",
+      "epassport",
+      "passport issuance",
+      "passport personalization",
+      "passport procurement",
+      "icao doc 9303",
+      "icao compliance",
+      "passport verification",
+      "passport rollout",
+      "passport redesign",
+      "chip authentication",
+      "pki",
+      "passport fraud",
+      "passport production",
+      "government issuance system",
+      "document inspection",
+      "border interoperability",
+    ],
+    mediumPositive: [
+      "passport security",
+      "travel document security",
+      "secure passport",
+      "mrtd",
+      "emrtd",
+      "mrz",
+      "document authentication",
+      "issuance modernization",
+      "border control",
+    ],
+    weakPositive: ["passport", "travel document", "passport office", "state department"],
+    strongNegative: [
+      "travel rankings",
+      "strongest passports",
+      "most beautiful passports",
+      "most powerful passports",
+      "tourism journalism",
+      "vacation guide",
+      "travel tips",
+      "visa-free destinations",
+      "airport delays",
+      "airport queue",
+      "holiday travel",
+    ],
+    requiredContextGroups: [
+      ["passport", "travel document"],
+      ["issuance", "security", "verification", "personalization", "chip", "pki", "border", "icao", "fraud", "production"],
+    ],
+    authorityBoostSources: [
+      "icao",
+      "keesing",
+      "regula",
+      "hid",
+      "entrust",
+      "veridos",
+      "idemia",
+      "bundesdruckerei",
+      "in groupe",
+      "security document world",
+      "biometric update",
+      "ovd kinegram",
+      "de la rue",
+      "giesecke+devrient",
+    ],
+  },
+  visas: {
+    strongPositive: [
+      "visa issuance",
+      "e-visa",
+      "electronic visa",
+      "visa policy",
+      "visa waiver",
+      "visa exemption",
+      "travel authorization",
+      "consular digitization",
+      "consular modernization",
+      "visa center",
+      "visa sticker",
+      "entry permit",
+      "mobility agreement",
+      "visa diplomacy",
+    ],
+    mediumPositive: [
+      "visa processing",
+      "consular services",
+      "transit system",
+      "mobility policy",
+      "visa regulation",
+      "visa-free agreement",
+    ],
+    weakPositive: ["visa", "visas", "consular"],
+    strongNegative: [
+      "travel blog",
+      "vacation guide",
+      "tour package",
+      "cheap flights",
+      "hotel deal",
+      "travel agency",
+      "destination ranking",
+      "holiday ideas",
+    ],
+    requiredContextGroups: [["visa", "consular", "authorization"], ["policy", "issuance", "processing", "agreement", "regulation", "security"]],
+    authorityBoostSources: ["keesing", "biometric update", "regula", "security document world", "state department"],
+  },
+  residence_permits: {
+    strongPositive: [
+      "residence permit",
+      "residency card",
+      "biometric residence permit",
+      "permit issuance",
+      "permit personalization",
+      "permit procurement",
+      "foreign resident card",
+      "secure permit document",
+      "digital residence permit",
+      "permit verification",
+      "permit authentication",
+      "permit renewal system",
+      "immigration authority infrastructure",
+      "permit fraud",
+    ],
+    mediumPositive: [
+      "immigration card system",
+      "resident permit",
+      "stay permit",
+      "permit card security",
+      "secure issuance",
+      "document vendor",
+      "card personalization",
+    ],
+    weakPositive: ["residence permit", "permit card", "immigration card"],
+    strongNegative: [
+      "expat blog",
+      "relocation guide",
+      "generic asylum news",
+      "migration opinion",
+      "citizenship lifestyle",
+      "nationality dispute",
+      "travel bureaucracy",
+      "immigration politics",
+    ],
+    requiredContextGroups: [["permit", "resident", "residence"], ["issuance", "card", "biometric", "security", "personalization", "verification", "authority", "fraud"]],
+    authorityBoostSources: [
+      "keesing",
+      "biometric update",
+      "regula",
+      "hid",
+      "thales",
+      "veridos",
+      "bundesdruckerei",
+      "in groupe",
+      "security document world",
+    ],
+  },
+  border_control: {
+    strongPositive: [
+      "automated border control",
+      "abc system",
+      "e-gates",
+      "egates",
+      "ees",
+      "etias",
+      "frontex",
+      "cbp",
+      "border biometrics",
+      "traveler verification",
+      "document inspection",
+      "facial recognition at borders",
+      "border kiosk",
+      "passport control automation",
+      "immigration enforcement technology",
+    ],
+    mediumPositive: [
+      "border control",
+      "border verification",
+      "border interoperability",
+      "passport control",
+      "document verification",
+      "travel document inspection",
+      "icao border interoperability",
+      "secure traveler verification",
+    ],
+    weakPositive: ["border", "border check", "passport control"],
+    strongNegative: [
+      "airport queue",
+      "airport chaos",
+      "ryanair",
+      "travel delays",
+      "passenger complaint",
+      "baggage",
+      "holiday travel",
+      "tourism frustration",
+      "flight disruption",
+      "airport operational chaos",
+    ],
+    requiredContextGroups: [["border", "passport control", "immigration"], ["biometric", "verification", "document", "egate", "ees", "etias", "frontex", "cbp", "facial recognition", "inspection", "automation"]],
+    authorityBoostSources: [
+      "icao",
+      "frontex",
+      "cbp",
+      "biometric update",
+      "keesing",
+      "regula",
+      "hid",
+      "thales",
+      "entrust",
+      "veridos",
+      "security document world",
+    ],
+  },
+  icao: {
+    strongPositive: ["icao", "doc 9303", "mrtd", "emrtd", "mrz", "machine readable", "icao compliance", "travel document standards"],
+    mediumPositive: ["border interoperability", "passport chip", "document verification", "secure traveler verification"],
+    weakPositive: ["travel document", "border control"],
+    strongNegative: ["tourism", "vacation", "travel ranking", "cheap flights"],
+    requiredContextGroups: [["icao", "doc 9303", "mrtd", "emrtd", "mrz"], ["compliance", "standards", "verification", "interoperability", "chip"]],
+    authorityBoostSources: ["icao", "keesing", "biometric update", "regula", "security document world"],
+  },
+  issuance: {
+    strongPositive: ["document issuance", "passport issuance", "identity card issuance", "permit issuance", "visa issuance", "secure issuance", "issuance modernization"],
+    mediumPositive: ["renewal system", "production system", "enrollment", "personalization", "government issuance system"],
+    weakPositive: ["issued", "issuance"],
+    strongNegative: ["stock issuance", "bond issuance", "share issuance", "vacation", "travel tips"],
+    requiredContextGroups: [["issuance", "issued", "renewal"], ["passport", "identity card", "visa", "permit", "document", "government"]],
+    authorityBoostSources: ["keesing", "regula", "hid", "veridos", "bundesdruckerei", "security document world"],
+  },
+  fraud: {
+    strongPositive: ["document fraud", "fake passport", "forged passport", "forged id", "counterfeit id", "permit fraud", "fraudulent issuance"],
+    mediumPositive: ["document verification", "identity fraud ring", "secure document fraud", "counterfeit document"],
+    weakPositive: ["fraud", "forged document"],
+    strongNegative: ["credit card fraud", "insurance fraud", "tax fraud", "romance scam", "cyber fraud software"],
+    requiredContextGroups: [["fraud", "forged", "counterfeit", "fake"], ["passport", "document", "id", "permit", "issuance", "verification"]],
+    authorityBoostSources: ["regula", "keesing", "biometric update", "security document world", "hid", "thales"],
+  },
+};
 const BANKNOTE_SOURCE_AUTHORITY = {
   veryHigh: [
     "banknotenews",
@@ -2206,6 +2444,8 @@ function getPersonalDashboardBackendDomainPlan() {
           "counterfeit id",
           "fraudulent issuance",
           "fake identity document",
+          "permit fraud",
+          "document verification",
         ]);
       } else if (selectedSubinterest === "icao") {
         addTerms([
@@ -2224,6 +2464,14 @@ function getPersonalDashboardBackendDomainPlan() {
           "document verification",
           "e-gates",
           "border verification",
+          "automated border control",
+          "ees",
+          "etias",
+          "frontex",
+          "cbp",
+          "traveler verification",
+          "facial recognition",
+          "abc systems",
         ]);
       } else if (selectedSubinterest === "issuance") {
         addTerms([
@@ -2233,6 +2481,8 @@ function getPersonalDashboardBackendDomainPlan() {
           "residence permit issuance",
           "visa issuance",
           "secure issuance",
+          "issuance modernization",
+          "enrollment system",
         ]);
       } else if (selectedSubinterest === "laminate") {
         addTerms([
@@ -2298,6 +2548,10 @@ function getPersonalDashboardBackendDomainPlan() {
       identitySearches.add("border checks");
       identitySearches.add("immigration control");
       identitySearches.add("entry exit system");
+      identitySearches.add("e-gates");
+      identitySearches.add("ees");
+      identitySearches.add("etias");
+      identitySearches.add("document verification");
     }
     if (hasInterest("security_printing_core")) {
       identitySearches.add("security printing");
@@ -2580,6 +2834,24 @@ function computePersonalInterestBoost(article, interestId) {
           score -= 300;
         }
       }
+      const selectedProfile = selectedSubinterest
+        ? (subinterestScore.profileByInterest?.[selectedSubinterest] || {
+          score: 0,
+          authorityBoost: 0,
+          matchedRequiredGroups: 0,
+          matchedNegative: [],
+          rejectionReasons: [],
+        })
+        : null;
+      if (selectedProfile) {
+        score += Math.min(160, Math.round(selectedProfile.score));
+        if (selectedProfile.matchedNegative.length >= 2) {
+          score -= 180;
+        }
+        if (selectedProfile.rejectionReasons.includes("missing_required_context")) {
+          score -= 140;
+        }
+      }
 
       if (interestId === "passports") {
         score += Math.min(90, Math.round((signals.passportHits * 0.7) + (selectedIntent.score * 1.1)));
@@ -2610,7 +2882,10 @@ function computePersonalInterestBoost(article, interestId) {
         score += Math.min(120, Math.round((signals.icaoHits * 1.5) + (selectedIntent.score * 0.9)));
         score -= Math.min(180, Math.round(signals.driverLicenseHits * 1.0));
       } else if (interestId === "border_control") {
-        score += Math.min(100, Math.round(signals.borderHits * 1.35));
+        score += Math.min(140, Math.round((signals.borderHits * 1.0) + (selectedProfile?.score || 0)));
+        if (selectedProfile?.rejectionReasons?.length) {
+          score -= 140;
+        }
       } else if (interestId === "visas") {
         score += Math.min(120, Math.round((signals.visaHits * 1.45) + (selectedIntent.score * 1.0)));
         score -= Math.min(200, Math.round(signals.driverLicenseHits * 1.1));
@@ -2645,6 +2920,8 @@ function computePersonalInterestBoost(article, interestId) {
           matchedWeak: intentScore.matchedWeak,
           matchedNegative: intentScore.matchedNegative,
           travelNoiseArticle: subinterestScore.travelNoiseArticle,
+          profileScore: selectedProfile?.score || 0,
+          profileRejectionReasons: selectedProfile?.rejectionReasons || [],
           finalScore: Math.round(score),
           title: article?.title || "Untitled article",
         });
@@ -3249,6 +3526,112 @@ function getIdentityDocumentIntentBreakdown(article) {
   });
 }
 
+function calculateIdentityProfileScore(article, profileId) {
+  return getCachedArticleValue(article, `identityProfileScore:${profileId}`, () => {
+    const profile = IDENTITY_INTELLIGENCE_PROFILES[profileId];
+    if (!profile) {
+      return {
+        score: 0,
+        authorityBoost: 0,
+        matchedRequiredGroups: 0,
+        matchedStrong: [],
+        matchedMedium: [],
+        matchedWeak: [],
+        matchedNegative: [],
+        rejectionReasons: [],
+      };
+    }
+
+    const context = getPersonalBoostContext(article);
+    const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
+    const scoreMatches = (terms = [], weights) => {
+      const matched = terms.filter((term) =>
+        textMatchesKeyword(context.titleText, term) ||
+        textMatchesKeyword(context.tagText, term) ||
+        textMatchesKeyword(context.metadataText, term) ||
+        textMatchesKeyword(context.bodyText, term)
+      );
+      const titleHits = matched.filter((term) => textMatchesKeyword(context.titleText, term)).length;
+      const tagHits = matched.filter((term) => textMatchesKeyword(context.tagText, term)).length;
+      const metaHits = matched.filter((term) => textMatchesKeyword(context.metadataText, term)).length;
+      const bodyHits = matched.filter((term) => textMatchesKeyword(context.bodyText, term)).length;
+      const score =
+        (titleHits * weights.title) +
+        (tagHits * weights.tag) +
+        (metaHits * weights.meta) +
+        (bodyHits * weights.body);
+      return { matched, score };
+    };
+
+    const strong = scoreMatches(profile.strongPositive, { title: 16, tag: 9, meta: 8, body: 6 });
+    const medium = scoreMatches(profile.mediumPositive, { title: 10, tag: 6, meta: 5, body: 3 });
+    const weak = scoreMatches(profile.weakPositive, { title: 4, tag: 2, meta: 2, body: 1 });
+    const negative = scoreMatches(profile.strongNegative, { title: 18, tag: 10, meta: 8, body: 6 });
+
+    const matchedRequiredGroups = (Array.isArray(profile.requiredContextGroups) ? profile.requiredContextGroups : []).reduce(
+      (count, group) => {
+        const hasGroupMatch = Array.isArray(group) && group.some((term) =>
+          textMatchesKeyword(context.titleText, term) ||
+          textMatchesKeyword(context.tagText, term) ||
+          textMatchesKeyword(context.metadataText, term) ||
+          textMatchesKeyword(context.bodyText, term)
+        );
+        return hasGroupMatch ? count + 1 : count;
+      },
+      0
+    );
+
+    let score = strong.score + medium.score + weak.score - negative.score;
+    const rejectionReasons = [];
+
+    if (matchedRequiredGroups >= 2) {
+      score += 28;
+    } else if (matchedRequiredGroups === 1) {
+      score += 8;
+    } else if (strong.matched.length || medium.matched.length) {
+      score -= 90;
+      rejectionReasons.push("missing_required_context");
+    }
+
+    const authorityBoost = Array.isArray(profile.authorityBoostSources) &&
+      profile.authorityBoostSources.some((value) => textMatchesKeyword(sourceFingerprint, value))
+      ? 30
+      : 0;
+    if (score > 10) {
+      score += authorityBoost;
+    }
+
+    if (negative.matched.length >= 2) {
+      score -= 220;
+      rejectionReasons.push("stacked_negative_context");
+    }
+
+    debugPersonalDashboardLog("[identity-semantic-profile]", {
+      profileId,
+      title: article?.title || "Untitled article",
+      matchedStrong: strong.matched,
+      matchedMedium: medium.matched,
+      matchedWeak: weak.matched,
+      matchedNegative: negative.matched,
+      matchedRequiredGroups,
+      authorityBoost,
+      rejectionReasons,
+      profileScore: Math.round(score),
+    });
+
+    return {
+      score: Math.round(score),
+      authorityBoost,
+      matchedRequiredGroups,
+      matchedStrong: strong.matched,
+      matchedMedium: medium.matched,
+      matchedWeak: weak.matched,
+      matchedNegative: negative.matched,
+      rejectionReasons,
+    };
+  });
+}
+
 function getIdentityDocumentSubinterestScore(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
   const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
   const signature = selectedIdentityInterests.slice().sort().join("|");
@@ -3266,6 +3649,15 @@ function getIdentityDocumentSubinterestScore(article, selectedInterests = normal
 
     const signals = getIdentityDocumentInterestSignals(article);
     const intentByInterest = getIdentityDocumentIntentBreakdown(article);
+    const profileByInterest = {
+      passports: calculateIdentityProfileScore(article, "passports"),
+      visas: calculateIdentityProfileScore(article, "visas"),
+      residence_permits: calculateIdentityProfileScore(article, "residence_permits"),
+      border_control: calculateIdentityProfileScore(article, "border_control"),
+      icao: calculateIdentityProfileScore(article, "icao"),
+      issuance: calculateIdentityProfileScore(article, "issuance"),
+      fraud: calculateIdentityProfileScore(article, "fraud"),
+    };
     const travelNoiseArticle = isIdentityTravelNoiseArticle(article);
     const scoreByInterest = {
       passports:
@@ -3275,7 +3667,8 @@ function getIdentityDocumentSubinterestScore(article, selectedInterests = normal
         (signals.personalizationHits * 0.45) -
         (signals.driverLicenseHits * 1.05) -
         (signals.noisyHits * 0.9) -
-        (signals.visaHits * 0.2),
+        (signals.visaHits * 0.2) +
+        (profileByInterest.passports.score * 1.1),
       id_cards:
         (signals.idCardHits * 1.55) +
         (signals.polycarbonateHits * 0.5) +
@@ -3291,7 +3684,8 @@ function getIdentityDocumentSubinterestScore(article, selectedInterests = normal
         (signals.driverLicenseHits * 1.0) -
         (signals.passportHits * 0.45) -
         (signals.visaHits * 0.25) -
-        (signals.noisyHits * 0.55),
+        (signals.noisyHits * 0.55) +
+        (profileByInterest.residence_permits.score * 1.15),
       drivers_licenses:
         (signals.driverLicenseHits * 1.8) +
         (signals.issuanceHits * 0.4) -
@@ -3302,7 +3696,8 @@ function getIdentityDocumentSubinterestScore(article, selectedInterests = normal
         (signals.borderHits * 0.25) -
         (signals.driverLicenseHits * 1.2) -
         (signals.passportHits * 0.6) -
-        (signals.noisyHits * 0.75),
+        (signals.noisyHits * 0.75) +
+        (profileByInterest.visas.score * 0.9),
       polycarbonate:
         (signals.polycarbonateHits * 1.85) +
         (signals.idCardHits * 0.3) +
@@ -3312,25 +3707,29 @@ function getIdentityDocumentSubinterestScore(article, selectedInterests = normal
         (signals.fraudHits * 1.8) +
         (signals.primaryContextHits * 0.2) -
         (signals.driverLicenseHits * 0.95) -
-        (signals.noisyHits * 0.45),
+        (signals.noisyHits * 0.45) +
+        (profileByInterest.fraud.score * 1.0),
       icao:
         (signals.icaoHits * 2.0) +
         (signals.passportHits * 0.2) +
         (signals.borderHits * 0.5) -
         (signals.driverLicenseHits * 1.05) -
-        (signals.noisyHits * 0.85),
+        (signals.noisyHits * 0.85) +
+        (profileByInterest.icao.score * 1.05),
       border_control:
         (signals.borderHits * 1.85) +
         (signals.icaoHits * 0.35) +
         (signals.passportHits * 0.2) -
-        (signals.noisyHits * 0.6),
+        (signals.noisyHits * 0.6) +
+        (profileByInterest.border_control.score * 1.2),
       issuance:
         (signals.issuanceHits * 1.75) +
         (signals.passportHits * 0.2) +
         (signals.idCardHits * 0.2) +
         (signals.visaHits * 0.2) -
         (signals.driverLicenseHits * 0.8) -
-        (signals.noisyHits * 0.35),
+        (signals.noisyHits * 0.35) +
+        (profileByInterest.issuance.score * 1.0),
       laminate:
         (signals.laminateHits * 1.8) +
         (signals.polycarbonateHits * 0.35) +
@@ -3388,6 +3787,7 @@ function getIdentityDocumentSubinterestScore(article, selectedInterests = normal
         selectedSubinterest: selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : selectedIdentityInterests.join(","),
         matchedSubinterest: bestSelected.interestId,
         intentByInterest,
+        profileByInterest,
         travelNoiseArticle,
       };
   });
@@ -3959,6 +4359,15 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
             matchedNegative: [],
           })
           : { score: 0, matchedStrong: [], matchedWeak: [], matchedNegative: [] };
+        const selectedProfile = selectedSubinterest
+          ? (identitySubinterest.profileByInterest?.[selectedSubinterest] || {
+            score: 0,
+            authorityBoost: 0,
+            matchedRequiredGroups: 0,
+            matchedNegative: [],
+            rejectionReasons: [],
+          })
+          : null;
         if (["travel_passport", "identity_document", "dmv_driver_license"].includes(context.topicType)) {
           score += 170;
         }
@@ -3997,6 +4406,15 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
             score -= 300;
           }
         }
+        if (selectedProfile) {
+          score += Math.min(190, Math.round(selectedProfile.score * 1.1));
+          if (selectedProfile.matchedNegative.length >= 2) {
+            score -= 200;
+          }
+          if (selectedProfile.rejectionReasons.includes("missing_required_context")) {
+            score -= 160;
+          }
+        }
         if (selectedSubinterest === "passports") {
           score += Math.min(135, Math.round((identitySignals.passportHits * 0.45) + (identitySignals.icaoHits * 0.45) + (selectedIntent.score * 1.1)));
           score -= Math.min(220, Math.round(identitySignals.driverLicenseHits * 1.05));
@@ -4013,8 +4431,13 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
           score += Math.min(155, Math.round((identitySignals.icaoHits * 1.0) + (selectedIntent.score * 1.0)));
           score -= Math.min(240, Math.round(identitySignals.driverLicenseHits * 1.25));
         } else if (selectedSubinterest === "fraud") {
-          score += Math.min(150, Math.round(identitySignals.fraudHits * 1.0));
+          score += Math.min(150, Math.round((identitySignals.fraudHits * 1.0) + (selectedProfile?.score || 0)));
           score -= Math.min(220, Math.round(identitySignals.driverLicenseHits * 1.05));
+        } else if (selectedSubinterest === "border_control") {
+          score += Math.min(160, Math.round((identitySignals.borderHits * 0.95) + (selectedProfile?.score || 0)));
+          if (selectedProfile?.rejectionReasons?.length) {
+            score -= 160;
+          }
         } else if (selectedSubinterest === "polycarbonate") {
           score += Math.min(130, Math.round(identitySignals.polycarbonateHits * 0.9));
           score -= Math.min(180, Math.round(identitySignals.driverLicenseHits * 0.9));
@@ -4022,7 +4445,7 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
           score += Math.min(120, Math.round(identitySignals.laminateHits * 0.85));
           score -= Math.min(180, Math.round(identitySignals.driverLicenseHits * 0.9));
         } else if (selectedSubinterest === "issuance") {
-          score += Math.min(120, Math.round(identitySignals.issuanceHits * 0.85));
+          score += Math.min(150, Math.round((identitySignals.issuanceHits * 0.85) + (selectedProfile?.score || 0)));
           score -= Math.min(180, Math.round(identitySignals.driverLicenseHits * 0.8));
         }
         score -= countBoostKeywordMatches(
@@ -4445,6 +4868,9 @@ function logIdentityDocumentTopResults(articles) {
     const authority = getIdentityDocumentSourceAuthority(article);
     const context = getIdentityDocumentInterestSignals(article);
     const subinterest = getIdentityDocumentSubinterestScore(article);
+    const selectedProfile = subinterest.selectedSubinterest
+      ? subinterest.profileByInterest?.[subinterest.selectedSubinterest]
+      : null;
     const finalScore = calculatePersonalDomainScore(article).domainScore;
     const matchedInterests = selectedIdentityInterests.filter(
       (interestId) => computePersonalInterestBoost(article, interestId).score >= 18
@@ -4458,6 +4884,9 @@ function logIdentityDocumentTopResults(articles) {
       selectedSubinterest: subinterest.selectedSubinterest,
       subinterestScore: subinterest.score,
       mismatchPenalty: subinterest.mismatchPenalty,
+      profileScore: selectedProfile?.score || 0,
+      profileRejections: selectedProfile?.rejectionReasons || [],
+      travelNoiseArticle: Boolean(subinterest.travelNoiseArticle),
       finalScore,
       detectedSubinterestMatch: matchedInterests.join(", ") || subinterest.matchedSubinterest || "none",
     };
@@ -13307,6 +13736,74 @@ function toggleGroupedArticleSourceList(article) {
   return;
 }
 
+function getArticleRenderSignature(article) {
+  const personalBoost = hasPersonalDashboardSelections() ? computePersonalBoost(article) : { level: "", score: 0 };
+  const primarySignalCategory = getPrimaryArticleSignalCategory(article);
+  return [
+    getGroupedArticleStateKey(article),
+    article?.title || "",
+    article?.source || "",
+    article?.topic || "",
+    article?.pubDate || "",
+    article?.sourceCount || 0,
+    primarySignalCategory || "",
+    personalBoost.level || "",
+    personalBoost.score || 0,
+  ].join("|");
+}
+
+function patchSimpleArticleGrid(articlesToRender = []) {
+  if (!elements.articlesGrid) {
+    return;
+  }
+
+  const existingCards = Array.from(elements.articlesGrid.querySelectorAll(".article-card"));
+  const existingByKey = new Map(
+    existingCards.map((card) => [String(card.dataset.articleStateKey || ""), card])
+  );
+  const nextCards = articlesToRender.map((article) => {
+    const fragment = renderArticleCard(article);
+    return fragment.firstElementChild || fragment.firstChild;
+  }).filter(Boolean);
+
+  if (!existingCards.length) {
+    elements.articlesGrid.innerHTML = "";
+    const fragment = document.createDocumentFragment();
+    nextCards.forEach((card) => fragment.appendChild(card));
+    elements.articlesGrid.appendChild(fragment);
+    debugPersonalDashboardLog("[refresh-grid-patch]", {
+      mode: "initial-render",
+      nextCount: nextCards.length,
+    });
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  let replacedCount = 0;
+  let reusedCount = 0;
+
+  nextCards.forEach((nextCard) => {
+    const key = String(nextCard?.dataset?.articleStateKey || "");
+    const signature = String(nextCard?.dataset?.articleRenderSignature || "");
+    const existingCard = key ? existingByKey.get(key) : null;
+    if (existingCard && existingCard.dataset.articleRenderSignature === signature) {
+      fragment.appendChild(existingCard);
+      reusedCount += 1;
+      return;
+    }
+    fragment.appendChild(nextCard);
+    replacedCount += 1;
+  });
+
+  elements.articlesGrid.replaceChildren(fragment);
+  debugPersonalDashboardLog("[refresh-grid-patch]", {
+    mode: "patched",
+    nextCount: nextCards.length,
+    reusedCount,
+    replacedCount,
+  });
+}
+
 function renderArticleCard(article) {
   const node = elements.articleCardTemplate.content.cloneNode(true);
   const card = node.querySelector(".article-card");
@@ -13324,8 +13821,10 @@ function renderArticleCard(article) {
   const groupedSources = getGroupedArticleSources(article);
   const articleStateKey = getGroupedArticleStateKey(article);
   const isGroupedSourcesExpanded = runtime.expandedGroupedSourceKeys.has(articleStateKey);
+  const articleRenderSignature = getArticleRenderSignature(article);
 
   card.dataset.articleStateKey = articleStateKey;
+  card.dataset.articleRenderSignature = articleRenderSignature;
   card.classList.toggle("article-card--grouped", groupedSources.length > 0);
 
   if (card && isGroupedSourcesExpanded && groupedSources.length) {
@@ -14356,11 +14855,7 @@ function renderArticles() {
       }
 
       logRenderingPageArticlesOnly(groupedArticlesCount, articlesToRender);
-      const fragment = document.createDocumentFragment();
-      articlesToRender.forEach((article) => {
-        fragment.appendChild(renderArticleCard(article));
-      });
-      elements.articlesGrid.appendChild(fragment);
+      patchSimpleArticleGrid(articlesToRender);
       renderPaginationControls(articlePagination);
       intelligenceTimeEnd("renderArticles:dom-update");
       finalizeRenderDiagnostics(renderDiagnostics);
@@ -14389,11 +14884,7 @@ function renderArticles() {
       }
 
       logRenderingPageArticlesOnly(groupedArticlesCount, articlesToRender);
-      const fragment = document.createDocumentFragment();
-      articlesToRender.forEach((article) => {
-        fragment.appendChild(renderArticleCard(article));
-      });
-      elements.articlesGrid.appendChild(fragment);
+      patchSimpleArticleGrid(articlesToRender);
       renderPaginationControls(articlePagination);
       intelligenceTimeEnd("renderArticles:dom-update");
       renderDiagnostics.branchName = "selected-dmv";
@@ -14541,11 +15032,7 @@ function renderArticles() {
     }
 
     logRenderingPageArticlesOnly(groupedArticlesCount, articlesToRender);
-    const fragment = document.createDocumentFragment();
-    articlesToRender.forEach((article) => {
-      fragment.appendChild(renderArticleCard(article));
-    });
-    elements.articlesGrid.appendChild(fragment);
+    patchSimpleArticleGrid(articlesToRender);
     renderPaginationControls(articlePagination);
     intelligenceTimeEnd("renderArticles:dom-update");
     renderDiagnostics.branchName = state.filters.feedId ? "feed-filter" : "default";
