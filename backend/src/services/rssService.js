@@ -656,13 +656,18 @@ export async function syncFeed(feed) {
     });
     broadcast("feed:update", { type: "feed:update", feed: updatedFeed });
 
-    await createPollLog({
-      feedId: feed.id,
-      startedAt,
-      finishedAt: new Date(),
-      status: "success",
-      newArticles
-    });
+    // Retain poll logs for failures and meaningful ingestion wins.
+    // Successful zero-insert polls are extremely frequent and can exhaust database storage
+    // without adding useful operational history to the dashboard.
+    if (newArticles > 0) {
+      await createPollLog({
+        feedId: feed.id,
+        startedAt,
+        finishedAt: new Date(),
+        status: "success",
+        newArticles
+      });
+    }
 
     console.log(`Feed sync complete for ${feed.id}; inserted ${newArticles} new articles`);
     return { feedId: String(feed.id), newArticles };
