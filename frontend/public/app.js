@@ -16,6 +16,7 @@ const DEBUG_PERFORMANCE = false;
 const DEBUG_PERSONAL_DASHBOARD =
   typeof localStorage !== "undefined" &&
   localStorage.getItem("DEBUG_PERSONAL_DASHBOARD") === "true";
+const HARD_SUBINTEREST_MISMATCH_THRESHOLD = 12;
 const MAX_ARTICLES_IN_MEMORY = 1500;
 const MAX_VISIBLE_SOURCES_IN_LIST = 100;
 const MAX_RSS_FEEDS = 150;
@@ -2263,6 +2264,9 @@ function computePersonalInterestBoost(article, interestId) {
       const signals = getIdentityDocumentInterestSignals(article);
       const authority = getIdentityDocumentSourceAuthority(article);
       const subinterestScore = getIdentityDocumentSubinterestScore(article);
+      const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests();
+      const selectedSubinterest = selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : "";
+      const genericDmvNoise = isGenericDmvNoise(article);
 
       score += Math.min(80, Math.round(signals.primaryContextHits * 0.9));
       score += authority.boost;
@@ -2270,33 +2274,64 @@ function computePersonalInterestBoost(article, interestId) {
       score += Math.max(-120, subinterestScore.score);
       score -= Math.min(110, subinterestScore.mismatchPenalty);
 
+      if (selectedSubinterest && subinterestScore.bestSelectedScore < 8 && selectedSubinterest !== "drivers_licenses") {
+        score -= 400;
+      }
+      if (subinterestScore.mismatchPenalty > HARD_SUBINTEREST_MISMATCH_THRESHOLD) {
+        score -= 500;
+      }
+      if (genericDmvNoise && selectedSubinterest && selectedSubinterest !== "drivers_licenses") {
+        score -= 700;
+      }
+
       if (interestId === "passports") {
         score += Math.min(90, Math.round(signals.passportHits * 1.15));
         score -= Math.min(40, Math.round((signals.idCardHits + signals.driverLicenseHits) * 0.25));
+        score -= Math.min(160, Math.round(signals.driverLicenseHits * 0.9));
+        if (genericDmvNoise) {
+          score -= 500;
+        }
       } else if (interestId === "id_cards") {
         score += Math.min(90, Math.round(signals.idCardHits * 1.25));
         score -= Math.min(45, Math.round(signals.passportHits * 0.35));
       } else if (interestId === "residence_permits") {
         score += Math.min(90, Math.round(signals.residencePermitHits * 1.3));
         score -= Math.min(45, Math.round(signals.passportHits * 0.3));
+        score -= Math.min(180, Math.round(signals.driverLicenseHits * 1.0));
       } else if (interestId === "drivers_licenses") {
         score += Math.min(90, Math.round(signals.driverLicenseHits * 1.35));
         score -= Math.min(45, Math.round(signals.passportHits * 0.35));
       } else if (interestId === "polycarbonate") {
         score += Math.min(100, Math.round(signals.polycarbonateHits * 1.5));
+        score -= Math.min(140, Math.round(signals.driverLicenseHits * 0.75));
       } else if (interestId === "fraud") {
         score += Math.min(100, Math.round(signals.fraudHits * 1.45));
+        score -= Math.min(160, Math.round(signals.driverLicenseHits * 0.9));
       } else if (interestId === "icao") {
         score += Math.min(100, Math.round(signals.icaoHits * 1.45));
+        score -= Math.min(180, Math.round(signals.driverLicenseHits * 1.0));
       } else if (interestId === "border_control") {
         score += Math.min(100, Math.round(signals.borderHits * 1.35));
       } else if (interestId === "visas") {
         score += Math.min(100, Math.round(signals.visaHits * 1.55));
-        score -= Math.min(65, Math.round(signals.driverLicenseHits * 0.65));
+        score -= Math.min(200, Math.round(signals.driverLicenseHits * 1.1));
       } else if (interestId === "issuance") {
         score += Math.min(95, Math.round(signals.issuanceHits * 1.45));
+        score -= Math.min(140, Math.round(signals.driverLicenseHits * 0.7));
       } else if (interestId === "laminate") {
         score += Math.min(95, Math.round(signals.laminateHits * 1.5));
+        score -= Math.min(140, Math.round(signals.driverLicenseHits * 0.7));
+      }
+
+      if (DEBUG_PERSONAL_DASHBOARD && selectedSubinterest) {
+        debugPersonalDashboardLog("[identity-subinterest-hard-filter]", {
+          selectedSubinterest,
+          matchedSubinterest: subinterestScore.matchedSubinterest,
+          mismatchPenalty: subinterestScore.mismatchPenalty,
+          genericDmvNoise,
+          finalScore: Math.round(score),
+          title: article?.title || "Untitled article",
+        });
       }
     }
 
@@ -2475,6 +2510,11 @@ function getIdentityDocumentSourceAuthority(article) {
     const context = getPersonalBoostContext(article);
     const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
     const hasAny = (values = []) => values.some((value) => textMatchesKeyword(sourceFingerprint, value));
+    const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests();
+    const onlyDriverLicensesSelected =
+      selectedIdentityInterests.length === 1 && selectedIdentityInterests[0] === "drivers_licenses";
+    const dmvAuthoritySource = ["dmv", "driver license agency", "motor vehicle", "department of motor vehicles"]
+      .some((value) => textMatchesKeyword(sourceFingerprint, value));
 
     let level = "medium";
     let multiplier = 1.0;
@@ -2500,6 +2540,14 @@ function getIdentityDocumentSourceAuthority(article) {
       level = "medium";
       multiplier = 1.1;
       boost = 12;
+    }
+
+    if (dmvAuthoritySource && !onlyDriverLicensesSelected && !isDriverLicenseSpecificArticle(article)) {
+      boost = Math.min(boost, 10);
+      multiplier = Math.min(multiplier, 1.0);
+      if (level === "very_high" || level === "high") {
+        level = "medium";
+      }
     }
 
     return {
@@ -2684,6 +2732,60 @@ function getIdentityDocumentInterestSignals(article) {
   });
 }
 
+function isDriverLicenseSpecificArticle(article) {
+  const context = getPersonalBoostContext(article);
+  const text = `${context.titleText} ${context.tagText} ${context.metadataText} ${context.bodyText}`;
+  return [
+    "real id",
+    "driver license",
+    "driver's license",
+    "driving licence",
+    "driver licence",
+    "cdl",
+    "mobile driver license",
+    "digital driver license",
+    "state id card",
+    "license card",
+  ].some((keyword) => textMatchesKeyword(text, keyword));
+}
+
+function isGenericDmvNoise(article) {
+  const text = [
+    article?.title || "",
+    article?.description || "",
+    article?.summary || "",
+    article?.summaryShort || "",
+    article?.content || "",
+    article?.contentSnippet || "",
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  const noiseKeywords = [
+    "resurfacing",
+    "highway",
+    "flood maps",
+    "forestry",
+    "immunization",
+    "road work",
+    "traffic",
+    "vehicle registration",
+    "parking",
+    "bridge",
+    "transportation",
+    "construction",
+    "weather",
+    "snow removal",
+    "lane closure",
+    "pavement",
+    "freeway",
+    "detour",
+    "road maintenance",
+  ];
+
+  return noiseKeywords.some((keyword) => text.includes(keyword));
+}
+
 function getIdentityDocumentSubinterestScore(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
   const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
   const signature = selectedIdentityInterests.slice().sort().join("|");
@@ -2730,6 +2832,7 @@ function getIdentityDocumentSubinterestScore(article, selectedInterests = normal
 
     return {
       score: Math.round(bestSelected.score - (mismatchPenalty * 0.9)),
+      bestSelectedScore: Math.round(bestSelected.score),
       mismatchPenalty: Math.round(mismatchPenalty),
       selectedSubinterest: selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : selectedIdentityInterests.join(","),
       matchedSubinterest: bestSelected.interestId,
@@ -3292,6 +3395,9 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         const identityAuthority = getIdentityDocumentSourceAuthority(article);
         const identitySignals = getIdentityDocumentInterestSignals(article);
         const identitySubinterest = getIdentityDocumentSubinterestScore(article, normalizedInterests);
+        const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(normalizedInterests);
+        const selectedSubinterest = selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : "";
+        const genericDmvNoise = isGenericDmvNoise(article);
         if (["travel_passport", "identity_document", "dmv_driver_license"].includes(context.topicType)) {
           score += 170;
         }
@@ -3314,6 +3420,42 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         score += Math.max(-140, identitySubinterest.score);
         score -= Math.min(150, Math.round(identitySignals.noisyHits * 0.95));
         score -= Math.min(130, identitySubinterest.mismatchPenalty);
+        if (selectedSubinterest && identitySubinterest.bestSelectedScore < 8 && selectedSubinterest !== "drivers_licenses") {
+          score -= 400;
+        }
+        if (identitySubinterest.mismatchPenalty > HARD_SUBINTEREST_MISMATCH_THRESHOLD) {
+          score -= 500;
+        }
+        if (genericDmvNoise && selectedSubinterest && selectedSubinterest !== "drivers_licenses") {
+          score -= 700;
+        }
+        if (selectedSubinterest === "passports") {
+          score += Math.min(130, Math.round(identitySignals.passportHits * 0.8 + identitySignals.icaoHits * 0.45));
+          score -= Math.min(220, Math.round(identitySignals.driverLicenseHits * 1.05));
+        } else if (selectedSubinterest === "visas") {
+          score += Math.min(140, Math.round(identitySignals.visaHits * 0.95));
+          score -= Math.min(240, Math.round(identitySignals.driverLicenseHits * 1.2));
+          score -= Math.min(90, Math.round(identitySignals.passportHits * 0.45));
+        } else if (selectedSubinterest === "residence_permits") {
+          score += Math.min(140, Math.round(identitySignals.residencePermitHits * 0.95));
+          score -= Math.min(240, Math.round(identitySignals.driverLicenseHits * 1.2));
+          score -= Math.min(80, Math.round(identitySignals.passportHits * 0.35));
+        } else if (selectedSubinterest === "icao") {
+          score += Math.min(150, Math.round(identitySignals.icaoHits * 1.0));
+          score -= Math.min(240, Math.round(identitySignals.driverLicenseHits * 1.25));
+        } else if (selectedSubinterest === "fraud") {
+          score += Math.min(150, Math.round(identitySignals.fraudHits * 1.0));
+          score -= Math.min(220, Math.round(identitySignals.driverLicenseHits * 1.05));
+        } else if (selectedSubinterest === "polycarbonate") {
+          score += Math.min(130, Math.round(identitySignals.polycarbonateHits * 0.9));
+          score -= Math.min(180, Math.round(identitySignals.driverLicenseHits * 0.9));
+        } else if (selectedSubinterest === "laminate") {
+          score += Math.min(120, Math.round(identitySignals.laminateHits * 0.85));
+          score -= Math.min(180, Math.round(identitySignals.driverLicenseHits * 0.9));
+        } else if (selectedSubinterest === "issuance") {
+          score += Math.min(120, Math.round(identitySignals.issuanceHits * 0.85));
+          score -= Math.min(180, Math.round(identitySignals.driverLicenseHits * 0.8));
+        }
         score -= countBoostKeywordMatches(
           `${context.titleText} ${context.tagText} ${context.metadataText}`,
           ["banknote", "banknotes", "central bank", "currency", "commemorative note", "cash circulation"]
