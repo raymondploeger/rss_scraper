@@ -789,6 +789,52 @@ const IDENTITY_DOCUMENT_HARD_CONTEXT_GATES = {
       "document security",
     ],
   },
+  icao: {
+    severePenalty: 420,
+    requiredTerms: [
+      "icao",
+      "doc 9303",
+      "mrtd",
+      "emrtd",
+      "epassport",
+      "e-passport",
+      "pkd",
+      "lds",
+      "pace",
+      "bac",
+      "sac",
+      "active authentication",
+      "chip authentication",
+      "digital travel credential",
+      "dtc",
+      "traveller identification programme",
+      "mrz",
+    ],
+  },
+  border_control: {
+    severePenalty: 360,
+    requiredTerms: [
+      "border control",
+      "egate",
+      "e-gate",
+      "abc gate",
+      "automated border control",
+      "passport control",
+      "immigration control",
+      "entry exit system",
+      "entry/exit system",
+      "ees",
+      "etias",
+      "cbp",
+      "frontex",
+      "document inspection",
+      "border inspection",
+      "mobile passport control",
+      "mpc",
+      "biometric border",
+      "facial recognition",
+    ],
+  },
 };
 const IDENTITY_REQUIRED_CONTEXT_COMBOS = {
   icao: [
@@ -3967,6 +4013,8 @@ function evaluateIdentityDocumentHardContext(article, profileId) {
         contextHits: 0,
         securityHits: 0,
         negativeSourceHits: 0,
+        matchedRequiredTerms: [],
+        matchedContextTerms: [],
       };
     }
 
@@ -3982,17 +4030,19 @@ function evaluateIdentityDocumentHardContext(article, profileId) {
       .filter(Boolean)
       .join(" ");
 
-    const countHits = (terms = []) =>
-      normalizeKeywordList(terms).reduce((count, term) => (
-        textMatchesKeyword(haystack, term) ? count + 1 : count
-      ), 0);
+    const getMatchedTerms = (terms = []) =>
+      normalizeKeywordList(terms).filter((term) => textMatchesKeyword(haystack, term));
+    const countHits = (terms = []) => getMatchedTerms(terms).length;
 
     const negativeSourceHits = countHits(IDENTITY_DOCUMENT_NEGATIVE_SOURCE_TERMS);
 
     if (profileId === "passports") {
-      const requiredHits = countHits(gate.requiredTerms);
-      const contextHits = countHits(gate.documentSecurityTerms);
-      const securityHits = countHits(gate.securityProductionTerms);
+      const matchedRequiredTerms = getMatchedTerms(gate.requiredTerms);
+      const matchedContextTerms = getMatchedTerms(gate.documentSecurityTerms);
+      const matchedSecurityTerms = getMatchedTerms(gate.securityProductionTerms);
+      const requiredHits = matchedRequiredTerms.length;
+      const contextHits = matchedContextTerms.length;
+      const securityHits = matchedSecurityTerms.length;
       return {
         matched: requiredHits > 0 && (contextHits > 0 || securityHits > 0),
         severePenalty: gate.severePenalty,
@@ -4000,13 +4050,18 @@ function evaluateIdentityDocumentHardContext(article, profileId) {
         contextHits,
         securityHits,
         negativeSourceHits,
+        matchedRequiredTerms,
+        matchedContextTerms: matchedContextTerms.concat(matchedSecurityTerms),
       };
     }
 
     if (profileId === "residence_permits") {
-      const permitHits = countHits(gate.permitTerms);
-      const contextHits = countHits(gate.issuanceTerms);
-      const securityHits = countHits(gate.securityTerms);
+      const matchedPermitTerms = getMatchedTerms(gate.permitTerms);
+      const matchedIssuanceTerms = getMatchedTerms(gate.issuanceTerms);
+      const matchedSecurityTerms = getMatchedTerms(gate.securityTerms);
+      const permitHits = matchedPermitTerms.length;
+      const contextHits = matchedIssuanceTerms.length;
+      const securityHits = matchedSecurityTerms.length;
       return {
         matched: permitHits > 0 || contextHits > 0 || securityHits > 0,
         severePenalty: gate.severePenalty,
@@ -4014,6 +4069,22 @@ function evaluateIdentityDocumentHardContext(article, profileId) {
         contextHits,
         securityHits,
         negativeSourceHits,
+        matchedRequiredTerms: matchedPermitTerms,
+        matchedContextTerms: matchedIssuanceTerms.concat(matchedSecurityTerms),
+      };
+    }
+
+    if (profileId === "icao" || profileId === "border_control") {
+      const matchedRequiredTerms = getMatchedTerms(gate.requiredTerms);
+      return {
+        matched: matchedRequiredTerms.length > 0,
+        severePenalty: gate.severePenalty,
+        requiredHits: matchedRequiredTerms.length,
+        contextHits: 0,
+        securityHits: 0,
+        negativeSourceHits,
+        matchedRequiredTerms,
+        matchedContextTerms: [],
       };
     }
 
@@ -4024,6 +4095,8 @@ function evaluateIdentityDocumentHardContext(article, profileId) {
       contextHits: 0,
       securityHits: 0,
       negativeSourceHits,
+      matchedRequiredTerms: [],
+      matchedContextTerms: [],
     };
   });
 }
@@ -4109,11 +4182,11 @@ function calculateIdentityProfileScore(article, profileId) {
       rejectionReasons.push("stacked_negative_context");
     }
 
-    if (["passports", "residence_permits"].includes(profileId)) {
+    if (["passports", "residence_permits", "icao", "border_control"].includes(profileId)) {
       if (!hardContext.matched) {
         score -= hardContext.severePenalty;
         rejectionReasons.push("failed_document_context_gate");
-      } else {
+      } else if (["passports", "residence_permits"].includes(profileId)) {
         score += Math.min(110, (hardContext.contextHits * 10) + (hardContext.securityHits * 12));
       }
 
@@ -4129,6 +4202,17 @@ function calculateIdentityProfileScore(article, profileId) {
         score += 24;
       }
     }
+
+    debugPersonalDashboardLog("[identity-profile-gate]", {
+      profileId,
+      title: article?.title || "Untitled article",
+      source: article?.source || article?.feedTitle || "",
+      matchedRequiredTerms: hardContext.matchedRequiredTerms || [],
+      matchedContextTerms: hardContext.matchedContextTerms || [],
+      gatePassed: hardContext.matched,
+      penaltyApplied: !hardContext.matched ? hardContext.severePenalty : 0,
+      finalScore: Math.round(score),
+    });
 
     debugPersonalDashboardLog("[identity-semantic-profile]", {
       profileId,
