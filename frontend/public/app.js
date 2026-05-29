@@ -594,6 +594,152 @@ const IDENTITY_INTELLIGENCE_PROFILES = {
     authorityBoostSources: ["regula", "keesing", "biometric update", "security document world", "hid", "thales"],
   },
 };
+const IDENTITY_REQUIRED_CONTEXT_COMBOS = {
+  icao: [
+    ["icao", "passport"],
+    ["icao", "travel document"],
+    ["icao", "mrtd"],
+    ["icao", "emrtd"],
+    ["icao", "doc 9303"],
+    ["icao", "mrz"],
+    ["icao", "pkd"],
+    ["icao", "dtc"],
+    ["icao", "digital travel credential"],
+    ["icao", "border interoperability"],
+    ["mrz", "passport"],
+    ["mrz", "travel document"],
+    ["doc 9303"],
+    ["mrtd"],
+    ["emrtd"],
+    ["digital travel credential"],
+    ["passport chip", "standard"],
+    ["lds", "passport"],
+    ["pki", "passport"],
+    ["chip authentication", "passport"],
+  ],
+  border_control: [
+    ["border", "biometric"],
+    ["border", "egate"],
+    ["border", "e-gate"],
+    ["border", "automated"],
+    ["border", "document verification"],
+    ["border", "passport verification"],
+    ["border", "facial recognition"],
+    ["border", "ees"],
+    ["border", "etias"],
+    ["border", "frontex"],
+    ["border", "cbp"],
+    ["border", "traveler verification"],
+    ["passport control", "egate"],
+    ["passport control", "e-gate"],
+    ["passport control", "biometric"],
+    ["passport control", "automated"],
+    ["passport control", "mobile passport control"],
+    ["entry/exit system"],
+    ["entry exit system"],
+    ["automated border control"],
+    ["abc gates"],
+    ["abc gate"],
+    ["biometric corridor"],
+    ["document inspection system"],
+    ["border kiosk"],
+  ],
+  residence_permits: [
+    ["residence permit"],
+    ["residence card"],
+    ["resident card"],
+    ["biometric residence permit"],
+    ["permit card"],
+    ["immigration card"],
+    ["foreign resident card"],
+    ["residence document"],
+    ["permit issuance"],
+    ["permit renewal"],
+    ["permit verification"],
+    ["permit authentication"],
+    ["digital residence permit"],
+    ["secure residence permit"],
+    ["residence permit fraud"],
+    ["long-term residence permit"],
+    ["long term residence permit"],
+    ["temporary residence permit"],
+    ["permanent residence permit"],
+  ],
+};
+const IDENTITY_REQUIRED_CONTEXT_STRICT_PENALTIES = {
+  icao: 800,
+  border_control: 600,
+  residence_permits: 700,
+};
+const IDENTITY_BORDER_CONTROL_TRAVEL_NOISE_TERMS = [
+  "airport queue",
+  "airport queues",
+  "missed flight",
+  "ryanair",
+  "passengers waited",
+  "travel advice",
+  "customs wait times",
+  "holiday delays",
+  "passenger complaints",
+  "airport chaos",
+  "family stranded",
+  "flight took off without them",
+  "airport operational chaos",
+  "travel disruption",
+  "flight disruption",
+];
+const IDENTITY_BORDER_CONTROL_TECH_TERMS = [
+  "biometric",
+  "egate",
+  "e-gate",
+  "automated",
+  "document verification",
+  "passport verification",
+  "facial recognition",
+  "ees",
+  "etias",
+  "frontex",
+  "cbp",
+  "traveler verification",
+  "mobile passport control",
+  "document inspection",
+  "border kiosk",
+  "abc gates",
+  "abc gate",
+];
+const IDENTITY_PASSPORT_LIGHT_NOISE_TERMS = [
+  "passport fair",
+  "passport fairs",
+  "travel lifestyle",
+  "most beautiful passports",
+  "passport rankings",
+  "travel freedom rankings",
+  "strongest passports",
+  "most powerful passports",
+];
+const IDENTITY_PASSPORT_ANCHOR_TERMS = [
+  "biometric",
+  "rollout",
+  "issuance",
+  "personalization",
+  "security",
+  "verification",
+  "icao",
+  "epassport",
+  "e-passport",
+  "chip",
+  "fraud",
+];
+const IDENTITY_VISA_SPAM_TERMS = [
+  "vacation guide",
+  "travel blog",
+  "cheap flights",
+  "tourist attractions",
+  "hotel deals",
+  "backpacking guide",
+  "tour package",
+  "holiday ideas",
+];
 const BANKNOTE_SOURCE_AUTHORITY = {
   veryHigh: [
     "banknotenews",
@@ -2803,6 +2949,13 @@ function computePersonalInterestBoost(article, interestId) {
       const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests();
       const selectedSubinterest = selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : "";
       const genericDmvNoise = isGenericDmvNoise(article);
+      const requiredContext = selectedSubinterest ? hasRequiredContextCombo(article, selectedSubinterest) : { matched: false, matchedCombos: [] };
+      const hardPenaltyBase = selectedSubinterest ? Number(IDENTITY_REQUIRED_CONTEXT_STRICT_PENALTIES[selectedSubinterest] || 0) : 0;
+      const borderTravelNoise = hasIdentityTravelNoise(article, IDENTITY_BORDER_CONTROL_TRAVEL_NOISE_TERMS);
+      const borderTechContext = hasIdentityTravelNoise(article, IDENTITY_BORDER_CONTROL_TECH_TERMS);
+      const passportLifestyleNoise = hasIdentityTravelNoise(article, IDENTITY_PASSPORT_LIGHT_NOISE_TERMS);
+      const passportAnchorContext = hasIdentityTravelNoise(article, IDENTITY_PASSPORT_ANCHOR_TERMS);
+      const visaSpamNoise = hasIdentityTravelNoise(article, IDENTITY_VISA_SPAM_TERMS);
       const selectedIntent = selectedSubinterest
         ? (subinterestScore.intentByInterest?.[selectedSubinterest] || {
           score: 0,
@@ -2851,6 +3004,23 @@ function computePersonalInterestBoost(article, interestId) {
         if (selectedProfile.rejectionReasons.includes("missing_required_context")) {
           score -= 140;
         }
+      }
+      let hardPenaltyApplied = 0;
+      if (hardPenaltyBase && !requiredContext.matched) {
+        score -= hardPenaltyBase;
+        hardPenaltyApplied += hardPenaltyBase;
+      }
+      if (selectedSubinterest === "border_control" && borderTravelNoise && !borderTechContext) {
+        score -= 900;
+        hardPenaltyApplied += 900;
+      }
+      if (selectedSubinterest === "passports" && passportLifestyleNoise && !passportAnchorContext) {
+        score -= 260;
+        hardPenaltyApplied += 260;
+      }
+      if (selectedSubinterest === "visas" && visaSpamNoise) {
+        score -= 260;
+        hardPenaltyApplied += 260;
       }
 
       if (interestId === "passports") {
@@ -2924,6 +3094,16 @@ function computePersonalInterestBoost(article, interestId) {
           profileRejectionReasons: selectedProfile?.rejectionReasons || [],
           finalScore: Math.round(score),
           title: article?.title || "Untitled article",
+        });
+        debugPersonalDashboardLog("[identity-required-context]", {
+          selectedSubinterest,
+          requiredContextMatched: requiredContext.matched,
+          matchedCombos: requiredContext.matchedCombos,
+          hardPenaltyApplied,
+          travelNoiseDetected: selectedSubinterest === "border_control" ? borderTravelNoise : subinterestScore.travelNoiseArticle,
+          finalScore: Math.round(score),
+          title: article?.title || "Untitled article",
+          source: article?.source || article?.feedTitle || "",
         });
       }
     }
@@ -3630,6 +3810,49 @@ function calculateIdentityProfileScore(article, profileId) {
       rejectionReasons,
     };
   });
+}
+
+function hasRequiredContextCombo(article, profileId) {
+  return getCachedArticleValue(article, `identityRequiredContext:${profileId}`, () => {
+    const combos = Array.isArray(IDENTITY_REQUIRED_CONTEXT_COMBOS[profileId])
+      ? IDENTITY_REQUIRED_CONTEXT_COMBOS[profileId]
+      : [];
+    const context = getPersonalBoostContext(article);
+    const haystack = [
+      context.titleText,
+      context.tagText,
+      context.metadataText,
+      context.bodyText,
+      context.sourceText,
+      context.domainText,
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    const matchedCombos = combos
+      .filter((combo) => Array.isArray(combo) && combo.every((term) => textMatchesKeyword(haystack, term)))
+      .map((combo) => combo.join(" + "));
+
+    return {
+      matched: matchedCombos.length > 0,
+      matchedCombos,
+    };
+  });
+}
+
+function hasIdentityTravelNoise(article, terms = []) {
+  const context = getPersonalBoostContext(article);
+  const haystack = [
+    context.titleText,
+    context.tagText,
+    context.metadataText,
+    context.bodyText,
+    context.sourceText,
+    context.domainText,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return normalizeKeywordList(terms).some((term) => textMatchesKeyword(haystack, term));
 }
 
 function getIdentityDocumentSubinterestScore(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
@@ -4351,6 +4574,13 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(normalizedInterests);
         const selectedSubinterest = selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : "";
         const genericDmvNoise = isGenericDmvNoise(article);
+        const requiredContext = selectedSubinterest ? hasRequiredContextCombo(article, selectedSubinterest) : { matched: false, matchedCombos: [] };
+        const hardPenaltyBase = selectedSubinterest ? Number(IDENTITY_REQUIRED_CONTEXT_STRICT_PENALTIES[selectedSubinterest] || 0) : 0;
+        const borderTravelNoise = hasIdentityTravelNoise(article, IDENTITY_BORDER_CONTROL_TRAVEL_NOISE_TERMS);
+        const borderTechContext = hasIdentityTravelNoise(article, IDENTITY_BORDER_CONTROL_TECH_TERMS);
+        const passportLifestyleNoise = hasIdentityTravelNoise(article, IDENTITY_PASSPORT_LIGHT_NOISE_TERMS);
+        const passportAnchorContext = hasIdentityTravelNoise(article, IDENTITY_PASSPORT_ANCHOR_TERMS);
+        const visaSpamNoise = hasIdentityTravelNoise(article, IDENTITY_VISA_SPAM_TERMS);
         const selectedIntent = selectedSubinterest
           ? (identitySubinterest.intentByInterest?.[selectedSubinterest] || {
             score: 0,
@@ -4414,6 +4644,18 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
           if (selectedProfile.rejectionReasons.includes("missing_required_context")) {
             score -= 160;
           }
+        }
+        if (hardPenaltyBase && !requiredContext.matched) {
+          score -= hardPenaltyBase;
+        }
+        if (selectedSubinterest === "border_control" && borderTravelNoise && !borderTechContext) {
+          score -= 900;
+        }
+        if (selectedSubinterest === "passports" && passportLifestyleNoise && !passportAnchorContext) {
+          score -= 260;
+        }
+        if (selectedSubinterest === "visas" && visaSpamNoise) {
+          score -= 260;
         }
         if (selectedSubinterest === "passports") {
           score += Math.min(135, Math.round((identitySignals.passportHits * 0.45) + (identitySignals.icaoHits * 0.45) + (selectedIntent.score * 1.1)));
