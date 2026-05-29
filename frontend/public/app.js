@@ -2979,6 +2979,9 @@ function computePersonalInterestBoost(article, interestId) {
       if (banknoteNoise.weakTrumpDebate) {
         score -= 180;
       }
+      if (isBanknoteSocialSource(article)) {
+        score = Math.min(score, 42);
+      }
       if (banknoteNoise.contaminated) {
         score -= 420;
       }
@@ -3317,6 +3320,22 @@ function isBanknotesOnlyPersonalSelection(selectedInterests = normalizePersonalD
 function isBanknoteAuthoritySource(article) {
   return getCachedArticleValue(article, "isBanknoteAuthoritySource", () => {
     return getBanknoteSourceAuthority(article).level === "very_high";
+  });
+}
+
+function isBanknoteSocialSource(article) {
+  return getCachedArticleValue(article, "isBanknoteSocialSource", () => {
+    const context = getPersonalBoostContext(article);
+    const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
+    return [
+      "reddit",
+      "facebook",
+      "instagram",
+      "tiktok",
+      "x.com",
+      "twitter",
+      "linkedin",
+    ].some((value) => textMatchesKeyword(sourceFingerprint, value));
   });
 }
 
@@ -4356,6 +4375,7 @@ function getBanknoteNoiseAssessment(article) {
       "stocks",
       "bonds",
       "forex",
+      "exchange rate",
       "market tensions",
       "financial market",
       "stock market",
@@ -4364,6 +4384,14 @@ function getBanknoteNoiseAssessment(article) {
       "inflation report",
       "investors on edge",
       "bond market",
+      "economy",
+      "gdp",
+      "unemployment",
+      "banking sector",
+      "fintech funding",
+      "political debate",
+      "political row",
+      "political clash",
       "coin values",
       "value your coins",
       "coin valuation",
@@ -4756,6 +4784,9 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         score -= Math.min(320, Math.round(banknoteNoise.totalNoiseHits * 3.2));
         if (banknoteNoise.weakTrumpDebate) {
           score -= 240;
+        }
+        if (isBanknoteSocialSource(article)) {
+          score = Math.min(score, 60);
         }
         if (banknoteNoise.contaminated) {
           score -= 520;
@@ -5174,6 +5205,10 @@ function getPersonalLaneRenderPlan(articles) {
 }
 
 function getPersonalDashboardSortMode() {
+  const selectedMainDomains = getSelectedMainDomains();
+  if (selectedMainDomains.length === 1 && selectedMainDomains[0] === "banknotes") {
+    return "relevance";
+  }
   return DEFAULT_PERSONAL_DASHBOARD_SORT;
 }
 
@@ -5202,6 +5237,27 @@ function comparePersonalDashboardArticlesByNewest(left, right) {
   return String(left?.title || "").localeCompare(String(right?.title || ""));
 }
 
+function comparePersonalDashboardArticlesByRelevance(left, right) {
+  const rightScore = calculatePersonalDomainScore(right).domainScore;
+  const leftScore = calculatePersonalDomainScore(left).domainScore;
+  if (rightScore !== leftScore) {
+    return rightScore - leftScore;
+  }
+
+  const leftTimestamp = getArticlePublishedTimestamp(left);
+  const rightTimestamp = getArticlePublishedTimestamp(right);
+  if (leftTimestamp !== rightTimestamp) {
+    return rightTimestamp - leftTimestamp;
+  }
+
+  const relevanceOrder = compareArticlesForDisplay(left, right);
+  if (relevanceOrder !== 0) {
+    return relevanceOrder;
+  }
+
+  return String(left?.title || "").localeCompare(String(right?.title || ""));
+}
+
 function sortPersonalDashboardResults(articles, options = {}) {
   if (!Array.isArray(articles) || !articles.length) {
     return Array.isArray(articles) ? articles : [];
@@ -5209,6 +5265,9 @@ function sortPersonalDashboardResults(articles, options = {}) {
 
   const sortMode = options.sortMode || getPersonalDashboardSortMode();
   const sortedArticles = articles.slice().sort((left, right) => {
+    if (sortMode === "relevance") {
+      return comparePersonalDashboardArticlesByRelevance(left, right);
+    }
     if (sortMode === "newest") {
       return comparePersonalDashboardArticlesByNewest(left, right);
     }
@@ -12298,12 +12357,18 @@ const BANKNOTE_INTELLIGENCE_NEGATIVE_SIGNALS = {
   ],
   genericFinance: [
     "forex",
+    "exchange rate",
     "bonds",
     "bond market",
     "stock market",
     "investors on edge",
     "inflation report",
     "currency markets",
+    "economy",
+    "gdp",
+    "unemployment",
+    "banking sector",
+    "fintech funding",
     "stock markets",
     "trade negotiations",
     "grain deals",
@@ -12325,9 +12390,13 @@ const BANKNOTE_INTELLIGENCE_NEGATIVE_SIGNALS = {
     "hi-res stock",
     "discount code",
     "marketplace",
+    "auction",
     "gambling",
     "casino",
     "betting",
+    "political debate",
+    "political row",
+    "political clash",
     "linkedin",
     "market spam",
     "ai-generated market report",
@@ -12359,6 +12428,7 @@ const BANKNOTE_INTELLIGENCE_HARD_REJECT_SIGNALS = [
   "stock photography",
   "for sale",
   "discount code",
+  "auction",
   "collector listing",
   "grading post",
   "reddit collector",
@@ -12371,9 +12441,16 @@ const BANKNOTE_INTELLIGENCE_HARD_REJECT_SIGNALS = [
   "casino",
   "betting",
   "forex",
+  "exchange rate",
   "bonds",
   "stock market",
   "inflation report",
+  "economy",
+  "gdp",
+  "unemployment",
+  "banking sector",
+  "fintech funding",
+  "political debate",
   "generic finance news",
   "trade negotiations",
   "geopolitics",
