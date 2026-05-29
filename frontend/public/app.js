@@ -4986,8 +4986,6 @@ function getPersonalLaneRenderPlan(articles) {
   };
 }
 
-const PERSONAL_DASHBOARD_RELEVANCE_TIE_WINDOW_MS = 24 * 60 * 60 * 1000;
-
 function getPersonalDashboardSortMode() {
   return DEFAULT_PERSONAL_DASHBOARD_SORT;
 }
@@ -5001,12 +4999,7 @@ function comparePersonalDashboardArticlesByNewest(left, right) {
   const leftTimestamp = getArticlePublishedTimestamp(left);
   const rightTimestamp = getArticlePublishedTimestamp(right);
 
-  if (leftTimestamp && rightTimestamp) {
-    const timestampDelta = Math.abs(rightTimestamp - leftTimestamp);
-    if (timestampDelta > PERSONAL_DASHBOARD_RELEVANCE_TIE_WINDOW_MS) {
-      return rightTimestamp - leftTimestamp;
-    }
-  } else if (leftTimestamp || rightTimestamp) {
+  if (leftTimestamp !== rightTimestamp) {
     return rightTimestamp - leftTimestamp;
   }
 
@@ -5022,7 +5015,7 @@ function comparePersonalDashboardArticlesByNewest(left, right) {
   return String(left?.title || "").localeCompare(String(right?.title || ""));
 }
 
-function sortPersonalDashboardArticles(articles, options = {}) {
+function sortPersonalDashboardResults(articles, options = {}) {
   if (!Array.isArray(articles) || !articles.length) {
     return Array.isArray(articles) ? articles : [];
   }
@@ -5037,11 +5030,12 @@ function sortPersonalDashboardArticles(articles, options = {}) {
 
   if (DEBUG_PERSONAL_DASHBOARD) {
     const firstArticle = sortedArticles[0] || null;
+    const lastArticle = sortedArticles[sortedArticles.length - 1] || null;
     debugPersonalDashboardLog("[personal-dashboard-sort]", {
       sortMode,
-      firstArticleTitle: firstArticle?.title || "",
-      firstArticleDate: firstArticle?.pubDate || "",
-      totalSorted: sortedArticles.length,
+      firstDate: firstArticle?.pubDate || "",
+      lastDate: lastArticle?.pubDate || "",
+      totalArticles: sortedArticles.length,
     });
   }
 
@@ -5054,7 +5048,7 @@ function sortArticlesForCurrentDashboardMode(articles, options = {}) {
   }
 
   return hasPersonalDashboardSelections()
-    ? sortPersonalDashboardArticles(articles, options)
+    ? sortPersonalDashboardResults(articles, options)
     : articles.slice().sort(compareArticlesForDisplay);
 }
 
