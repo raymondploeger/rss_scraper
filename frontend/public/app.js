@@ -2438,6 +2438,8 @@ function setPersonalDashboardInterest(interestId, enabled) {
   }
 
   state.personalDashboard.interests = Array.from(nextInterests);
+  ensurePaginationState();
+  state.pagination.page = 1;
   savePersonalDashboardPreferences();
   renderPersonalDashboard();
   clearFeedRenderCaches();
@@ -2951,6 +2953,15 @@ function computePersonalInterestBoost(article, interestId) {
       context.sourceText.includes(specialistSource) || context.domainText.includes(specialistSource)
     )) {
       score += groupId === "banknote_intelligence" ? 18 : 10;
+    }
+
+    if (groupId === "banknote_intelligence") {
+      const banknoteNoise = getBanknoteNoiseAssessment(article);
+      score += Math.min(90, Math.round(banknoteNoise.positiveHits * 0.75));
+      score -= Math.min(260, Math.round(banknoteNoise.totalNoiseHits * 2.4));
+      if (banknoteNoise.contaminated) {
+        score -= 420;
+      }
     }
 
     if (groupId === "identity_documents") {
@@ -4254,6 +4265,112 @@ function getBanknoteInterestSignals(article) {
   });
 }
 
+function getBanknoteNoiseAssessment(article) {
+  return getCachedArticleValue(article, "banknoteNoiseAssessment", () => {
+    const context = getPersonalBoostContext(article);
+    const weightedHits = (terms = []) =>
+      (countBoostKeywordMatches(context.titleText, terms) * 5) +
+      (countBoostKeywordMatches(context.tagText, terms) * 2) +
+      (countBoostKeywordMatches(context.metadataText, terms) * 2) +
+      countBoostKeywordMatches(context.bodyText, terms);
+
+    const strongPositiveTerms = [
+      "banknotenews",
+      "central bank",
+      "reserve bank",
+      "national bank",
+      "monetary authority",
+      "new note",
+      "new banknote",
+      "polymer banknote",
+      "commemorative note",
+      "security thread",
+      "watermark",
+      "anti-counterfeit",
+      "counterfeit banknote",
+      "withdrawal",
+      "redesign",
+      "denomination",
+      "currency issue",
+      "currency issuance",
+      "banknote printer",
+      "de la rue",
+      "g+d",
+      "giesecke+devrient",
+      "crane currency",
+      "oberthur",
+      "security printing",
+    ];
+    const socialMarketplaceNoiseTerms = [
+      "marketplace",
+      "for sale",
+      "discount code",
+      "collectible promotion",
+      "tiktok",
+      "instagram",
+      "reddit",
+      "facebook",
+      "old banknotes for sale",
+      "album of old banknotes",
+      "ebay",
+      "etsy",
+      "facebook marketplace",
+    ];
+    const marketFinanceNoiseTerms = [
+      "lottery",
+      "gambling",
+      "casino",
+      "betting",
+      "money laundering",
+      "stocks",
+      "bonds",
+      "forex",
+      "market tensions",
+      "financial market",
+      "stock market",
+      "currency markets",
+      "foreign exchange",
+      "coin values",
+      "value your coins",
+      "coin valuation",
+    ];
+    const stockPhotoNoiseTerms = [
+      "stock photography",
+      "hi-res stock",
+      "stock photo",
+      "alamy",
+      "freepik",
+      "shutterstock",
+      "getty images",
+    ];
+
+    const positiveHits = weightedHits(strongPositiveTerms);
+    const socialMarketplaceNoiseHits = weightedHits(socialMarketplaceNoiseTerms);
+    const marketFinanceNoiseHits = weightedHits(marketFinanceNoiseTerms);
+    const stockPhotoNoiseHits = weightedHits(stockPhotoNoiseTerms);
+    const totalNoiseHits = socialMarketplaceNoiseHits + marketFinanceNoiseHits + stockPhotoNoiseHits;
+    const isAuthoritySource = isBanknoteAuthoritySource(article);
+
+    const contaminated =
+      !isAuthoritySource
+      && (
+        (socialMarketplaceNoiseHits >= 5 && positiveHits < 10)
+        || (stockPhotoNoiseHits >= 5 && positiveHits < 10)
+        || (marketFinanceNoiseHits >= 8 && positiveHits < 12)
+        || (totalNoiseHits >= 10 && positiveHits < 12)
+      );
+
+    return {
+      positiveHits,
+      totalNoiseHits,
+      socialMarketplaceNoiseHits,
+      marketFinanceNoiseHits,
+      stockPhotoNoiseHits,
+      contaminated,
+    };
+  });
+}
+
 function getArticleDominantDomain(article) {
   return getCachedArticleValue(article, "personalDominantDomain", () => {
     const context = getPersonalBoostContext(article);
@@ -4328,6 +4445,11 @@ function isBanknoteContaminated(article) {
   return getCachedArticleValue(article, "isBanknoteContaminated", () => {
     if (isBanknotePrimary(article) || isBanknoteAdjacent(article)) {
       return false;
+    }
+
+    const noiseAssessment = getBanknoteNoiseAssessment(article);
+    if (noiseAssessment.contaminated) {
+      return true;
     }
 
     const context = getPersonalBoostContext(article);
@@ -4550,6 +4672,7 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
 
       if (groupId === "banknote_intelligence") {
         const banknoteAuthority = getBanknoteSourceAuthority(article);
+        const banknoteNoise = getBanknoteNoiseAssessment(article);
         if (specialistSourceMatch) {
           score += 300;
         }
@@ -4572,6 +4695,11 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         }
         if (countBoostKeywordMatches(`${context.titleText} ${context.tagText} ${context.metadataText}`, ["banknote", "banknotes", "currency", "cash", "note", "central bank", "circulation", "mint"]) >= 2) {
           score += 55;
+        }
+        score += Math.min(120, Math.round(banknoteNoise.positiveHits * 0.9));
+        score -= Math.min(320, Math.round(banknoteNoise.totalNoiseHits * 3.2));
+        if (banknoteNoise.contaminated) {
+          score -= 520;
         }
         score -= countBoostKeywordMatches(
           `${context.titleText} ${context.tagText} ${context.metadataText}`,
@@ -14569,6 +14697,10 @@ function getPaginationContextKey() {
     filters: state.filters,
     analyticsScope: state.analyticsScope,
     analyticsQualityFilter: state.analyticsQualityFilter,
+    personalDashboardInterests: Array.isArray(state.personalDashboard?.interests)
+      ? state.personalDashboard.interests.slice().sort()
+      : [],
+    personalDashboardMode: normalizePersonalDashboardMode(state.personalDashboard?.mode),
   });
 }
 
@@ -14606,6 +14738,18 @@ function getPaginatedItems(items) {
 
   const startIndex = totalCount ? (currentPage - 1) * pageSize : 0;
   const endIndex = Math.min(startIndex + pageSize, totalCount);
+
+  if (DEBUG_PERSONAL_DASHBOARD && hasPersonalDashboardSelections()) {
+    debugPersonalDashboardLog("[personal-dashboard-pagination]", {
+      currentPage,
+      totalPages,
+      totalFiltered: totalCount,
+      pageSize,
+      startIndex,
+      endIndex,
+      selectedInterests: normalizePersonalDashboardInterests(state.personalDashboard.interests),
+    });
+  }
 
   return {
     items: Array.isArray(items) ? items.slice(startIndex, endIndex) : [],
@@ -15087,7 +15231,7 @@ function renderArticles() {
     syncFilterUx();
     updateArticleFilterContext(articles);
     const articlePagination = getPaginatedItems(articles);
-    if (useBackendQuery && Number(state.remoteQuery.totalCount) > articlePagination.totalCount) {
+    if (useBackendQuery && !hasPersonalDashboardSelections() && Number(state.remoteQuery.totalCount) > articlePagination.totalCount) {
       articlePagination.totalCount = Number(state.remoteQuery.totalCount);
       articlePagination.totalPages = Math.max(1, Math.ceil(articlePagination.totalCount / articlePagination.pageSize));
     }
