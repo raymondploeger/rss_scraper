@@ -5258,6 +5258,105 @@ function comparePersonalDashboardArticlesByRelevance(left, right) {
   return String(left?.title || "").localeCompare(String(right?.title || ""));
 }
 
+function getPersonalDashboardSourceKey(article) {
+  const context = getPersonalBoostContext(article);
+  return String(
+    article?.source
+    || article?.sourceName
+    || article?.feedTitle
+    || context.sourceText
+    || context.domainText
+    || "unknown-source"
+  )
+    .trim()
+    .toLowerCase();
+}
+
+function getSourceDiversificationPenalty(sourceKey, consecutiveCount) {
+  if (!sourceKey) {
+    return 0;
+  }
+  if (consecutiveCount >= 5) {
+    return 120;
+  }
+  if (consecutiveCount >= 3) {
+    return 45;
+  }
+  return 0;
+}
+
+function diversifyPersonalDashboardResults(sortedArticles) {
+  if (!Array.isArray(sortedArticles) || sortedArticles.length <= 3) {
+    return Array.isArray(sortedArticles) ? sortedArticles : [];
+  }
+
+  const remaining = sortedArticles.map((article, index) => ({
+    article,
+    originalRank: index + 1,
+    sourceKey: getPersonalDashboardSourceKey(article),
+  }));
+  const diversified = [];
+  const debugMoves = [];
+  const MAX_LOOKAHEAD = 10;
+
+  while (remaining.length) {
+    const lastSourceKey = diversified.length ? diversified[diversified.length - 1].sourceKey : "";
+    let consecutiveCount = 0;
+    for (let index = diversified.length - 1; index >= 0; index -= 1) {
+      if (diversified[index].sourceKey !== lastSourceKey) {
+        break;
+      }
+      consecutiveCount += 1;
+    }
+
+    let bestIndex = 0;
+    let bestCost = Number.POSITIVE_INFINITY;
+    let bestPenalty = 0;
+    const searchLimit = Math.min(MAX_LOOKAHEAD, remaining.length);
+
+    for (let index = 0; index < searchLimit; index += 1) {
+      const candidate = remaining[index];
+      const nextConsecutiveCount =
+        candidate.sourceKey && candidate.sourceKey === lastSourceKey
+          ? consecutiveCount + 1
+          : 1;
+      const diversificationPenalty = getSourceDiversificationPenalty(
+        candidate.sourceKey,
+        nextConsecutiveCount
+      );
+      const rankDriftPenalty = index * 12;
+      const candidateCost = diversificationPenalty + rankDriftPenalty;
+
+      if (candidateCost < bestCost) {
+        bestCost = candidateCost;
+        bestIndex = index;
+        bestPenalty = diversificationPenalty;
+      }
+    }
+
+    const [selected] = remaining.splice(bestIndex, 1);
+    diversified.push(selected);
+
+    if (
+      DEBUG_PERSONAL_DASHBOARD
+      && (bestPenalty > 0 || selected.originalRank !== diversified.length)
+    ) {
+      debugMoves.push({
+        source: selected.article?.source || selected.article?.feedTitle || "Unknown source",
+        originalRank: selected.originalRank,
+        diversifiedRank: diversified.length,
+        diversificationPenalty: bestPenalty,
+      });
+    }
+  }
+
+  if (DEBUG_PERSONAL_DASHBOARD && debugMoves.length) {
+    debugPersonalDashboardLog("[source-diversification]", debugMoves);
+  }
+
+  return diversified.map((entry) => entry.article);
+}
+
 function sortPersonalDashboardResults(articles, options = {}) {
   if (!Array.isArray(articles) || !articles.length) {
     return Array.isArray(articles) ? articles : [];
@@ -5273,19 +5372,20 @@ function sortPersonalDashboardResults(articles, options = {}) {
     }
     return compareArticlesForDisplay(left, right);
   });
+  const diversifiedArticles = diversifyPersonalDashboardResults(sortedArticles);
 
   if (DEBUG_PERSONAL_DASHBOARD) {
-    const firstArticle = sortedArticles[0] || null;
-    const lastArticle = sortedArticles[sortedArticles.length - 1] || null;
+    const firstArticle = diversifiedArticles[0] || null;
+    const lastArticle = diversifiedArticles[diversifiedArticles.length - 1] || null;
     debugPersonalDashboardLog("[personal-dashboard-sort]", {
       sortMode,
       firstDate: firstArticle?.pubDate || "",
       lastDate: lastArticle?.pubDate || "",
-      totalArticles: sortedArticles.length,
+      totalArticles: diversifiedArticles.length,
     });
   }
 
-  return sortedArticles;
+  return diversifiedArticles;
 }
 
 function sortArticlesForCurrentDashboardMode(articles, options = {}) {
