@@ -2707,6 +2707,131 @@ function getSelectedIdentityDocumentSubinterests(selectedInterests = normalizePe
     .filter((interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "identity_documents");
 }
 
+// Identity Documents retrieval should start from secure-document intent, not generic travel/passport mentions.
+const IDENTITY_DOCUMENT_RETRIEVAL_EXCLUSION_TERMS = [
+  "agritourism passport",
+  "food passport",
+  "food & drink passport",
+  "digital product passport",
+  "product passport",
+  "passport rankings",
+  "travel rankings",
+  "vacation",
+  "holiday",
+  "cruise",
+  "tourism",
+  "travel guide",
+  "passport to paradise",
+  "passport to leadership",
+  "sports passport",
+  "travel passport",
+  "passport adventure",
+  "passport program",
+  "beach holiday",
+  "luxury travel",
+];
+const IDENTITY_DOCUMENT_RETRIEVAL_SECURE_ANCHORS = [
+  "issuance",
+  "renewal",
+  "application",
+  "biometric",
+  "icao",
+  "doc 9303",
+  "chip",
+  "rfid",
+  "nfc",
+  "verification",
+  "authentication",
+  "fraud",
+  "counterfeit",
+  "inspection",
+  "border control",
+  "secure document",
+  "passport office",
+  "consular service",
+  "passport authority",
+  "polycarbonate",
+  "laminate",
+  "security feature",
+  "security printing",
+  "hologram",
+  "kinegram",
+  "micro optics",
+  "intaglio",
+  "guilloche",
+  "laser engraving",
+  "document security",
+  "passport production",
+  "passport manufacturing",
+  "booklet production",
+  "residence permit",
+  "resident card",
+  "immigration card",
+  "permit issuance",
+  "visa issuance",
+  "evisa",
+  "digital visa",
+  "mrtd",
+  "emrtd",
+  "mrz",
+  "pkd",
+  "lds",
+  "pace",
+  "bac",
+  "sac",
+  "dtc",
+  "digital travel credential",
+  "entry/exit system",
+  "ees",
+  "etias",
+  "egate",
+  "e-gate",
+  "abc gate",
+  "document inspection",
+  "immigration control",
+  "automated border control",
+];
+
+function shouldExcludeIdentityDocumentsRetrievalCandidate(
+  article,
+  selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)
+) {
+  const selectedIdentitySubinterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
+  const selectedSet = new Set(selectedIdentitySubinterests);
+  const context = getPersonalBoostContext(article);
+  const haystack = [
+    context.titleText,
+    context.tagText,
+    context.metadataText,
+    context.bodyText,
+    context.sourceText,
+    context.domainText,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const hasExcludedTheme = IDENTITY_DOCUMENT_RETRIEVAL_EXCLUSION_TERMS.some((term) => textMatchesKeyword(haystack, term));
+  if (!hasExcludedTheme) {
+    return false;
+  }
+
+  const secureAnchorTerms = selectedSet.has("visas")
+    ? IDENTITY_DOCUMENT_RETRIEVAL_SECURE_ANCHORS.concat([
+      "visa issuance",
+      "visa processing",
+      "consular system",
+      "immigration system",
+      "visa verification",
+      "travel authorization",
+      "visa waiver",
+      "visa exemption",
+    ])
+    : IDENTITY_DOCUMENT_RETRIEVAL_SECURE_ANCHORS;
+
+  const hasSecureAnchor = secureAnchorTerms.some((term) => textMatchesKeyword(haystack, term));
+  return !hasSecureAnchor;
+}
+
 function getPersonalDashboardBackendDomainPlan() {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const selectedMainDomains = getSelectedMainDomains(selectedInterests);
@@ -2739,26 +2864,24 @@ function getPersonalDashboardBackendDomainPlan() {
   if (selectedMainDomains.length === 1 && selectedMainDomains[0] === "identity_documents") {
     const selectedIdentitySubinterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
     const identitySearches = new Set(selectedIdentitySubinterests.length === 1 ? [] : [
-      "passport",
-      "passports",
-      "identity card",
-      "id card",
-      "residence permit",
-      "visa",
-      "driver license",
-      "driving licence",
-      "travel document",
-      "secure document",
-      "document issuance",
       "passport issuance",
-      "passport personalization",
-      "polycarbonate",
-      "laminate",
+      "biometric passport",
+      "passport verification",
+      "passport security",
+      "residence permit card",
+      "biometric residence permit",
+      "visa issuance",
+      "evisa",
+      "secure document",
       "document security",
-      "border control",
+      "polycarbonate",
       "icao",
+      "doc 9303",
       "mrtd",
       "emrtd",
+      "border control",
+      "document inspection",
+      "automated border control",
     ]);
 
     const addTerms = (terms = []) => {
@@ -2769,23 +2892,38 @@ function getPersonalDashboardBackendDomainPlan() {
       const selectedSubinterest = selectedIdentitySubinterests[0];
       if (selectedSubinterest === "passports") {
         addTerms([
-          "passport",
-          "passports",
-          "biometric passport",
-          "electronic passport",
-          "emrtd",
-          "mrtd",
-          "passport rollout",
           "passport issuance",
-          "passport security",
+          "passport renewal",
+          "biometric passport",
+          "epassport",
+          "e-passport",
+          "machine readable travel document",
+          "mrtd",
+          "emrtd",
+          "passport chip",
           "passport personalization",
-          "passport procurement",
+          "passport personalisation",
           "passport verification",
-          "icao compliance",
-          "document authentication",
-          "chip authentication",
-          "secure passport",
-          "border interoperability",
+          "passport authentication",
+          "passport fraud",
+          "passport office",
+          "consular service",
+          "passport authority",
+          "passport polycarbonate",
+          "passport laminate",
+          "passport security features",
+          "passport security printing",
+          "passport hologram",
+          "passport holography",
+          "passport ovd",
+          "passport kinegram",
+          "passport micro optics",
+          "passport intaglio",
+          "passport guilloche",
+          "passport laser engraving",
+          "secure passport document",
+          "passport production",
+          "passport manufacturing",
         ]);
       } else if (selectedSubinterest === "id_cards") {
         addTerms([
@@ -2800,19 +2938,21 @@ function getPersonalDashboardBackendDomainPlan() {
       } else if (selectedSubinterest === "residence_permits") {
         addTerms([
           "residence permit",
+          "residence permit card",
+          "biometric residence permit",
           "residence card",
-          "permit card",
-          "immigration residence document",
-          "residence permit issuance",
-          "residence permit card security",
-          "biometric permit",
-          "permit personalization",
-          "permit procurement",
+          "resident card",
           "foreign resident card",
-          "secure permit document",
-          "digital permit system",
+          "immigration card",
+          "residence document",
+          "immigration document",
+          "permit issuance",
+          "permit renewal",
+          "permit production",
+          "permit personalization",
+          "permit personalisation",
           "permit verification",
-          "permit authentication",
+          "residence permit security features",
         ]);
       } else if (selectedSubinterest === "drivers_licenses") {
         addTerms([
@@ -2828,14 +2968,17 @@ function getPersonalDashboardBackendDomainPlan() {
         ]);
       } else if (selectedSubinterest === "visas") {
         addTerms([
-          "visa",
-          "visas",
-          "visa document",
-          "visa sticker",
           "evisa",
+          "digital visa",
           "electronic visa",
           "visa issuance",
-          "visa security",
+          "visa processing",
+          "consular systems",
+          "immigration systems",
+          "visa verification",
+          "travel authorization",
+          "visa waiver",
+          "visa exemption",
         ]);
       } else if (selectedSubinterest === "polycarbonate") {
         addTerms([
@@ -2864,120 +3007,177 @@ function getPersonalDashboardBackendDomainPlan() {
           "doc 9303",
           "mrtd",
           "emrtd",
+          "epassport",
+          "e-passport",
+          "pkd",
+          "lds",
+          "pace",
+          "bac",
+          "sac",
+          "active authentication",
+          "chip authentication",
+          "dtc",
+          "digital travel credential",
           "mrz",
-          "travel document standards",
         ]);
       } else if (selectedSubinterest === "border_control") {
         addTerms([
           "border control",
           "passport control",
-          "document inspection",
-          "document verification",
-          "e-gates",
-          "border verification",
+          "egate",
+          "e-gate",
+          "abc gate",
           "automated border control",
+          "immigration control",
+          "entry/exit system",
           "ees",
           "etias",
-          "frontex",
           "cbp",
-          "traveler verification",
+          "frontex",
+          "document inspection",
+          "border inspection",
+          "mobile passport control",
+          "mpc",
+          "biometric border",
           "facial recognition",
-          "abc systems",
         ]);
       } else if (selectedSubinterest === "issuance") {
         addTerms([
           "document issuance",
           "passport issuance",
-          "identity card issuance",
-          "residence permit issuance",
-          "visa issuance",
+          "passport renewal",
           "secure issuance",
-          "issuance modernization",
-          "enrollment system",
+          "issuance system",
+          "identity infrastructure",
         ]);
       } else if (selectedSubinterest === "laminate") {
         addTerms([
-          "laminate",
-          "security laminate",
-          "laminated document",
           "passport laminate",
-          "id laminate",
+          "laminated document",
+          "security laminate",
+          "document laminate",
         ]);
       }
     }
 
     if (hasInterest("passports")) {
-      identitySearches.add("passport");
-      identitySearches.add("travel document");
-      identitySearches.add("passport issuance");
+      addTerms([
+        "passport issuance",
+        "passport renewal",
+        "biometric passport",
+        "epassport",
+        "e-passport",
+        "passport verification",
+        "passport security",
+        "passport fraud",
+        "passport production",
+      ]);
     }
     if (hasInterest("id_cards")) {
-      identitySearches.add("identity card");
-      identitySearches.add("id card");
-      identitySearches.add("national id");
+      addTerms([
+        "identity card",
+        "id card",
+        "electronic identity card",
+        "card issuance",
+        "polycarbonate id",
+      ]);
     }
     if (hasInterest("residence_permits")) {
-      identitySearches.add("residence permit");
-      identitySearches.add("permit card");
+      addTerms([
+        "residence permit",
+        "residence permit card",
+        "biometric residence permit",
+        "resident card",
+        "permit issuance",
+        "permit renewal",
+        "immigration card",
+      ]);
     }
     if (hasInterest("drivers_licenses")) {
-      identitySearches.add("driver license");
-      identitySearches.add("driver's license");
-      identitySearches.add("driving licence");
+      addTerms([
+        "driver license",
+        "driver's license",
+        "driving licence",
+      ]);
     }
     if (hasInterest("visas")) {
-      identitySearches.add("visa");
-      identitySearches.add("visa policy");
+      addTerms([
+        "visa issuance",
+        "evisa",
+        "digital visa",
+        "visa processing",
+        "consular systems",
+        "immigration systems",
+      ]);
     }
     if (hasInterest("laminate")) {
-      identitySearches.add("laminate");
-      identitySearches.add("security laminate");
+      addTerms([
+        "passport laminate",
+        "security laminate",
+      ]);
     }
     if (hasInterest("polycarbonate")) {
-      identitySearches.add("polycarbonate");
-      identitySearches.add("pc datapage");
-      identitySearches.add("polycarbonate card");
+      addTerms([
+        "polycarbonate",
+        "polycarbonate card",
+        "passport datapage",
+      ]);
     }
     if (hasInterest("issuance")) {
-      identitySearches.add("document issuance");
-      identitySearches.add("passport issuance");
-      identitySearches.add("secure issuance");
+      addTerms([
+        "document issuance",
+        "passport issuance",
+        "secure issuance",
+      ]);
     }
     if (hasInterest("fraud")) {
-      identitySearches.add("document fraud");
-      identitySearches.add("forged document");
-      identitySearches.add("fake passport");
+      addTerms([
+        "document fraud",
+        "forged document",
+        "fake passport",
+      ]);
     }
     if (hasInterest("icao")) {
-      identitySearches.add("icao");
-      identitySearches.add("doc 9303");
-      identitySearches.add("mrz");
-      identitySearches.add("emrtd");
+      addTerms([
+        "icao",
+        "doc 9303",
+        "mrz",
+        "emrtd",
+        "pkd",
+        "lds",
+        "dtc",
+      ]);
     }
     if (hasInterest("border_control")) {
-      identitySearches.add("border control");
-      identitySearches.add("border checks");
-      identitySearches.add("immigration control");
-      identitySearches.add("entry exit system");
-      identitySearches.add("e-gates");
-      identitySearches.add("ees");
-      identitySearches.add("etias");
-      identitySearches.add("document verification");
+      addTerms([
+        "border control",
+        "passport control",
+        "automated border control",
+        "entry/exit system",
+        "ees",
+        "etias",
+        "document inspection",
+      ]);
     }
     if (hasInterest("security_printing_core")) {
-      identitySearches.add("security printing");
-      identitySearches.add("security printing for passports");
-      identitySearches.add("secure document printing");
+      addTerms([
+        "security printing for passports",
+        "secure document printing",
+        "passport security printing",
+      ]);
     }
     if (hasInterest("personalization")) {
-      identitySearches.add("personalization");
-      identitySearches.add("passport personalization");
-      identitySearches.add("card personalization");
+      addTerms([
+        "passport personalization",
+        "card personalization",
+        "laser personalization",
+      ]);
     }
 
     return {
       domain: "identity_documents",
       topic: "Identity Documents",
+      includeTopicBaseline: false,
       searches: Array.from(identitySearches),
     };
   }
@@ -15271,7 +15471,9 @@ function buildPersonalDashboardBackendQueryParamsList() {
     requestParamsList.push(params);
   };
 
-  addParams(null, { includePlanTopic: true });
+  if (plan.includeTopicBaseline !== false) {
+    addParams(null, { includePlanTopic: true });
+  }
   plan.searches.forEach((searchTerm) => {
     addParams((params) => {
       params.set("search", searchTerm);
@@ -15342,7 +15544,10 @@ async function ensureBackendArticleQueryData() {
   const dedupedRawArticles = Array.from(dedupedRawArticleMap.values())
     .sort((left, right) => new Date(right?.pubDate || 0) - new Date(left?.pubDate || 0))
     .slice(0, MAX_ARTICLES_IN_MEMORY);
-  const normalizedArticles = dedupedRawArticles.map(normalizeLoadedArticle);
+  let normalizedArticles = dedupedRawArticles.map(normalizeLoadedArticle);
+  if (personalDomainPlan?.domain === "identity_documents") {
+    normalizedArticles = normalizedArticles.filter((article) => !shouldExcludeIdentityDocumentsRetrievalCandidate(article));
+  }
   const totalCount = normalizedArticles.length;
 
   if (personalDomainPlan && hasPersonalDashboardSelections()) {
