@@ -659,6 +659,137 @@ const IDENTITY_INTELLIGENCE_PROFILES = {
     authorityBoostSources: ["regula", "keesing", "biometric update", "security document world", "hid", "thales"],
   },
 };
+const IDENTITY_DOCUMENT_SECURITY_INDUSTRY_SOURCES = [
+  "thales",
+  "idemia",
+  "veridos",
+  "entrust",
+  "hid",
+  "regula",
+  "bundesdruckerei",
+  "in groupe",
+  "ovd kinegram",
+  "keesing",
+  "security document world",
+  "biometric update",
+  "crane authentication",
+  "giesecke+devrient",
+  "g+d",
+  "laxton",
+];
+const IDENTITY_DOCUMENT_NEGATIVE_SOURCE_TERMS = [
+  "travel blog",
+  "tourism blog",
+  "vacation blog",
+  "adventure",
+  "sports",
+  "lifestyle",
+  "entertainment",
+];
+const IDENTITY_DOCUMENT_HARD_CONTEXT_GATES = {
+  passports: {
+    severePenalty: 420,
+    requiredTerms: [
+      "passport",
+      "epassport",
+      "e-passport",
+      "travel document",
+      "machine readable travel document",
+      "mrtd",
+      "emrtd",
+    ],
+    documentSecurityTerms: [
+      "issuance",
+      "renewal",
+      "application",
+      "enrollment",
+      "enrolment",
+      "biometric",
+      "chip",
+      "rfid",
+      "nfc",
+      "icao",
+      "doc 9303",
+      "verification",
+      "authentication",
+      "fraud",
+      "counterfeit",
+      "inspection",
+      "border control",
+      "identity verification",
+      "secure document",
+      "passport office",
+      "consular service",
+      "passport authority",
+    ],
+    securityProductionTerms: [
+      "polycarbonate",
+      "laminate",
+      "security feature",
+      "security features",
+      "security printing",
+      "hologram",
+      "holography",
+      "ovd",
+      "kinegram",
+      "micro optic",
+      "micro-optic",
+      "micro optics",
+      "micro-optics",
+      "intaglio",
+      "guilloche",
+      "laser engraving",
+      "laser personalization",
+      "laser personalisation",
+      "optically variable",
+      "optically variable device",
+      "colour shift",
+      "color shift",
+      "substrate",
+      "document security",
+      "passport production",
+      "passport manufacturing",
+      "booklet production",
+      "personalization centre",
+      "personalization center",
+      "issuance system",
+      "identity infrastructure",
+    ],
+  },
+  residence_permits: {
+    severePenalty: 380,
+    permitTerms: [
+      "residence permit",
+      "residence permit card",
+      "residence card",
+      "resident card",
+      "biometric residence permit",
+      "foreign resident card",
+      "residence document",
+      "immigration document",
+    ],
+    issuanceTerms: [
+      "permit issuance",
+      "permit renewal",
+      "permit production",
+      "permit personalisation",
+      "permit personalization",
+      "permit verification",
+      "resident document",
+      "immigration card",
+    ],
+    securityTerms: [
+      "polycarbonate",
+      "security printing",
+      "security feature",
+      "hologram",
+      "kinegram",
+      "ovd",
+      "laser engraving",
+      "document security",
+    ],
+  },
+};
 const IDENTITY_REQUIRED_CONTEXT_COMBOS = {
   icao: [
     ["icao", "passport"],
@@ -3825,6 +3956,78 @@ function getIdentityDocumentIntentBreakdown(article) {
   });
 }
 
+function evaluateIdentityDocumentHardContext(article, profileId) {
+  return getCachedArticleValue(article, `identityHardContext:${profileId}`, () => {
+    const gate = IDENTITY_DOCUMENT_HARD_CONTEXT_GATES[profileId];
+    if (!gate) {
+      return {
+        matched: true,
+        severePenalty: 0,
+        requiredHits: 0,
+        contextHits: 0,
+        securityHits: 0,
+        negativeSourceHits: 0,
+      };
+    }
+
+    const context = getPersonalBoostContext(article);
+    const haystack = [
+      context.titleText,
+      context.tagText,
+      context.metadataText,
+      context.bodyText,
+      context.sourceText,
+      context.domainText,
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    const countHits = (terms = []) =>
+      normalizeKeywordList(terms).reduce((count, term) => (
+        textMatchesKeyword(haystack, term) ? count + 1 : count
+      ), 0);
+
+    const negativeSourceHits = countHits(IDENTITY_DOCUMENT_NEGATIVE_SOURCE_TERMS);
+
+    if (profileId === "passports") {
+      const requiredHits = countHits(gate.requiredTerms);
+      const contextHits = countHits(gate.documentSecurityTerms);
+      const securityHits = countHits(gate.securityProductionTerms);
+      return {
+        matched: requiredHits > 0 && (contextHits > 0 || securityHits > 0),
+        severePenalty: gate.severePenalty,
+        requiredHits,
+        contextHits,
+        securityHits,
+        negativeSourceHits,
+      };
+    }
+
+    if (profileId === "residence_permits") {
+      const permitHits = countHits(gate.permitTerms);
+      const contextHits = countHits(gate.issuanceTerms);
+      const securityHits = countHits(gate.securityTerms);
+      return {
+        matched: permitHits > 0 || contextHits > 0 || securityHits > 0,
+        severePenalty: gate.severePenalty,
+        requiredHits: permitHits,
+        contextHits,
+        securityHits,
+        negativeSourceHits,
+      };
+    }
+
+    return {
+      matched: true,
+      severePenalty: 0,
+      requiredHits: 0,
+      contextHits: 0,
+      securityHits: 0,
+      negativeSourceHits,
+    };
+  });
+}
+
 function calculateIdentityProfileScore(article, profileId) {
   return getCachedArticleValue(article, `identityProfileScore:${profileId}`, () => {
     const profile = IDENTITY_INTELLIGENCE_PROFILES[profileId];
@@ -3843,6 +4046,7 @@ function calculateIdentityProfileScore(article, profileId) {
 
     const context = getPersonalBoostContext(article);
     const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
+    const hardContext = evaluateIdentityDocumentHardContext(article, profileId);
     const scoreMatches = (terms = [], weights) => {
       const matched = terms.filter((term) =>
         textMatchesKeyword(context.titleText, term) ||
@@ -3905,6 +4109,27 @@ function calculateIdentityProfileScore(article, profileId) {
       rejectionReasons.push("stacked_negative_context");
     }
 
+    if (["passports", "residence_permits"].includes(profileId)) {
+      if (!hardContext.matched) {
+        score -= hardContext.severePenalty;
+        rejectionReasons.push("failed_document_context_gate");
+      } else {
+        score += Math.min(110, (hardContext.contextHits * 10) + (hardContext.securityHits * 12));
+      }
+
+      if (hardContext.negativeSourceHits > 0 && !hardContext.matched) {
+        score -= 180;
+        rejectionReasons.push("negative_travel_source");
+      }
+
+      if (
+        hardContext.matched
+        && IDENTITY_DOCUMENT_SECURITY_INDUSTRY_SOURCES.some((value) => textMatchesKeyword(sourceFingerprint, value))
+      ) {
+        score += 24;
+      }
+    }
+
     debugPersonalDashboardLog("[identity-semantic-profile]", {
       profileId,
       title: article?.title || "Untitled article",
@@ -3913,6 +4138,11 @@ function calculateIdentityProfileScore(article, profileId) {
       matchedWeak: weak.matched,
       matchedNegative: negative.matched,
       matchedRequiredGroups,
+      hardContextMatched: hardContext.matched,
+      hardContextRequiredHits: hardContext.requiredHits,
+      hardContextContextHits: hardContext.contextHits,
+      hardContextSecurityHits: hardContext.securityHits,
+      hardContextNegativeSourceHits: hardContext.negativeSourceHits,
       authorityBoost,
       rejectionReasons,
       profileScore: Math.round(score),
@@ -3927,6 +4157,7 @@ function calculateIdentityProfileScore(article, profileId) {
       matchedWeak: weak.matched,
       matchedNegative: negative.matched,
       rejectionReasons,
+      hardContextMatched: hardContext.matched,
     };
   });
 }
