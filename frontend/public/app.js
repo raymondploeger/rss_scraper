@@ -7,7 +7,13 @@ const ALERT_ARTICLE_FILTER_STORAGE_KEY = "activeAlertArticleFilter";
 const ACTIVITY_LOG_STORAGE_KEY = "dashboardActivityLog";
 const ALERT_DEDUPE_WINDOW_MS = 10 * 60 * 1000;
 const ACTIVITY_LOG_TTL_MS = 24 * 60 * 60 * 1000;
-const POLLING_INTERVAL_MS = 30000;
+const POLLING_INTERVAL_MS = 60 * 60 * 1000;
+const AUTO_REFRESH_MODE_STORAGE_KEY = "dashboardAutoRefreshMode";
+const AUTO_REFRESH_MODE =
+  typeof localStorage !== "undefined" &&
+  localStorage.getItem(AUTO_REFRESH_MODE_STORAGE_KEY) === "off"
+    ? "off"
+    : "hourly";
 const REFRESH_INTERACTION_PAUSE_MS = 6000;
 const REFRESH_SCROLL_PAUSE_MS = 5000;
 const ARTICLE_PAGE_SIZE = 400;
@@ -1856,6 +1862,7 @@ const runtime = {
   articleGridHovered: false,
   sidebarHovered: false,
   lastSnapshotSignature: "",
+  pendingSnapshot: null,
 };
 
 const elements = {
@@ -1950,11 +1957,6 @@ function flushScheduledRender() {
   runtime.scheduledRenderReason = "";
   runtime.lastRenderedReason = reason;
   intelligenceDebug("[scheduleRenderArticles:flush]", { reason });
-  if (runtime.pendingBackgroundRefresh) {
-    clearPendingBackgroundRefresh();
-    runtime.lastRefreshStatusAt = runtime.lastBackgroundRefreshAt || Date.now();
-    updateRefreshStatus();
-  }
   renderArticles();
 }
 
@@ -2030,17 +2032,24 @@ function updateRefreshStatus(options = {}) {
     return;
   }
 
-  const usingRealtime = options.realtime ?? runtime.realtimeEnabled;
-  const paused = options.paused ?? (Date.now() < runtime.refreshPauseUntil);
   const pendingCount = Number(options.pendingCount ?? runtime.pendingBackgroundNewArticles ?? 0);
-  const lastUpdatedAt = options.lastUpdatedAt ?? runtime.lastRefreshStatusAt ?? runtime.lastBackgroundRefreshAt;
+  const baseLabel = AUTO_REFRESH_MODE === "off"
+    ? "Manual refresh mode"
+    : "Background refresh every 60 minutes";
 
-  let prefix = usingRealtime ? "Background refresh active" : `Live updates every ${Math.round(POLLING_INTERVAL_MS / 1000)}s`;
-  if (paused && pendingCount > 0) {
-    prefix = `${prefix} | ${pendingCount} update${pendingCount === 1 ? "" : "s"} ready`;
+  elements.connectionStatus.innerHTML = "";
+  const baseText = document.createTextNode(baseLabel);
+  elements.connectionStatus.appendChild(baseText);
+
+  if (pendingCount > 0) {
+    const spacer = document.createTextNode(" | ");
+    const refreshButton = document.createElement("button");
+    refreshButton.type = "button";
+    refreshButton.className = "status-inline-refresh";
+    refreshButton.dataset.applyRefresh = "true";
+    refreshButton.textContent = "New articles available (Refresh)";
+    elements.connectionStatus.append(spacer, refreshButton);
   }
-
-  elements.connectionStatus.textContent = `${prefix} | ${formatRefreshAge(lastUpdatedAt)}`;
 }
 
 function markRefreshInteraction(reason = "interaction", pauseMs = REFRESH_INTERACTION_PAUSE_MS) {
@@ -2093,6 +2102,7 @@ function clearPendingBackgroundRefresh() {
   runtime.pendingBackgroundRefresh = false;
   runtime.pendingBackgroundRefreshReason = "";
   runtime.pendingBackgroundNewArticles = 0;
+  runtime.pendingSnapshot = null;
   if (runtime.pendingRefreshTimer) {
     window.clearTimeout(runtime.pendingRefreshTimer);
     runtime.pendingRefreshTimer = 0;
@@ -15353,6 +15363,58 @@ async function loadAllArticles() {
   };
 }
 
+function applySnapshotPayload(snapshotPayload, options = {}) {
+  const { render = true } = options;
+  if (!snapshotPayload) {
+    return;
+  }
+
+  runtime.articleComputationCache.clear();
+  runtime.articlePairComputationCache.clear();
+  state.feeds = snapshotPayload.feeds;
+  rebuildFeedLookupCaches();
+  state.articles = snapshotPayload.normalizedArticles;
+  logPersonalDashboardSourceStage("[personal-dashboard-frontend-state]", state.articles, {
+    source: "loadSnapshot",
+    totalAvailable: snapshotPayload.totalAvailable,
+    loadedInFrontend: snapshotPayload.normalizedArticles.length,
+  });
+  state.articleStats = {
+    totalAvailable: snapshotPayload.totalAvailable,
+    loadedInFrontend: snapshotPayload.normalizedArticles.length,
+  };
+  runtime.lastSnapshotSignature = snapshotPayload.signature;
+  runtime.articleDataRevision += 1;
+  rebuildArticleFeedIndexes();
+  clearFeedRenderCaches();
+  runtime.backendArticleQueryCache.clear();
+  debugPerformanceLog("[memory]", {
+    totalArticlesAvailable: state.articleStats.totalAvailable,
+    articleCountInMemory: state.articles.length,
+    feedCount: state.feeds.length,
+    articleCacheSize: runtime.articleComputationCache.size,
+    articlePairCacheSize: runtime.articlePairComputationCache.size,
+    groupedFeedCacheSize: runtime.groupedFeedCache.size,
+  });
+  state.dmvCatalog = snapshotPayload.dmvCatalog;
+  restoreExactArticleFilterFromSession();
+  syncDashboardAlerts(snapshotPayload.feeds, snapshotPayload.normalizedArticles);
+  syncActivityLog();
+  syncNewArticleNotifications(snapshotPayload.normalizedArticles);
+  syncFeedErrorNotifications();
+  runtime.lastBackgroundRefreshAt = Date.now();
+
+  if (!render) {
+    return;
+  }
+
+  renderDashboard();
+  syncFeedPanelVisibility();
+  runtime.lastRefreshStatusAt = runtime.lastBackgroundRefreshAt;
+  updateRefreshStatus();
+  clearPendingBackgroundRefresh();
+}
+
 async function loadSnapshot(options = {}) {
   const background = Boolean(options.background);
   const reason = String(options.reason || (background ? "background-refresh" : "full-refresh"));
@@ -15363,82 +15425,41 @@ async function loadSnapshot(options = {}) {
   ]);
   const previousArticles = Array.isArray(state.articles) ? state.articles.slice() : [];
   const previousSignature = runtime.lastSnapshotSignature || buildArticleSnapshotSignature(previousArticles);
-  runtime.articleComputationCache.clear();
-  runtime.articlePairComputationCache.clear();
-  state.feeds = feeds;
-  rebuildFeedLookupCaches();
   const normalizedArticles = (articleResponse?.items || [])
     .slice(0, MAX_ARTICLES_IN_MEMORY)
     .map(normalizeLoadedArticle);
-
-  state.articles = normalizedArticles;
-  logPersonalDashboardSourceStage("[personal-dashboard-frontend-state]", state.articles, {
-    source: "loadSnapshot",
-    totalAvailable: Number(articleResponse?.totalCount) || normalizedArticles.length,
-    loadedInFrontend: normalizedArticles.length,
-  });
-  state.articleStats = {
-    totalAvailable: Number(articleResponse?.totalCount) || normalizedArticles.length,
-    loadedInFrontend: normalizedArticles.length,
-  };
+  const totalAvailable = Number(articleResponse?.totalCount) || normalizedArticles.length;
   const nextSignature = buildArticleSnapshotSignature(normalizedArticles);
-  runtime.lastSnapshotSignature = nextSignature;
   const newArticleCount = countNewArticles(previousArticles, normalizedArticles);
   const snapshotChanged = previousSignature !== nextSignature;
-  runtime.articleDataRevision += 1;
-  rebuildArticleFeedIndexes();
-  clearFeedRenderCaches();
-  if (snapshotChanged) {
-    runtime.backendArticleQueryCache.clear();
-  }
-  debugPerformanceLog("[memory]", {
-    totalArticlesAvailable: state.articleStats.totalAvailable,
-    articleCountInMemory: state.articles.length,
-    feedCount: state.feeds.length,
-    articleCacheSize: runtime.articleComputationCache.size,
-    articlePairCacheSize: runtime.articlePairComputationCache.size,
-    groupedFeedCacheSize: runtime.groupedFeedCache.size,
-  });
-  state.dmvCatalog = Array.isArray(dmvCatalog) ? dmvCatalog : [];
-  restoreExactArticleFilterFromSession();
-  syncDashboardAlerts(feeds, normalizedArticles);
-  syncActivityLog();
-  syncNewArticleNotifications(normalizedArticles);
-  syncFeedErrorNotifications();
-  runtime.lastBackgroundRefreshAt = Date.now();
+  const snapshotPayload = {
+    feeds: Array.isArray(feeds) ? feeds : [],
+    dmvCatalog: Array.isArray(dmvCatalog) ? dmvCatalog : [],
+    normalizedArticles,
+    totalAvailable,
+    signature: nextSignature,
+  };
 
   if (!background) {
-    renderDashboard();
-    syncFeedPanelVisibility();
-    runtime.lastRefreshStatusAt = runtime.lastBackgroundRefreshAt;
-    updateRefreshStatus();
-    clearPendingBackgroundRefresh();
+    applySnapshotPayload(snapshotPayload, { render: true });
     return;
   }
+
+  runtime.lastBackgroundRefreshAt = Date.now();
 
   if (!snapshotChanged) {
     runtime.lastRefreshStatusAt = runtime.lastBackgroundRefreshAt;
     updateRefreshStatus();
     return;
   }
-
-  if (isBackgroundRefreshPaused()) {
-    runtime.pendingBackgroundRefresh = true;
-    runtime.pendingBackgroundRefreshReason = reason;
-    runtime.pendingBackgroundNewArticles = newArticleCount;
-    updateRefreshStatus({
-      paused: true,
-      pendingCount: newArticleCount,
-      lastUpdatedAt: runtime.lastRefreshStatusAt || runtime.lastBackgroundRefreshAt,
-    });
-    schedulePendingBackgroundRefresh();
-    return;
-  }
-
-  clearPendingBackgroundRefresh();
-  renderArticleRegionPreservingScroll({ updateSummary: true });
+  runtime.pendingSnapshot = snapshotPayload;
+  runtime.pendingBackgroundRefresh = true;
+  runtime.pendingBackgroundRefreshReason = reason;
+  runtime.pendingBackgroundNewArticles = Math.max(1, newArticleCount);
   runtime.lastRefreshStatusAt = runtime.lastBackgroundRefreshAt;
-  updateRefreshStatus();
+  updateRefreshStatus({
+    pendingCount: runtime.pendingBackgroundNewArticles,
+  });
 }
 
 async function refreshFeedsOnly() {
@@ -15458,70 +15479,25 @@ function startPolling() {
     window.clearInterval(runtime.pollTimer);
   }
 
+  if (AUTO_REFRESH_MODE === "off") {
+    runtime.pollTimer = null;
+    updateRefreshStatus();
+    return;
+  }
+
   runtime.pollTimer = window.setInterval(() => {
     void loadSnapshot({ background: true, reason: "polling" });
   }, POLLING_INTERVAL_MS);
-  updateRefreshStatus({ realtime: false });
+  updateRefreshStatus();
 }
 
 function initRealtime() {
   if (runtime.eventSource) {
     runtime.eventSource.close();
+    runtime.eventSource = null;
   }
-
-  try {
-    const eventSource = new EventSource("/api/stream");
-    const refreshSnapshot = debounce((snapshotOptions = {}) => {
-      void loadSnapshot({ background: true, reason: "realtime-event", ...snapshotOptions });
-    });
-    const refreshFeedsOnlyDebounced = debounce(() => {
-      void refreshFeedsOnly();
-    });
-
-    runtime.eventSource = eventSource;
-    runtime.realtimeEnabled = true;
-
-    eventSource.addEventListener("ready", () => {
-      updateRefreshStatus({ realtime: true });
-    });
-
-    eventSource.addEventListener("article:new", (event) => {
-      const payload = parseStreamPayload(event);
-      const articleId = payload?.id || payload?.article?.id;
-      if (articleId) {
-        runtime.knownArticleIds.add(articleId);
-      }
-      showNotification({
-        title: "New article detected",
-        message: payload?.title || payload?.article?.title || "A new article was added to the live stream.",
-        type: "info",
-      });
-      refreshSnapshot({ background: true, reason: "article:new" });
-    });
-
-    eventSource.addEventListener("refresh:complete", () => {
-      showNotification({
-        title: "Feed refresh completed",
-        message: "Latest feed data has been loaded.",
-        type: "success",
-      });
-      refreshSnapshot({ background: true, reason: "refresh:complete" });
-    });
-
-    eventSource.addEventListener("article:update", refreshSnapshot);
-    eventSource.addEventListener("feed:update", refreshFeedsOnlyDebounced);
-
-    eventSource.onerror = () => {
-      runtime.realtimeEnabled = false;
-      updateRefreshStatus({ realtime: false });
-      eventSource.close();
-      startPolling();
-    };
-  } catch {
-    runtime.realtimeEnabled = false;
-    updateRefreshStatus({ realtime: false });
-    startPolling();
-  }
+  runtime.realtimeEnabled = false;
+  startPolling();
 }
 
 async function updateFeed(feedId, payload) {
@@ -15574,6 +15550,23 @@ async function importDmvFeeds() {
 }
 
 function bindEvents() {
+  if (elements.connectionStatus) {
+    elements.connectionStatus.addEventListener("click", async (event) => {
+      const target = event.target instanceof Element ? event.target.closest("[data-apply-refresh]") : null;
+      if (!target) {
+        return;
+      }
+
+      updateRefreshStatus({ message: "Refreshing dashboard..." });
+      if (runtime.pendingSnapshot) {
+        const pendingSnapshot = runtime.pendingSnapshot;
+        applySnapshotPayload(pendingSnapshot, { render: true });
+        return;
+      }
+      await loadSnapshot({ background: false, reason: "pending-refresh-apply" });
+    });
+  }
+
   if (elements.articlesGrid) {
     elements.articlesGrid.addEventListener("mouseenter", () => {
       runtime.articleGridHovered = true;
@@ -16046,19 +16039,28 @@ function bindEvents() {
   });
 
   elements.refreshButton.addEventListener("click", async () => {
-    updateRefreshStatus({ message: "Refreshing feeds..." });
+    updateRefreshStatus({ message: "Refreshing dashboard..." });
     try {
-      const result = await apiRequest("/api/feeds/refresh", { method: "POST" });
-      updateRefreshStatus({ message: result.message || "Feed refresh started." });
+      if (runtime.pendingSnapshot) {
+        const pendingSnapshot = runtime.pendingSnapshot;
+        applySnapshotPayload(pendingSnapshot, { render: true });
+        showNotification({
+          title: "Dashboard refreshed",
+          message: "New cached articles have been applied.",
+          type: "success",
+        });
+        return;
+      }
+      await loadSnapshot({ background: false, reason: "manual-refresh" });
       showNotification({
-        title: "Feed refresh started",
-        message: result.message || "Refresh is running in the background.",
-        type: "info",
+        title: "Dashboard refreshed",
+        message: "Latest stored articles have been loaded.",
+        type: "success",
       });
     } catch (error) {
       updateRefreshStatus({ message: error.message });
       showNotification({
-        title: "Feed refresh failed",
+        title: "Dashboard refresh failed",
         message: error.message,
         type: "warning",
       });
