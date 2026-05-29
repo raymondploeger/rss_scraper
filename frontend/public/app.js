@@ -762,11 +762,16 @@ const BANKNOTE_SOURCE_AUTHORITY = {
     "national bank",
     "reserve bank",
     "monetary authority",
+    "imf",
+    "currency bulletin",
+    "currency publication",
     "issuer bank",
     "issuing authority",
     "bank of england",
     "ecb",
+    "bceao",
     "rbi",
+    "keesing",
     "de la rue",
     "de-la-rue",
     "giesecke+devrient",
@@ -774,9 +779,12 @@ const BANKNOTE_SOURCE_AUTHORITY = {
     "gi-de",
     "crane currency",
     "cranecurrency",
+    "orell fussli",
+    "orell fuessli",
     "koenig & bauer",
     "koenig-bauer",
     "oberthur",
+    "sicpa",
     "louisenthal",
     "security document world",
     "securitydocumentworld",
@@ -808,10 +816,19 @@ const BANKNOTE_SOURCE_AUTHORITY = {
     "mashable",
     "techradar",
     "youtube",
+    "x.com",
+    "twitter",
+    "reddit",
+    "facebook",
     "instagram",
     "tiktok",
+    "pinterest",
     "alamy",
     "freepik",
+    "ebay",
+    "marketplace",
+    "collector sale",
+    "collector sales",
     "vpn",
     "antivirus",
     "iphone security",
@@ -2959,6 +2976,9 @@ function computePersonalInterestBoost(article, interestId) {
       const banknoteNoise = getBanknoteNoiseAssessment(article);
       score += Math.min(90, Math.round(banknoteNoise.positiveHits * 0.75));
       score -= Math.min(260, Math.round(banknoteNoise.totalNoiseHits * 2.4));
+      if (banknoteNoise.weakTrumpDebate) {
+        score -= 180;
+      }
       if (banknoteNoise.contaminated) {
         score -= 420;
       }
@@ -4280,9 +4300,17 @@ function getBanknoteNoiseAssessment(article) {
       "reserve bank",
       "national bank",
       "monetary authority",
+      "ecb",
+      "bceao",
+      "imf",
+      "keesing",
       "new note",
       "new banknote",
+      "banknote issuance",
+      "note issuance",
+      "banknote rollout",
       "polymer banknote",
+      "substrate",
       "commemorative note",
       "security thread",
       "watermark",
@@ -4298,7 +4326,10 @@ function getBanknoteNoiseAssessment(article) {
       "g+d",
       "giesecke+devrient",
       "crane currency",
+      "orell fussli",
       "oberthur",
+      "sicpa",
+      "louisenthal",
       "security printing",
     ];
     const socialMarketplaceNoiseTerms = [
@@ -4330,6 +4361,9 @@ function getBanknoteNoiseAssessment(article) {
       "stock market",
       "currency markets",
       "foreign exchange",
+      "inflation report",
+      "investors on edge",
+      "bond market",
       "coin values",
       "value your coins",
       "coin valuation",
@@ -4343,6 +4377,23 @@ function getBanknoteNoiseAssessment(article) {
       "shutterstock",
       "getty images",
     ];
+    const weakTrumpBillTerms = [
+      "trump 250 bill",
+      "$250 bill",
+      "250 dollar bill",
+      "trump banknote",
+      "trump bill",
+    ];
+    const officialProposalTerms = [
+      "treasury",
+      "legislative proposal",
+      "bill introduced",
+      "house bill",
+      "senate bill",
+      "official design proposal",
+      "currency issuance",
+      "official proposal",
+    ];
 
     const positiveHits = weightedHits(strongPositiveTerms);
     const socialMarketplaceNoiseHits = weightedHits(socialMarketplaceNoiseTerms);
@@ -4350,6 +4401,9 @@ function getBanknoteNoiseAssessment(article) {
     const stockPhotoNoiseHits = weightedHits(stockPhotoNoiseTerms);
     const totalNoiseHits = socialMarketplaceNoiseHits + marketFinanceNoiseHits + stockPhotoNoiseHits;
     const isAuthoritySource = isBanknoteAuthoritySource(article);
+    const weakTrumpBillHits = weightedHits(weakTrumpBillTerms);
+    const officialProposalHits = weightedHits(officialProposalTerms);
+    const weakTrumpDebate = weakTrumpBillHits >= 5 && officialProposalHits < 5;
 
     const contaminated =
       !isAuthoritySource
@@ -4358,6 +4412,7 @@ function getBanknoteNoiseAssessment(article) {
         || (stockPhotoNoiseHits >= 5 && positiveHits < 10)
         || (marketFinanceNoiseHits >= 8 && positiveHits < 12)
         || (totalNoiseHits >= 10 && positiveHits < 12)
+        || weakTrumpDebate
       );
 
     return {
@@ -4366,6 +4421,7 @@ function getBanknoteNoiseAssessment(article) {
       socialMarketplaceNoiseHits,
       marketFinanceNoiseHits,
       stockPhotoNoiseHits,
+      weakTrumpDebate,
       contaminated,
     };
   });
@@ -4698,6 +4754,9 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         }
         score += Math.min(120, Math.round(banknoteNoise.positiveHits * 0.9));
         score -= Math.min(320, Math.round(banknoteNoise.totalNoiseHits * 3.2));
+        if (banknoteNoise.weakTrumpDebate) {
+          score -= 240;
+        }
         if (banknoteNoise.contaminated) {
           score -= 520;
         }
@@ -9138,6 +9197,7 @@ function getBanknoteIntelligenceRelevance(article) {
     const sourceText = String(article?.source || "").toLowerCase();
     const combinedText = getArticleSignalText(article);
     const eventType = getBanknoteEventType(article);
+    const noiseAssessment = getBanknoteNoiseAssessment(article);
 
     let score = 0;
     const applyWeightedSignals = (keywords, weights) => {
@@ -9238,9 +9298,22 @@ function getBanknoteIntelligenceRelevance(article) {
       score -= 12;
     }
 
+    score += Math.min(20, Math.round(noiseAssessment.positiveHits * 0.2));
+    score -= Math.min(40, Math.round(noiseAssessment.totalNoiseHits * 0.35));
+    if (noiseAssessment.weakTrumpDebate) {
+      score -= 24;
+    }
+    if (noiseAssessment.contaminated) {
+      score -= 36;
+    }
+
     let rejectedReason = "";
     if (!hasRequiredComponent) {
       rejectedReason = "missing central-bank/document component";
+    } else if (noiseAssessment.contaminated) {
+      rejectedReason = "collector/social/market noise";
+    } else if (noiseAssessment.weakTrumpDebate) {
+      rejectedReason = "non-official political banknote debate";
     } else if (eventType === "banknote_auction_noise") {
       rejectedReason = "collector or auction noise";
     } else if (isSignatureOnly && score < BANKNOTE_RELEVANCE_THRESHOLD) {
@@ -12124,12 +12197,19 @@ const KEESING_RELEVANCE_THRESHOLD = 16;
 const BANKNOTE_INTELLIGENCE_POSITIVE_SIGNALS = {
   centralBankActions: [
     "central bank",
+    "reserve bank",
+    "monetary authority",
     "withdrawn from circulation",
     "demonetisation",
     "demonetization",
     "legal tender withdrawal",
     "circulation changes",
     "issuance",
+    "banknote issuance",
+    "new banknote",
+    "new note",
+    "note rollout",
+    "banknote rollout",
     "replacement series",
     "redesign",
     "new family",
@@ -12139,9 +12219,12 @@ const BANKNOTE_INTELLIGENCE_POSITIVE_SIGNALS = {
   ],
   securityCounterfeiting: [
     "counterfeit banknotes",
+    "counterfeit banknote",
+    "counterfeit currency",
     "anti-counterfeit",
     "forged notes",
     "security feature",
+    "security thread",
     "hologram",
     "watermark",
     "polymer substrate",
@@ -12155,6 +12238,7 @@ const BANKNOTE_INTELLIGENCE_POSITIVE_SIGNALS = {
     "redesign",
     "new artwork",
     "substrate migration",
+    "polymer banknote",
     "tactile features",
     "accessibility features",
     "anti-counterfeit redesign",
@@ -12170,8 +12254,12 @@ const BANKNOTE_INTELLIGENCE_POSITIVE_SIGNALS = {
     "giesecke+devrient",
     "giesecke devrient",
     "crane currency",
+    "orell fussli",
     "oberthur",
     "sicpa",
+    "louisenthal",
+    "banknotenews",
+    "keesing",
   ],
 };
 const BANKNOTE_INTELLIGENCE_NEGATIVE_SIGNALS = {
@@ -12181,13 +12269,26 @@ const BANKNOTE_INTELLIGENCE_NEGATIVE_SIGNALS = {
     "graded note",
     "auction",
     "collectible",
+    "collectible banknotes",
     "numismatic sales",
     "ebay",
+    "for sale",
+    "old banknotes for sale",
+    "album of old banknotes",
     "rarity value",
+    "coin values",
+    "value your coins",
+    "coin valuation",
     "serial number collecting",
     "pmg",
   ],
   socialCommunityNoise: [
+    "reddit",
+    "facebook",
+    "instagram",
+    "tiktok",
+    "x.com",
+    "linkedin repost",
     "reddit",
     "facebook repost",
     "youtube collector",
@@ -12196,6 +12297,13 @@ const BANKNOTE_INTELLIGENCE_NEGATIVE_SIGNALS = {
     "instagram collection",
   ],
   genericFinance: [
+    "forex",
+    "bonds",
+    "bond market",
+    "stock market",
+    "investors on edge",
+    "inflation report",
+    "currency markets",
     "stock markets",
     "trade negotiations",
     "grain deals",
@@ -12205,6 +12313,7 @@ const BANKNOTE_INTELLIGENCE_NEGATIVE_SIGNALS = {
     "market trends",
   ],
   genericCrime: [
+    "money laundering",
     "robbery cash seizure",
     "atm theft",
     "unrelated fraud",
@@ -12212,6 +12321,13 @@ const BANKNOTE_INTELLIGENCE_NEGATIVE_SIGNALS = {
     "cash seizure",
   ],
   spam: [
+    "stock photography",
+    "hi-res stock",
+    "discount code",
+    "marketplace",
+    "gambling",
+    "casino",
+    "betting",
     "linkedin",
     "market spam",
     "ai-generated market report",
@@ -12227,21 +12343,37 @@ const BANKNOTE_INTELLIGENCE_HARD_KEEP_SIGNALS = [
   "counterfeit alert",
   "central bank warning",
   "polymer migration",
+  "polymer banknote",
   "major redesign",
   "anti-counterfeit technology",
   "circulation withdrawal",
   "currency reform",
   "security feature upgrade",
   "security feature upgrades",
+  "new banknote",
   "new banknote family",
   "new banknote family launch",
   "new banknote family launches",
 ];
 const BANKNOTE_INTELLIGENCE_HARD_REJECT_SIGNALS = [
+  "stock photography",
+  "for sale",
+  "discount code",
   "collector listing",
   "grading post",
   "reddit collector",
   "hobby showcase",
+  "marketplace",
+  "collectible banknotes",
+  "coin values",
+  "value your coins",
+  "gambling",
+  "casino",
+  "betting",
+  "forex",
+  "bonds",
+  "stock market",
+  "inflation report",
   "generic finance news",
   "trade negotiations",
   "geopolitics",
@@ -12252,20 +12384,30 @@ const BANKNOTE_INTELLIGENCE_HARD_REJECT_SIGNALS = [
 ];
 const BANKNOTE_REQUIRED_COMPONENT_SIGNALS = [
   "central bank",
+  "reserve bank",
+  "monetary authority",
   "withdrawn from circulation",
   "demonetisation",
   "demonetization",
   "legal tender withdrawal",
   "issuance",
+  "banknote issuance",
+  "new banknote",
+  "new note",
+  "note rollout",
   "replacement series",
   "redesign",
   "new family",
   "new denomination",
   "polymer transition",
+  "polymer banknote",
   "counterfeit banknotes",
+  "counterfeit banknote",
+  "counterfeit currency",
   "anti-counterfeit",
   "forged notes",
   "security feature",
+  "security thread",
   "hologram",
   "watermark",
   "polymer substrate",
