@@ -94,6 +94,7 @@ const TAG_LIST_STORAGE_KEY = "dashboardTagList";
 const KEYWORD_FILTER_STORAGE_KEY = "dashboardKeywordFilters";
 const PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY = "personalDashboardInterests";
 const PERSONAL_DASHBOARD_MODE_STORAGE_KEY = "personalDashboardMode";
+const DEFAULT_PERSONAL_DASHBOARD_SORT = "newest";
 const NOISE_KEYWORDS_EXPANDED_STORAGE_KEY = "noiseKeywordsExpanded";
 const PERSONAL_DASHBOARD_MODES = {
   strict: 1.8,
@@ -4985,6 +4986,78 @@ function getPersonalLaneRenderPlan(articles) {
   };
 }
 
+const PERSONAL_DASHBOARD_RELEVANCE_TIE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function getPersonalDashboardSortMode() {
+  return DEFAULT_PERSONAL_DASHBOARD_SORT;
+}
+
+function getArticlePublishedTimestamp(article) {
+  const timestamp = toDate(article?.pubDate).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function comparePersonalDashboardArticlesByNewest(left, right) {
+  const leftTimestamp = getArticlePublishedTimestamp(left);
+  const rightTimestamp = getArticlePublishedTimestamp(right);
+
+  if (leftTimestamp && rightTimestamp) {
+    const timestampDelta = Math.abs(rightTimestamp - leftTimestamp);
+    if (timestampDelta > PERSONAL_DASHBOARD_RELEVANCE_TIE_WINDOW_MS) {
+      return rightTimestamp - leftTimestamp;
+    }
+  } else if (leftTimestamp || rightTimestamp) {
+    return rightTimestamp - leftTimestamp;
+  }
+
+  const relevanceOrder = compareArticlesForDisplay(left, right);
+  if (relevanceOrder !== 0) {
+    return relevanceOrder;
+  }
+
+  if (rightTimestamp !== leftTimestamp) {
+    return rightTimestamp - leftTimestamp;
+  }
+
+  return String(left?.title || "").localeCompare(String(right?.title || ""));
+}
+
+function sortPersonalDashboardArticles(articles, options = {}) {
+  if (!Array.isArray(articles) || !articles.length) {
+    return Array.isArray(articles) ? articles : [];
+  }
+
+  const sortMode = options.sortMode || getPersonalDashboardSortMode();
+  const sortedArticles = articles.slice().sort((left, right) => {
+    if (sortMode === "newest") {
+      return comparePersonalDashboardArticlesByNewest(left, right);
+    }
+    return compareArticlesForDisplay(left, right);
+  });
+
+  if (DEBUG_PERSONAL_DASHBOARD) {
+    const firstArticle = sortedArticles[0] || null;
+    debugPersonalDashboardLog("[personal-dashboard-sort]", {
+      sortMode,
+      firstArticleTitle: firstArticle?.title || "",
+      firstArticleDate: firstArticle?.pubDate || "",
+      totalSorted: sortedArticles.length,
+    });
+  }
+
+  return sortedArticles;
+}
+
+function sortArticlesForCurrentDashboardMode(articles, options = {}) {
+  if (!Array.isArray(articles) || !articles.length) {
+    return Array.isArray(articles) ? articles : [];
+  }
+
+  return hasPersonalDashboardSelections()
+    ? sortPersonalDashboardArticles(articles, options)
+    : articles.slice().sort(compareArticlesForDisplay);
+}
+
 function renderPersonalLaneSections(container, articles, laneCounts) {
   if (!container || !Array.isArray(articles) || !articles.length) {
     return;
@@ -5287,9 +5360,9 @@ function getCachedGroupedFeedResult(feedIdentity) {
     ? (runtime.articlesByFeedId.get(selectedFeedResolution.selectedFeedId) || [])
     : state.articles.filter((article) => articleMatchesSelectedFeed(article, feedIdentity));
   const rawMatches = candidateArticles.slice().sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
-  const filteredMatches = candidateArticles
-    .filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
-    .sort(compareArticlesForDisplay);
+  const filteredMatches = sortArticlesForCurrentDashboardMode(
+    candidateArticles.filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
+  );
   const groupedArticles = groupArticlesByEvent(filteredMatches);
   const result = {
     selectedFeedResolution,
@@ -10985,10 +11058,9 @@ function getVisibleArticles(options = {}) {
       }
     })
     .filter(isUiRelevantIntelligenceArticle)
-    .filter((article) => articleMatchesFilters(article, options))
-    .sort(compareArticlesForDisplay);
+    .filter((article) => articleMatchesFilters(article, options));
   intelligenceTimeEnd("getVisibleArticles");
-  return visibleArticles;
+  return sortArticlesForCurrentDashboardMode(visibleArticles);
 }
 
 function getArticleCountLabel(count) {
@@ -14839,16 +14911,16 @@ function renderArticlesFallback(error) {
   try {
     const shouldIgnoreFeedIdForGrouping = Boolean(state.filters?.feedId) && !state.filters?.date;
     fallbackAllArticles = state.filters?.date
-      ? state.articles.filter(articleMatchesFilters).sort(compareArticlesForDisplay)
+      ? sortArticlesForCurrentDashboardMode(state.articles.filter(articleMatchesFilters))
       : state.filters?.feedId
         ? (() => {
             const selectedFeedResolution = getSelectedFeedResolution(state.filters.feedId);
             const candidateArticles = selectedFeedResolution.selectedFeedId
               ? (runtime.articlesByFeedId.get(selectedFeedResolution.selectedFeedId) || [])
               : state.articles.filter((article) => articleMatchesSelectedFeed(article, state.filters.feedId));
-            const rawFeedMatches = candidateArticles
-              .filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
-              .sort(compareArticlesForDisplay);
+            const rawFeedMatches = sortArticlesForCurrentDashboardMode(
+              candidateArticles.filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
+            );
             return groupArticlesByEvent(rawFeedMatches);
           })()
         : (() => {
@@ -14869,8 +14941,8 @@ function renderArticlesFallback(error) {
         } catch (_error) {
           return true;
         }
-      })
-      .sort(compareArticlesForDisplay);
+      });
+    fallbackAllArticles = sortArticlesForCurrentDashboardMode(fallbackAllArticles);
   }
 
   const fallbackPagination = getPaginatedItems(fallbackAllArticles);
@@ -14969,9 +15041,9 @@ function renderArticles() {
         totalCount: 0,
       };
       personalDashboardBasePool = cachedQuery.articles;
-      filteredRawArticles = cachedQuery.articles
-        .filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
-        .sort(compareArticlesForDisplay);
+      filteredRawArticles = sortArticlesForCurrentDashboardMode(
+        cachedQuery.articles.filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
+      );
       const groupedArticles = groupArticlesByEvent(filteredRawArticles);
       groupedArticlesCount = groupedArticles.length;
       articles = groupedArticles;
@@ -14988,9 +15060,9 @@ function renderArticles() {
       articles = groupedArticles;
     } else if (state.filters.date) {
       personalDashboardBasePool = state.articles;
-      filteredRawArticles = state.articles
-        .filter(articleMatchesFilters)
-        .sort(compareArticlesForDisplay);
+      filteredRawArticles = sortArticlesForCurrentDashboardMode(
+        state.articles.filter(articleMatchesFilters)
+      );
       articles = filteredRawArticles;
       groupedArticlesCount = articles.length;
       feedRenderFilteredCount = filteredRawArticles.length;
