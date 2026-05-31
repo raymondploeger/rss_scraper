@@ -159,6 +159,8 @@ const SPECIALIST_SOURCE_INTERESTS = {
 const ID_DOCUMENT_SOURCE_AUTHORITY = {
   veryHigh: [
     "icao",
+    "icao newsroom",
+    "icao trip",
     "passport office",
     "ministry of interior",
     "immigration authority",
@@ -195,6 +197,14 @@ const ID_DOCUMENT_SOURCE_AUTHORITY = {
     "gi-de",
     "crane authentication",
     "crane currency",
+    "ukvi biometric residence permits",
+    "ukvi brp and brc guidance",
+    "ukvi",
+    "home office",
+    "eu-lisa",
+    "eulisa",
+    "cbp newsroom",
+    "mobile passport control",
   ],
   high: [
     "passport",
@@ -207,6 +217,13 @@ const ID_DOCUMENT_SOURCE_AUTHORITY = {
     "document security",
     "border control",
     "document verification",
+    "ind.nl",
+    "migrationsverket",
+    "migration authority",
+    "government permit issuer",
+    "border agency",
+    "border police",
+    "customs and border protection",
   ],
   medium: [
     "reuters",
@@ -249,6 +266,48 @@ const ID_DOCUMENT_SOURCE_AUTHORITY = {
     "attorney",
     "marketing",
   ],
+};
+const IDENTITY_PROFILE_SOURCE_PRIORITY = {
+  icao: {
+    strong: ["icao newsroom", "icao trip", "icao.int"],
+    medium: ["biometric update", "keesing", "security document world", "securitydocumentworld"],
+  },
+  residence_permits: {
+    strong: [
+      "ukvi biometric residence permits",
+      "ukvi brp and brc guidance",
+      "gov.uk/biometric-residence-permits",
+      "gov.uk/government/publications/biometric-residence-permits-guidance",
+    ],
+    medium: [
+      "ukvi",
+      "home office",
+      "ind.nl",
+      "ind residence",
+      "migrationsverket",
+      "migration authority",
+      "immigration authority",
+      "immigration service",
+      "immigration department",
+      "government permit issuer",
+    ],
+  },
+  border_control: {
+    strong: ["eu-lisa", "eulisa", "cbp newsroom", "cbp", "mobile passport control", "frontex"],
+    medium: [
+      "border police",
+      "border agency",
+      "customs and border protection",
+      "government border agency",
+      "sita",
+      "vision-box",
+      "visionbox",
+      "amadeus",
+      "thales",
+      "idemia",
+      "regula",
+    ],
+  },
 };
 const IDENTITY_SUBINTEREST_INTENTS = {
   passports: {
@@ -3444,9 +3503,13 @@ function computePersonalInterestBoost(article, interestId) {
           matchedNegative: [],
         })
         : { score: 0, matchedStrong: [], matchedWeak: [], matchedNegative: [] };
+      const selectedProfileSourcePriority = selectedSubinterest
+        ? getIdentityProfileSourcePriorityBoost(article, selectedSubinterest)
+        : { level: "none", boost: 0 };
 
       score += Math.min(80, Math.round(signals.primaryContextHits * 0.9));
       score += authority.boost;
+      score += selectedProfileSourcePriority.boost;
       score -= Math.min(90, Math.round(signals.noisyHits * 0.8));
       score += Math.max(-120, subinterestScore.score);
       score -= Math.min(110, subinterestScore.mismatchPenalty);
@@ -3570,6 +3633,8 @@ function computePersonalInterestBoost(article, interestId) {
           matchedWeak: intentScore.matchedWeak,
           matchedNegative: intentScore.matchedNegative,
           travelNoiseArticle: subinterestScore.travelNoiseArticle,
+          sourcePriorityLevel: selectedProfileSourcePriority.level,
+          sourcePriorityBoost: selectedProfileSourcePriority.boost,
           profileScore: selectedProfile?.score || 0,
           profileRejectionReasons: selectedProfile?.rejectionReasons || [],
           finalScore: Math.round(score),
@@ -4188,6 +4253,41 @@ function getIdentityIntentAuthorityBoost(article, intentScore) {
   const context = getPersonalBoostContext(article);
   const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
   return IDENTITY_INTENT_AUTHORITY_SOURCES.some((value) => textMatchesKeyword(sourceFingerprint, value)) ? 20 : 0;
+}
+
+function getIdentityProfileSourcePriorityBoost(article, profileId) {
+  return getCachedArticleValue(article, `identityProfileSourcePriority:${profileId}`, () => {
+    const profile = IDENTITY_PROFILE_SOURCE_PRIORITY[profileId];
+    if (!profile) {
+      return {
+        level: "none",
+        boost: 0,
+      };
+    }
+
+    const context = getPersonalBoostContext(article);
+    const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
+    const hasAny = (values = []) => values.some((value) => textMatchesKeyword(sourceFingerprint, value));
+
+    if (hasAny(profile.strong)) {
+      return {
+        level: "strong",
+        boost: 220,
+      };
+    }
+
+    if (hasAny(profile.medium)) {
+      return {
+        level: "medium",
+        boost: 95,
+      };
+    }
+
+    return {
+      level: "none",
+      boost: 0,
+    };
+  });
 }
 
 function getIdentityDocumentIntentBreakdown(article) {
@@ -5391,6 +5491,9 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
             matchedNegative: [],
           })
           : { score: 0, matchedStrong: [], matchedWeak: [], matchedNegative: [] };
+        const selectedProfileSourcePriority = selectedSubinterest
+          ? getIdentityProfileSourcePriorityBoost(article, selectedSubinterest)
+          : { level: "none", boost: 0 };
         const selectedProfile = selectedSubinterest
           ? (identitySubinterest.profileByInterest?.[selectedSubinterest] || {
             score: 0,
@@ -5419,6 +5522,7 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         }
         score += Math.min(140, Math.round(identitySignals.primaryContextHits * 0.9));
         score += identityAuthority.boost;
+        score += selectedProfileSourcePriority.boost;
         score += Math.max(-140, identitySubinterest.score);
         score -= Math.min(150, Math.round(identitySignals.noisyHits * 0.95));
         score -= Math.min(130, identitySubinterest.mismatchPenalty);
