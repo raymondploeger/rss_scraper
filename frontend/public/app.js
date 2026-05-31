@@ -309,6 +309,92 @@ const IDENTITY_PROFILE_SOURCE_PRIORITY = {
     ],
   },
 };
+const IDENTITY_PROFILE_SOFT_NOISE_TERMS = {
+  passports: [
+    "travel rankings",
+    "passport rankings",
+    "most powerful passport",
+    "visa-free destinations",
+    "best destinations",
+    "vacation",
+    "holiday",
+    "tourism",
+    "travel guide",
+    "passport to paradise",
+    "passport to leadership",
+    "travel passport",
+  ],
+  residence_permits: [
+    "golden visa guide",
+    "digital nomad visa guide",
+    "investor visa guide",
+    "generic visa guide",
+    "seo visa",
+    "travel guide",
+    "tourism",
+    "vacation",
+    "holiday",
+    "visa agency",
+    "immigration lawyer",
+  ],
+  border_control: [
+    "holiday",
+    "vacation",
+    "tourism",
+    "tourist",
+    "travel tips",
+    "travel guide",
+    "best destinations",
+    "airport delays",
+    "missed flight",
+    "long queues",
+    "holidaymakers",
+    "cruise passengers",
+    "ferry passengers",
+    "travel chaos",
+    "airline boss",
+    "arrive three hours before flight",
+  ],
+};
+const IDENTITY_PROFILE_STRONG_CONTEXT_TERMS = {
+  passports: [
+    "icao",
+    "doc 9303",
+    "passport issuance",
+    "passport verification",
+    "passport fraud",
+    "biometric passport",
+    "passport chip",
+    "secure document",
+    "document security",
+  ],
+  residence_permits: [
+    "residence permit card",
+    "biometric residence permit",
+    "foreign resident card",
+    "immigration card",
+    "residence document",
+    "permit issuance",
+    "permit verification",
+    "document verification",
+  ],
+  border_control: [
+    "ees",
+    "etias",
+    "egate",
+    "e-gate",
+    "automated border control",
+    "mobile passport control",
+    "cbp",
+    "frontex",
+    "eu-lisa",
+    "eulisa",
+    "document inspection",
+    "document verification",
+    "border biometrics",
+    "facial recognition",
+  ],
+};
 const IDENTITY_SUBINTEREST_INTENTS = {
   passports: {
     strongPositive: [
@@ -2538,19 +2624,115 @@ function normalizeArticleImageUrl(value) {
   }
 }
 
+function isGoogleNewsArticle(article) {
+  return getCachedArticleValue(article, "isGoogleNewsArticle", () => {
+    const context = getPersonalBoostContext(article);
+    const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
+    return [
+      "news.google.com",
+      "google news",
+      "news.google",
+    ].some((value) => textMatchesKeyword(sourceFingerprint, value));
+  });
+}
+
+function assessArticleImageQuality(article) {
+  return getCachedArticleValue(article, "articleImageQuality", () => {
+    const normalizedImageUrl = normalizeArticleImageUrl(article?.thumbnail);
+    if (!normalizedImageUrl) {
+      return {
+        score: 0,
+        imageSrc: "",
+      };
+    }
+
+    try {
+      const url = new URL(normalizedImageUrl);
+      const fingerprint = `${url.hostname.toLowerCase()} ${url.pathname.toLowerCase()} ${url.search.toLowerCase()}`;
+      let score = 10;
+
+      if ([
+        "news.google.com",
+        "lh3.googleusercontent.com",
+        "gstatic.com",
+        "googleusercontent.com",
+      ].some((value) => fingerprint.includes(value))) {
+        score -= 4;
+      }
+
+      if ([
+        "placeholder",
+        "default-image",
+        "default",
+        "blank",
+        "spacer",
+        "sprite",
+        "logo",
+        "icon",
+        "avatar",
+        "tracking",
+      ].some((value) => fingerprint.includes(value))) {
+        score -= 7;
+      }
+
+      return {
+        score: Math.max(0, score),
+        imageSrc: isNotafiliaUrl(normalizedImageUrl)
+          ? `/api/image?url=${encodeURIComponent(normalizedImageUrl)}`
+          : normalizedImageUrl,
+      };
+    } catch {
+      return {
+        score: 0,
+        imageSrc: "",
+      };
+    }
+  });
+}
+
+function getArticleVisualQualityScore(article) {
+  return getCachedArticleValue(article, "articleVisualQualityScore", () => {
+    const groupedSources = Array.isArray(article?.sources) ? article.sources : [];
+    const candidates = [article, ...groupedSources];
+    return candidates.reduce((bestScore, candidate) => {
+      return Math.max(bestScore, assessArticleImageQuality(candidate).score);
+    }, 0);
+  });
+}
+
 function isDmvWrapperFeed(feed) {
   return isDmvSource(feed);
 }
 
-function getArticleImageSrc(article) {
-  const thumbnail = normalizeArticleImageUrl(article.thumbnail);
-  if (!thumbnail) {
+function getPreferredArticleImageSrc(article) {
+  const groupedSources = getGroupedArticleSources(article);
+  const candidates = [article, ...groupedSources]
+    .map((candidate) => ({
+      article: candidate,
+      quality: assessArticleImageQuality(candidate),
+      googleNews: isGoogleNewsArticle(candidate),
+    }))
+    .filter((entry) => entry.quality.imageSrc);
+
+  if (!candidates.length) {
     return "";
   }
 
-  return isNotafiliaUrl(thumbnail)
-    ? `/api/image?url=${encodeURIComponent(thumbnail)}`
-    : thumbnail;
+  candidates.sort((left, right) => {
+    if (right.quality.score !== left.quality.score) {
+      return right.quality.score - left.quality.score;
+    }
+    if (left.googleNews !== right.googleNews) {
+      return left.googleNews ? 1 : -1;
+    }
+    return 0;
+  });
+
+  return candidates[0]?.quality.imageSrc || "";
+}
+
+function getArticleImageSrc(article) {
+  return getPreferredArticleImageSrc(article);
 }
 
 function toDateInputValue(value) {
@@ -3506,13 +3688,28 @@ function computePersonalInterestBoost(article, interestId) {
       const selectedProfileSourcePriority = selectedSubinterest
         ? getIdentityProfileSourcePriorityBoost(article, selectedSubinterest)
         : { level: "none", boost: 0 };
+      const selectedSoftNoise = selectedSubinterest
+        ? getIdentityProfileSoftNoiseAssessment(article, selectedSubinterest)
+        : { penalty: 0, hasNoise: false, hasStrongContext: false, matchedNoise: [], matchedStrongContext: [] };
+      const googleNewsArticle = isGoogleNewsArticle(article);
+      const visualQualityScore = getArticleVisualQualityScore(article);
 
       score += Math.min(80, Math.round(signals.primaryContextHits * 0.9));
       score += authority.boost;
       score += selectedProfileSourcePriority.boost;
+      score -= selectedSoftNoise.penalty;
       score -= Math.min(90, Math.round(signals.noisyHits * 0.8));
       score += Math.max(-120, subinterestScore.score);
       score -= Math.min(110, subinterestScore.mismatchPenalty);
+      if (googleNewsArticle) {
+        score -= 35;
+        if (!selectedSoftNoise.hasStrongContext) {
+          score -= 55;
+        }
+        if (visualQualityScore <= 2) {
+          score -= 35;
+        }
+      }
 
       if (selectedSubinterest && subinterestScore.bestSelectedScore < 8 && selectedSubinterest !== "drivers_licenses") {
         score -= 400;
@@ -3635,6 +3832,9 @@ function computePersonalInterestBoost(article, interestId) {
           travelNoiseArticle: subinterestScore.travelNoiseArticle,
           sourcePriorityLevel: selectedProfileSourcePriority.level,
           sourcePriorityBoost: selectedProfileSourcePriority.boost,
+          softNoisePenalty: selectedSoftNoise.penalty,
+          googleNewsArticle,
+          visualQualityScore,
           profileScore: selectedProfile?.score || 0,
           profileRejectionReasons: selectedProfile?.rejectionReasons || [],
           finalScore: Math.round(score),
@@ -4286,6 +4486,49 @@ function getIdentityProfileSourcePriorityBoost(article, profileId) {
     return {
       level: "none",
       boost: 0,
+    };
+  });
+}
+
+function getIdentityProfileSoftNoiseAssessment(article, profileId) {
+  return getCachedArticleValue(article, `identityProfileSoftNoise:${profileId}`, () => {
+    const noiseTerms = Array.isArray(IDENTITY_PROFILE_SOFT_NOISE_TERMS[profileId])
+      ? IDENTITY_PROFILE_SOFT_NOISE_TERMS[profileId]
+      : [];
+    const strongContextTerms = Array.isArray(IDENTITY_PROFILE_STRONG_CONTEXT_TERMS[profileId])
+      ? IDENTITY_PROFILE_STRONG_CONTEXT_TERMS[profileId]
+      : [];
+    const context = getPersonalBoostContext(article);
+    const haystack = [
+      context.titleText,
+      context.tagText,
+      context.metadataText,
+      context.bodyText,
+      context.sourceText,
+      context.domainText,
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    const matchedNoise = noiseTerms.filter((term) => textMatchesKeyword(haystack, term));
+    const matchedStrongContext = strongContextTerms.filter((term) => textMatchesKeyword(haystack, term));
+
+    let penalty = 0;
+    if (matchedNoise.length) {
+      penalty += matchedNoise.length * 28;
+      if (!matchedStrongContext.length) {
+        penalty += 110;
+      } else {
+        penalty -= Math.min(60, matchedStrongContext.length * 12);
+      }
+    }
+
+    return {
+      matchedNoise,
+      matchedStrongContext,
+      hasNoise: matchedNoise.length > 0,
+      hasStrongContext: matchedStrongContext.length > 0,
+      penalty: Math.max(0, penalty),
     };
   });
 }
@@ -5494,6 +5737,11 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         const selectedProfileSourcePriority = selectedSubinterest
           ? getIdentityProfileSourcePriorityBoost(article, selectedSubinterest)
           : { level: "none", boost: 0 };
+        const selectedSoftNoise = selectedSubinterest
+          ? getIdentityProfileSoftNoiseAssessment(article, selectedSubinterest)
+          : { penalty: 0, hasNoise: false, hasStrongContext: false, matchedNoise: [], matchedStrongContext: [] };
+        const googleNewsArticle = isGoogleNewsArticle(article);
+        const visualQualityScore = getArticleVisualQualityScore(article);
         const selectedProfile = selectedSubinterest
           ? (identitySubinterest.profileByInterest?.[selectedSubinterest] || {
             score: 0,
@@ -5523,9 +5771,19 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         score += Math.min(140, Math.round(identitySignals.primaryContextHits * 0.9));
         score += identityAuthority.boost;
         score += selectedProfileSourcePriority.boost;
+        score -= selectedSoftNoise.penalty;
         score += Math.max(-140, identitySubinterest.score);
         score -= Math.min(150, Math.round(identitySignals.noisyHits * 0.95));
         score -= Math.min(130, identitySubinterest.mismatchPenalty);
+        if (googleNewsArticle) {
+          score -= 30;
+          if (!selectedSoftNoise.hasStrongContext) {
+            score -= 50;
+          }
+          if (visualQualityScore <= 2) {
+            score -= 30;
+          }
+        }
         if (selectedSubinterest && identitySubinterest.bestSelectedScore < 8 && selectedSubinterest !== "drivers_licenses") {
           score -= 400;
         }
@@ -5886,6 +6144,9 @@ function getPersonalDashboardSortMode() {
   if (selectedMainDomains.length === 1 && selectedMainDomains[0] === "banknotes") {
     return "relevance";
   }
+  if (selectedMainDomains.length === 1 && selectedMainDomains[0] === "identity_documents") {
+    return "relevance";
+  }
   return DEFAULT_PERSONAL_DASHBOARD_SORT;
 }
 
@@ -6140,6 +6401,16 @@ function compareArticlesForDisplay(left, right) {
   }
 
   if (selectedMainDomains.length === 1 && selectedMainDomains[0] === "identity_documents") {
+    const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests();
+    const selectedSubinterest = selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : "";
+    if (selectedSubinterest) {
+      const leftSourcePriority = getIdentityProfileSourcePriorityBoost(left, selectedSubinterest).boost;
+      const rightSourcePriority = getIdentityProfileSourcePriorityBoost(right, selectedSubinterest).boost;
+      if (rightSourcePriority !== leftSourcePriority) {
+        return rightSourcePriority - leftSourcePriority;
+      }
+    }
+
     const leftAuthority = getIdentityDocumentSourceAuthority(left);
     const rightAuthority = getIdentityDocumentSourceAuthority(right);
     if (rightAuthority.multiplier !== leftAuthority.multiplier) {
@@ -6152,6 +6423,12 @@ function compareArticlesForDisplay(left, right) {
     const rightContextScore = rightContext.primaryContextHits - rightContext.noisyHits;
     if (rightContextScore !== leftContextScore) {
       return rightContextScore - leftContextScore;
+    }
+
+    const leftVisualQuality = getArticleVisualQualityScore(left);
+    const rightVisualQuality = getArticleVisualQualityScore(right);
+    if (rightVisualQuality !== leftVisualQuality) {
+      return rightVisualQuality - leftVisualQuality;
     }
   }
 
@@ -6213,6 +6490,9 @@ function logIdentityDocumentTopResults(articles) {
     const selectedProfile = subinterest.selectedSubinterest
       ? subinterest.profileByInterest?.[subinterest.selectedSubinterest]
       : null;
+    const sourcePriority = subinterest.selectedSubinterest
+      ? getIdentityProfileSourcePriorityBoost(article, subinterest.selectedSubinterest)
+      : { level: "none", boost: 0 };
     const finalScore = calculatePersonalDomainScore(article).domainScore;
     const matchedInterests = selectedIdentityInterests.filter(
       (interestId) => computePersonalInterestBoost(article, interestId).score >= 18
@@ -6226,6 +6506,10 @@ function logIdentityDocumentTopResults(articles) {
       selectedSubinterest: subinterest.selectedSubinterest,
       subinterestScore: subinterest.score,
       mismatchPenalty: subinterest.mismatchPenalty,
+      sourcePriorityLevel: sourcePriority.level,
+      sourcePriorityBoost: sourcePriority.boost,
+      googleNewsArticle: isGoogleNewsArticle(article),
+      visualQualityScore: getArticleVisualQualityScore(article),
       profileScore: selectedProfile?.score || 0,
       profileRejections: selectedProfile?.rejectionReasons || [],
       travelNoiseArticle: Boolean(subinterest.travelNoiseArticle),
