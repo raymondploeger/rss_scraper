@@ -43,6 +43,45 @@ const parser = new Parser({
   }
 });
 
+const WEBSITE_NAV_TITLE_PATTERNS = [
+  "home",
+  "downloads",
+  "download",
+  "support",
+  "careers",
+  "career",
+  "jobs",
+  "vacancies",
+  "contact",
+  "contact us",
+  "imprint",
+  "privacy",
+  "privacy policy",
+  "cookie policy",
+  "terms",
+  "legal",
+  "sitemap",
+  "search",
+  "login",
+  "register",
+];
+
+const WEBSITE_NAV_URL_SEGMENTS = [
+  "/careers/",
+  "/jobs/",
+  "/support/",
+  "/download/",
+  "/downloads/",
+  "/contact/",
+  "/privacy/",
+  "/imprint/",
+  "/legal/",
+  "/terms/",
+  "/login/",
+];
+
+const WEBSITE_NEWS_CONTEXT_TERMS = ["newsroom", "news", "press", "media"];
+
 function isNotafiliaUrl(value) {
   try {
     return new URL(String(value || "")).hostname === "news.notafilia.pl";
@@ -87,6 +126,34 @@ function resolveFeedImageCandidate(link, candidate) {
   } catch {
     return candidate;
   }
+}
+
+function normalizeWebsiteValidationText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function isBlockedWebsiteNavTitle(title) {
+  const normalizedTitle = normalizeWebsiteValidationText(title);
+  if (!normalizedTitle) {
+    return true;
+  }
+
+  return WEBSITE_NAV_TITLE_PATTERNS.some((pattern) => {
+    if (normalizedTitle === pattern) {
+      return true;
+    }
+
+    const suffix = normalizedTitle.slice(pattern.length).trim();
+    return normalizedTitle.startsWith(`${pattern} `) && suffix.length > 0 && suffix.length <= 24;
+  });
+}
+
+function urlHasBlockedWebsiteSegment(link) {
+  const value = String(link || "").toLowerCase();
+  return WEBSITE_NAV_URL_SEGMENTS.some((segment) => value.includes(segment));
 }
 
 function pickImageFromSrcset(value) {
@@ -319,6 +386,164 @@ function parseWebsiteDate(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function extractWebsitePublishedDate($, pageUrl = "") {
+  const selectors = [
+    'meta[property="article:published_time"]',
+    'meta[name="article:published_time"]',
+    'meta[name="publish-date"]',
+    'meta[name="pubdate"]',
+    'meta[name="date"]',
+    "time[datetime]",
+    "[datetime]",
+  ];
+
+  for (const selector of selectors) {
+    const node = $(selector).first();
+    const value = node.attr("content") || node.attr("datetime") || node.text();
+    const parsed = parseWebsiteDate(value);
+    if (parsed) {
+      return parsed;
+    }
+  }
+
+  const jsonLdScripts = $('script[type="application/ld+json"]').toArray();
+  for (const script of jsonLdScripts) {
+    const raw = $(script).contents().text();
+    if (!raw) {
+      continue;
+    }
+
+    try {
+      const payload = JSON.parse(raw);
+      const entries = Array.isArray(payload) ? payload : [payload];
+      for (const entry of entries) {
+        const parsed = parseWebsiteDate(entry?.datePublished || entry?.dateCreated || entry?.dateModified);
+        if (parsed) {
+          return parsed;
+        }
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  if (pageUrl) {
+    const fromUrl = pageUrl.match(/\/(20\d{2})\/(\d{1,2})\/(\d{1,2})(?:\/|$)/);
+    if (fromUrl) {
+      const parsed = parseWebsiteDate(`${fromUrl[1]}-${fromUrl[2]}-${fromUrl[3]}`);
+      if (parsed) {
+        return parsed;
+      }
+    }
+  }
+
+  return null;
+}
+
+function extractWebsiteArticleBody($) {
+  const selectors = [
+    "article p",
+    ".entry-content p",
+    ".post-content p",
+    ".article-content p",
+    ".content p",
+    "main p",
+  ];
+
+  for (const selector of selectors) {
+    const text = $(selector)
+      .slice(0, 12)
+      .map((_, element) => $(element).text())
+      .get()
+      .join(" ");
+    const sanitized = sanitizeFeedText(text, "");
+    if (sanitized.length >= 140) {
+      return sanitized;
+    }
+  }
+
+  return "";
+}
+
+function hasWebsiteNewsroomContext($, pageUrl = "") {
+  const bucket = [
+    pageUrl,
+    $("body").attr("class") || "",
+    $("main").attr("class") || "",
+    $("article").attr("class") || "",
+    $("nav.breadcrumb, .breadcrumb, [aria-label='breadcrumb']").text() || "",
+    $("meta[property='og:type']").attr("content") || "",
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  return WEBSITE_NEWS_CONTEXT_TERMS.some((term) => bucket.includes(term));
+}
+
+async function validateWebsiteArticleCandidate(link, title) {
+  // Website sources are noisier than RSS feeds, so we require article-like signals
+  // before allowing a page into storage.
+  if (isBlockedWebsiteNavTitle(title)) {
+    return {
+      accepted: false,
+      reason: "blocked-title",
+      title,
+      link,
+    };
+  }
+
+  const html = String((await fetchWebsiteHtml(link)).data || "");
+  const $ = cheerio.load(html);
+  const pageTitle =
+    sanitizeFeedText($('meta[property="og:title"]').attr("content"), "") ||
+    sanitizeFeedText($("title").first().text(), "") ||
+    title;
+
+  if (isBlockedWebsiteNavTitle(pageTitle)) {
+    return {
+      accepted: false,
+      reason: "blocked-page-title",
+      title: pageTitle,
+      link,
+    };
+  }
+
+  const publishedDate = extractWebsitePublishedDate($, link);
+  const articleBody = extractWebsiteArticleBody($);
+  const hasNewsroomContext = hasWebsiteNewsroomContext($, link);
+  const hasArticleBody = articleBody.length >= 140;
+  const hasRequiredSignal = Boolean(publishedDate || hasArticleBody || hasNewsroomContext);
+
+  if (urlHasBlockedWebsiteSegment(link) && !publishedDate) {
+    return {
+      accepted: false,
+      reason: "blocked-url-without-date",
+      title: pageTitle,
+      link,
+    };
+  }
+
+  if (!hasRequiredSignal) {
+    return {
+      accepted: false,
+      reason: "missing-article-signals",
+      title: pageTitle,
+      link,
+    };
+  }
+
+  return {
+    accepted: true,
+    title: pageTitle,
+    link,
+    isoDate: (publishedDate || new Date()).toISOString(),
+    contentSnippet: sanitizeFeedText(articleBody, ""),
+    hasNewsroomContext,
+    hasArticleBody,
+    hasPublicationDate: Boolean(publishedDate),
+  };
+}
+
 function inferWebsiteItemDate($, anchor) {
   const containers = [$(anchor), $(anchor).closest("article"), $(anchor).parent(), $(anchor).closest("li")];
 
@@ -406,12 +631,24 @@ async function extractWebsiteItems(feed) {
       continue;
     }
 
+    const validated = await validateWebsiteArticleCandidate(link, text).catch((error) => {
+      console.warn(`Website article validation failed for ${link}:`, error?.message || error);
+      return null;
+    });
+    if (!validated?.accepted) {
+      if (validated?.reason) {
+        console.log(`Rejected website candidate ${link}: ${validated.reason}`);
+      }
+      continue;
+    }
+
     seenLinks.add(canonicalLink);
     items.push({
-      title: text,
+      title: validated.title || text,
       link,
-      isoDate: inferWebsiteItemDate($, anchor).toISOString(),
-      contentSnippet: sanitizeFeedText($(anchor).closest("article, li, div").text(), ""),
+      isoDate: validated.isoDate || inferWebsiteItemDate($, anchor).toISOString(),
+      contentSnippet:
+        validated.contentSnippet || sanitizeFeedText($(anchor).closest("article, li, div").text(), ""),
       author: "",
       source: getSourceName(link)
     });
