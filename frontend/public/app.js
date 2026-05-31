@@ -381,8 +381,12 @@ const IDENTITY_PROFILE_SOFT_NOISE_TERMS = {
     "tourist banned",
     "traveler damages gate",
     "traveller damages gate",
+    "traveler incident",
+    "traveller incident",
     "passenger incident",
     "airport incident",
+    "airport disturbance",
+    "immigration gate vandalism",
   ],
 };
 const IDENTITY_PROFILE_STRONG_CONTEXT_TERMS = {
@@ -449,6 +453,7 @@ const IDENTITY_WEBSITE_NAV_TITLE_TERMS = [
   "vacancies",
   "contact",
   "contact us",
+  "about us",
   "imprint",
   "privacy",
   "privacy policy",
@@ -473,6 +478,28 @@ const IDENTITY_WEBSITE_NAV_URL_SEGMENTS = [
   "/terms/",
   "/login/",
   "/sitemap/",
+];
+const IDENTITY_WEBSITE_MARKETING_TITLE_TERMS = [
+  "solutions",
+  "products",
+  "portfolio",
+  "capabilities",
+  "services",
+  "offerings",
+  "identity management",
+  "physical documents",
+  "document readers",
+];
+const IDENTITY_WEBSITE_MARKETING_URL_SEGMENTS = [
+  "/solutions/",
+  "/products/",
+  "/portfolio/",
+  "/capabilities/",
+  "/services/",
+  "/offerings/",
+  "/identity-management/",
+  "/physical-documents/",
+  "/document-readers/",
 ];
 const IDENTITY_SUBINTEREST_INTENTS = {
   passports: {
@@ -687,8 +714,12 @@ const IDENTITY_SUBINTEREST_INTENTS = {
       "tourist banned",
       "traveler damages gate",
       "traveller damages gate",
+      "traveler incident",
+      "traveller incident",
       "passenger incident",
       "airport incident",
+      "airport disturbance",
+      "immigration gate vandalism",
     ],
   },
 };
@@ -978,7 +1009,11 @@ const IDENTITY_INTELLIGENCE_PROFILES = {
       "tourist banned",
       "traveler damages gate",
       "traveller damages gate",
+      "traveler incident",
+      "traveller incident",
       "airport incident",
+      "airport disturbance",
+      "immigration gate vandalism",
     ],
     requiredContextGroups: [["border", "passport control", "immigration"], ["biometric", "verification", "document", "egate", "ees", "etias", "frontex", "cbp", "facial recognition", "inspection", "automation"]],
     authorityBoostSources: [
@@ -1308,6 +1343,10 @@ const IDENTITY_BORDER_CONTROL_TRAVEL_NOISE_TERMS = [
   "tourist banned",
   "traveler damages gate",
   "traveller damages gate",
+  "traveler incident",
+  "traveller incident",
+  "airport disturbance",
+  "immigration gate vandalism",
 ];
 const IDENTITY_BORDER_CONTROL_TECH_TERMS = [
   "biometric",
@@ -3925,6 +3964,9 @@ function computePersonalInterestBoost(article, interestId) {
       const selectedSoftNoise = selectedSubinterest
         ? getIdentityProfileSoftNoiseAssessment(article, selectedSubinterest)
         : { penalty: 0, hasNoise: false, hasStrongContext: false, matchedNoise: [], matchedStrongContext: [] };
+      const borderMarketingPenalty = selectedSubinterest === "border_control"
+        ? getBorderControlMarketingPagePenalty(article)
+        : { penalty: 0 };
       const googleNewsArticle = isGoogleNewsArticle(article);
       const visualQualityScore = getArticleVisualQualityScore(article);
       const activeIdentityProfile = selectedSubinterest || interestId || "";
@@ -3985,6 +4027,9 @@ function computePersonalInterestBoost(article, interestId) {
       if (selectedSubinterest === "border_control" && borderTravelNoise && !borderTechContext) {
         score -= 900;
         hardPenaltyApplied += 900;
+      }
+      if (selectedSubinterest === "border_control" && borderMarketingPenalty.penalty) {
+        score -= borderMarketingPenalty.penalty;
       }
       if (selectedSubinterest === "passports" && passportLifestyleNoise && !passportAnchorContext) {
         score -= 260;
@@ -4741,6 +4786,65 @@ function isIdentityNavigationPageArticle(article) {
     const blockedUrl = IDENTITY_WEBSITE_NAV_URL_SEGMENTS.some((segment) => linkValue.includes(segment));
 
     return titleBlocked || (blockedUrl && !hasStrongContext);
+  });
+}
+
+function getBorderControlMarketingPagePenalty(article) {
+  return getCachedArticleValue(article, "borderControlMarketingPagePenalty", () => {
+    const context = getPersonalBoostContext(article);
+    const normalizedTitle = normalizeIdentityNavTitle(article?.title || "");
+    const linkValue = `${article?.link || ""} ${article?.canonicalLink || ""}`.toLowerCase();
+    const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
+    const strongContextTerms = [
+      ...IDENTITY_PROFILE_STRONG_CONTEXT_TERMS.border_control,
+      "news",
+      "newsroom",
+      "press",
+      "media",
+      "announcement",
+      "announcements",
+      "case study",
+      "case studies",
+    ];
+    const hasStrongContext = strongContextTerms.some((term) =>
+      textMatchesKeyword(
+        [
+          context.titleText,
+          context.tagText,
+          context.metadataText,
+          context.bodyText,
+          context.sourceText,
+          context.domainText,
+        ]
+          .filter(Boolean)
+          .join(" "),
+        term
+      )
+    );
+    const marketingTitleMatches = IDENTITY_WEBSITE_MARKETING_TITLE_TERMS.filter((term) => normalizedTitle.includes(term));
+    const marketingUrl = IDENTITY_WEBSITE_MARKETING_URL_SEGMENTS.some((segment) => linkValue.includes(segment));
+    const veridosArticle = textMatchesKeyword(sourceFingerprint, "veridos");
+    const veridosPreferredContext = ["press", "media", "news", "announcement", "announcements", "case study", "case studies"]
+      .some((term) => textMatchesKeyword([context.titleText, context.metadataText, context.bodyText].join(" "), term));
+
+    let penalty = 0;
+    if ((marketingTitleMatches.length || marketingUrl) && !hasStrongContext) {
+      penalty += 180 + (marketingTitleMatches.length * 35);
+    } else if (marketingTitleMatches.length || marketingUrl) {
+      penalty += 45;
+    }
+
+    if (veridosArticle && (marketingTitleMatches.length || marketingUrl) && !veridosPreferredContext) {
+      penalty += 140;
+    }
+
+    return {
+      penalty,
+      hasStrongContext,
+      marketingTitleMatches,
+      marketingUrl,
+      veridosPreferredContext,
+    };
   });
 }
 
@@ -6124,6 +6228,9 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         const selectedSoftNoise = selectedSubinterest
           ? getIdentityProfileSoftNoiseAssessment(article, selectedSubinterest)
           : { penalty: 0, hasNoise: false, hasStrongContext: false, matchedNoise: [], matchedStrongContext: [] };
+        const borderMarketingPenalty = selectedSubinterest === "border_control"
+          ? getBorderControlMarketingPagePenalty(article)
+          : { penalty: 0 };
         const googleNewsArticle = isGoogleNewsArticle(article);
         const visualQualityScore = getArticleVisualQualityScore(article);
         const activeIdentityProfile = selectedSubinterest || "";
@@ -6196,6 +6303,9 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         }
         if (selectedSubinterest === "border_control" && borderTravelNoise && !borderTechContext) {
           score -= 900;
+        }
+        if (selectedSubinterest === "border_control" && borderMarketingPenalty.penalty) {
+          score -= borderMarketingPenalty.penalty;
         }
         if (selectedSubinterest === "passports" && passportLifestyleNoise && !passportAnchorContext) {
           score -= 260;

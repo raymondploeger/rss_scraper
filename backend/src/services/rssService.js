@@ -55,6 +55,7 @@ const WEBSITE_NAV_TITLE_PATTERNS = [
   "vacancies",
   "contact",
   "contact us",
+  "about us",
   "imprint",
   "privacy",
   "privacy policy",
@@ -83,6 +84,29 @@ const WEBSITE_NAV_URL_SEGMENTS = [
 ];
 
 const WEBSITE_NEWS_CONTEXT_TERMS = ["newsroom", "news", "press", "media"];
+const WEBSITE_MARKETING_TITLE_TERMS = [
+  "solutions",
+  "products",
+  "portfolio",
+  "capabilities",
+  "services",
+  "offerings",
+  "identity management",
+  "physical documents",
+  "document readers",
+];
+const WEBSITE_MARKETING_URL_SEGMENTS = [
+  "/solutions/",
+  "/products/",
+  "/portfolio/",
+  "/capabilities/",
+  "/services/",
+  "/offerings/",
+  "/identity-management/",
+  "/physical-documents/",
+  "/document-readers/",
+];
+const VERIDOS_NEWS_CONTEXT_TERMS = ["press", "press release", "media", "news", "announcement", "announcements", "case study", "case studies"];
 
 function isNotafiliaUrl(value) {
   try {
@@ -156,6 +180,16 @@ function isBlockedWebsiteNavTitle(title) {
 function urlHasBlockedWebsiteSegment(link) {
   const value = String(link || "").toLowerCase();
   return WEBSITE_NAV_URL_SEGMENTS.some((segment) => value.includes(segment));
+}
+
+function hasWebsiteMarketingTitle(title) {
+  const normalizedTitle = normalizeWebsiteValidationText(title);
+  return WEBSITE_MARKETING_TITLE_TERMS.some((pattern) => normalizedTitle.includes(pattern));
+}
+
+function urlHasMarketingWebsiteSegment(link) {
+  const value = String(link || "").toLowerCase();
+  return WEBSITE_MARKETING_URL_SEGMENTS.some((segment) => value.includes(segment));
 }
 
 function pickImageFromSrcset(value) {
@@ -515,6 +549,17 @@ async function validateWebsiteArticleCandidate(link, title) {
   const hasNewsroomContext = hasWebsiteNewsroomContext($, link);
   const hasArticleBody = articleBody.length >= 140;
   const hasRequiredSignal = Boolean(publishedDate || hasArticleBody || hasNewsroomContext);
+  const strongArticleSignals = [Boolean(publishedDate), hasArticleBody, hasNewsroomContext].filter(Boolean).length;
+  const marketingTitle = hasWebsiteMarketingTitle(pageTitle);
+  const marketingUrl = urlHasMarketingWebsiteSegment(link);
+  const hostname = getHostname(link);
+  const veridosSource = hostname.includes("veridos");
+  const veridosNewsContext = VERIDOS_NEWS_CONTEXT_TERMS.some((term) =>
+    [pageTitle, link, $("body").text().slice(0, 1500)]
+      .join(" ")
+      .toLowerCase()
+      .includes(term)
+  );
 
   if (urlHasBlockedWebsiteSegment(link) && !publishedDate) {
     return {
@@ -529,6 +574,24 @@ async function validateWebsiteArticleCandidate(link, title) {
     return {
       accepted: false,
       reason: "missing-article-signals",
+      title: pageTitle,
+      link,
+    };
+  }
+
+  if ((marketingTitle || marketingUrl) && strongArticleSignals < 2) {
+    return {
+      accepted: false,
+      reason: "marketing-page-without-article-signals",
+      title: pageTitle,
+      link,
+    };
+  }
+
+  if (veridosSource && (marketingTitle || marketingUrl) && !veridosNewsContext) {
+    return {
+      accepted: false,
+      reason: "veridos-marketing-page",
       title: pageTitle,
       link,
     };
