@@ -45,6 +45,7 @@ const parser = new Parser({
 
 const WEBSITE_NAV_TITLE_PATTERNS = [
   "home",
+  "projects",
   "downloads",
   "download",
   "support",
@@ -78,6 +79,7 @@ const WEBSITE_NAV_URL_SEGMENTS = [
   "/legal/",
   "/terms/",
   "/login/",
+  "/sitemap/",
 ];
 
 const WEBSITE_NEWS_CONTEXT_TERMS = ["newsroom", "news", "press", "media"];

@@ -365,14 +365,24 @@ const IDENTITY_PROFILE_SOFT_NOISE_TERMS = {
     "travel guide",
     "best destinations",
     "airport delays",
+    "airport delay",
     "missed flight",
     "long queues",
+    "long queue",
     "holidaymakers",
     "cruise passengers",
     "ferry passengers",
     "travel chaos",
     "airline boss",
     "arrive three hours before flight",
+    "customs wait times",
+    "customs wait time",
+    "tourist arrested",
+    "tourist banned",
+    "traveler damages gate",
+    "traveller damages gate",
+    "passenger incident",
+    "airport incident",
   ],
 };
 const IDENTITY_PROFILE_STRONG_CONTEXT_TERMS = {
@@ -427,6 +437,43 @@ const IDENTITY_PROFILE_STRONG_CONTEXT_TERMS = {
     "facial recognition",
   ],
 };
+const IDENTITY_WEBSITE_NAV_TITLE_TERMS = [
+  "home",
+  "projects",
+  "downloads",
+  "download",
+  "support",
+  "careers",
+  "career",
+  "jobs",
+  "vacancies",
+  "contact",
+  "contact us",
+  "imprint",
+  "privacy",
+  "privacy policy",
+  "cookie policy",
+  "terms",
+  "legal",
+  "sitemap",
+  "search",
+  "login",
+  "register",
+];
+const IDENTITY_WEBSITE_NAV_URL_SEGMENTS = [
+  "/careers/",
+  "/jobs/",
+  "/support/",
+  "/download/",
+  "/downloads/",
+  "/contact/",
+  "/privacy/",
+  "/imprint/",
+  "/legal/",
+  "/terms/",
+  "/login/",
+  "/sitemap/",
+];
 const IDENTITY_SUBINTEREST_INTENTS = {
   passports: {
     strongPositive: [
@@ -619,18 +666,29 @@ const IDENTITY_SUBINTEREST_INTENTS = {
     ],
     hardNegative: [
       "airport delays",
+      "airport delay",
       "flight delays",
       "travel chaos",
       "holidaymakers",
       "tourism disruption",
       "customs waiting times",
+      "customs wait times",
+      "customs wait time",
       "longest queues",
+      "long queue",
+      "long queues",
       "airport congestion",
       "travel tips",
       "airline advice",
       "arrive early",
       "busiest travel days",
       "tourism forecasts",
+      "tourist arrested",
+      "tourist banned",
+      "traveler damages gate",
+      "traveller damages gate",
+      "passenger incident",
+      "airport incident",
     ],
   },
 };
@@ -889,11 +947,13 @@ const IDENTITY_INTELLIGENCE_PROFILES = {
     strongNegative: [
       "airport queue",
       "airport delays",
+      "airport delay",
       "airport chaos",
       "ryanair",
       "travel delays",
       "flight delays",
       "passenger complaint",
+      "passenger incident",
       "baggage",
       "holiday travel",
       "holidaymakers",
@@ -902,7 +962,11 @@ const IDENTITY_INTELLIGENCE_PROFILES = {
       "flight disruption",
       "airport operational chaos",
       "customs waiting times",
+      "customs wait times",
+      "customs wait time",
       "longest queues",
+      "long queue",
+      "long queues",
       "airport congestion",
       "travel tips",
       "airline advice",
@@ -910,6 +974,11 @@ const IDENTITY_INTELLIGENCE_PROFILES = {
       "busiest travel days",
       "tourism forecasts",
       "travel chaos",
+      "tourist arrested",
+      "tourist banned",
+      "traveler damages gate",
+      "traveller damages gate",
+      "airport incident",
     ],
     requiredContextGroups: [["border", "passport control", "immigration"], ["biometric", "verification", "document", "egate", "ees", "etias", "frontex", "cbp", "facial recognition", "inspection", "automation"]],
     authorityBoostSources: [
@@ -1214,19 +1283,31 @@ const IDENTITY_REQUIRED_CONTEXT_STRICT_PENALTIES = {
 const IDENTITY_BORDER_CONTROL_TRAVEL_NOISE_TERMS = [
   "airport queue",
   "airport queues",
+  "airport delay",
+  "airport delays",
   "missed flight",
   "ryanair",
   "passengers waited",
   "travel advice",
   "customs wait times",
+  "customs wait time",
   "holiday delays",
   "passenger complaints",
+  "passenger incident",
   "airport chaos",
+  "airport incident",
   "family stranded",
   "flight took off without them",
   "airport operational chaos",
   "travel disruption",
   "flight disruption",
+  "long queue",
+  "long queues",
+  "holidaymakers",
+  "tourist arrested",
+  "tourist banned",
+  "traveler damages gate",
+  "traveller damages gate",
 ];
 const IDENTITY_BORDER_CONTROL_TECH_TERMS = [
   "biometric",
@@ -4609,6 +4690,60 @@ function getIdentityIntentAuthorityBoost(article, intentScore) {
   return IDENTITY_INTENT_AUTHORITY_SOURCES.some((value) => textMatchesKeyword(sourceFingerprint, value)) ? 20 : 0;
 }
 
+function normalizeIdentityNavTitle(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function isIdentityNavigationPageArticle(article) {
+  return getCachedArticleValue(article, "identityNavigationPageArticle", () => {
+    const context = getPersonalBoostContext(article);
+    const normalizedTitle = normalizeIdentityNavTitle(article?.title || "");
+    const linkValue = `${article?.link || ""} ${article?.canonicalLink || ""}`.toLowerCase();
+    const strongContextTerms = Array.from(
+      new Set([
+        ...Object.values(IDENTITY_PROFILE_STRONG_CONTEXT_TERMS).flatMap((terms) => terms),
+        "news",
+        "newsroom",
+        "press",
+        "media",
+        "announcement",
+        "announcements",
+        "update",
+        "updates",
+      ])
+    );
+    const hasStrongContext = strongContextTerms.some((term) =>
+      textMatchesKeyword(
+        [
+          context.titleText,
+          context.tagText,
+          context.metadataText,
+          context.bodyText,
+          context.sourceText,
+          context.domainText,
+        ]
+          .filter(Boolean)
+          .join(" "),
+        term
+      )
+    );
+    const titleBlocked = IDENTITY_WEBSITE_NAV_TITLE_TERMS.some((pattern) => {
+      if (normalizedTitle === pattern) {
+        return true;
+      }
+
+      const suffix = normalizedTitle.slice(pattern.length).trim();
+      return normalizedTitle.startsWith(`${pattern} `) && suffix.length > 0 && suffix.length <= 24;
+    });
+    const blockedUrl = IDENTITY_WEBSITE_NAV_URL_SEGMENTS.some((segment) => linkValue.includes(segment));
+
+    return titleBlocked || (blockedUrl && !hasStrongContext);
+  });
+}
+
 function getIdentityProfileSourcePriorityBoost(article, profileId) {
   return getCachedArticleValue(article, `identityProfileSourcePriority:${profileId}`, () => {
     const profile = IDENTITY_PROFILE_SOURCE_PRIORITY[profileId];
@@ -6283,6 +6418,10 @@ function articleMatchesPersonalDashboardSelection(article) {
   }
 
   if (primaryDomain === "identity_documents") {
+    if (isIdentityNavigationPageArticle(article)) {
+      return false;
+    }
+
     const selectedIdentityInterests = selectedInterests.filter(
       (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "identity_documents"
     );
