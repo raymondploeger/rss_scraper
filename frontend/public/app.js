@@ -378,6 +378,19 @@ const IDENTITY_PROFILE_STRONG_CONTEXT_TERMS = {
     "permit verification",
     "document verification",
   ],
+  icao: [
+    "icao",
+    "doc 9303",
+    "pkd",
+    "digital travel credential",
+    "dtc",
+    "mrz",
+    "mrtd",
+    "emrtd",
+    "chip authentication",
+    "active authentication",
+    "lds",
+  ],
   border_control: [
     "ees",
     "etias",
@@ -3693,22 +3706,20 @@ function computePersonalInterestBoost(article, interestId) {
         : { penalty: 0, hasNoise: false, hasStrongContext: false, matchedNoise: [], matchedStrongContext: [] };
       const googleNewsArticle = isGoogleNewsArticle(article);
       const visualQualityScore = getArticleVisualQualityScore(article);
+      const activeIdentityProfile = selectedSubinterest || interestId || "";
+      const recencyAdjustment = getIdentityRecencyAdjustment(article);
+      const googleNewsPenalty = getIdentityGoogleNewsPenalty(article, activeIdentityProfile);
 
       score += Math.min(80, Math.round(signals.primaryContextHits * 0.9));
       score += authority.boost;
       score += selectedProfileSourcePriority.boost;
+      score += recencyAdjustment.boost;
       score -= selectedSoftNoise.penalty;
       score -= Math.min(90, Math.round(signals.noisyHits * 0.8));
       score += Math.max(-120, subinterestScore.score);
       score -= Math.min(110, subinterestScore.mismatchPenalty);
       if (googleNewsArticle) {
-        score -= 35;
-        if (!selectedSoftNoise.hasStrongContext) {
-          score -= 55;
-        }
-        if (visualQualityScore <= 2) {
-          score -= 35;
-        }
+        score -= googleNewsPenalty.penalty;
       }
 
       if (selectedSubinterest && subinterestScore.bestSelectedScore < 8 && selectedSubinterest !== "drivers_licenses") {
@@ -3832,6 +3843,9 @@ function computePersonalInterestBoost(article, interestId) {
           travelNoiseArticle: subinterestScore.travelNoiseArticle,
           sourcePriorityLevel: selectedProfileSourcePriority.level,
           sourcePriorityBoost: selectedProfileSourcePriority.boost,
+          recencyBoost: recencyAdjustment.boost,
+          ageDays: Math.round(recencyAdjustment.ageDays),
+          googleNewsPenalty: googleNewsPenalty.penalty,
           softNoisePenalty: selectedSoftNoise.penalty,
           googleNewsArticle,
           visualQualityScore,
@@ -4529,6 +4543,100 @@ function getIdentityProfileSoftNoiseAssessment(article, profileId) {
       hasNoise: matchedNoise.length > 0,
       hasStrongContext: matchedStrongContext.length > 0,
       penalty: Math.max(0, penalty),
+    };
+  });
+}
+
+function getIdentityRecencyAdjustment(article) {
+  return getCachedArticleValue(article, "identityRecencyAdjustment", () => {
+    const publishedAt = getArticlePublishedTimestamp(article);
+    if (!publishedAt) {
+      return {
+        ageDays: Number.POSITIVE_INFINITY,
+        boost: -45,
+      };
+    }
+
+    const ageDays = Math.max(0, (Date.now() - publishedAt) / (24 * 60 * 60 * 1000));
+    let boost = 0;
+
+    if (ageDays <= 30) {
+      boost = 125;
+    } else if (ageDays <= 90) {
+      boost = 70;
+    } else if (ageDays <= 180) {
+      boost = 30;
+    } else if (ageDays > 365 * 5) {
+      boost = -260;
+    } else if (ageDays > 365 * 3) {
+      boost = -180;
+    } else if (ageDays > 365) {
+      boost = -90;
+    }
+
+    return {
+      ageDays,
+      boost,
+    };
+  });
+}
+
+function getIdentityGoogleNewsPenalty(article, profileId) {
+  return getCachedArticleValue(article, `identityGoogleNewsPenalty:${profileId}`, () => {
+    if (!isGoogleNewsArticle(article)) {
+      return {
+        penalty: 0,
+        hasStrongContext: false,
+        weakContext: false,
+      };
+    }
+
+    const recency = getIdentityRecencyAdjustment(article);
+    const visualQualityScore = getArticleVisualQualityScore(article);
+    const strongContextTerms = profileId && Array.isArray(IDENTITY_PROFILE_STRONG_CONTEXT_TERMS[profileId])
+      ? IDENTITY_PROFILE_STRONG_CONTEXT_TERMS[profileId]
+      : Array.from(
+        new Set(Object.values(IDENTITY_PROFILE_STRONG_CONTEXT_TERMS).flatMap((terms) => terms))
+      );
+    const context = getPersonalBoostContext(article);
+    const haystack = [
+      context.titleText,
+      context.tagText,
+      context.metadataText,
+      context.bodyText,
+      context.sourceText,
+      context.domainText,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const matchedStrongContext = strongContextTerms.filter((term) => textMatchesKeyword(haystack, term));
+    const hasStrongContext = matchedStrongContext.length > 0;
+    const softNoise = getIdentityProfileSoftNoiseAssessment(article, profileId);
+
+    let penalty = 35;
+    if (recency.ageDays > 365) {
+      penalty += 90;
+    }
+    if (recency.ageDays > 365 * 3) {
+      penalty += 90;
+    }
+    if (visualQualityScore <= 2) {
+      penalty += 35;
+    }
+    if (!hasStrongContext) {
+      penalty += 55;
+    }
+    if (softNoise.hasNoise && !softNoise.hasStrongContext) {
+      penalty += 60;
+    }
+    if (hasStrongContext) {
+      penalty -= 45;
+    }
+
+    return {
+      penalty: Math.max(0, penalty),
+      hasStrongContext,
+      weakContext: !hasStrongContext,
     };
   });
 }
@@ -5742,6 +5850,9 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
           : { penalty: 0, hasNoise: false, hasStrongContext: false, matchedNoise: [], matchedStrongContext: [] };
         const googleNewsArticle = isGoogleNewsArticle(article);
         const visualQualityScore = getArticleVisualQualityScore(article);
+        const activeIdentityProfile = selectedSubinterest || "";
+        const recencyAdjustment = getIdentityRecencyAdjustment(article);
+        const googleNewsPenalty = getIdentityGoogleNewsPenalty(article, activeIdentityProfile);
         const selectedProfile = selectedSubinterest
           ? (identitySubinterest.profileByInterest?.[selectedSubinterest] || {
             score: 0,
@@ -5771,18 +5882,13 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         score += Math.min(140, Math.round(identitySignals.primaryContextHits * 0.9));
         score += identityAuthority.boost;
         score += selectedProfileSourcePriority.boost;
+        score += recencyAdjustment.boost;
         score -= selectedSoftNoise.penalty;
         score += Math.max(-140, identitySubinterest.score);
         score -= Math.min(150, Math.round(identitySignals.noisyHits * 0.95));
         score -= Math.min(130, identitySubinterest.mismatchPenalty);
         if (googleNewsArticle) {
-          score -= 30;
-          if (!selectedSoftNoise.hasStrongContext) {
-            score -= 50;
-          }
-          if (visualQualityScore <= 2) {
-            score -= 30;
-          }
+          score -= googleNewsPenalty.penalty;
         }
         if (selectedSubinterest && identitySubinterest.bestSelectedScore < 8 && selectedSubinterest !== "drivers_licenses") {
           score -= 400;
