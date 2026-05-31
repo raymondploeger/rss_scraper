@@ -2,6 +2,7 @@ import { createApp } from "./app.js";
 import { connectDatabase, disconnectDatabase } from "./config/db.js";
 import { env, envFilePath } from "./config/env.js";
 import { startScheduler } from "./services/schedulerService.js";
+import { ensureStrategicFeeds } from "./services/strategicFeedBootstrapService.js";
 import { spawn } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -55,6 +56,7 @@ async function bootstrapRuntime() {
   markDatabaseConnected(true);
   await runMigrationsInBackground();
   markMigrationsApplied(true);
+  await ensureStrategicFeeds();
 
   if (!schedulerStarted) {
     startScheduler();
