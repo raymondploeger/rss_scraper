@@ -13,6 +13,8 @@
     "db:poll-logs": "node scripts/poll-logs-analysis.js",
     "db:poll-indexes": "node scripts/poll-logs-index-analysis.js",
     "db:cleanup-poll-logs": "node scripts/cleanup-poll-logs.js",
+    "db:product-cleanup": "node scripts/cleanup-product-pages.js",
+    "db:product-cleanup:execute": "node scripts/cleanup-product-pages.js --execute",
     "db:optimize-poll-indexes": "node scripts/optimize-poll-log-indexes.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
