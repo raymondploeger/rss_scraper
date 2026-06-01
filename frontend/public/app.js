@@ -501,6 +501,80 @@ const IDENTITY_WEBSITE_MARKETING_URL_SEGMENTS = [
   "/physical-documents/",
   "/document-readers/",
 ];
+const BORDER_CONTROL_NEWS_SIGNAL_TERMS = [
+  "launch",
+  "launched",
+  "rollout",
+  "rolled out",
+  "deployment",
+  "deployed",
+  "implementation",
+  "implemented",
+  "contract",
+  "awarded",
+  "procurement",
+  "partnership",
+  "agreement",
+  "collaboration",
+  "pilot",
+  "trial",
+  "expansion",
+  "expands",
+  "upgrade",
+  "upgraded",
+  "modernization",
+  "opens",
+  "operational",
+  "production",
+  "installed",
+  "commissioned",
+  "announcement",
+  "press release",
+  "news release",
+  "media release",
+];
+const BORDER_CONTROL_NEWS_CONTEXT_TERMS = [
+  "egate deployment",
+  "abc deployment",
+  "automated border control",
+  "mobile passport control",
+  "mpc rollout",
+  "ees rollout",
+  "etias rollout",
+  "frontex update",
+  "cbp announcement",
+  "eu-lisa implementation",
+  "document verification deployment",
+  "passport inspection deployment",
+  "border biometrics deployment",
+  "border management system",
+  "document inspection",
+  "passport verification",
+];
+const BORDER_CONTROL_PRODUCT_PAGE_TERMS = [
+  "document readers",
+  "document reader",
+  "identity verification devices",
+  "biometric verification software",
+  "identity management",
+  "solutions",
+  "products",
+  "portfolio",
+  "services",
+  "capabilities",
+  "offerings",
+  "product family",
+  "platform",
+  "border management solutions",
+];
+const BORDER_CONTROL_VENDOR_SOURCE_TERMS = [
+  "regula",
+  "veridos",
+  "idemia",
+  "thales",
+  "vision-box",
+  "visionbox",
+];
 const IDENTITY_SUBINTEREST_INTENTS = {
   passports: {
     strongPositive: [
@@ -3967,6 +4041,9 @@ function computePersonalInterestBoost(article, interestId) {
       const borderMarketingPenalty = selectedSubinterest === "border_control"
         ? getBorderControlMarketingPagePenalty(article)
         : { penalty: 0 };
+      const borderNewsPriority = selectedSubinterest === "border_control"
+        ? getBorderControlNewsPriority(article)
+        : { boost: 0, penalty: 0 };
       const googleNewsArticle = isGoogleNewsArticle(article);
       const visualQualityScore = getArticleVisualQualityScore(article);
       const activeIdentityProfile = selectedSubinterest || interestId || "";
@@ -3978,6 +4055,10 @@ function computePersonalInterestBoost(article, interestId) {
       score += selectedProfileSourcePriority.boost;
       score += recencyAdjustment.boost;
       score -= selectedSoftNoise.penalty;
+      if (selectedSubinterest === "border_control") {
+        score += borderNewsPriority.boost;
+        score -= borderNewsPriority.penalty;
+      }
       score -= Math.min(90, Math.round(signals.noisyHits * 0.8));
       score += Math.max(-120, subinterestScore.score);
       score -= Math.min(110, subinterestScore.mismatchPenalty);
@@ -4844,6 +4925,68 @@ function getBorderControlMarketingPagePenalty(article) {
       marketingTitleMatches,
       marketingUrl,
       veridosPreferredContext,
+    };
+  });
+}
+
+function getBorderControlNewsPriority(article) {
+  return getCachedArticleValue(article, "borderControlNewsPriority", () => {
+    const context = getPersonalBoostContext(article);
+    const haystack = [
+      context.titleText,
+      context.tagText,
+      context.metadataText,
+      context.bodyText,
+      context.sourceText,
+      context.domainText,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const normalizedTitle = normalizeIdentityNavTitle(article?.title || "");
+    const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
+    const recencyAdjustment = getIdentityRecencyAdjustment(article);
+
+    const matchedNewsSignals = BORDER_CONTROL_NEWS_SIGNAL_TERMS.filter((term) => textMatchesKeyword(haystack, term));
+    const matchedNewsContext = BORDER_CONTROL_NEWS_CONTEXT_TERMS.filter((term) => textMatchesKeyword(haystack, term));
+    const matchedProductTerms = BORDER_CONTROL_PRODUCT_PAGE_TERMS.filter((term) => textMatchesKeyword(normalizedTitle, term) || textMatchesKeyword(haystack, term));
+    const vendorSource = BORDER_CONTROL_VENDOR_SOURCE_TERMS.some((term) => textMatchesKeyword(sourceFingerprint, term));
+    const newslikeSourceContext = ["news", "newsroom", "press", "media", "announcement", "announcements", "case study", "case studies"]
+      .some((term) => textMatchesKeyword(haystack, term));
+
+    let boost = 0;
+    let penalty = 0;
+
+    boost += matchedNewsSignals.length * 28;
+    boost += matchedNewsContext.length * 44;
+
+    if (vendorSource && (matchedNewsSignals.length || matchedNewsContext.length || newslikeSourceContext)) {
+      boost += 70;
+    }
+
+    if (recencyAdjustment.ageDays <= 30 && (matchedNewsSignals.length || matchedNewsContext.length)) {
+      boost += 45;
+    } else if (recencyAdjustment.ageDays <= 90 && (matchedNewsSignals.length || matchedNewsContext.length)) {
+      boost += 20;
+    }
+
+    if (matchedProductTerms.length) {
+      penalty += 70 + (matchedProductTerms.length * 18);
+      if (!matchedNewsSignals.length && !matchedNewsContext.length) {
+        penalty += 60;
+      }
+      if (vendorSource && !newslikeSourceContext && !matchedNewsContext.length) {
+        penalty += 45;
+      }
+    }
+
+    return {
+      boost,
+      penalty,
+      matchedNewsSignals,
+      matchedNewsContext,
+      matchedProductTerms,
+      vendorSource,
+      newslikeSourceContext,
     };
   });
 }
@@ -6231,6 +6374,9 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         const borderMarketingPenalty = selectedSubinterest === "border_control"
           ? getBorderControlMarketingPagePenalty(article)
           : { penalty: 0 };
+        const borderNewsPriority = selectedSubinterest === "border_control"
+          ? getBorderControlNewsPriority(article)
+          : { boost: 0, penalty: 0 };
         const googleNewsArticle = isGoogleNewsArticle(article);
         const visualQualityScore = getArticleVisualQualityScore(article);
         const activeIdentityProfile = selectedSubinterest || "";
@@ -6267,6 +6413,10 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         score += selectedProfileSourcePriority.boost;
         score += recencyAdjustment.boost;
         score -= selectedSoftNoise.penalty;
+        if (selectedSubinterest === "border_control") {
+          score += borderNewsPriority.boost;
+          score -= borderNewsPriority.penalty;
+        }
         score += Math.max(-140, identitySubinterest.score);
         score -= Math.min(150, Math.round(identitySignals.noisyHits * 0.95));
         score -= Math.min(130, identitySubinterest.mismatchPenalty);
