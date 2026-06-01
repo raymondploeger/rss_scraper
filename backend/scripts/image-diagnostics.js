@@ -87,14 +87,22 @@ async function main() {
 
     const byDomain = new Map();
     const byReason = new Map();
+    let rssThumbnailUsedCount = 0;
     const failedDiagnostics = [];
 
     for (const article of articles) {
       const diagnostic = await diagnoseArticleImage(
         article.link,
         article.contentSnippet || article.summary || "",
-        article.title || ""
+        article.title || "",
+        {
+          existingThumbnail: article.thumbnail,
+        }
       );
+
+      if (diagnostic.rssThumbnailUsed) {
+        rssThumbnailUsedCount += 1;
+      }
 
       if (diagnostic.finalThumbnail) {
         continue;
@@ -116,6 +124,7 @@ async function main() {
         twitterImage: diagnostic.twitterImageFound,
         schemaImage: diagnostic.schemaImageFound,
         articleImage: diagnostic.articleImageFound,
+        rssThumbnailUsed: diagnostic.rssThumbnailUsed,
         rejectedReason: Array.isArray(diagnostic.rejectedReasons) && diagnostic.rejectedReasons.length
           ? diagnostic.rejectedReasons.join(", ")
           : "no_valid_image_found",
@@ -144,6 +153,17 @@ async function main() {
           .sort((left, right) => right.count - left.count)
           .slice(0, 20)
       )
+    );
+
+    console.log("\n=== RSS Thumbnail Usage ===");
+    console.table(
+      formatRows([
+        {
+          scanned_articles: articles.length,
+          rssThumbnailUsed: rssThumbnailUsedCount,
+          rssThumbnailNotUsed: Math.max(0, articles.length - rssThumbnailUsedCount),
+        },
+      ])
     );
 
     console.log("\n=== Sample Failures ===");

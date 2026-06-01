@@ -407,11 +407,6 @@ function extractFeedThumbnail(link, item) {
     return { url: mediaContentCandidate, source: "rss-media-content" };
   }
 
-  const mediaThumbnailCandidate = findFirstImageCandidate(link, [item["media:thumbnail"], item.mediaThumbnail]);
-  if (mediaThumbnailCandidate) {
-    return { url: mediaThumbnailCandidate, source: "rss-media-thumbnail" };
-  }
-
   if (isImageEnclosure(item.enclosure)) {
     return { url: resolveFeedImageCandidate(link, item.enclosure.url), source: "rss-enclosure" };
   }
@@ -419,6 +414,11 @@ function extractFeedThumbnail(link, item) {
   const imageEnclosure = (Array.isArray(item.enclosures) ? item.enclosures : []).find(isImageEnclosure);
   if (imageEnclosure) {
     return { url: resolveFeedImageCandidate(link, imageEnclosure.url), source: "rss-enclosure" };
+  }
+
+  const mediaThumbnailCandidate = findFirstImageCandidate(link, [item["media:thumbnail"], item.mediaThumbnail]);
+  if (mediaThumbnailCandidate) {
+    return { url: mediaThumbnailCandidate, source: "rss-media-thumbnail" };
   }
 
   const directImageCandidate = findFirstImageCandidate(link, [
@@ -973,7 +973,13 @@ function normalizeItem(feed, item) {
   const contentSnippet = sanitizeFeedText(item.contentSnippet || item.content || item.summary || item.description, "");
   const title = sanitizeFeedText(item.title, "Untitled Article");
   const extractedThumbnail = extractFeedThumbnail(link, item);
-  const thumbnail = normalizeText(extractedThumbnail.url, env.placeholderImage);
+  const feedFallbackThumbnail = resolveFeedImageCandidate(link, feed.sourceFallbackImage || "");
+  const thumbnail = normalizeText(extractedThumbnail.url || feedFallbackThumbnail, env.placeholderImage);
+  const thumbnailSource = extractedThumbnail.url
+    ? extractedThumbnail.source
+    : feedFallbackThumbnail
+      ? "feed-fallback-image"
+      : "placeholder";
   const canonicalLink = canonicalizeUrl(link);
   const source = sanitizeFeedText(item.creator || item.author || getSourceName(link), "Unknown");
   const tags = normalizeArticleTags(item);
@@ -1009,9 +1015,9 @@ function normalizeItem(feed, item) {
     isDuplicate: false,
     duplicateOf: null,
     language: "unknown",
-    fetchStatus: thumbnail && thumbnail !== env.placeholderImage ? "partial" : "pending",
+    fetchStatus: thumbnail && thumbnail !== env.placeholderImage ? "enriched" : "pending",
     articleHash: createDeterministicId(canonicalLink || link),
-    thumbnailSource: extractedThumbnail.source
+    thumbnailSource
   };
 }
 
@@ -1183,7 +1189,15 @@ export async function processArticleBacklog(limit = 20) {
 
   for (const article of pendingArticles) {
     try {
-      const enriched = await scrapeArticleMetadata(article.link, article.contentSnippet || article.summary, article.title || "");
+      const enriched = await scrapeArticleMetadata(
+        article.link,
+        article.contentSnippet || article.summary,
+        article.title || "",
+        {
+          existingThumbnail: article.thumbnail,
+          rssThumbnailSource: article.thumbnail && article.thumbnail !== env.placeholderImage ? "article-existing" : "",
+        }
+      );
       const updatedArticle = await updateArticle(article.id, {
         thumbnail: article.thumbnail !== env.placeholderImage ? article.thumbnail : enriched.thumbnail,
         canonicalLink: enriched.canonicalLink || article.canonicalLink,

@@ -9,6 +9,7 @@ const scrapeCache = new Map();
 const DEBUG_IMAGE_EXTRACTION =
   process.env.NODE_ENV !== "production" &&
   String(process.env.DEBUG_IMAGE_EXTRACTION || "").trim().toLowerCase() === "true";
+const IMAGE_SCRAPE_FAIL_FAST_STATUSES = new Set([401, 403, 406, 429, 503]);
 
 function isNotafiliaUrl(value) {
   try {
@@ -310,6 +311,7 @@ function logImageDebug(diagnostic) {
     twitterImage: diagnostic.twitterImageFound,
     schemaImage: diagnostic.schemaImageFound,
     articleImage: diagnostic.articleImageFound,
+    rssThumbnailUsed: diagnostic.rssThumbnailUsed,
     rejectedReason: diagnostic.rejectedReasons.join(", ") || "no_valid_image_found",
   });
 }
@@ -335,6 +337,10 @@ async function requestHtml(url, attempt = 0) {
 
     return String(response.data || "");
   } catch (error) {
+    const status = Number(error?.response?.status || 0);
+    if (IMAGE_SCRAPE_FAIL_FAST_STATUSES.has(status)) {
+      throw new Error(`Blocked content fetch (${status})`);
+    }
     if (attempt < env.scrapeRetryAttempts) {
       return requestHtml(url, attempt + 1);
     }
@@ -343,14 +349,46 @@ async function requestHtml(url, attempt = 0) {
   }
 }
 
-export async function scrapeArticleMetadata(link, existingSnippet = "", articleTitle = "") {
-  const cacheKey = canonicalizeUrl(link);
+export async function scrapeArticleMetadata(link, existingSnippet = "", articleTitle = "", options = {}) {
+  const existingThumbnail = normalizeText(options.existingThumbnail, "");
+  const rssThumbnailSource = normalizeText(options.rssThumbnailSource, "");
+  const cacheKey = `${canonicalizeUrl(link)}|${existingThumbnail}|${rssThumbnailSource}`;
   if (scrapeCache.has(cacheKey)) {
     return scrapeCache.get(cacheKey);
   }
 
   const pending = (async () => {
     try {
+      if (existingThumbnail && existingThumbnail !== env.placeholderImage) {
+        const diagnostic = {
+          domain: getDomainForDiagnostics(link),
+          link,
+          ogImageFound: false,
+          twitterImageFound: false,
+          schemaImageFound: false,
+          articleImageFound: false,
+          rejectedReasons: [],
+          finalThumbnail: existingThumbnail,
+          thumbnailSource: rssThumbnailSource || "rss-existing",
+          rssThumbnailUsed: true,
+        };
+
+        logImageExtraction(link, diagnostic.thumbnailSource, {
+          usedThumbnail: existingThumbnail,
+          rssThumbnailUsed: true,
+        });
+
+        return {
+          thumbnail: existingThumbnail,
+          canonicalLink: canonicalizeUrl(link),
+          metaDescription: "",
+          contentSnippet: existingSnippet,
+          language: "unknown",
+          imageDiagnostic: diagnostic,
+          fetchStatus: "partial"
+        };
+      }
+
       const html = await requestHtml(link);
       const $ = cheerio.load(html);
       const ogImage = $('meta[property="og:image"]').attr("content");
@@ -409,10 +447,12 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
         rejectedReasons: Array.from(new Set(rejectedReasons)).filter(Boolean),
         finalThumbnail: resolvedThumbnail,
         thumbnailSource,
+        rssThumbnailUsed: false,
       };
 
       logImageExtraction(link, thumbnailSource, {
         usedThumbnail: resolvedThumbnail,
+        rssThumbnailUsed: false,
       });
       logImageDebug(diagnostic);
       if (isNotafiliaUrl(link)) {
@@ -446,10 +486,13 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
         rejectedReasons: [
           error instanceof Error && /Unsupported content type/i.test(error.message)
             ? "unsupported_content_type"
-            : "request_failed",
+            : error instanceof Error && /Blocked content fetch \((\d+)\)/i.test(error.message)
+              ? `blocked_status_${error.message.match(/(\d+)/)?.[1] || "unknown"}`
+              : "request_failed",
         ],
         finalThumbnail: "",
         thumbnailSource: "fallback",
+        rssThumbnailUsed: false,
       };
       logImageDebug(diagnostic);
       if (isNotafiliaUrl(link)) {
@@ -471,8 +514,8 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
   return pending;
 }
 
-export async function diagnoseArticleImage(link, existingSnippet = "", articleTitle = "") {
-  const result = await scrapeArticleMetadata(link, existingSnippet, articleTitle);
+export async function diagnoseArticleImage(link, existingSnippet = "", articleTitle = "", options = {}) {
+  const result = await scrapeArticleMetadata(link, existingSnippet, articleTitle, options);
   return result?.imageDiagnostic || {
     domain: getDomainForDiagnostics(link),
     link,
@@ -483,6 +526,7 @@ export async function diagnoseArticleImage(link, existingSnippet = "", articleTi
     rejectedReasons: ["unknown"],
     finalThumbnail: normalizeText(result?.thumbnail, ""),
     thumbnailSource: result?.thumbnailSource || "",
+    rssThumbnailUsed: Boolean(result?.imageDiagnostic?.rssThumbnailUsed),
   };
 }
 
@@ -496,7 +540,15 @@ export async function enrichArticle(articleId) {
     return article;
   }
 
-  const enriched = await scrapeArticleMetadata(article.link, article.contentSnippet || article.summary || "", article.title || "");
+  const enriched = await scrapeArticleMetadata(
+    article.link,
+    article.contentSnippet || article.summary || "",
+    article.title || "",
+    {
+      existingThumbnail: article.thumbnail,
+      rssThumbnailSource: article.thumbnail && article.thumbnail !== env.placeholderImage ? "article-existing" : "",
+    }
+  );
   const nextThumbnail =
     article.thumbnail && article.thumbnail !== env.placeholderImage ? article.thumbnail : enriched.thumbnail || article.thumbnail;
 
