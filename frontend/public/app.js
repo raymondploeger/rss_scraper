@@ -1466,6 +1466,38 @@ const IDENTITY_BORDER_CONTROL_TECH_TERMS = [
   "abc gates",
   "abc gate",
 ];
+const BORDER_CONTROL_GUIDANCE_NOISE_TERMS = [
+  "esta",
+  "visa waiver program",
+  "travel authorization",
+  "visa requirements",
+  "entry requirements",
+  "tourist travel guidance",
+  "travel advice",
+  "travel guidance",
+];
+const BORDER_CONTROL_OPERATIONAL_PRIORITY_TERMS = [
+  "egate deployment",
+  "egates",
+  "automated border control",
+  "mobile passport control",
+  "mpc",
+  "ees",
+  "etias",
+  "frontex",
+  "cbp",
+  "eu-lisa",
+  "eulisa",
+  "document verification",
+  "document inspection",
+  "passport verification",
+  "border biometrics",
+  "biometric border system",
+  "border management system",
+  "airport modernization",
+  "airport border-control modernization",
+  "entry exit system",
+];
 const IDENTITY_PASSPORT_LIGHT_NOISE_TERMS = [
   "passport fair",
   "passport fairs",
@@ -5085,6 +5117,79 @@ function getBorderControlAuthorityAdjustment(article, authority) {
   });
 }
 
+function getBorderControlGuidancePenalty(article) {
+  return getCachedArticleValue(article, "borderControlGuidancePenalty", () => {
+    const context = getPersonalBoostContext(article);
+    const haystack = [
+      context.titleText,
+      context.tagText,
+      context.metadataText,
+      context.bodyText,
+      context.sourceText,
+      context.domainText,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const matchedGuidanceTerms = BORDER_CONTROL_GUIDANCE_NOISE_TERMS.filter((term) =>
+      textMatchesKeyword(haystack, term)
+    );
+    const matchedOperationalTerms = BORDER_CONTROL_OPERATIONAL_PRIORITY_TERMS.filter((term) =>
+      textMatchesKeyword(haystack, term)
+    );
+
+    let penalty = 0;
+    if (matchedGuidanceTerms.length) {
+      penalty += 45 + (matchedGuidanceTerms.length * 20);
+      if (!matchedOperationalTerms.length) {
+        penalty += 110;
+      } else {
+        penalty -= Math.min(70, matchedOperationalTerms.length * 14);
+      }
+    }
+
+    return {
+      penalty: Math.max(0, penalty),
+      matchedGuidanceTerms,
+      matchedOperationalTerms,
+      hasOperationalContext: matchedOperationalTerms.length > 0,
+    };
+  });
+}
+
+function getBorderControlRecencyAdjustment(article) {
+  return getCachedArticleValue(article, "borderControlRecencyAdjustment", () => {
+    const publishedAt = getArticlePublishedTimestamp(article);
+    if (!publishedAt) {
+      return {
+        ageDays: Number.POSITIVE_INFINITY,
+        boost: -20,
+      };
+    }
+
+    const ageDays = Math.max(0, (Date.now() - publishedAt) / (24 * 60 * 60 * 1000));
+    let boost = 0;
+
+    if (ageDays <= 30) {
+      boost = 85;
+    } else if (ageDays <= 90) {
+      boost = 45;
+    } else if (ageDays <= 365) {
+      boost = 15;
+    } else if (ageDays > 365 * 5) {
+      boost = -110;
+    } else if (ageDays > 365 * 3) {
+      boost = -75;
+    } else if (ageDays > 365) {
+      boost = -35;
+    }
+
+    return {
+      ageDays,
+      boost,
+    };
+  });
+}
+
 function getIdentityProfileSourcePriorityBoost(article, profileId) {
   return getCachedArticleValue(article, `identityProfileSourcePriority:${profileId}`, () => {
     const profile = IDENTITY_PROFILE_SOURCE_PRIORITY[profileId];
@@ -6474,6 +6579,12 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         const borderNewsPriority = selectedSubinterest === "border_control"
           ? getBorderControlNewsPriority(article)
           : { boost: 0, penalty: 0 };
+        const borderGuidancePenalty = selectedSubinterest === "border_control"
+          ? getBorderControlGuidancePenalty(article)
+          : { penalty: 0, hasOperationalContext: false };
+        const borderRecencyAdjustment = selectedSubinterest === "border_control"
+          ? getBorderControlRecencyAdjustment(article)
+          : { boost: 0, ageDays: Number.POSITIVE_INFINITY };
         const googleNewsArticle = isGoogleNewsArticle(article);
         const visualQualityScore = getArticleVisualQualityScore(article);
         const activeIdentityProfile = selectedSubinterest || "";
@@ -6513,12 +6624,20 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         if (selectedSubinterest === "border_control") {
           score += borderNewsPriority.boost;
           score -= borderNewsPriority.penalty;
+          score += borderRecencyAdjustment.boost;
+          score -= borderGuidancePenalty.penalty;
         }
         score += Math.max(-140, identitySubinterest.score);
         score -= Math.min(150, Math.round(identitySignals.noisyHits * 0.95));
         score -= Math.min(130, identitySubinterest.mismatchPenalty);
         if (googleNewsArticle) {
           score -= googleNewsPenalty.penalty;
+          if (selectedSubinterest === "border_control" && borderRecencyAdjustment.ageDays > 365) {
+            score -= borderRecencyAdjustment.ageDays > 365 * 3 ? 90 : 55;
+          }
+          if (selectedSubinterest === "border_control" && borderGuidancePenalty.penalty && !borderGuidancePenalty.hasOperationalContext) {
+            score -= 60;
+          }
         }
         if (selectedSubinterest && identitySubinterest.bestSelectedScore < 8 && selectedSubinterest !== "drivers_licenses") {
           score -= 400;

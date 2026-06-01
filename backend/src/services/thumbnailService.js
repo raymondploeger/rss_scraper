@@ -6,6 +6,9 @@ import { broadcast } from "./realtimeService.js";
 import { canonicalizeUrl, normalizeText, resolveUrl, sanitizeFeedText } from "../utils/text.js";
 
 const scrapeCache = new Map();
+const DEBUG_IMAGE_EXTRACTION =
+  process.env.NODE_ENV !== "production" &&
+  String(process.env.DEBUG_IMAGE_EXTRACTION || "").trim().toLowerCase() === "true";
 
 function isNotafiliaUrl(value) {
   try {
@@ -37,6 +40,7 @@ function isLikelyGenericMetadataImage(imageUrl) {
   return [
     "logo",
     "icon",
+    "favicon",
     "avatar",
     "banner",
     "default",
@@ -45,8 +49,109 @@ function isLikelyGenericMetadataImage(imageUrl) {
     "social-share",
     "share-image",
     "og-image",
-    "media-image"
+    "media-image",
+    "sprite",
+    "tracking",
+    "pixel",
   ].some((token) => value.includes(token));
+}
+
+function parseNumericDimension(value) {
+  const match = String(value || "").match(/(\d{2,5})/);
+  return match ? Number(match[1]) : 0;
+}
+
+function isAcceptableImageSize(width, height) {
+  if (width && width < 300) {
+    return false;
+  }
+  if (!width && height && height < 180) {
+    return false;
+  }
+  return true;
+}
+
+function pickImageFromSrcset(value) {
+  return String(value || "")
+    .split(",")
+    .map((candidate) => candidate.trim().split(/\s+/)[0])
+    .find(Boolean) || "";
+}
+
+function resolveNodeImageCandidate(pageUrl, node) {
+  return (
+    node.attr("src") ||
+    node.attr("data-src") ||
+    node.attr("data-lazy-src") ||
+    node.attr("data-original") ||
+    pickImageFromSrcset(node.attr("srcset") || node.attr("data-srcset")) ||
+    ""
+  )
+    ? resolveImageCandidate(
+      pageUrl,
+      node.attr("src") ||
+        node.attr("data-src") ||
+        node.attr("data-lazy-src") ||
+        node.attr("data-original") ||
+        pickImageFromSrcset(node.attr("srcset") || node.attr("data-srcset")) ||
+        ""
+    )
+    : "";
+}
+
+function collectSchemaImagesFromValue(value, results) {
+  if (!value) {
+    return;
+  }
+
+  if (typeof value === "string") {
+    results.push(value);
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((entry) => collectSchemaImagesFromValue(entry, results));
+    return;
+  }
+
+  if (typeof value === "object") {
+    if (typeof value.url === "string") {
+      results.push(value.url);
+    }
+    if (typeof value.contentUrl === "string") {
+      results.push(value.contentUrl);
+    }
+    if (value.image) {
+      collectSchemaImagesFromValue(value.image, results);
+    }
+  }
+}
+
+function extractSchemaImage($, pageUrl) {
+  const candidates = [];
+  $('script[type="application/ld+json"]').each((_, element) => {
+    const raw = $(element).contents().text();
+    if (!raw) {
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      const entries = Array.isArray(parsed) ? parsed : [parsed];
+      entries.forEach((entry) => {
+        collectSchemaImagesFromValue(entry?.image, candidates);
+        if (entry?.["@graph"]) {
+          collectSchemaImagesFromValue(entry["@graph"], candidates);
+        }
+      });
+    } catch {
+      // Ignore malformed JSON-LD blocks.
+    }
+  });
+
+  return candidates
+    .map((candidate) => resolveImageCandidate(pageUrl, candidate))
+    .find((candidate) => candidate && !isLikelyGenericMetadataImage(candidate)) || "";
 }
 
 function isClearlyArticleSpecificImage(imageUrl, pageUrl, title) {
@@ -71,7 +176,7 @@ function isClearlyArticleSpecificImage(imageUrl, pageUrl, title) {
   return Array.from(articleTokens).some((token) => normalizedImageUrl.includes(token));
 }
 
-function findMeaningfulImage($) {
+function findMeaningfulImage($, pageUrl) {
   const selectors = [
     "article img",
     "figure img",
@@ -85,37 +190,85 @@ function findMeaningfulImage($) {
     ".content img",
     "img"
   ];
+  const candidates = [];
 
   for (const selector of selectors) {
-    const candidates = $(selector)
-      .map((_, element) => {
-        const node = $(element);
-        return (
-          node.attr("src") ||
-          node.attr("data-src") ||
-          node.attr("data-lazy-src") ||
-          node.attr("data-original") ||
-          ""
-        );
-      })
-      .get()
-      .filter(Boolean);
-
-    const meaningful = candidates.find((candidate) => {
-      const normalized = String(candidate).trim().toLowerCase();
-      if (!normalized || normalized.startsWith("data:")) {
-        return false;
+    $(selector).each((index, element) => {
+      const node = $(element);
+      const candidate = resolveNodeImageCandidate(pageUrl, node);
+      if (!candidate || isLikelyGenericMetadataImage(candidate)) {
+        return;
       }
 
-      return !["logo", "icon", "avatar", "pixel", "tracking"].some((token) => normalized.includes(token));
-    });
+      const width = parseNumericDimension(node.attr("width") || node.attr("data-width"));
+      const height = parseNumericDimension(node.attr("height") || node.attr("data-height"));
+      if (!isAcceptableImageSize(width, height)) {
+        return;
+      }
 
-    if (meaningful) {
-      return meaningful;
+      candidates.push({
+        url: candidate,
+        width,
+        height,
+        selectorIndex: selectors.indexOf(selector),
+        position: index,
+      });
+    });
+  }
+
+  const bestCandidate = candidates.sort((left, right) => {
+    const leftArea = (left.width || 0) * (left.height || 0);
+    const rightArea = (right.width || 0) * (right.height || 0);
+    if (rightArea !== leftArea) {
+      return rightArea - leftArea;
+    }
+    if ((right.width || 0) !== (left.width || 0)) {
+      return (right.width || 0) - (left.width || 0);
+    }
+    if (left.selectorIndex !== right.selectorIndex) {
+      return left.selectorIndex - right.selectorIndex;
+    }
+    return left.position - right.position;
+  })[0];
+
+  return bestCandidate?.url || "";
+}
+
+function findFirstValidArticleImage($, pageUrl) {
+  const selectors = [
+    "article img",
+    "main img",
+    "[role='main'] img",
+    ".article-content img",
+    ".entry-content img",
+    ".post-content img",
+    ".content img",
+    "img",
+  ];
+
+  for (const selector of selectors) {
+    const candidate = $(selector)
+      .map((_, element) => resolveNodeImageCandidate(pageUrl, $(element)))
+      .get()
+      .find((value) => value && !isLikelyGenericMetadataImage(value));
+    if (candidate) {
+      return candidate;
     }
   }
 
   return "";
+}
+
+function logImageExtraction(link, source, details = {}) {
+  if (!DEBUG_IMAGE_EXTRACTION) {
+    return;
+  }
+
+  console.log("[image-extract]", {
+    link,
+    source,
+    ...details,
+  });
 }
 
 async function requestHtml(url, attempt = 0) {
@@ -160,8 +313,10 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
       const ogImage = $('meta[property="og:image"]').attr("content");
       const ogSecureImage = $('meta[property="og:image:secure_url"]').attr("content");
       const twitterImage = $('meta[name="twitter:image"]').attr("content");
+      const schemaImage = extractSchemaImage($, link);
       const canonicalUrl = $('link[rel="canonical"]').attr("href");
-      const articleImage = findMeaningfulImage($);
+      const articleImage = findMeaningfulImage($, link);
+      const fallbackArticleImage = findFirstValidArticleImage($, link);
       const metaDescription =
         $('meta[property="og:description"]').attr("content") ||
         $('meta[name="description"]').attr("content") ||
@@ -172,24 +327,27 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
         .get()
         .join(" ");
       const htmlLang = $("html").attr("lang") || "";
-      const metadataImage = resolveImageCandidate(link, ogImage || ogSecureImage || twitterImage || "");
-      const articleSpecificMetadataImage = isClearlyArticleSpecificImage(metadataImage, link, articleTitle) ? metadataImage : "";
-      const articleImageCandidate = resolveImageCandidate(link, articleImage || "");
-      const resolvedThumbnail = normalizeText(articleSpecificMetadataImage || articleImageCandidate, "");
-      const thumbnailSource = articleSpecificMetadataImage
-        ? ogImage
-          ? "og:image"
-          : ogSecureImage
-            ? "og:image:secure_url"
-            : "twitter:image"
-        : articleImage
-          ? "article-image"
-          : "placeholder";
+      const metadataCandidates = [
+        { url: resolveImageCandidate(link, ogImage || ""), source: "og:image" },
+        { url: resolveImageCandidate(link, ogSecureImage || ""), source: "og:image:secure_url" },
+        { url: resolveImageCandidate(link, twitterImage || ""), source: "twitter:image" },
+        { url: resolveImageCandidate(link, schemaImage || ""), source: "schema-image" },
+      ].filter((candidate) => candidate.url && !isLikelyGenericMetadataImage(candidate.url));
+      const articleSpecificMetadata = metadataCandidates.find((candidate) =>
+        isClearlyArticleSpecificImage(candidate.url, link, articleTitle)
+      );
+      const articleImageCandidate = normalizeText(articleImage || fallbackArticleImage, "");
+      const selectedCandidate = articleSpecificMetadata
+        || (articleImageCandidate ? { url: resolveImageCandidate(link, articleImageCandidate), source: articleImage ? "article-image-largest" : "article-image" } : null);
+      const resolvedThumbnail = normalizeText(selectedCandidate?.url, "");
+      const thumbnailSource = selectedCandidate?.source || "fallback";
 
-      console.log(`Thumbnail source for ${link}: ${thumbnailSource}`);
+      logImageExtraction(link, thumbnailSource, {
+        usedThumbnail: resolvedThumbnail,
+      });
       if (isNotafiliaUrl(link)) {
         console.log(
-          `[notafilia][enrich] articleUrl=${link} ogImageFound=${Boolean(articleSpecificMetadataImage)} ogImageValue=${articleSpecificMetadataImage || ""} articleImageFound=${Boolean(articleImageCandidate)} articleImageValue=${articleImageCandidate || ""} finalThumbnail=${resolvedThumbnail || ""}`
+          `[notafilia][enrich] articleUrl=${link} ogImageFound=${Boolean(articleSpecificMetadata?.url)} ogImageValue=${articleSpecificMetadata?.url || ""} articleImageFound=${Boolean(articleImageCandidate)} articleImageValue=${articleImageCandidate || ""} finalThumbnail=${resolvedThumbnail || ""}`
         );
       }
 
@@ -200,13 +358,13 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
         contentSnippet: sanitizeFeedText(articleText || existingSnippet, existingSnippet),
         language: normalizeText(htmlLang, "unknown"),
         fetchStatus:
-          articleSpecificMetadataImage || articleImage || canonicalUrl || metaDescription || articleText
+          resolvedThumbnail || canonicalUrl || metaDescription || articleText
             ? "enriched"
             : "partial"
       };
     } catch (error) {
       console.error(`Thumbnail scrape failed for ${link}:`, error?.stack || error);
-      console.log(`Thumbnail source for ${link}: placeholder`);
+      logImageExtraction(link, "fallback");
       if (isNotafiliaUrl(link)) {
         console.log(`[notafilia][enrich] articleUrl=${link} ogImageFound=false articleImageFound=false finalThumbnail=`);
       }
