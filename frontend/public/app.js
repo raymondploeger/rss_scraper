@@ -4991,6 +4991,32 @@ function getBorderControlNewsPriority(article) {
   });
 }
 
+function getBorderControlContentType(article) {
+  return getCachedArticleValue(article, "borderControlContentType", () => {
+    const newsPriority = getBorderControlNewsPriority(article);
+    const marketingPenalty = getBorderControlMarketingPagePenalty(article);
+    const aggregated = isGoogleNewsArticle(article);
+
+    let type = "NEWS";
+    if (aggregated) {
+      type = "AGGREGATED_NEWS";
+    } else if ((marketingPenalty.marketingTitleMatches?.length || marketingPenalty.marketingUrl) && newsPriority.matchedNewsContext.length === 0) {
+      type = "PRODUCT";
+    } else if (newsPriority.matchedProductTerms.length && newsPriority.matchedNewsSignals.length === 0 && newsPriority.matchedNewsContext.length === 0) {
+      type = "PRODUCT";
+    }
+
+    const rank = type === "NEWS" ? 0 : type === "PRODUCT" ? 1 : 2;
+    return {
+      type,
+      rank,
+      aggregated,
+      hasNewsSignals: newsPriority.matchedNewsSignals.length > 0 || newsPriority.matchedNewsContext.length > 0,
+      hasProductSignals: newsPriority.matchedProductTerms.length > 0 || Boolean(marketingPenalty.marketingUrl),
+    };
+  });
+}
+
 function getIdentityProfileSourcePriorityBoost(article, profileId) {
   return getCachedArticleValue(article, `identityProfileSourcePriority:${profileId}`, () => {
     const profile = IDENTITY_PROFILE_SOURCE_PRIORITY[profileId];
@@ -6822,6 +6848,19 @@ function comparePersonalDashboardArticlesByNewest(left, right) {
 }
 
 function comparePersonalDashboardArticlesByRelevance(left, right) {
+  const selectedMainDomains = getSelectedMainDomains();
+  if (selectedMainDomains.length === 1 && selectedMainDomains[0] === "identity_documents") {
+    const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests();
+    const selectedSubinterest = selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : "";
+    if (selectedSubinterest === "border_control") {
+      const leftContentType = getBorderControlContentType(left);
+      const rightContentType = getBorderControlContentType(right);
+      if (leftContentType.rank !== rightContentType.rank) {
+        return leftContentType.rank - rightContentType.rank;
+      }
+    }
+  }
+
   const rightScore = calculatePersonalDomainScore(right).domainScore;
   const leftScore = calculatePersonalDomainScore(left).domainScore;
   if (rightScore !== leftScore) {
@@ -7050,6 +7089,14 @@ function compareArticlesForDisplay(left, right) {
     const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests();
     const selectedSubinterest = selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : "";
     if (selectedSubinterest) {
+      if (selectedSubinterest === "border_control") {
+        const leftContentType = getBorderControlContentType(left);
+        const rightContentType = getBorderControlContentType(right);
+        if (leftContentType.rank !== rightContentType.rank) {
+          return leftContentType.rank - rightContentType.rank;
+        }
+      }
+
       const leftSourcePriority = getIdentityProfileSourcePriorityBoost(left, selectedSubinterest).boost;
       const rightSourcePriority = getIdentityProfileSourcePriorityBoost(right, selectedSubinterest).boost;
       if (rightSourcePriority !== leftSourcePriority) {
