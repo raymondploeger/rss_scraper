@@ -491,8 +491,11 @@ const IDENTITY_WEBSITE_MARKETING_TITLE_TERMS = [
   "document readers",
 ];
 const IDENTITY_WEBSITE_MARKETING_URL_SEGMENTS = [
+  "/product/",
   "/solutions/",
+  "/solution/",
   "/products/",
+  "/platform/",
   "/portfolio/",
   "/capabilities/",
   "/services/",
@@ -500,6 +503,14 @@ const IDENTITY_WEBSITE_MARKETING_URL_SEGMENTS = [
   "/identity-management/",
   "/physical-documents/",
   "/document-readers/",
+];
+const BORDER_CONTROL_NEWS_URL_SEGMENTS = [
+  "/news/",
+  "/media/",
+  "/press/",
+  "/press-release/",
+  "/announcement/",
+  "/blog/",
 ];
 const BORDER_CONTROL_NEWS_SIGNAL_TERMS = [
   "launch",
@@ -5013,6 +5024,13 @@ function getBorderControlContentType(article) {
     const newsPriority = getBorderControlNewsPriority(article);
     const marketingPenalty = getBorderControlMarketingPagePenalty(article);
     const aggregated = isGoogleNewsArticle(article);
+    const linkValue = `${article?.link || ""} ${article?.canonicalLink || ""}`.toLowerCase();
+    const hasNewsUrl = BORDER_CONTROL_NEWS_URL_SEGMENTS.some((segment) => linkValue.includes(segment));
+    const hasPublicationDate = Boolean(getArticlePublishedTimestamp(article));
+    const hasAnnouncementLanguage =
+      newsPriority.matchedNewsSignals.length > 0
+      || newsPriority.matchedNewsContext.length > 0
+      || marketingPenalty.veridosPreferredContext;
     const strongProductSignals =
       (marketingPenalty.marketingTitleMatches?.length || 0)
       + (marketingPenalty.marketingUrl ? 1 : 0)
@@ -5021,6 +5039,13 @@ function getBorderControlContentType(article) {
     let type = "NEWS";
     if (aggregated) {
       type = "AGGREGATED_NEWS";
+    } else if (
+      marketingPenalty.marketingUrl
+      && !hasNewsUrl
+      && !hasAnnouncementLanguage
+      && (!hasPublicationDate || strongProductSignals > 0)
+    ) {
+      type = "PRODUCT";
     } else if (strongProductSignals > 0 && newsPriority.matchedNewsSignals.length === 0) {
       type = "PRODUCT";
     } else if ((marketingPenalty.marketingTitleMatches?.length || marketingPenalty.marketingUrl) && newsPriority.matchedNewsSignals.length <= 1 && newsPriority.matchedNewsContext.length === 0) {
@@ -5037,6 +5062,8 @@ function getBorderControlContentType(article) {
       hasNewsSignals: newsPriority.matchedNewsSignals.length > 0 || newsPriority.matchedNewsContext.length > 0,
       hasProductSignals: newsPriority.matchedProductTerms.length > 0 || Boolean(marketingPenalty.marketingUrl),
       strongProductSignals,
+      hasNewsUrl,
+      hasAnnouncementLanguage,
     };
   });
 }
