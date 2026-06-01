@@ -32,14 +32,6 @@ const NEWS_URL_SEGMENTS = [
   "/case-studies/",
 ];
 
-const REGULA_PRODUCT_TITLE_PATTERNS = [
-  "Document Readers",
-  "Manual Devices",
-  "Manual Control Devices",
-  "Identity Verification Devices",
-  "Biometric and Document Verification Software",
-];
-
 const client = new Client({
   connectionString: databaseUrl,
   application_name: "cleanup-product-pages",
@@ -56,8 +48,8 @@ function formatRows(rows = []) {
   );
 }
 
-function buildTitlePatterns(phrases = []) {
-  return phrases.map((phrase) => `%${String(phrase || "").toLowerCase()}%`);
+function buildLikePatterns(values = []) {
+  return values.map((value) => `%${String(value || "").toLowerCase()}%`);
 }
 
 async function runQuery(label, sql, values = []) {
@@ -103,8 +95,7 @@ function getMatchingArticlesCte() {
           normalized_source LIKE '%veridos.com%'
           OR normalized_url LIKE '%veridos.com%'
         ) AS veridos_domain_match,
-        normalized_url LIKE ANY($1::text[]) AS news_url_match,
-        normalized_title LIKE ANY($2::text[]) AS regula_product_title_match
+        normalized_url LIKE ANY($1::text[]) AS news_url_match
       FROM article_flags
     ),
     cleanup_candidates AS (
@@ -133,8 +124,7 @@ function getMatchingArticlesCte() {
 
 async function main() {
   const newsUrlPatterns = buildLikePatterns(NEWS_URL_SEGMENTS);
-  const regulaProductTitlePatterns = buildTitlePatterns(REGULA_PRODUCT_TITLE_PATTERNS);
-  const queryValues = [newsUrlPatterns, regulaProductTitlePatterns];
+  const queryValues = [newsUrlPatterns];
 
   try {
     await client.connect();
