@@ -27,6 +27,14 @@ function resolveImageCandidate(pageUrl, candidate) {
   return resolveUrl(pageUrl, value);
 }
 
+function getDomainForDiagnostics(value) {
+  try {
+    return new URL(String(value || "")).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
 function tokenizeForMatch(value) {
   return String(value || "")
     .toLowerCase()
@@ -149,9 +157,16 @@ function extractSchemaImage($, pageUrl) {
     }
   });
 
-  return candidates
+  const resolvedCandidates = candidates
     .map((candidate) => resolveImageCandidate(pageUrl, candidate))
-    .find((candidate) => candidate && !isLikelyGenericMetadataImage(candidate)) || "";
+    .filter(Boolean);
+  const acceptedCandidate = resolvedCandidates.find((candidate) => !isLikelyGenericMetadataImage(candidate)) || "";
+
+  return {
+    url: acceptedCandidate,
+    found: resolvedCandidates.length > 0,
+    rejectedReasons: acceptedCandidate ? [] : resolvedCandidates.length ? ["schema_image_generic"] : [],
+  };
 }
 
 function isClearlyArticleSpecificImage(imageUrl, pageUrl, title) {
@@ -191,18 +206,26 @@ function findMeaningfulImage($, pageUrl) {
     "img"
   ];
   const candidates = [];
+  const rejectedReasons = [];
+  let foundAny = false;
 
   for (const selector of selectors) {
     $(selector).each((index, element) => {
       const node = $(element);
       const candidate = resolveNodeImageCandidate(pageUrl, node);
-      if (!candidate || isLikelyGenericMetadataImage(candidate)) {
+      if (!candidate) {
+        return;
+      }
+      foundAny = true;
+      if (isLikelyGenericMetadataImage(candidate)) {
+        rejectedReasons.push("article_image_generic");
         return;
       }
 
       const width = parseNumericDimension(node.attr("width") || node.attr("data-width"));
       const height = parseNumericDimension(node.attr("height") || node.attr("data-height"));
       if (!isAcceptableImageSize(width, height)) {
+        rejectedReasons.push(width && width < 300 ? "width_too_small" : "height_too_small");
         return;
       }
 
@@ -231,7 +254,11 @@ function findMeaningfulImage($, pageUrl) {
     return left.position - right.position;
   })[0];
 
-  return bestCandidate?.url || "";
+  return {
+    url: bestCandidate?.url || "",
+    found: foundAny,
+    rejectedReasons,
+  };
 }
 
 function findFirstValidArticleImage($, pageUrl) {
@@ -268,6 +295,22 @@ function logImageExtraction(link, source, details = {}) {
     link,
     source,
     ...details,
+  });
+}
+
+function logImageDebug(diagnostic) {
+  if (!DEBUG_IMAGE_EXTRACTION || !diagnostic || diagnostic.finalThumbnail) {
+    return;
+  }
+
+  console.log("[image-debug]", {
+    domain: diagnostic.domain,
+    url: diagnostic.link,
+    ogImage: diagnostic.ogImageFound,
+    twitterImage: diagnostic.twitterImageFound,
+    schemaImage: diagnostic.schemaImageFound,
+    articleImage: diagnostic.articleImageFound,
+    rejectedReason: diagnostic.rejectedReasons.join(", ") || "no_valid_image_found",
   });
 }
 
@@ -313,9 +356,9 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
       const ogImage = $('meta[property="og:image"]').attr("content");
       const ogSecureImage = $('meta[property="og:image:secure_url"]').attr("content");
       const twitterImage = $('meta[name="twitter:image"]').attr("content");
-      const schemaImage = extractSchemaImage($, link);
+      const schemaImageResult = extractSchemaImage($, link);
       const canonicalUrl = $('link[rel="canonical"]').attr("href");
-      const articleImage = findMeaningfulImage($, link);
+      const articleImageResult = findMeaningfulImage($, link);
       const fallbackArticleImage = findFirstValidArticleImage($, link);
       const metaDescription =
         $('meta[property="og:description"]').attr("content") ||
@@ -327,24 +370,51 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
         .get()
         .join(" ");
       const htmlLang = $("html").attr("lang") || "";
+      const rejectedReasons = [];
       const metadataCandidates = [
         { url: resolveImageCandidate(link, ogImage || ""), source: "og:image" },
         { url: resolveImageCandidate(link, ogSecureImage || ""), source: "og:image:secure_url" },
         { url: resolveImageCandidate(link, twitterImage || ""), source: "twitter:image" },
-        { url: resolveImageCandidate(link, schemaImage || ""), source: "schema-image" },
+        { url: resolveImageCandidate(link, schemaImageResult.url || ""), source: "schema-image" },
       ].filter((candidate) => candidate.url && !isLikelyGenericMetadataImage(candidate.url));
+      if ((ogImage || ogSecureImage) && !metadataCandidates.some((candidate) => candidate.source.startsWith("og:image"))) {
+        rejectedReasons.push("og_image_generic");
+      }
+      if (twitterImage && !metadataCandidates.some((candidate) => candidate.source === "twitter:image")) {
+        rejectedReasons.push("twitter_image_generic");
+      }
+      rejectedReasons.push(...schemaImageResult.rejectedReasons);
       const articleSpecificMetadata = metadataCandidates.find((candidate) =>
         isClearlyArticleSpecificImage(candidate.url, link, articleTitle)
       );
-      const articleImageCandidate = normalizeText(articleImage || fallbackArticleImage, "");
+      if (metadataCandidates.length && !articleSpecificMetadata) {
+        rejectedReasons.push("metadata_not_article_specific");
+      }
+      const articleImageCandidate = normalizeText(articleImageResult.url || fallbackArticleImage, "");
+      rejectedReasons.push(...articleImageResult.rejectedReasons);
+      if (articleImageResult.found && !articleImageResult.url && fallbackArticleImage) {
+        rejectedReasons.push("article_image_fallback_used");
+      }
       const selectedCandidate = articleSpecificMetadata
-        || (articleImageCandidate ? { url: resolveImageCandidate(link, articleImageCandidate), source: articleImage ? "article-image-largest" : "article-image" } : null);
+        || (articleImageCandidate ? { url: resolveImageCandidate(link, articleImageCandidate), source: articleImageResult.url ? "article-image-largest" : "article-image" } : null);
       const resolvedThumbnail = normalizeText(selectedCandidate?.url, "");
       const thumbnailSource = selectedCandidate?.source || "fallback";
+      const diagnostic = {
+        domain: getDomainForDiagnostics(link),
+        link,
+        ogImageFound: Boolean(ogImage || ogSecureImage),
+        twitterImageFound: Boolean(twitterImage),
+        schemaImageFound: Boolean(schemaImageResult.found),
+        articleImageFound: Boolean(articleImageResult.found || fallbackArticleImage),
+        rejectedReasons: Array.from(new Set(rejectedReasons)).filter(Boolean),
+        finalThumbnail: resolvedThumbnail,
+        thumbnailSource,
+      };
 
       logImageExtraction(link, thumbnailSource, {
         usedThumbnail: resolvedThumbnail,
       });
+      logImageDebug(diagnostic);
       if (isNotafiliaUrl(link)) {
         console.log(
           `[notafilia][enrich] articleUrl=${link} ogImageFound=${Boolean(articleSpecificMetadata?.url)} ogImageValue=${articleSpecificMetadata?.url || ""} articleImageFound=${Boolean(articleImageCandidate)} articleImageValue=${articleImageCandidate || ""} finalThumbnail=${resolvedThumbnail || ""}`
@@ -357,6 +427,7 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
         metaDescription: sanitizeFeedText(metaDescription, ""),
         contentSnippet: sanitizeFeedText(articleText || existingSnippet, existingSnippet),
         language: normalizeText(htmlLang, "unknown"),
+        imageDiagnostic: diagnostic,
         fetchStatus:
           resolvedThumbnail || canonicalUrl || metaDescription || articleText
             ? "enriched"
@@ -365,6 +436,22 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
     } catch (error) {
       console.error(`Thumbnail scrape failed for ${link}:`, error?.stack || error);
       logImageExtraction(link, "fallback");
+      const diagnostic = {
+        domain: getDomainForDiagnostics(link),
+        link,
+        ogImageFound: false,
+        twitterImageFound: false,
+        schemaImageFound: false,
+        articleImageFound: false,
+        rejectedReasons: [
+          error instanceof Error && /Unsupported content type/i.test(error.message)
+            ? "unsupported_content_type"
+            : "request_failed",
+        ],
+        finalThumbnail: "",
+        thumbnailSource: "fallback",
+      };
+      logImageDebug(diagnostic);
       if (isNotafiliaUrl(link)) {
         console.log(`[notafilia][enrich] articleUrl=${link} ogImageFound=false articleImageFound=false finalThumbnail=`);
       }
@@ -374,6 +461,7 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
         metaDescription: "",
         contentSnippet: existingSnippet,
         language: "unknown",
+        imageDiagnostic: diagnostic,
         fetchStatus: "failed"
       };
     }
@@ -381,6 +469,21 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
 
   scrapeCache.set(cacheKey, pending);
   return pending;
+}
+
+export async function diagnoseArticleImage(link, existingSnippet = "", articleTitle = "") {
+  const result = await scrapeArticleMetadata(link, existingSnippet, articleTitle);
+  return result?.imageDiagnostic || {
+    domain: getDomainForDiagnostics(link),
+    link,
+    ogImageFound: false,
+    twitterImageFound: false,
+    schemaImageFound: false,
+    articleImageFound: false,
+    rejectedReasons: ["unknown"],
+    finalThumbnail: normalizeText(result?.thumbnail, ""),
+    thumbnailSource: result?.thumbnailSource || "",
+  };
 }
 
 export async function enrichArticle(articleId) {
