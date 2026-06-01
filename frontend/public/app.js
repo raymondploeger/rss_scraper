@@ -504,13 +504,18 @@ const IDENTITY_WEBSITE_MARKETING_URL_SEGMENTS = [
 const BORDER_CONTROL_NEWS_SIGNAL_TERMS = [
   "launch",
   "launched",
+  "launching",
   "rollout",
   "rolled out",
+  "rolling out",
   "deployment",
   "deployed",
+  "deploying",
   "implementation",
   "implemented",
+  "implementing",
   "contract",
+  "award",
   "awarded",
   "procurement",
   "partnership",
@@ -520,10 +525,16 @@ const BORDER_CONTROL_NEWS_SIGNAL_TERMS = [
   "trial",
   "expansion",
   "expands",
+  "expanded",
   "upgrade",
   "upgraded",
   "modernization",
+  "announce",
+  "announced",
+  "announcing",
   "opens",
+  "opening",
+  "opened",
   "operational",
   "production",
   "installed",
@@ -554,9 +565,12 @@ const BORDER_CONTROL_NEWS_CONTEXT_TERMS = [
 const BORDER_CONTROL_PRODUCT_PAGE_TERMS = [
   "document readers",
   "document reader",
+  "manual devices",
+  "verification devices",
   "identity verification devices",
   "biometric verification software",
   "identity management",
+  "self-kiosks",
   "solutions",
   "products",
   "portfolio",
@@ -4016,6 +4030,9 @@ function computePersonalInterestBoost(article, interestId) {
       const subinterestScore = getIdentityDocumentSubinterestScore(article);
       const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests();
       const selectedSubinterest = selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : "";
+      const borderAuthorityAdjustment = selectedSubinterest === "border_control"
+        ? getBorderControlAuthorityAdjustment(article, authority)
+        : { multiplier: authority.multiplier, sourceBoostScale: 1 };
       const genericDmvNoise = isGenericDmvNoise(article);
       const requiredContext = selectedSubinterest ? hasRequiredContextCombo(article, selectedSubinterest) : { matched: false, matchedCombos: [] };
       const hardPenaltyBase = selectedSubinterest ? Number(IDENTITY_REQUIRED_CONTEXT_STRICT_PENALTIES[selectedSubinterest] || 0) : 0;
@@ -4051,8 +4068,8 @@ function computePersonalInterestBoost(article, interestId) {
       const googleNewsPenalty = getIdentityGoogleNewsPenalty(article, activeIdentityProfile);
 
       score += Math.min(80, Math.round(signals.primaryContextHits * 0.9));
-      score += authority.boost;
-      score += selectedProfileSourcePriority.boost;
+      score += Math.round(authority.boost * borderAuthorityAdjustment.sourceBoostScale);
+      score += Math.round(selectedProfileSourcePriority.boost * borderAuthorityAdjustment.sourceBoostScale);
       score += recencyAdjustment.boost;
       score -= selectedSoftNoise.penalty;
       if (selectedSubinterest === "border_control") {
@@ -4996,13 +5013,19 @@ function getBorderControlContentType(article) {
     const newsPriority = getBorderControlNewsPriority(article);
     const marketingPenalty = getBorderControlMarketingPagePenalty(article);
     const aggregated = isGoogleNewsArticle(article);
+    const strongProductSignals =
+      (marketingPenalty.marketingTitleMatches?.length || 0)
+      + (marketingPenalty.marketingUrl ? 1 : 0)
+      + newsPriority.matchedProductTerms.length;
 
     let type = "NEWS";
     if (aggregated) {
       type = "AGGREGATED_NEWS";
-    } else if ((marketingPenalty.marketingTitleMatches?.length || marketingPenalty.marketingUrl) && newsPriority.matchedNewsContext.length === 0) {
+    } else if (strongProductSignals > 0 && newsPriority.matchedNewsSignals.length === 0) {
       type = "PRODUCT";
-    } else if (newsPriority.matchedProductTerms.length && newsPriority.matchedNewsSignals.length === 0 && newsPriority.matchedNewsContext.length === 0) {
+    } else if ((marketingPenalty.marketingTitleMatches?.length || marketingPenalty.marketingUrl) && newsPriority.matchedNewsSignals.length <= 1 && newsPriority.matchedNewsContext.length === 0) {
+      type = "PRODUCT";
+    } else if (newsPriority.matchedProductTerms.length >= 2 && newsPriority.matchedNewsContext.length === 0) {
       type = "PRODUCT";
     }
 
@@ -5013,6 +5036,24 @@ function getBorderControlContentType(article) {
       aggregated,
       hasNewsSignals: newsPriority.matchedNewsSignals.length > 0 || newsPriority.matchedNewsContext.length > 0,
       hasProductSignals: newsPriority.matchedProductTerms.length > 0 || Boolean(marketingPenalty.marketingUrl),
+      strongProductSignals,
+    };
+  });
+}
+
+function getBorderControlAuthorityAdjustment(article, authority) {
+  return getCachedArticleValue(article, "borderControlAuthorityAdjustment", () => {
+    const contentType = getBorderControlContentType(article);
+    if (contentType.type !== "PRODUCT") {
+      return {
+        multiplier: Number(authority?.multiplier || 1),
+        sourceBoostScale: 1,
+      };
+    }
+
+    return {
+      multiplier: 1 + ((Number(authority?.multiplier || 1) - 1) * 0.2),
+      sourceBoostScale: 0.5,
     };
   });
 }
@@ -6375,6 +6416,9 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         const identitySubinterest = getIdentityDocumentSubinterestScore(article, normalizedInterests);
         const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(normalizedInterests);
         const selectedSubinterest = selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : "";
+        const borderAuthorityAdjustment = selectedSubinterest === "border_control"
+          ? getBorderControlAuthorityAdjustment(article, identityAuthority)
+          : { multiplier: identityAuthority.multiplier, sourceBoostScale: 1 };
         const genericDmvNoise = isGenericDmvNoise(article);
         const requiredContext = selectedSubinterest ? hasRequiredContextCombo(article, selectedSubinterest) : { matched: false, matchedCombos: [] };
         const hardPenaltyBase = selectedSubinterest ? Number(IDENTITY_REQUIRED_CONTEXT_STRICT_PENALTIES[selectedSubinterest] || 0) : 0;
@@ -6435,8 +6479,8 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
           score += 50;
         }
         score += Math.min(140, Math.round(identitySignals.primaryContextHits * 0.9));
-        score += identityAuthority.boost;
-        score += selectedProfileSourcePriority.boost;
+        score += Math.round(identityAuthority.boost * borderAuthorityAdjustment.sourceBoostScale);
+        score += Math.round(selectedProfileSourcePriority.boost * borderAuthorityAdjustment.sourceBoostScale);
         score += recencyAdjustment.boost;
         score -= selectedSoftNoise.penalty;
         if (selectedSubinterest === "border_control") {
@@ -6526,7 +6570,7 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
           `${context.titleText} ${context.tagText} ${context.metadataText}`,
           ["banknote", "banknotes", "central bank", "currency", "commemorative note", "cash circulation"]
         ) * 32;
-        score = Math.round(score * identityAuthority.multiplier);
+        score = Math.round(score * borderAuthorityAdjustment.multiplier);
       } else if (groupId === "digital_identity_biometrics") {
         if (context.topicType === "digital_identity" || context.domain === "digital_identity") {
           score += 175;
