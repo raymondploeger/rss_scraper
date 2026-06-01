@@ -84,6 +84,16 @@ const WEBSITE_NAV_URL_SEGMENTS = [
 ];
 
 const WEBSITE_NEWS_CONTEXT_TERMS = ["newsroom", "news", "press", "media"];
+const WEBSITE_NEWS_URL_SEGMENTS = [
+  "/news/",
+  "/press/",
+  "/media/",
+  "/blog/",
+  "/article/",
+  "/announcement/",
+  "/case-study/",
+  "/case-studies/",
+];
 const WEBSITE_MARKETING_TITLE_TERMS = [
   "solutions",
   "products",
@@ -106,7 +116,67 @@ const WEBSITE_MARKETING_URL_SEGMENTS = [
   "/physical-documents/",
   "/document-readers/",
 ];
+const WEBSITE_PRODUCT_TITLE_TERMS = [
+  "document readers",
+  "document reader",
+  "manual devices",
+  "manual control devices",
+  "verification devices",
+  "identity verification devices",
+  "biometric and document verification software",
+  "biometric verification software",
+  "border management egates",
+  "border management solutions",
+  "self kiosks",
+  "self-kiosks",
+  "seamless travel solutions",
+  "identity management",
+  "product overview",
+  "solution overview",
+  "our products",
+  "our solutions",
+];
+const WEBSITE_PRODUCT_URL_SEGMENTS = [
+  "/products/",
+  "/product/",
+  "/solutions/",
+  "/solution/",
+  "/services/",
+  "/service/",
+  "/platform/",
+  "/portfolio/",
+  "/capabilities/",
+  "/offerings/",
+  "/industries/",
+  "/use-cases/",
+  "/use-case/",
+];
+const WEBSITE_NEWS_INDICATOR_TERMS = [
+  "published",
+  "press release",
+  "news release",
+  "media release",
+  "announcement",
+  "announcements",
+  "launch",
+  "launched",
+  "rollout",
+  "deployment",
+  "contract",
+  "partnership",
+  "award",
+  "awarded",
+  "implemented",
+  "implementation",
+  "expanded",
+  "expansion",
+  "case study",
+  "case studies",
+];
 const VERIDOS_NEWS_CONTEXT_TERMS = ["press", "press release", "media", "news", "announcement", "announcements", "case study", "case studies"];
+const DEBUG_ARTICLE_REJECTS =
+  process.env.NODE_ENV !== "production" ||
+  String(process.env.DEBUG_ARTICLE_REJECTS || "").trim().toLowerCase() === "true";
 
 function isNotafiliaUrl(value) {
   try {
@@ -187,9 +257,35 @@ function hasWebsiteMarketingTitle(title) {
   return WEBSITE_MARKETING_TITLE_TERMS.some((pattern) => normalizedTitle.includes(pattern));
 }
 
+function hasWebsiteProductTitle(title) {
+  const normalizedTitle = normalizeWebsiteValidationText(title);
+  return WEBSITE_PRODUCT_TITLE_TERMS.some((pattern) => normalizedTitle.includes(pattern));
+}
+
 function urlHasMarketingWebsiteSegment(link) {
   const value = String(link || "").toLowerCase();
   return WEBSITE_MARKETING_URL_SEGMENTS.some((segment) => value.includes(segment));
+}
+
+function urlHasProductWebsiteSegment(link) {
+  const value = String(link || "").toLowerCase();
+  return WEBSITE_PRODUCT_URL_SEGMENTS.some((segment) => value.includes(segment));
+}
+
+function urlHasNewsWebsiteSegment(link) {
+  const value = String(link || "").toLowerCase();
+  return WEBSITE_NEWS_URL_SEGMENTS.some((segment) => value.includes(segment));
+}
+
+function logArticleReject(reason, { link = "", title = "" } = {}) {
+  if (!DEBUG_ARTICLE_REJECTS) {
+    return;
+  }
+
+  console.log(`[article-reject] ${reason}`, {
+    title: sanitizeFeedText(title, ""),
+    link,
+  });
 }
 
 function pickImageFromSrcset(value) {
@@ -516,10 +612,24 @@ function hasWebsiteNewsroomContext($, pageUrl = "") {
   return WEBSITE_NEWS_CONTEXT_TERMS.some((term) => bucket.includes(term));
 }
 
+function hasWebsiteNewsIndicators({ pageTitle = "", link = "", articleBody = "", hasNewsroomContext = false, hasPublicationDate = false }) {
+  const indicatorText = [pageTitle, link, articleBody]
+    .join(" ")
+    .toLowerCase();
+
+  return Boolean(
+    hasPublicationDate ||
+    hasNewsroomContext ||
+    urlHasNewsWebsiteSegment(link) ||
+    WEBSITE_NEWS_INDICATOR_TERMS.some((term) => indicatorText.includes(term))
+  );
+}
+
 async function validateWebsiteArticleCandidate(link, title) {
   // Website sources are noisier than RSS feeds, so we require article-like signals
   // before allowing a page into storage.
   if (isBlockedWebsiteNavTitle(title)) {
+    logArticleReject("blocked-title", { link, title });
     return {
       accepted: false,
       reason: "blocked-title",
@@ -536,6 +646,7 @@ async function validateWebsiteArticleCandidate(link, title) {
     title;
 
   if (isBlockedWebsiteNavTitle(pageTitle)) {
+    logArticleReject("blocked-page-title", { link, title: pageTitle });
     return {
       accepted: false,
       reason: "blocked-page-title",
@@ -552,7 +663,12 @@ async function validateWebsiteArticleCandidate(link, title) {
   const strongArticleSignals = [Boolean(publishedDate), hasArticleBody, hasNewsroomContext].filter(Boolean).length;
   const marketingTitle = hasWebsiteMarketingTitle(pageTitle);
   const marketingUrl = urlHasMarketingWebsiteSegment(link);
+  const productTitle = hasWebsiteProductTitle(pageTitle);
+  const productUrl = urlHasProductWebsiteSegment(link);
+  const newsUrl = urlHasNewsWebsiteSegment(link);
   const hostname = getHostname(link);
+  const sourceText = `${hostname} ${link}`.toLowerCase();
+  const regulaSource = hostname.includes("regula");
   const veridosSource = hostname.includes("veridos");
   const veridosNewsContext = VERIDOS_NEWS_CONTEXT_TERMS.some((term) =>
     [pageTitle, link, $("body").text().slice(0, 1500)]
@@ -560,8 +676,16 @@ async function validateWebsiteArticleCandidate(link, title) {
       .toLowerCase()
       .includes(term)
   );
+  const hasNewsIndicators = hasWebsiteNewsIndicators({
+    pageTitle,
+    link,
+    articleBody,
+    hasNewsroomContext,
+    hasPublicationDate: Boolean(publishedDate),
+  });
 
   if (urlHasBlockedWebsiteSegment(link) && !publishedDate) {
+    logArticleReject("blocked-url", { link, title: pageTitle });
     return {
       accepted: false,
       reason: "blocked-url-without-date",
@@ -571,6 +695,7 @@ async function validateWebsiteArticleCandidate(link, title) {
   }
 
   if (!hasRequiredSignal) {
+    logArticleReject("missing-article-signals", { link, title: pageTitle });
     return {
       accepted: false,
       reason: "missing-article-signals",
@@ -579,7 +704,28 @@ async function validateWebsiteArticleCandidate(link, title) {
     };
   }
 
+  if (productUrl && !newsUrl && !hasNewsIndicators) {
+    logArticleReject("product-url", { link, title: pageTitle });
+    return {
+      accepted: false,
+      reason: "product-url",
+      title: pageTitle,
+      link,
+    };
+  }
+
+  if (productTitle && !hasNewsIndicators) {
+    logArticleReject("product-title", { link, title: pageTitle });
+    return {
+      accepted: false,
+      reason: "product-title",
+      title: pageTitle,
+      link,
+    };
+  }
+
   if ((marketingTitle || marketingUrl) && strongArticleSignals < 2) {
+    logArticleReject("marketing-page-without-article-signals", { link, title: pageTitle });
     return {
       accepted: false,
       reason: "marketing-page-without-article-signals",
@@ -588,7 +734,18 @@ async function validateWebsiteArticleCandidate(link, title) {
     };
   }
 
+  if (regulaSource && (productUrl || marketingUrl) && !newsUrl) {
+    logArticleReject("regula-product-page", { link, title: pageTitle });
+    return {
+      accepted: false,
+      reason: "regula-product-page",
+      title: pageTitle,
+      link,
+    };
+  }
+
   if (veridosSource && (marketingTitle || marketingUrl) && !veridosNewsContext) {
+    logArticleReject("veridos-marketing-page", { link, title: pageTitle });
     return {
       accepted: false,
       reason: "veridos-marketing-page",
