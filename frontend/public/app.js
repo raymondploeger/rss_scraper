@@ -5162,7 +5162,7 @@ function getBorderControlRecencyAdjustment(article) {
     if (!publishedAt) {
       return {
         ageDays: Number.POSITIVE_INFINITY,
-        boost: -20,
+        boost: -35,
       };
     }
 
@@ -5170,17 +5170,17 @@ function getBorderControlRecencyAdjustment(article) {
     let boost = 0;
 
     if (ageDays <= 30) {
-      boost = 85;
+      boost = 140;
     } else if (ageDays <= 90) {
-      boost = 45;
+      boost = 85;
+    } else if (ageDays <= 180) {
+      boost = 30;
     } else if (ageDays <= 365) {
-      boost = 15;
-    } else if (ageDays > 365 * 5) {
-      boost = -110;
-    } else if (ageDays > 365 * 3) {
-      boost = -75;
-    } else if (ageDays > 365) {
-      boost = -35;
+      boost = 0;
+    } else if (ageDays <= 730) {
+      boost = -70;
+    } else {
+      boost = -160;
     }
 
     return {
