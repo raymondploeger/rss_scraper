@@ -21,22 +21,6 @@ if (!databaseUrl) {
 
 const execute = process.argv.slice(2).includes("--execute");
 
-const PRODUCT_URL_SEGMENTS = [
-  "/products/",
-  "/product/",
-  "/solutions/",
-  "/solution/",
-  "/services/",
-  "/service/",
-  "/platform/",
-  "/portfolio/",
-  "/capabilities/",
-  "/offerings/",
-  "/industries/",
-  "/use-cases/",
-  "/use-case/",
-];
-
 const NEWS_URL_SEGMENTS = [
   "/news/",
   "/press/",
@@ -48,39 +32,12 @@ const NEWS_URL_SEGMENTS = [
   "/case-studies/",
 ];
 
-const PRODUCT_TITLE_PATTERNS = [
+const REGULA_PRODUCT_TITLE_PATTERNS = [
   "Document Readers",
   "Manual Devices",
   "Manual Control Devices",
   "Identity Verification Devices",
   "Biometric and Document Verification Software",
-  "Biometric Verification Software",
-  "Border Management eGates",
-  "Self-Kiosks",
-  "Seamless Travel Solutions",
-  "Identity Management",
-  "Product Overview",
-  "Solution Overview",
-  "Our Products",
-  "Our Solutions",
-];
-
-const NEWS_TITLE_INDICATORS = [
-  "press release",
-  "news release",
-  "media release",
-  "announcement",
-  "launched",
-  "launch",
-  "rollout",
-  "deployment",
-  "contract",
-  "partnership",
-  "award",
-  "awarded",
-  "implemented",
-  "implementation",
-  "expanded",
 ];
 
 const client = new Client({
@@ -97,10 +54,6 @@ function formatRows(rows = []) {
       ])
     )
   );
-}
-
-function buildLikePatterns(segments = []) {
-  return segments.map((segment) => `%${String(segment || "").toLowerCase()}%`);
 }
 
 function buildTitlePatterns(phrases = []) {
@@ -131,6 +84,7 @@ function getMatchingArticlesCte() {
         a."pubDate",
         a."createdAt",
         a."updatedAt",
+        LOWER(COALESCE(a.source, '')) AS normalized_source,
         LOWER(COALESCE(a."canonicalLink", a.link, '')) AS normalized_url,
         LOWER(COALESCE(a.title, '')) AS normalized_title,
         f."sourceType" AS feed_source_type
@@ -141,41 +95,46 @@ function getMatchingArticlesCte() {
     matching_articles AS (
       SELECT
         *,
-        normalized_url LIKE ANY($1::text[]) AS product_url_match,
-        normalized_url LIKE ANY($2::text[]) AS news_url_match,
-        normalized_title LIKE ANY($3::text[]) AS product_title_match,
-        normalized_title LIKE ANY($4::text[]) AS news_title_match
-      FROM article_flags
-      WHERE (
         (
-          normalized_url LIKE ANY($1::text[])
-          AND NOT (normalized_url LIKE ANY($2::text[]))
-        )
-        OR normalized_title LIKE ANY($3::text[])
-      )
+          normalized_source LIKE '%regulaforensics.com%'
+          OR normalized_url LIKE '%regulaforensics.com%'
+        ) AS regula_domain_match,
+        (
+          normalized_source LIKE '%veridos.com%'
+          OR normalized_url LIKE '%veridos.com%'
+        ) AS veridos_domain_match,
+        normalized_url LIKE ANY($1::text[]) AS news_url_match,
+        normalized_title LIKE ANY($2::text[]) AS regula_product_title_match
+      FROM article_flags
     ),
     cleanup_candidates AS (
       SELECT
         *,
         CASE
-          WHEN product_url_match AND NOT news_url_match THEN 'product-url'
-          WHEN product_title_match AND NOT news_title_match AND NOT news_url_match THEN 'product-title'
+          WHEN regula_domain_match AND normalized_url LIKE '%/products/%' THEN 'regula-products-url'
+          WHEN veridos_domain_match AND normalized_url LIKE '%/solutions/%' THEN 'veridos-solutions-url'
           ELSE 'review'
         END AS match_reason
       FROM matching_articles
       WHERE
-        (product_url_match AND NOT news_url_match)
-        OR (product_title_match AND NOT news_title_match AND NOT news_url_match)
+        (
+          regula_domain_match
+          AND normalized_url LIKE '%/products/%'
+          AND NOT news_url_match
+        )
+        OR (
+          veridos_domain_match
+          AND normalized_url LIKE '%/solutions/%'
+          AND NOT news_url_match
+        )
     )
   `;
 }
 
 async function main() {
-  const productUrlPatterns = buildLikePatterns(PRODUCT_URL_SEGMENTS);
   const newsUrlPatterns = buildLikePatterns(NEWS_URL_SEGMENTS);
-  const productTitlePatterns = buildTitlePatterns(PRODUCT_TITLE_PATTERNS);
-  const newsTitlePatterns = buildTitlePatterns(NEWS_TITLE_INDICATORS);
-  const queryValues = [productUrlPatterns, newsUrlPatterns, productTitlePatterns, newsTitlePatterns];
+  const regulaProductTitlePatterns = buildTitlePatterns(REGULA_PRODUCT_TITLE_PATTERNS);
+  const queryValues = [newsUrlPatterns, regulaProductTitlePatterns];
 
   try {
     await client.connect();
