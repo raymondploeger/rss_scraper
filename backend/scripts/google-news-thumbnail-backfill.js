@@ -23,6 +23,7 @@ if (!databaseUrl) {
 
 const args = process.argv.slice(2);
 const execute = args.includes("--execute");
+const testResolve = args.includes("--test-resolve");
 const limitArg = args.find((arg) => arg.startsWith("--limit="));
 const limit = Math.max(1, Math.min(250, Number(limitArg ? limitArg.split("=")[1] : 50) || 50));
 
@@ -123,6 +124,24 @@ async function loadGoogleNewsCandidates() {
   return result.rows.filter(needsGoogleNewsThumbnailBackfill);
 }
 
+function getGoogleNewsUrl(article) {
+  return article.link || article.canonicalLink || "";
+}
+
+function getResolvedPublisherUrl(enriched, article) {
+  const diagnosticLink = String(enriched?.imageDiagnostic?.link || "").trim();
+  if (enriched?.imageDiagnostic?.originalPublisherResolved && diagnosticLink) {
+    return diagnosticLink;
+  }
+
+  const canonicalLink = String(enriched?.canonicalLink || "").trim();
+  if (canonicalLink && !canonicalLink.includes("news.google.com")) {
+    return canonicalLink;
+  }
+
+  return "";
+}
+
 async function main() {
   try {
     await client.connect();
@@ -170,6 +189,95 @@ async function main() {
         }))
       )
     );
+
+    if (testResolve) {
+      const sample = candidates.slice(0, Math.min(20, limit));
+      let resolvedCount = 0;
+      let resolveFailureCount = 0;
+      let imageFoundCount = 0;
+      let imageNotFoundCount = 0;
+      const testRows = [];
+
+      for (const article of sample) {
+        try {
+          const enriched = await scrapeArticleMetadata(
+            article.link,
+            article.contentSnippet || article.summary || "",
+            article.title || "",
+            {
+              existingThumbnail: "",
+              rssThumbnailSource: "",
+            }
+          );
+
+          const resolvedPublisherUrl = getResolvedPublisherUrl(enriched, article);
+          const publisherResolved = Boolean(resolvedPublisherUrl);
+          const imageFound =
+            Boolean(enriched?.thumbnail) &&
+            enriched.thumbnail !== env.placeholderImage &&
+            !isGoogleNewsPlaceholderImage(enriched.thumbnail);
+
+          if (publisherResolved) {
+            resolvedCount += 1;
+          } else {
+            resolveFailureCount += 1;
+          }
+
+          if (imageFound) {
+            imageFoundCount += 1;
+          } else {
+            imageNotFoundCount += 1;
+          }
+
+          testRows.push({
+            title: article.title || "",
+            googleNewsUrl: getGoogleNewsUrl(article),
+            resolvedPublisherUrl,
+            publisherDomain: getHostname(resolvedPublisherUrl),
+            resolveStatus: publisherResolved ? "success" : "failure",
+            imageFound,
+            imageSourceType: enriched?.thumbnailSource || "fallback",
+          });
+        } catch (error) {
+          resolveFailureCount += 1;
+          imageNotFoundCount += 1;
+          testRows.push({
+            title: article.title || "",
+            googleNewsUrl: getGoogleNewsUrl(article),
+            resolvedPublisherUrl: "",
+            publisherDomain: "",
+            resolveStatus: "failure",
+            imageFound: false,
+            imageSourceType: "error",
+          });
+          console.error(
+            `Resolve test failed for article ${article.id}:`,
+            error instanceof Error ? error.message : error
+          );
+        }
+      }
+
+      console.log("\n=== Google News Resolve Test Summary ===");
+      console.table(
+        formatRows([
+          {
+            sample_size: sample.length,
+            publisher_resolved_count: resolvedCount,
+            publisher_resolve_failures: resolveFailureCount,
+            image_found_count: imageFoundCount,
+            image_not_found_count: imageNotFoundCount,
+          },
+        ])
+      );
+
+      console.log("\n=== Google News Resolve Test Rows ===");
+      if (!testRows.length) {
+        console.log("(no matching Google News articles in sample)");
+      } else {
+        console.table(formatRows(testRows));
+      }
+      return;
+    }
 
     if (!execute) {
       console.log("\nDry run only. No articles were updated.");
