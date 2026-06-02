@@ -76,20 +76,20 @@ function extractDomainCandidates(value) {
   );
 }
 
-function extractItemFields($item) {
+function extractItemFields($root, $item) {
   const fieldMap = new Map();
   const fieldNames = [];
 
-  $item.children().each((_, element) => {
+  $item.children().each((index, element) => {
     const tagName = element.tagName || element.name || "";
     if (!tagName) {
       return;
     }
     fieldNames.push(tagName);
 
-    const node = cheerio.load(cheerio.html(element), { xmlMode: true }).root().children().first();
+    const node = $item.children().eq(index);
     const textValue = node.text();
-    const htmlValue = cheerio.html(element, { xmlMode: true }) || "";
+    const htmlValue = $root.html(element) || "";
     const attrMap = element.attribs || {};
 
     if (!fieldMap.has(tagName)) {
@@ -240,13 +240,59 @@ async function main() {
     let itemsWithNoPublisherInfo = 0;
 
     for (const feed of feeds) {
-      let rawXml = "";
       try {
-        rawXml = await fetchRawXml(feed.rssUrl);
+        const rawXml = await fetchRawXml(feed.rssUrl);
+        const $ = cheerio.load(rawXml, { xmlMode: true });
+        const items = $("item").slice(0, itemLimit).toArray();
+
+        for (const item of items) {
+          const $item = $(item);
+          const { fieldMap, fieldNames } = extractItemFields($, $item);
+          const title = (fieldMap.get("title")?.[0]?.text || "").trim();
+          const googleNewsUrl =
+            (fieldMap.get("link")?.[0]?.text || "").trim() ||
+            (fieldMap.get("guid")?.[0]?.text || "").trim();
+          const {
+            publisherName,
+            publisherDomain,
+            publisherUrlCandidate,
+            publisherInfoSourceField,
+          } = inspectPublisherInfo(fieldMap);
+          const thumbnailCandidate = extractThumbnailCandidate(fieldMap);
+
+          itemsInspected += 1;
+          if (publisherUrlCandidate) {
+            itemsWithPublisherUrlFound += 1;
+          } else if (publisherDomain || publisherName) {
+            itemsWithPublisherDomainOnly += 1;
+          } else {
+            itemsWithNoPublisherInfo += 1;
+          }
+
+          if (publisherInfoSourceField) {
+            fieldsFound.set(
+              publisherInfoSourceField,
+              (fieldsFound.get(publisherInfoSourceField) || 0) + 1
+            );
+          }
+
+          sampleRows.push({
+            feedName: feed.name || "",
+            itemTitle: title,
+            googleNewsUrl,
+            publisherName,
+            publisherDomain,
+            publisherUrlCandidate,
+            publisherInfoSourceField,
+            thumbnailCandidate,
+            rawFieldNamesAvailable: fieldNames.join(", "),
+            fetchError: "",
+          });
+        }
       } catch (error) {
         sampleRows.push({
           feedName: feed.name || "",
-          itemTitle: "[feed fetch failed]",
+          itemTitle: "[feed inspection failed]",
           googleNewsUrl: feed.rssUrl,
           publisherName: "",
           publisherDomain: "",
@@ -254,57 +300,15 @@ async function main() {
           publisherInfoSourceField: "",
           thumbnailCandidate: "",
           rawFieldNamesAvailable: "",
-          fetchError: error instanceof Error ? error.message : String(error),
+          fetchError: `${feed.name || "unknown feed"} | ${feed.rssUrl || ""} | ${
+            error instanceof Error ? error.message : String(error)
+          }`,
         });
-        itemsInspected += 1;
+        console.error(
+          `Google News raw RSS inspect failed for ${feed.name || feed.rssUrl}:`,
+          error instanceof Error ? error.message : error
+        );
         continue;
-      }
-
-      const $ = cheerio.load(rawXml, { xmlMode: true });
-      const items = $("item").slice(0, itemLimit).toArray();
-
-      for (const item of items) {
-        const $item = $(item);
-        const { fieldMap, fieldNames } = extractItemFields($item);
-        const title = (fieldMap.get("title")?.[0]?.text || "").trim();
-        const googleNewsUrl =
-          (fieldMap.get("link")?.[0]?.text || "").trim() ||
-          (fieldMap.get("guid")?.[0]?.text || "").trim();
-        const {
-          publisherName,
-          publisherDomain,
-          publisherUrlCandidate,
-          publisherInfoSourceField,
-        } = inspectPublisherInfo(fieldMap);
-        const thumbnailCandidate = extractThumbnailCandidate(fieldMap);
-
-        itemsInspected += 1;
-        if (publisherUrlCandidate) {
-          itemsWithPublisherUrlFound += 1;
-        } else if (publisherDomain || publisherName) {
-          itemsWithPublisherDomainOnly += 1;
-        } else {
-          itemsWithNoPublisherInfo += 1;
-        }
-
-        if (publisherInfoSourceField) {
-          fieldsFound.set(
-            publisherInfoSourceField,
-            (fieldsFound.get(publisherInfoSourceField) || 0) + 1
-          );
-        }
-
-        sampleRows.push({
-          feedName: feed.name || "",
-          itemTitle: title,
-          googleNewsUrl,
-          publisherName,
-          publisherDomain,
-          publisherUrlCandidate,
-          publisherInfoSourceField,
-          thumbnailCandidate,
-          rawFieldNamesAvailable: fieldNames.join(", "),
-        });
       }
     }
 
