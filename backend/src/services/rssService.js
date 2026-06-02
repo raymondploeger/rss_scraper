@@ -30,6 +30,7 @@ const parser = new Parser({
   },
   customFields: {
     item: [
+      ["source", "source", { keepArray: true }],
       ["media:content", "media:content", { keepArray: true }],
       ["media:thumbnail", "media:thumbnail", { keepArray: true }],
       ["content:encoded", "content:encoded"],
@@ -177,6 +178,9 @@ const VERIDOS_NEWS_CONTEXT_TERMS = ["press", "press release", "media", "news", "
 const DEBUG_ARTICLE_REJECTS =
   process.env.NODE_ENV !== "production" ||
   String(process.env.DEBUG_ARTICLE_REJECTS || "").trim().toLowerCase() === "true";
+const DEBUG_IMAGE_EXTRACTION =
+  process.env.NODE_ENV !== "production" &&
+  String(process.env.DEBUG_IMAGE_EXTRACTION || "").trim().toLowerCase() === "true";
 
 function isNotafiliaUrl(value) {
   try {
@@ -963,6 +967,43 @@ function resolveItemLink(item) {
   return "";
 }
 
+function isGoogleNewsLink(link) {
+  return getHostname(link) === "news.google.com";
+}
+
+function extractItemSourceMetadata(item) {
+  const entries = Array.isArray(item?.source) ? item.source : item?.source ? [item.source] : [];
+
+  for (const entry of entries) {
+    if (typeof entry === "string") {
+      const name = sanitizeFeedText(entry, "");
+      if (name) {
+        return { name, url: "" };
+      }
+      continue;
+    }
+
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+
+    const name = sanitizeFeedText(
+      entry._ || entry.text || entry.name || entry.title || "",
+      ""
+    );
+    const url = normalizeText(
+      entry.url || entry.href || entry.$?.url || entry.$?.href || entry["@_url"] || entry["@_href"],
+      ""
+    );
+
+    if (name || url) {
+      return { name, url };
+    }
+  }
+
+  return { name: "", url: "" };
+}
+
 function normalizeItem(feed, item) {
   const link = resolveItemLink(item);
   if (!link) {
@@ -985,10 +1026,15 @@ function normalizeItem(feed, item) {
       ? "feed-fallback-image"
       : "placeholder";
   const canonicalLink = canonicalizeUrl(link);
-  const source = sanitizeFeedText(item.creator || item.author || getSourceName(link), "Unknown");
+  const sourceMeta = extractItemSourceMetadata(item);
+  const source = sanitizeFeedText(sourceMeta.name || item.creator || item.author || getSourceName(link), "Unknown");
   const tags = normalizeArticleTags(item);
   const keywords = Array.from(new Set([...tags, ...inferKeywords([title, contentSnippet, feed.topic], 6)]));
   const isNotafiliaArticle = isNotafiliaUrl(link) || isNotafiliaUrl(canonicalLink);
+  const sourceUrlCandidate =
+    isGoogleNewsLink(link) && sourceMeta.url && getHostname(sourceMeta.url) !== "news.google.com"
+      ? sourceMeta.url
+      : "";
 
   if (isNotafiliaArticle) {
     console.log(
@@ -1021,7 +1067,8 @@ function normalizeItem(feed, item) {
     language: "unknown",
     fetchStatus: hasUsableThumbnail ? "enriched" : "pending",
     articleHash: createDeterministicId(canonicalLink || link),
-    thumbnailSource
+    thumbnailSource,
+    sourceUrlCandidate
   };
 }
 
@@ -1053,6 +1100,62 @@ async function upsertArticle(article) {
   }
 
   return { created: false, article: existing };
+}
+
+async function enrichGoogleNewsThumbnailFromSourceUrl(article) {
+  if (
+    !article ||
+    !article.sourceUrlCandidate ||
+    (article.thumbnail &&
+      article.thumbnail !== env.placeholderImage &&
+      !isGoogleNewsPlaceholderImage(article.thumbnail))
+  ) {
+    return article;
+  }
+
+  const thumbnailExtractionUrl = article.sourceUrlCandidate;
+  const enriched = await scrapeArticleMetadata(
+    thumbnailExtractionUrl,
+    article.contentSnippet || article.summary || "",
+    article.title || "",
+    {
+      existingThumbnail: article.thumbnail,
+      rssThumbnailSource:
+        article.thumbnail &&
+        article.thumbnail !== env.placeholderImage &&
+        !isGoogleNewsPlaceholderImage(article.thumbnail)
+          ? article.thumbnailSource || "article-existing"
+          : "",
+    }
+  );
+
+  const nextThumbnail = normalizeText(enriched?.thumbnail, "");
+  const nextThumbnailIsUsable =
+    Boolean(nextThumbnail) &&
+    nextThumbnail !== env.placeholderImage &&
+    !isGoogleNewsPlaceholderImage(nextThumbnail);
+
+  if (DEBUG_IMAGE_EXTRACTION) {
+    console.log("[google-news-thumbnail-source-url]", {
+      articleTitle: article.title || "",
+      googleNewsUrl: article.link || "",
+      sourceUrl: article.sourceUrlCandidate,
+      thumbnailExtractionUrl,
+      thumbnailResult: nextThumbnail || "",
+      thumbnailSource: enriched?.thumbnailSource || "",
+    });
+  }
+
+  if (!nextThumbnailIsUsable) {
+    return article;
+  }
+
+  return {
+    ...article,
+    thumbnail: nextThumbnail,
+    thumbnailSource: enriched?.thumbnailSource || "google-news-source-url",
+    fetchStatus: "enriched",
+  };
 }
 
 function queueThumbnailEnrichment(article) {
@@ -1100,10 +1203,12 @@ export async function syncFeed(feed) {
 
     for (const item of resolvedItems) {
       try {
-        const normalized = normalizeItem(feed, item);
+        let normalized = normalizeItem(feed, item);
         if (!normalized) {
           continue;
         }
+
+        normalized = await enrichGoogleNewsThumbnailFromSourceUrl(normalized);
 
         console.log(
           `Thumbnail source for article ${normalized.id}: ${normalized.thumbnailSource || "placeholder"}`
