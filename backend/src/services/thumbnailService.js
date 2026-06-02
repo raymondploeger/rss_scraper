@@ -394,14 +394,18 @@ function logImageDebug(diagnostic) {
   });
 }
 
+function buildHtmlRequestHeaders() {
+  return {
+    "User-Agent": "RSS Monitor Dashboard/2.0",
+    Accept: "text/html,application/xhtml+xml"
+  };
+}
+
 async function requestHtml(url, attempt = 0) {
   try {
     const response = await axios.get(url, {
       timeout: env.requestTimeoutMs,
-      headers: {
-        "User-Agent": "RSS Monitor Dashboard/2.0",
-        Accept: "text/html,application/xhtml+xml"
-      },
+      headers: buildHtmlRequestHeaders(),
       responseType: "text",
       maxRedirects: 5,
       maxContentLength: 1024 * 1024 * 2,
@@ -430,6 +434,60 @@ async function requestHtml(url, attempt = 0) {
       return requestHtml(url, attempt + 1);
     }
 
+    throw error;
+  }
+}
+
+async function requestHtmlWithRedirectChain(url, attempt = 0) {
+  const redirectChain = [];
+  let currentUrl = url;
+
+  try {
+    for (let redirectCount = 0; redirectCount <= 5; redirectCount += 1) {
+      const response = await axios.get(currentUrl, {
+        timeout: env.requestTimeoutMs,
+        headers: buildHtmlRequestHeaders(),
+        responseType: "text",
+        maxRedirects: 0,
+        maxContentLength: 1024 * 1024 * 2,
+        validateStatus: (status) => status >= 200 && status < 400
+      });
+
+      const location = normalizeText(response.headers?.location, "");
+      redirectChain.push({
+        url: currentUrl,
+        status: Number(response.status || 0),
+        location
+      });
+
+      if ([301, 302, 303, 307, 308].includes(Number(response.status || 0)) && location) {
+        currentUrl = resolveUrl(currentUrl, location);
+        continue;
+      }
+
+      const contentType = String(response.headers["content-type"] || "");
+      if (!contentType.includes("text/html")) {
+        throw new Error(`Unsupported content type: ${contentType || "unknown"}`);
+      }
+
+      return {
+        html: String(response.data || ""),
+        statusCode: Number(response.status || 0),
+        finalUrl: currentUrl,
+        headers: response.headers || {},
+        redirectChain,
+      };
+    }
+
+    throw new Error("Too many redirects");
+  } catch (error) {
+    const status = Number(error?.response?.status || 0);
+    if (IMAGE_SCRAPE_FAIL_FAST_STATUSES.has(status)) {
+      throw new Error(`Blocked content fetch (${status})`);
+    }
+    if (attempt < env.scrapeRetryAttempts) {
+      return requestHtmlWithRedirectChain(url, attempt + 1);
+    }
     throw error;
   }
 }
@@ -511,6 +569,130 @@ function extractOriginalPublisherUrlFromGoogleNews($, pageUrl) {
 
   const dedupedFallback = Array.from(new Set(fallbackCandidates));
   return dedupedFallback[0] || "";
+}
+
+function collectPublisherUrlCandidatesFromGoogleNewsDocument($, pageUrl, rawHtml = "") {
+  const candidates = [];
+
+  const pushCandidate = (candidate, method) => {
+    const resolved = resolveGoogleNewsPublisherCandidate(pageUrl, candidate);
+    if (!resolved) {
+      return;
+    }
+    candidates.push({
+      url: resolved,
+      method,
+      domain: getDomainForDiagnostics(resolved),
+    });
+  };
+
+  pushCandidate($('link[rel="canonical"]').attr("href"), "canonical-link");
+  pushCandidate($('meta[property="og:url"]').attr("content"), "og-url");
+  pushCandidate($('meta[name="twitter:url"]').attr("content"), "twitter-url");
+
+  $("a[href]").each((_, element) => {
+    pushCandidate($(element).attr("href"), "anchor-href");
+  });
+
+  const htmlUrlMatches = String(rawHtml || "").match(/https?:\/\/[^\s"'<>\\]+/gi) || [];
+  htmlUrlMatches.forEach((match) => pushCandidate(match, "html-regex"));
+
+  const deduped = [];
+  const seen = new Set();
+  for (const candidate of candidates) {
+    if (seen.has(candidate.url)) {
+      continue;
+    }
+    seen.add(candidate.url);
+    deduped.push(candidate);
+  }
+
+  return deduped;
+}
+
+export async function analyzeGoogleNewsPublisherUrl(link) {
+  const originalRssUrl = String(link || "").trim();
+  const decodedPublisherUrl = decodeOriginalPublisherUrlFromGoogleNewsRss(originalRssUrl);
+
+  const result = {
+    originalRssUrl,
+    attemptedUrl: originalRssUrl,
+    httpStatus: 0,
+    redirectChain: [],
+    finalUrl: "",
+    canonicalUrl: "",
+    publisherUrlCandidates: [],
+    extractionMethodUsed: "",
+    resolvedPublisherUrl: "",
+    failureReason: "",
+  };
+
+  if (!originalRssUrl) {
+    result.failureReason = "missing_url";
+    return result;
+  }
+
+  if (decodedPublisherUrl) {
+    result.publisherUrlCandidates.push({
+      url: decodedPublisherUrl,
+      method: "rss-path-decode",
+      domain: getDomainForDiagnostics(decodedPublisherUrl),
+    });
+    result.extractionMethodUsed = "rss-path-decode";
+    result.resolvedPublisherUrl = decodedPublisherUrl;
+  }
+
+  try {
+    const response = await requestHtmlWithRedirectChain(originalRssUrl);
+    result.httpStatus = Number(response.statusCode || 0);
+    result.redirectChain = response.redirectChain || [];
+    result.finalUrl = normalizeText(response.finalUrl, originalRssUrl);
+
+    if (!result.resolvedPublisherUrl && result.finalUrl && !isGoogleNewsArticleUrl(result.finalUrl)) {
+      result.publisherUrlCandidates.push({
+        url: canonicalizeUrl(result.finalUrl),
+        method: "http-redirect",
+        domain: getDomainForDiagnostics(result.finalUrl),
+      });
+      result.extractionMethodUsed = "http-redirect";
+      result.resolvedPublisherUrl = canonicalizeUrl(result.finalUrl);
+    }
+
+    const $ = cheerio.load(response.html);
+    const canonicalUrl = normalizeText($('link[rel="canonical"]').attr("href"), "");
+    result.canonicalUrl = canonicalUrl ? canonicalizeUrl(resolveUrl(result.finalUrl || originalRssUrl, canonicalUrl)) : "";
+
+    const htmlCandidates = collectPublisherUrlCandidatesFromGoogleNewsDocument(
+      $,
+      result.finalUrl || originalRssUrl,
+      response.html
+    );
+
+    for (const candidate of htmlCandidates) {
+      if (!result.publisherUrlCandidates.some((existing) => existing.url === candidate.url)) {
+        result.publisherUrlCandidates.push(candidate);
+      }
+    }
+
+    if (!result.resolvedPublisherUrl && htmlCandidates.length) {
+      result.extractionMethodUsed = htmlCandidates[0].method;
+      result.resolvedPublisherUrl = htmlCandidates[0].url;
+    }
+  } catch (error) {
+    result.failureReason =
+      error instanceof Error && /Unsupported content type/i.test(error.message)
+        ? "unsupported_content_type"
+        : error instanceof Error && /Blocked content fetch \((\d+)\)/i.test(error.message)
+          ? `blocked_status_${error.message.match(/(\d+)/)?.[1] || "unknown"}`
+          : "request_failed";
+    return result;
+  }
+
+  if (!result.resolvedPublisherUrl) {
+    result.failureReason = "no_publisher_url_found";
+  }
+
+  return result;
 }
 
 export async function scrapeArticleMetadata(link, existingSnippet = "", articleTitle = "", options = {}) {
