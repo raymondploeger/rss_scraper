@@ -12,7 +12,7 @@ import {
 import { createPollLog } from "../database/pollLogRepository.js";
 import { listFeeds as listFeedRecords, updateFeed as updateFeedRecord } from "../database/feedRepository.js";
 import { broadcast } from "./realtimeService.js";
-import { enrichArticle, scrapeArticleMetadata } from "./thumbnailService.js";
+import { enrichArticle, isGoogleNewsPlaceholderImage, scrapeArticleMetadata } from "./thumbnailService.js";
 import {
   canonicalizeUrl,
   createDeterministicId,
@@ -975,6 +975,10 @@ function normalizeItem(feed, item) {
   const extractedThumbnail = extractFeedThumbnail(link, item);
   const feedFallbackThumbnail = resolveFeedImageCandidate(link, feed.sourceFallbackImage || "");
   const thumbnail = normalizeText(extractedThumbnail.url || feedFallbackThumbnail, env.placeholderImage);
+  const hasUsableThumbnail =
+    Boolean(thumbnail) &&
+    thumbnail !== env.placeholderImage &&
+    !isGoogleNewsPlaceholderImage(thumbnail);
   const thumbnailSource = extractedThumbnail.url
     ? extractedThumbnail.source
     : feedFallbackThumbnail
@@ -1015,7 +1019,7 @@ function normalizeItem(feed, item) {
     isDuplicate: false,
     duplicateOf: null,
     language: "unknown",
-    fetchStatus: thumbnail && thumbnail !== env.placeholderImage ? "enriched" : "pending",
+    fetchStatus: hasUsableThumbnail ? "enriched" : "pending",
     articleHash: createDeterministicId(canonicalLink || link),
     thumbnailSource
   };
@@ -1029,7 +1033,10 @@ async function upsertArticle(article) {
     return { created: true, article: created };
   }
 
-  const shouldBackfillThumbnail = existing.thumbnail === env.placeholderImage && article.thumbnail !== env.placeholderImage;
+  const shouldBackfillThumbnail =
+    (existing.thumbnail === env.placeholderImage || isGoogleNewsPlaceholderImage(existing.thumbnail)) &&
+    article.thumbnail !== env.placeholderImage &&
+    !isGoogleNewsPlaceholderImage(article.thumbnail);
   const shouldBackfillSnippet = (!existing.contentSnippet || existing.contentSnippet.length < 40) && article.contentSnippet;
 
   if (shouldBackfillThumbnail || shouldBackfillSnippet) {
@@ -1053,7 +1060,11 @@ function queueThumbnailEnrichment(article) {
     return;
   }
 
-  if (article.thumbnail && article.thumbnail !== env.placeholderImage) {
+  if (
+    article.thumbnail &&
+    article.thumbnail !== env.placeholderImage &&
+    !isGoogleNewsPlaceholderImage(article.thumbnail)
+  ) {
     if (isNotafiliaUrl(article.link) || isNotafiliaUrl(article.canonicalLink) || isNotafiliaUrl(article.thumbnail)) {
       console.log(
         `[notafilia][enrich] articleUrl=${article.canonicalLink || article.link} skipped=true reason=existing-thumbnail finalThumbnail=${article.thumbnail || ""}`
@@ -1195,11 +1206,19 @@ export async function processArticleBacklog(limit = 20) {
         article.title || "",
         {
           existingThumbnail: article.thumbnail,
-          rssThumbnailSource: article.thumbnail && article.thumbnail !== env.placeholderImage ? "article-existing" : "",
+          rssThumbnailSource:
+            article.thumbnail &&
+            article.thumbnail !== env.placeholderImage &&
+            !isGoogleNewsPlaceholderImage(article.thumbnail)
+              ? "article-existing"
+              : "",
         }
       );
       const updatedArticle = await updateArticle(article.id, {
-        thumbnail: article.thumbnail !== env.placeholderImage ? article.thumbnail : enriched.thumbnail,
+        thumbnail:
+          article.thumbnail !== env.placeholderImage && !isGoogleNewsPlaceholderImage(article.thumbnail)
+            ? article.thumbnail
+            : enriched.thumbnail,
         canonicalLink: enriched.canonicalLink || article.canonicalLink,
         contentSnippet: enriched.contentSnippet || article.contentSnippet,
         summary: article.summary || enriched.metaDescription || article.contentSnippet,

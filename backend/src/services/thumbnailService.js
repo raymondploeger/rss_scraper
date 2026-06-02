@@ -36,6 +36,28 @@ function getDomainForDiagnostics(value) {
   }
 }
 
+function isGoogleNewsHost(hostname) {
+  const normalized = String(hostname || "").replace(/^www\./, "").toLowerCase();
+  return normalized === "news.google.com" || normalized.endsWith(".news.google.com");
+}
+
+function isGoogleNewsArticleUrl(value) {
+  return isGoogleNewsHost(getDomainForDiagnostics(value));
+}
+
+export function isGoogleNewsPlaceholderImage(value) {
+  const hostname = getDomainForDiagnostics(value);
+  if (!hostname) {
+    return false;
+  }
+
+  return (
+    isGoogleNewsHost(hostname) ||
+    hostname.includes("googleusercontent.com") ||
+    hostname.includes("gstatic.com")
+  );
+}
+
 function tokenizeForMatch(value) {
   return String(value || "")
     .toLowerCase()
@@ -63,6 +85,10 @@ function isLikelyGenericMetadataImage(imageUrl) {
     "tracking",
     "pixel",
   ].some((token) => value.includes(token));
+}
+
+function isRejectedGoogleNewsImage(imageUrl, pageUrl) {
+  return isGoogleNewsArticleUrl(pageUrl) && isGoogleNewsPlaceholderImage(imageUrl);
 }
 
 function parseNumericDimension(value) {
@@ -278,7 +304,12 @@ function findFirstValidArticleImage($, pageUrl) {
     const candidate = $(selector)
       .map((_, element) => resolveNodeImageCandidate(pageUrl, $(element)))
       .get()
-      .find((value) => value && !isLikelyGenericMetadataImage(value));
+      .find(
+        (value) =>
+          value &&
+          !isLikelyGenericMetadataImage(value) &&
+          !isRejectedGoogleNewsImage(value, pageUrl)
+      );
     if (candidate) {
       return candidate;
     }
@@ -311,6 +342,9 @@ function logImageDebug(diagnostic) {
     twitterImage: diagnostic.twitterImageFound,
     schemaImage: diagnostic.schemaImageFound,
     articleImage: diagnostic.articleImageFound,
+    googleNewsPlaceholderDetected: diagnostic.googleNewsPlaceholderDetected,
+    originalPublisherResolved: diagnostic.originalPublisherResolved,
+    thumbnailSource: diagnostic.thumbnailSource,
     rssThumbnailUsed: diagnostic.rssThumbnailUsed,
     rejectedReason: diagnostic.rejectedReasons.join(", ") || "no_valid_image_found",
   });
@@ -335,7 +369,13 @@ async function requestHtml(url, attempt = 0) {
       throw new Error(`Unsupported content type: ${contentType || "unknown"}`);
     }
 
-    return String(response.data || "");
+    return {
+      html: String(response.data || ""),
+      finalUrl:
+        normalizeText(response?.request?.res?.responseUrl, "") ||
+        normalizeText(response?.config?.url, "") ||
+        url,
+    };
   } catch (error) {
     const status = Number(error?.response?.status || 0);
     if (IMAGE_SCRAPE_FAIL_FAST_STATUSES.has(status)) {
@@ -349,6 +389,85 @@ async function requestHtml(url, attempt = 0) {
   }
 }
 
+function hasNewsLikePublisherUrl(value) {
+  const normalized = String(value || "").toLowerCase();
+  return [
+    "/news/",
+    "/press/",
+    "/media/",
+    "/blog/",
+    "/article/",
+    "/announcement/",
+    "/case-study/",
+    "/case-studies/",
+  ].some((segment) => normalized.includes(segment));
+}
+
+function resolveGoogleNewsPublisherCandidate(baseUrl, candidate) {
+  const resolved = resolveImageCandidate(baseUrl, candidate);
+  if (!resolved) {
+    return "";
+  }
+
+  const hostname = getDomainForDiagnostics(resolved);
+  if (
+    !hostname ||
+    isGoogleNewsHost(hostname) ||
+    hostname.includes("google.com") ||
+    hostname.includes("googleusercontent.com") ||
+    hostname.includes("gstatic.com")
+  ) {
+    return "";
+  }
+
+  return canonicalizeUrl(resolved);
+}
+
+function extractOriginalPublisherUrlFromGoogleNews($, pageUrl) {
+  const prioritizedCandidates = [];
+  const fallbackCandidates = [];
+
+  const pushCandidate = (candidate, priority = "fallback") => {
+    const resolved = resolveGoogleNewsPublisherCandidate(pageUrl, candidate);
+    if (!resolved) {
+      return;
+    }
+
+    if (priority === "priority") {
+      prioritizedCandidates.push(resolved);
+      return;
+    }
+
+    fallbackCandidates.push(resolved);
+  };
+
+  pushCandidate($('link[rel="canonical"]').attr("href"), "priority");
+  pushCandidate($('meta[property="og:url"]').attr("content"), "priority");
+  pushCandidate($('meta[name="twitter:url"]').attr("content"), "priority");
+
+  $("a[href]").each((_, element) => {
+    const href = $(element).attr("href");
+    const text = normalizeText($(element).text(), "").toLowerCase();
+    const priority =
+      text.includes("read full article") ||
+      text.includes("full coverage") ||
+      text.includes("original") ||
+      text.includes("publisher") ||
+      hasNewsLikePublisherUrl(String(href || ""))
+        ? "priority"
+        : "fallback";
+    pushCandidate(href, priority);
+  });
+
+  const dedupedPriority = Array.from(new Set(prioritizedCandidates));
+  if (dedupedPriority.length) {
+    return dedupedPriority[0];
+  }
+
+  const dedupedFallback = Array.from(new Set(fallbackCandidates));
+  return dedupedFallback[0] || "";
+}
+
 export async function scrapeArticleMetadata(link, existingSnippet = "", articleTitle = "", options = {}) {
   const existingThumbnail = normalizeText(options.existingThumbnail, "");
   const rssThumbnailSource = normalizeText(options.rssThumbnailSource, "");
@@ -359,7 +478,10 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
 
   const pending = (async () => {
     try {
-      if (existingThumbnail && existingThumbnail !== env.placeholderImage) {
+      const googleNewsPlaceholderDetected = isGoogleNewsPlaceholderImage(existingThumbnail);
+      const fallbackGoogleNewsThumbnail =
+        googleNewsPlaceholderDetected && existingThumbnail !== env.placeholderImage ? existingThumbnail : "";
+      if (existingThumbnail && existingThumbnail !== env.placeholderImage && !googleNewsPlaceholderDetected) {
         const diagnostic = {
           domain: getDomainForDiagnostics(link),
           link,
@@ -367,6 +489,8 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
           twitterImageFound: false,
           schemaImageFound: false,
           articleImageFound: false,
+          googleNewsPlaceholderDetected: false,
+          originalPublisherResolved: false,
           rejectedReasons: [],
           finalThumbnail: existingThumbnail,
           thumbnailSource: rssThumbnailSource || "rss-existing",
@@ -375,6 +499,8 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
 
         logImageExtraction(link, diagnostic.thumbnailSource, {
           usedThumbnail: existingThumbnail,
+          googleNewsPlaceholderDetected: false,
+          originalPublisherResolved: false,
           rssThumbnailUsed: true,
         });
 
@@ -385,19 +511,45 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
           contentSnippet: existingSnippet,
           language: "unknown",
           imageDiagnostic: diagnostic,
+          thumbnailSource: diagnostic.thumbnailSource,
           fetchStatus: "partial"
         };
       }
 
-      const html = await requestHtml(link);
-      const $ = cheerio.load(html);
+      let scrapeTargetUrl = link;
+      let originalPublisherResolved = false;
+      let initialResponse = await requestHtml(link);
+      let activeHtml = initialResponse.html;
+      let activeUrl = normalizeText(initialResponse.finalUrl, link);
+
+      if (isGoogleNewsArticleUrl(link)) {
+        const googleNewsDocument = cheerio.load(activeHtml);
+        const resolvedPublisherUrl = resolveGoogleNewsPublisherCandidate(
+          activeUrl,
+          activeUrl
+        ) || extractOriginalPublisherUrlFromGoogleNews(googleNewsDocument, activeUrl);
+
+        if (resolvedPublisherUrl && !isGoogleNewsArticleUrl(resolvedPublisherUrl)) {
+          originalPublisherResolved = true;
+          scrapeTargetUrl = resolvedPublisherUrl;
+          if (canonicalizeUrl(resolvedPublisherUrl) !== canonicalizeUrl(activeUrl)) {
+            const resolvedResponse = await requestHtml(resolvedPublisherUrl);
+            activeHtml = resolvedResponse.html;
+            activeUrl = normalizeText(resolvedResponse.finalUrl, resolvedPublisherUrl);
+          } else {
+            activeUrl = resolvedPublisherUrl;
+          }
+        }
+      }
+
+      const $ = cheerio.load(activeHtml);
       const ogImage = $('meta[property="og:image"]').attr("content");
       const ogSecureImage = $('meta[property="og:image:secure_url"]').attr("content");
       const twitterImage = $('meta[name="twitter:image"]').attr("content");
-      const schemaImageResult = extractSchemaImage($, link);
+      const schemaImageResult = extractSchemaImage($, activeUrl);
       const canonicalUrl = $('link[rel="canonical"]').attr("href");
-      const articleImageResult = findMeaningfulImage($, link);
-      const fallbackArticleImage = findFirstValidArticleImage($, link);
+      const articleImageResult = findMeaningfulImage($, activeUrl);
+      const fallbackArticleImage = findFirstValidArticleImage($, activeUrl);
       const metaDescription =
         $('meta[property="og:description"]').attr("content") ||
         $('meta[name="description"]').attr("content") ||
@@ -410,20 +562,25 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
       const htmlLang = $("html").attr("lang") || "";
       const rejectedReasons = [];
       const metadataCandidates = [
-        { url: resolveImageCandidate(link, ogImage || ""), source: "og:image" },
-        { url: resolveImageCandidate(link, ogSecureImage || ""), source: "og:image:secure_url" },
-        { url: resolveImageCandidate(link, twitterImage || ""), source: "twitter:image" },
-        { url: resolveImageCandidate(link, schemaImageResult.url || ""), source: "schema-image" },
-      ].filter((candidate) => candidate.url && !isLikelyGenericMetadataImage(candidate.url));
-      if ((ogImage || ogSecureImage) && !metadataCandidates.some((candidate) => candidate.source.startsWith("og:image"))) {
+        { url: resolveImageCandidate(activeUrl, ogImage || ""), source: "og-image" },
+        { url: resolveImageCandidate(activeUrl, ogSecureImage || ""), source: "og-image" },
+        { url: resolveImageCandidate(activeUrl, twitterImage || ""), source: "twitter-image" },
+        { url: resolveImageCandidate(activeUrl, schemaImageResult.url || ""), source: "schema-image" },
+      ].filter(
+        (candidate) =>
+          candidate.url &&
+          !isLikelyGenericMetadataImage(candidate.url) &&
+          !isRejectedGoogleNewsImage(candidate.url, link)
+      );
+      if ((ogImage || ogSecureImage) && !metadataCandidates.some((candidate) => candidate.source === "og-image")) {
         rejectedReasons.push("og_image_generic");
       }
-      if (twitterImage && !metadataCandidates.some((candidate) => candidate.source === "twitter:image")) {
+      if (twitterImage && !metadataCandidates.some((candidate) => candidate.source === "twitter-image")) {
         rejectedReasons.push("twitter_image_generic");
       }
       rejectedReasons.push(...schemaImageResult.rejectedReasons);
       const articleSpecificMetadata = metadataCandidates.find((candidate) =>
-        isClearlyArticleSpecificImage(candidate.url, link, articleTitle)
+        isClearlyArticleSpecificImage(candidate.url, activeUrl, articleTitle)
       );
       if (metadataCandidates.length && !articleSpecificMetadata) {
         rejectedReasons.push("metadata_not_article_specific");
@@ -434,16 +591,18 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
         rejectedReasons.push("article_image_fallback_used");
       }
       const selectedCandidate = articleSpecificMetadata
-        || (articleImageCandidate ? { url: resolveImageCandidate(link, articleImageCandidate), source: articleImageResult.url ? "article-image-largest" : "article-image" } : null);
-      const resolvedThumbnail = normalizeText(selectedCandidate?.url, "");
-      const thumbnailSource = selectedCandidate?.source || "fallback";
+        || (articleImageCandidate ? { url: resolveImageCandidate(activeUrl, articleImageCandidate), source: "article-image" } : null);
+      const resolvedThumbnail = normalizeText(selectedCandidate?.url, fallbackGoogleNewsThumbnail);
+      const thumbnailSource = selectedCandidate?.source || (fallbackGoogleNewsThumbnail ? "google-news" : "fallback");
       const diagnostic = {
-        domain: getDomainForDiagnostics(link),
-        link,
+        domain: getDomainForDiagnostics(activeUrl || link),
+        link: scrapeTargetUrl,
         ogImageFound: Boolean(ogImage || ogSecureImage),
         twitterImageFound: Boolean(twitterImage),
         schemaImageFound: Boolean(schemaImageResult.found),
         articleImageFound: Boolean(articleImageResult.found || fallbackArticleImage),
+        googleNewsPlaceholderDetected,
+        originalPublisherResolved,
         rejectedReasons: Array.from(new Set(rejectedReasons)).filter(Boolean),
         finalThumbnail: resolvedThumbnail,
         thumbnailSource,
@@ -452,6 +611,8 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
 
       logImageExtraction(link, thumbnailSource, {
         usedThumbnail: resolvedThumbnail,
+        googleNewsPlaceholderDetected,
+        originalPublisherResolved,
         rssThumbnailUsed: false,
       });
       logImageDebug(diagnostic);
@@ -463,11 +624,12 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
 
       return {
         thumbnail: resolvedThumbnail,
-        canonicalLink: canonicalizeUrl(normalizeText(canonicalUrl, link)),
+        canonicalLink: canonicalizeUrl(normalizeText(canonicalUrl, activeUrl || scrapeTargetUrl || link)),
         metaDescription: sanitizeFeedText(metaDescription, ""),
         contentSnippet: sanitizeFeedText(articleText || existingSnippet, existingSnippet),
         language: normalizeText(htmlLang, "unknown"),
         imageDiagnostic: diagnostic,
+        thumbnailSource,
         fetchStatus:
           resolvedThumbnail || canonicalUrl || metaDescription || articleText
             ? "enriched"
@@ -475,7 +637,11 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
       };
     } catch (error) {
       console.error(`Thumbnail scrape failed for ${link}:`, error?.stack || error);
-      logImageExtraction(link, "fallback");
+      logImageExtraction(link, "fallback", {
+        googleNewsPlaceholderDetected: isGoogleNewsPlaceholderImage(existingThumbnail),
+        originalPublisherResolved: false,
+        rssThumbnailUsed: false,
+      });
       const diagnostic = {
         domain: getDomainForDiagnostics(link),
         link,
@@ -483,6 +649,8 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
         twitterImageFound: false,
         schemaImageFound: false,
         articleImageFound: false,
+        googleNewsPlaceholderDetected: isGoogleNewsPlaceholderImage(existingThumbnail),
+        originalPublisherResolved: false,
         rejectedReasons: [
           error instanceof Error && /Unsupported content type/i.test(error.message)
             ? "unsupported_content_type"
@@ -490,21 +658,30 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
               ? `blocked_status_${error.message.match(/(\d+)/)?.[1] || "unknown"}`
               : "request_failed",
         ],
-        finalThumbnail: "",
-        thumbnailSource: "fallback",
-        rssThumbnailUsed: false,
+        finalThumbnail:
+          isGoogleNewsPlaceholderImage(existingThumbnail) && existingThumbnail !== env.placeholderImage
+            ? existingThumbnail
+            : "",
+        thumbnailSource:
+          isGoogleNewsPlaceholderImage(existingThumbnail) && existingThumbnail !== env.placeholderImage
+            ? "google-news"
+            : "fallback",
+        rssThumbnailUsed: Boolean(
+          isGoogleNewsPlaceholderImage(existingThumbnail) && existingThumbnail !== env.placeholderImage
+        ),
       };
       logImageDebug(diagnostic);
       if (isNotafiliaUrl(link)) {
         console.log(`[notafilia][enrich] articleUrl=${link} ogImageFound=false articleImageFound=false finalThumbnail=`);
       }
       return {
-        thumbnail: "",
+        thumbnail: diagnostic.finalThumbnail,
         canonicalLink: canonicalizeUrl(link),
         metaDescription: "",
         contentSnippet: existingSnippet,
         language: "unknown",
         imageDiagnostic: diagnostic,
+        thumbnailSource: diagnostic.thumbnailSource,
         fetchStatus: "failed"
       };
     }
@@ -523,9 +700,11 @@ export async function diagnoseArticleImage(link, existingSnippet = "", articleTi
     twitterImageFound: false,
     schemaImageFound: false,
     articleImageFound: false,
+    googleNewsPlaceholderDetected: false,
+    originalPublisherResolved: false,
     rejectedReasons: ["unknown"],
     finalThumbnail: normalizeText(result?.thumbnail, ""),
-    thumbnailSource: result?.thumbnailSource || "",
+    thumbnailSource: result?.thumbnailSource || result?.imageDiagnostic?.thumbnailSource || "",
     rssThumbnailUsed: Boolean(result?.imageDiagnostic?.rssThumbnailUsed),
   };
 }
@@ -536,7 +715,11 @@ export async function enrichArticle(articleId) {
     return;
   }
 
-  if (article.thumbnail && article.thumbnail !== env.placeholderImage) {
+  if (
+    article.thumbnail &&
+    article.thumbnail !== env.placeholderImage &&
+    !isGoogleNewsPlaceholderImage(article.thumbnail)
+  ) {
     return article;
   }
 
@@ -550,7 +733,11 @@ export async function enrichArticle(articleId) {
     }
   );
   const nextThumbnail =
-    article.thumbnail && article.thumbnail !== env.placeholderImage ? article.thumbnail : enriched.thumbnail || article.thumbnail;
+    article.thumbnail &&
+    article.thumbnail !== env.placeholderImage &&
+    !isGoogleNewsPlaceholderImage(article.thumbnail)
+      ? article.thumbnail
+      : enriched.thumbnail || article.thumbnail;
 
   const updatedArticle = await updateArticle(articleId, {
     thumbnail: nextThumbnail,
