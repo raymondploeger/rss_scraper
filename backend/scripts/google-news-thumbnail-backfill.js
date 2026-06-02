@@ -129,9 +129,9 @@ function getGoogleNewsUrl(article) {
 }
 
 function getResolvedPublisherUrl(enriched, article) {
-  const diagnosticLink = String(enriched?.imageDiagnostic?.link || "").trim();
-  if (enriched?.imageDiagnostic?.originalPublisherResolved && diagnosticLink) {
-    return diagnosticLink;
+  const diagnosticResolvedPublisherUrl = String(enriched?.imageDiagnostic?.resolvedPublisherUrl || "").trim();
+  if (enriched?.imageDiagnostic?.originalPublisherResolved && diagnosticResolvedPublisherUrl) {
+    return diagnosticResolvedPublisherUrl;
   }
 
   const canonicalLink = String(enriched?.canonicalLink || "").trim();
@@ -157,45 +157,40 @@ async function main() {
       null
     );
 
-    console.log("\n=== Google News Thumbnail Backfill Dry Run ===");
+    console.log("\n=== Google News Thumbnail Backfill Startup ===");
     console.table(
       formatRows([
         {
-          total_matching_google_news_articles: candidates.length,
-          google_placeholder_thumbnails: placeholderCount,
-          missing_thumbnails: missingCount,
-          oldest_matching_article: oldestArticle?.pubDate || "",
-          newest_matching_article: newestArticle?.pubDate || "",
+          test_mode: testResolve,
           execute_mode: execute,
           limit,
+          argv: args.join(" "),
         },
       ])
     );
 
-    console.log("\n=== Source / Domain Summary ===");
-    console.table(formatRows(summarizeBySource(candidates)));
-
-    console.log("\n=== Sample Rows ===");
-    console.table(
-      formatRows(
-        candidates.slice(0, 20).map((article) => ({
-          id: article.id,
-          title: article.title || "",
-          source: article.source || "",
-          current_thumbnail: article.thumbnail || "",
-          article_url: article.canonicalLink || article.link || "",
-          published_at: article.pubDate,
-          imported_at: article.createdAt,
-        }))
-      )
-    );
-
     if (testResolve) {
+      console.log("\n=== Google News Publisher Resolution Test ===");
+      console.table(
+        formatRows([
+          {
+            total_matching_google_news_articles: candidates.length,
+            google_placeholder_thumbnails: placeholderCount,
+            missing_thumbnails: missingCount,
+            oldest_matching_article: oldestArticle?.pubDate || "",
+            newest_matching_article: newestArticle?.pubDate || "",
+            test_mode: true,
+            limit,
+          },
+        ])
+      );
+
       const sample = candidates.slice(0, Math.min(20, limit));
       let resolvedCount = 0;
       let resolveFailureCount = 0;
       let imageFoundCount = 0;
       let imageNotFoundCount = 0;
+      const failureReasonCounts = new Map();
       const testRows = [];
 
       for (const article of sample) {
@@ -212,6 +207,9 @@ async function main() {
 
           const resolvedPublisherUrl = getResolvedPublisherUrl(enriched, article);
           const publisherResolved = Boolean(resolvedPublisherUrl);
+          const failureReason =
+            String(enriched?.imageDiagnostic?.failureReason || "").trim() ||
+            (publisherResolved ? "" : "unknown");
           const imageFound =
             Boolean(enriched?.thumbnail) &&
             enriched.thumbnail !== env.placeholderImage &&
@@ -221,6 +219,7 @@ async function main() {
             resolvedCount += 1;
           } else {
             resolveFailureCount += 1;
+            failureReasonCounts.set(failureReason, (failureReasonCounts.get(failureReason) || 0) + 1);
           }
 
           if (imageFound) {
@@ -232,21 +231,30 @@ async function main() {
           testRows.push({
             title: article.title || "",
             googleNewsUrl: getGoogleNewsUrl(article),
+            attemptedUrl: enriched?.imageDiagnostic?.attemptedUrl || getGoogleNewsUrl(article),
+            httpStatus: enriched?.imageDiagnostic?.httpStatus || 0,
+            finalUrl: enriched?.imageDiagnostic?.finalUrl || "",
             resolvedPublisherUrl,
             publisherDomain: getHostname(resolvedPublisherUrl),
             resolveStatus: publisherResolved ? "success" : "failure",
+            failureReason,
             imageFound,
             imageSourceType: enriched?.thumbnailSource || "fallback",
           });
         } catch (error) {
           resolveFailureCount += 1;
           imageNotFoundCount += 1;
+          failureReasonCounts.set("script_error", (failureReasonCounts.get("script_error") || 0) + 1);
           testRows.push({
             title: article.title || "",
             googleNewsUrl: getGoogleNewsUrl(article),
+            attemptedUrl: getGoogleNewsUrl(article),
+            httpStatus: 0,
+            finalUrl: "",
             resolvedPublisherUrl: "",
             publisherDomain: "",
             resolveStatus: "failure",
+            failureReason: "script_error",
             imageFound: false,
             imageSourceType: "error",
           });
@@ -270,6 +278,19 @@ async function main() {
         ])
       );
 
+      console.log("\n=== Top Failure Reasons ===");
+      if (!failureReasonCounts.size) {
+        console.log("(no resolution failures in sample)");
+      } else {
+        console.table(
+          formatRows(
+            Array.from(failureReasonCounts.entries())
+              .map(([failure_reason, count]) => ({ failure_reason, count }))
+              .sort((left, right) => right.count - left.count)
+          )
+        );
+      }
+
       console.log("\n=== Google News Resolve Test Rows ===");
       if (!testRows.length) {
         console.log("(no matching Google News articles in sample)");
@@ -278,6 +299,40 @@ async function main() {
       }
       return;
     }
+
+    console.log("\n=== Google News Thumbnail Backfill Dry Run ===");
+    console.table(
+      formatRows([
+        {
+          total_matching_google_news_articles: candidates.length,
+          google_placeholder_thumbnails: placeholderCount,
+          missing_thumbnails: missingCount,
+          oldest_matching_article: oldestArticle?.pubDate || "",
+          newest_matching_article: newestArticle?.pubDate || "",
+          execute_mode: execute,
+          test_mode: false,
+          limit,
+        },
+      ])
+    );
+
+    console.log("\n=== Source / Domain Summary ===");
+    console.table(formatRows(summarizeBySource(candidates)));
+
+    console.log("\n=== Sample Rows ===");
+    console.table(
+      formatRows(
+        candidates.slice(0, 20).map((article) => ({
+          id: article.id,
+          title: article.title || "",
+          source: article.source || "",
+          current_thumbnail: article.thumbnail || "",
+          article_url: article.canonicalLink || article.link || "",
+          published_at: article.pubDate,
+          imported_at: article.createdAt,
+        }))
+      )
+    );
 
     if (!execute) {
       console.log("\nDry run only. No articles were updated.");

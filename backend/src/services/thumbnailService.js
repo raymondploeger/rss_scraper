@@ -58,6 +58,50 @@ export function isGoogleNewsPlaceholderImage(value) {
   );
 }
 
+function decodeBase64Url(value) {
+  const normalized = String(value || "")
+    .replace(/-/g, "+")
+    .replace(/_/g, "/");
+  const padded = normalized + "=".repeat((4 - (normalized.length % 4 || 4)) % 4);
+  try {
+    return Buffer.from(padded, "base64").toString("utf8");
+  } catch {
+    return "";
+  }
+}
+
+function extractNonGoogleUrl(value) {
+  const matches = String(value || "").match(/https?:\/\/[^\s"'<>\\\u0000]+/gi) || [];
+  for (const candidate of matches) {
+    const hostname = getDomainForDiagnostics(candidate);
+    if (
+      hostname &&
+      !isGoogleNewsHost(hostname) &&
+      !hostname.includes("google.com") &&
+      !hostname.includes("googleusercontent.com") &&
+      !hostname.includes("gstatic.com")
+    ) {
+      return canonicalizeUrl(candidate);
+    }
+  }
+  return "";
+}
+
+function decodeOriginalPublisherUrlFromGoogleNewsRss(link) {
+  try {
+    const parsed = new URL(String(link || ""));
+    const match = parsed.pathname.match(/\/rss\/articles\/([^/?#]+)/i);
+    if (!match?.[1]) {
+      return "";
+    }
+
+    const decoded = decodeBase64Url(match[1]);
+    return extractNonGoogleUrl(decoded);
+  } catch {
+    return "";
+  }
+}
+
 function tokenizeForMatch(value) {
   return String(value || "")
     .toLowerCase()
@@ -371,6 +415,7 @@ async function requestHtml(url, attempt = 0) {
 
     return {
       html: String(response.data || ""),
+      statusCode: Number(response.status || 0),
       finalUrl:
         normalizeText(response?.request?.res?.responseUrl, "") ||
         normalizeText(response?.config?.url, "") ||
@@ -518,16 +563,32 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
 
       let scrapeTargetUrl = link;
       let originalPublisherResolved = false;
+      let resolutionMethod = "";
+      let resolutionFailureReason = "";
       let initialResponse = await requestHtml(link);
       let activeHtml = initialResponse.html;
       let activeUrl = normalizeText(initialResponse.finalUrl, link);
+      const initialStatusCode = Number(initialResponse.statusCode || 0);
+      const initialAttemptedUrl = link;
+      const initialFinalUrl = activeUrl;
 
       if (isGoogleNewsArticleUrl(link)) {
         const googleNewsDocument = cheerio.load(activeHtml);
-        const resolvedPublisherUrl = resolveGoogleNewsPublisherCandidate(
-          activeUrl,
-          activeUrl
-        ) || extractOriginalPublisherUrlFromGoogleNews(googleNewsDocument, activeUrl);
+        const decodedPublisherUrl = decodeOriginalPublisherUrlFromGoogleNewsRss(link);
+        const redirectedPublisherUrl = resolveGoogleNewsPublisherCandidate(activeUrl, activeUrl);
+        const extractedPublisherUrl = extractOriginalPublisherUrlFromGoogleNews(googleNewsDocument, activeUrl);
+        const resolvedPublisherUrl =
+          decodedPublisherUrl || redirectedPublisherUrl || extractedPublisherUrl;
+
+        if (decodedPublisherUrl) {
+          resolutionMethod = "rss-path-decode";
+        } else if (redirectedPublisherUrl) {
+          resolutionMethod = "http-redirect";
+        } else if (extractedPublisherUrl) {
+          resolutionMethod = "html-link-extract";
+        } else {
+          resolutionFailureReason = "no_publisher_url_found";
+        }
 
         if (resolvedPublisherUrl && !isGoogleNewsArticleUrl(resolvedPublisherUrl)) {
           originalPublisherResolved = true;
@@ -597,6 +658,12 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
       const diagnostic = {
         domain: getDomainForDiagnostics(activeUrl || link),
         link: scrapeTargetUrl,
+        attemptedUrl: initialAttemptedUrl,
+        httpStatus: initialStatusCode,
+        finalUrl: initialFinalUrl,
+        resolvedPublisherUrl: originalPublisherResolved ? scrapeTargetUrl : "",
+        resolutionMethod,
+        failureReason: resolutionFailureReason,
         ogImageFound: Boolean(ogImage || ogSecureImage),
         twitterImageFound: Boolean(twitterImage),
         schemaImageFound: Boolean(schemaImageResult.found),
@@ -645,6 +712,17 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
       const diagnostic = {
         domain: getDomainForDiagnostics(link),
         link,
+        attemptedUrl: link,
+        httpStatus: Number(error?.response?.status || 0),
+        finalUrl: "",
+        resolvedPublisherUrl: "",
+        resolutionMethod: "",
+        failureReason:
+          error instanceof Error && /Unsupported content type/i.test(error.message)
+            ? "unsupported_content_type"
+            : error instanceof Error && /Blocked content fetch \((\d+)\)/i.test(error.message)
+              ? `blocked_status_${error.message.match(/(\d+)/)?.[1] || "unknown"}`
+              : "request_failed",
         ogImageFound: false,
         twitterImageFound: false,
         schemaImageFound: false,
@@ -696,6 +774,12 @@ export async function diagnoseArticleImage(link, existingSnippet = "", articleTi
   return result?.imageDiagnostic || {
     domain: getDomainForDiagnostics(link),
     link,
+    attemptedUrl: link,
+    httpStatus: 0,
+    finalUrl: "",
+    resolvedPublisherUrl: "",
+    resolutionMethod: "",
+    failureReason: "unknown",
     ogImageFound: false,
     twitterImageFound: false,
     schemaImageFound: false,
