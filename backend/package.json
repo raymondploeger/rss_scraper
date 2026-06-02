@@ -18,6 +18,8 @@
     "db:optimize-poll-indexes": "node scripts/optimize-poll-log-indexes.js",
     "image:diagnostics": "node scripts/image-diagnostics.js",
     "google-news-diagnostics": "node scripts/google-news-diagnostics.js",
+    "google-news:thumbnail-backfill": "node scripts/google-news-thumbnail-backfill.js",
+    "google-news:thumbnail-backfill:execute": "node scripts/google-news-thumbnail-backfill.js --execute",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
