@@ -24,7 +24,7 @@ if (!databaseUrl) {
 const args = process.argv.slice(2);
 const execute = args.includes("--execute");
 const limitArg = args.find((arg) => arg.startsWith("--limit="));
-const limit = Math.max(1, Math.min(250, Number(limitArg ? limitArg.split("=")[1] : 75) || 75));
+const limit = Math.max(1, Math.min(250, Number(limitArg ? limitArg.split("=")[1] : 50) || 50));
 
 const client = new Client({
   connectionString: databaseUrl,
@@ -65,7 +65,7 @@ function isGoogleNewsArticle(article) {
 
 function hasMissingThumbnail(article) {
   const thumbnail = String(article.thumbnail || "").trim();
-  return !thumbnail || thumbnail === env.placeholderImage;
+  return !thumbnail || thumbnail === env.placeholderImage || thumbnail.toLowerCase() === "no image";
 }
 
 function hasGooglePlaceholderThumbnail(article) {
@@ -162,8 +162,9 @@ async function main() {
         candidates.slice(0, 20).map((article) => ({
           id: article.id,
           title: article.title || "",
-          url: article.canonicalLink || article.link || "",
+          source: article.source || "",
           current_thumbnail: article.thumbnail || "",
+          article_url: article.canonicalLink || article.link || "",
           published_at: article.pubDate,
           imported_at: article.createdAt,
         }))
