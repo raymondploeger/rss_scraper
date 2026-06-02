@@ -278,6 +278,15 @@ const IDENTITY_PROFILE_SOURCE_PRIORITY = {
       "ukvi brp and brc guidance",
       "gov.uk/biometric-residence-permits",
       "gov.uk/government/publications/biometric-residence-permits-guidance",
+      "ind.nl",
+      "migrationsverket.se",
+      "migrationsverket residence permit cards",
+      "dutch ind residence updates",
+      "gov.uk",
+      "homeoffice.gov.uk",
+      "valtioneuvosto.fi",
+      "island.is",
+      "mzv.gov.cz",
     ],
     medium: [
       "ukvi",
@@ -285,6 +294,13 @@ const IDENTITY_PROFILE_SOURCE_PRIORITY = {
       "ind.nl",
       "ind residence",
       "migrationsverket",
+      "gov.uk",
+      "homeoffice.gov.uk",
+      "valtioneuvosto.fi",
+      "island.is",
+      "mzv.gov.cz",
+      "interior ministry",
+      "migration agency",
       "migration authority",
       "immigration authority",
       "immigration service",
@@ -347,6 +363,17 @@ const IDENTITY_PROFILE_SOFT_NOISE_TERMS = {
     "golden visa guide",
     "digital nomad visa guide",
     "investor visa guide",
+    "golden visa",
+    "investor visa",
+    "digital nomad visa",
+    "student visa guide",
+    "work visa guide",
+    "tourist visa",
+    "travel visa",
+    "visa requirements",
+    "immigration advice",
+    "how to move to",
+    "expat guide",
     "generic visa guide",
     "seo visa",
     "travel guide",
@@ -403,8 +430,25 @@ const IDENTITY_PROFILE_STRONG_CONTEXT_TERMS = {
   ],
   residence_permits: [
     "residence permit card",
+    "residence card",
+    "biometric residence card",
     "biometric residence permit",
+    "brp",
+    "brc",
+    "permit card",
+    "epermit",
+    "electronic residence permit",
     "foreign resident card",
+    "permanent residence permit card",
+    "temporary residence permit card",
+    "renew residence permit card",
+    "collect residence permit card",
+    "issue residence permit card",
+    "residence permit renewal",
+    "residence permit issuance",
+    "permit personalization",
+    "permit document",
+    "secure residence document",
     "immigration card",
     "residence document",
     "permit issuance",
@@ -1497,6 +1541,61 @@ const BORDER_CONTROL_OPERATIONAL_PRIORITY_TERMS = [
   "airport modernization",
   "airport border-control modernization",
   "entry exit system",
+];
+const RESIDENCE_PERMIT_CARD_PRIORITY_TERMS = [
+  "residence permit card",
+  "residence card",
+  "biometric residence permit",
+  "biometric residence card",
+  "brp",
+  "brc",
+  "permit card",
+  "epermit",
+  "electronic residence permit",
+  "foreign resident card",
+  "permanent residence permit card",
+  "temporary residence permit card",
+  "renew residence permit card",
+  "collect residence permit card",
+  "issue residence permit card",
+  "residence permit renewal",
+  "residence permit issuance",
+  "permit personalization",
+  "permit personalisation",
+  "permit document",
+  "secure residence document",
+];
+const RESIDENCE_PERMIT_OFFICIAL_SOURCE_TERMS = [
+  "ind.nl",
+  "migrationsverket.se",
+  "migrationsverket",
+  "gov.uk",
+  "homeoffice.gov.uk",
+  "home office",
+  "valtioneuvosto.fi",
+  "island.is",
+  "mzv.gov.cz",
+  "immigration authority",
+  "migration authority",
+  "migration agency",
+  "interior ministry",
+  "immigration service",
+  "immigration department",
+  "government permit issuer",
+];
+const RESIDENCE_PERMIT_GUIDE_NOISE_TERMS = [
+  "golden visa",
+  "investor visa",
+  "digital nomad visa",
+  "student visa guide",
+  "work visa guide",
+  "tourist visa",
+  "travel visa",
+  "visa requirements",
+  "immigration advice",
+  "how to move to",
+  "expat guide",
+  "relocation guide",
 ];
 const IDENTITY_PASSPORT_LIGHT_NOISE_TERMS = [
   "passport fair",
@@ -4104,6 +4203,9 @@ function computePersonalInterestBoost(article, interestId) {
       const borderNewsPriority = selectedSubinterest === "border_control"
         ? getBorderControlNewsPriority(article)
         : { boost: 0, penalty: 0 };
+      const residencePermitIntentAdjustment = selectedSubinterest === "residence_permits" || interestId === "residence_permits"
+        ? getResidencePermitIntentAdjustment(article)
+        : { hasCardIntent: false, cardBoost: 0, officialSourceBoost: 0, guidePenalty: 0 };
       const googleNewsArticle = isGoogleNewsArticle(article);
       const visualQualityScore = getArticleVisualQualityScore(article);
       const activeIdentityProfile = selectedSubinterest || interestId || "";
@@ -4194,6 +4296,9 @@ function computePersonalInterestBoost(article, interestId) {
         score -= Math.min(45, Math.round(signals.passportHits * 0.35));
       } else if (interestId === "residence_permits") {
         score += Math.min(110, Math.round((signals.residencePermitHits * 1.35) + (selectedIntent.score * 0.9)));
+        score += residencePermitIntentAdjustment.cardBoost;
+        score += residencePermitIntentAdjustment.officialSourceBoost;
+        score -= residencePermitIntentAdjustment.guidePenalty;
         score -= Math.min(45, Math.round(signals.passportHits * 0.3));
         score -= Math.min(180, Math.round(signals.driverLicenseHits * 1.0));
         score -= Math.min(60, Math.round(signals.visaHits * 0.3));
@@ -5186,6 +5291,57 @@ function getBorderControlRecencyAdjustment(article) {
     return {
       ageDays,
       boost,
+    };
+  });
+}
+
+function getResidencePermitIntentAdjustment(article) {
+  return getCachedArticleValue(article, "residencePermitIntentAdjustment", () => {
+    const context = getPersonalBoostContext(article);
+    const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
+
+    const titleCardHits = countBoostKeywordMatches(context.titleText, RESIDENCE_PERMIT_CARD_PRIORITY_TERMS);
+    const tagCardHits = countBoostKeywordMatches(context.tagText, RESIDENCE_PERMIT_CARD_PRIORITY_TERMS);
+    const metaCardHits = countBoostKeywordMatches(context.metadataText, RESIDENCE_PERMIT_CARD_PRIORITY_TERMS);
+    const bodyCardHits = countBoostKeywordMatches(context.bodyText, RESIDENCE_PERMIT_CARD_PRIORITY_TERMS);
+    const totalCardHits = titleCardHits + tagCardHits + metaCardHits + bodyCardHits;
+    const hasCardIntent = totalCardHits > 0;
+
+    let cardBoost = 0;
+    cardBoost += titleCardHits * 26;
+    cardBoost += tagCardHits * 18;
+    cardBoost += metaCardHits * 16;
+    cardBoost += bodyCardHits * 8;
+    cardBoost = Math.min(210, cardBoost);
+
+    const officialSourceHits = RESIDENCE_PERMIT_OFFICIAL_SOURCE_TERMS.filter((term) =>
+      textMatchesKeyword(sourceFingerprint, term)
+    ).length;
+    const officialSourceBoost = hasCardIntent
+      ? Math.min(140, officialSourceHits * 38)
+      : 0;
+
+    const titleGuideHits = countBoostKeywordMatches(context.titleText, RESIDENCE_PERMIT_GUIDE_NOISE_TERMS);
+    const tagGuideHits = countBoostKeywordMatches(context.tagText, RESIDENCE_PERMIT_GUIDE_NOISE_TERMS);
+    const metaGuideHits = countBoostKeywordMatches(context.metadataText, RESIDENCE_PERMIT_GUIDE_NOISE_TERMS);
+    const bodyGuideHits = countBoostKeywordMatches(context.bodyText, RESIDENCE_PERMIT_GUIDE_NOISE_TERMS);
+
+    let guidePenalty = 0;
+    guidePenalty += titleGuideHits * 34;
+    guidePenalty += tagGuideHits * 24;
+    guidePenalty += metaGuideHits * 18;
+    guidePenalty += bodyGuideHits * 10;
+    if (hasCardIntent) {
+      guidePenalty = Math.max(0, guidePenalty - Math.min(120, cardBoost * 0.55));
+    }
+    guidePenalty = Math.min(220, guidePenalty);
+
+    return {
+      hasCardIntent,
+      cardBoost,
+      officialSourceBoost,
+      guidePenalty,
+      officialSourceHits,
     };
   });
 }
@@ -6585,6 +6741,9 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         const borderRecencyAdjustment = selectedSubinterest === "border_control"
           ? getBorderControlRecencyAdjustment(article)
           : { boost: 0, ageDays: Number.POSITIVE_INFINITY };
+        const residencePermitIntentAdjustment = selectedSubinterest === "residence_permits"
+          ? getResidencePermitIntentAdjustment(article)
+          : { hasCardIntent: false, cardBoost: 0, officialSourceBoost: 0, guidePenalty: 0 };
         const googleNewsArticle = isGoogleNewsArticle(article);
         const visualQualityScore = getArticleVisualQualityScore(article);
         const activeIdentityProfile = selectedSubinterest || "";
@@ -6689,6 +6848,9 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
           score -= Math.min(110, Math.round(identitySignals.passportHits * 0.55));
         } else if (selectedSubinterest === "residence_permits") {
           score += Math.min(145, Math.round((identitySignals.residencePermitHits * 1.0) + (selectedIntent.score * 1.0)));
+          score += residencePermitIntentAdjustment.cardBoost;
+          score += residencePermitIntentAdjustment.officialSourceBoost;
+          score -= residencePermitIntentAdjustment.guidePenalty;
           score -= Math.min(240, Math.round(identitySignals.driverLicenseHits * 1.2));
           score -= Math.min(95, Math.round(identitySignals.passportHits * 0.45));
         } else if (selectedSubinterest === "icao") {
