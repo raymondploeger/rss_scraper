@@ -159,7 +159,7 @@ function buildContext(article) {
   const sourceText = [article.source, article.feedName].filter(Boolean).join(" ").toLowerCase();
   const domainText = [getHostname(article.link), getHostname(article.canonicalLink)].filter(Boolean).join(" ").toLowerCase();
   return {
-    titleText: [article.title, article.normalizedTitle].filter(Boolean).join(" ").toLowerCase(),
+    titleText: [article.title].filter(Boolean).join(" ").toLowerCase(),
     tagText: [article.keywords].filter(Boolean).join(" ").toLowerCase(),
     metadataText: [article.topic, sourceText].filter(Boolean).join(" ").toLowerCase(),
     bodyText: [article.summary, article.summaryShort, article.contentSnippet].filter(Boolean).join(" ").toLowerCase(),
@@ -360,7 +360,6 @@ async function loadArticles(client) {
       SELECT
         id,
         title,
-        normalizedTitle,
         link,
         "canonicalLink",
         source,
