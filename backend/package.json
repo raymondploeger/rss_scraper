@@ -20,6 +20,7 @@
     "image:diagnostics": "node scripts/image-diagnostics.js",
     "google-news:inspect-raw-rss": "node scripts/google-news-raw-rss-inspect.js",
     "google-news:inspect-ingest-fields": "node scripts/google-news-inspect-ingest-fields.js",
+    "google-news:trace-source-url": "node scripts/google-news-trace-source-url.js",
     "google-news-diagnostics": "node scripts/google-news-diagnostics.js",
     "google-news:analyze-url": "node scripts/google-news-analyze-url.js",
     "google-news:thumbnail-backfill": "node scripts/google-news-thumbnail-backfill.js",
