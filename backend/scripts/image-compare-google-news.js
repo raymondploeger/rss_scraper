@@ -2,6 +2,8 @@ import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import pg from "pg";
+import Parser from "rss-parser";
+import { listFeeds } from "../src/database/feedRepository.js";
 import { env } from "../src/config/env.js";
 import { diagnoseArticleImage, isGoogleNewsPlaceholderImage } from "../src/services/thumbnailService.js";
 
@@ -24,6 +26,24 @@ if (!databaseUrl) {
 const args = process.argv.slice(2);
 const sampleArg = args.find((arg) => arg.startsWith("--sample="));
 const sampleSize = Math.max(1, Math.min(25, Number(sampleArg ? sampleArg.split("=")[1] : 10) || 10));
+
+const parser = new Parser({
+  timeout: env.requestTimeoutMs,
+  headers: {
+    "User-Agent": "RSS Monitor Dashboard/2.0"
+  },
+  customFields: {
+    item: [
+      ["source", "source", { keepArray: true }],
+      ["media:content", "media:content", { keepArray: true }],
+      ["media:thumbnail", "media:thumbnail", { keepArray: true }],
+      ["content:encoded", "content:encoded"],
+      ["image", "image"],
+      ["image:url", "image:url"],
+      ["thumbnail", "thumbnail"],
+    ]
+  }
+});
 
 const client = new Client({
   connectionString: databaseUrl,
@@ -96,6 +116,7 @@ async function loadGoogleNewsArticles() {
         link,
         "canonicalLink",
         source,
+        "feedId",
         "feedName",
         thumbnail,
         summary,
@@ -113,9 +134,133 @@ async function loadGoogleNewsArticles() {
   return result.rows.filter(isGoogleNewsArticle);
 }
 
-async function diagnoseArticle(article) {
+function extractAtomLinkHref(linkValue) {
+  if (!linkValue) {
+    return "";
+  }
+  if (typeof linkValue === "string") {
+    return linkValue;
+  }
+  if (Array.isArray(linkValue)) {
+    for (const entry of linkValue) {
+      const href = extractAtomLinkHref(entry);
+      if (href) {
+        return href;
+      }
+    }
+    return "";
+  }
+  if (typeof linkValue === "object") {
+    if (typeof linkValue.href === "string" && linkValue.href.trim()) {
+      return linkValue.href;
+    }
+    if (typeof linkValue.url === "string" && linkValue.url.trim()) {
+      return linkValue.url;
+    }
+    if (linkValue.$ && typeof linkValue.$.href === "string" && linkValue.$.href.trim()) {
+      return linkValue.$.href;
+    }
+  }
+  return "";
+}
+
+function resolveItemLink(item) {
+  const candidates = [
+    item?.link,
+    item?.guid,
+    item?.id,
+    item?.url,
+    extractAtomLinkHref(item?.link),
+    extractAtomLinkHref(item?.links),
+    extractAtomLinkHref(item?.atomLink),
+  ];
+
+  for (const candidate of candidates) {
+    const resolved = String(candidate || "").trim();
+    if (resolved) {
+      return resolved;
+    }
+  }
+  return "";
+}
+
+function extractItemSourceUrl(item) {
+  const entries = Array.isArray(item?.source) ? item.source : item?.source ? [item.source] : [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+    const candidate = String(
+      entry.url || entry.href || entry.$?.url || entry.$?.href || entry["@_url"] || entry["@_href"] || ""
+    ).trim();
+    if (candidate) {
+      return candidate;
+    }
+  }
+  return "";
+}
+
+async function buildGoogleNewsSourceUrlMap(feedIds = []) {
+  const sourceUrlMap = new Map();
+  const feeds = await listFeeds({ activeOnly: true, order: "DESC" });
+  const relevantFeeds = feeds.filter(
+    (feed) =>
+      feedIds.includes(feed.id) ||
+      String(feed.rssUrl || "").toLowerCase().includes("news.google.com")
+  );
+
+  for (const feed of relevantFeeds) {
+    try {
+      const parsedFeed = await parser.parseURL(feed.rssUrl);
+      const items = Array.isArray(parsedFeed.items) ? parsedFeed.items : [];
+      for (const item of items) {
+        const itemLink = resolveItemLink(item);
+        const sourceUrl = extractItemSourceUrl(item);
+        if (!itemLink || !sourceUrl) {
+          continue;
+        }
+        if (!sourceUrlMap.has(itemLink)) {
+          sourceUrlMap.set(itemLink, sourceUrl);
+        }
+      }
+    } catch {
+      // Diagnostics should continue even if one feed fails.
+    }
+  }
+
+  return sourceUrlMap;
+}
+
+function selectThumbnailExtractionTarget(article, sourceUrlMap) {
+  const sourceUrl = String(sourceUrlMap.get(article.link) || "").trim();
+  if (sourceUrl) {
+    return {
+      sourceUrl,
+      selectedThumbnailExtractionUrl: sourceUrl,
+      selectedBy: "source_url",
+    };
+  }
+
+  const enrichmentUrl = String(article.canonicalLink || "").trim();
+  if (enrichmentUrl && enrichmentUrl !== article.link) {
+    return {
+      sourceUrl: "",
+      selectedThumbnailExtractionUrl: enrichmentUrl,
+      selectedBy: "enrichment_url",
+    };
+  }
+
+  return {
+    sourceUrl: "",
+    selectedThumbnailExtractionUrl: article.link || "",
+    selectedBy: "article_link",
+  };
+}
+
+async function diagnoseArticle(article, sourceUrlMap) {
+  const selection = selectThumbnailExtractionTarget(article, sourceUrlMap);
   const diagnostic = await diagnoseArticleImage(
-    article.link,
+    selection.selectedThumbnailExtractionUrl,
     article.contentSnippet || article.summary || "",
     article.title || "",
     {
@@ -125,6 +270,7 @@ async function diagnoseArticle(article) {
   );
 
   return {
+    ...selection,
     ...diagnostic,
     selectedThumbnailUrl: diagnostic.finalThumbnail || "",
     rejectionReason:
@@ -140,6 +286,9 @@ async function main() {
     await client.query("BEGIN READ ONLY");
 
     const allGoogleNewsArticles = await loadGoogleNewsArticles();
+    const sourceUrlMap = await buildGoogleNewsSourceUrlMap(
+      Array.from(new Set(allGoogleNewsArticles.map((article) => String(article.feedId || "")).filter(Boolean)))
+    );
     const workingArticles = allGoogleNewsArticles.filter(
       (article) => getCurrentImageStatus(article.thumbnail) === "real_image"
     );
@@ -168,14 +317,23 @@ async function main() {
     const workingDomains = new Map();
     const failingDomains = new Map();
     const failureReasons = new Map();
+    let testedUsingSourceUrl = 0;
+    let testedUsingArticleLink = 0;
+    let testedUsingOtherUrl = 0;
 
     for (const article of workingSample) {
-      const diagnostic = await diagnoseArticle(article);
+      const diagnostic = await diagnoseArticle(article, sourceUrlMap);
+      if (diagnostic.selectedBy === "source_url") testedUsingSourceUrl += 1;
+      else if (diagnostic.selectedBy === "article_link") testedUsingArticleLink += 1;
+      else testedUsingOtherUrl += 1;
       incrementCount(workingDomains, chooseDomainLabel(article, diagnostic));
       workingRows.push({
         id: article.id,
         title: article.title || "",
         storedLink: article.link || "",
+        sourceUrl: diagnostic.sourceUrl || "",
+        selectedThumbnailExtractionUrl: diagnostic.selectedThumbnailExtractionUrl || "",
+        selectedBy: diagnostic.selectedBy || "",
         currentThumbnail: article.thumbnail || "",
         feedOrSourceName: article.feedName || article.source || "",
         publishedDate: article.pubDate,
@@ -192,13 +350,19 @@ async function main() {
     }
 
     for (const article of failingSample) {
-      const diagnostic = await diagnoseArticle(article);
+      const diagnostic = await diagnoseArticle(article, sourceUrlMap);
+      if (diagnostic.selectedBy === "source_url") testedUsingSourceUrl += 1;
+      else if (diagnostic.selectedBy === "article_link") testedUsingArticleLink += 1;
+      else testedUsingOtherUrl += 1;
       incrementCount(failingDomains, chooseDomainLabel(article, diagnostic));
       incrementCount(failureReasons, diagnostic.failureReason || diagnostic.rejectionReason || "unknown");
       failingRows.push({
         id: article.id,
         title: article.title || "",
         storedLink: article.link || "",
+        sourceUrl: diagnostic.sourceUrl || "",
+        selectedThumbnailExtractionUrl: diagnostic.selectedThumbnailExtractionUrl || "",
+        selectedBy: diagnostic.selectedBy || "",
         currentThumbnail: article.thumbnail || "",
         feedOrSourceName: article.feedName || article.source || "",
         publishedDate: article.pubDate,
@@ -222,6 +386,9 @@ async function main() {
         {
           working_count: workingArticles.length,
           failing_count: failingArticles.length,
+          tested_using_source_url: testedUsingSourceUrl,
+          tested_using_article_link: testedUsingArticleLink,
+          tested_using_other_url: testedUsingOtherUrl,
           working_domains: Array.from(workingDomains.entries())
             .sort((left, right) => right[1] - left[1])
             .map(([domain, count]) => `${domain}:${count}`)
