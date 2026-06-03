@@ -118,11 +118,81 @@ const DIGITAL_SUBGROUP_HYBRID_FILTERS = {
     minimumDomainScore: 12,
     minimumInterestScore: 22,
     related: ["eudi wallet", "electronic identification", "identity wallet", "digital credential", "eidas", "trust service"],
+    preferred: [
+      "eid",
+      "e-id",
+      "electronic identity",
+      "national identity system",
+      "digital identity card",
+      "citizen identity",
+      "national digital identity",
+      "eidas",
+      "eidas 2",
+      "aadhaar",
+      "mitid",
+      "austria id",
+      "bundid",
+      "vneid",
+      "gov.uk one login",
+      "national identity framework",
+      "sovereign identity",
+      "sovereign identity program",
+      "sovereign identity programmes",
+    ],
+    cross: [
+      "digital wallet",
+      "identity wallet",
+      "mobile wallet",
+      "wallet ecosystem",
+      "wallet interoperability",
+      "wallet credential",
+      "verifiable credential wallet",
+      "wallet rollout",
+      "wallet procurement",
+      "wallet adoption",
+      "wallet framework",
+    ],
+    minimumPreferredHits: 1,
+    minimumNetEvidence: 1,
   },
   digital_wallet: {
     minimumDomainScore: 12,
     minimumInterestScore: 22,
     related: ["eudi wallet", "identity wallet", "wallet issuer", "wallet framework", "verifiable credential", "mdoc"],
+    preferred: [
+      "digital wallet",
+      "identity wallet",
+      "eudi wallet",
+      "mobile wallet",
+      "wallet ecosystem",
+      "wallet interoperability",
+      "wallet credential",
+      "verifiable credential wallet",
+      "wallet rollout",
+      "wallet procurement",
+      "wallet adoption",
+      "wallet implementation",
+      "wallet deployment",
+    ],
+    cross: [
+      "national identity system",
+      "digital identity card",
+      "citizen identity",
+      "national digital identity",
+      "electronic identity",
+      "eidas",
+      "eidas 2",
+      "aadhaar",
+      "mitid",
+      "austria id",
+      "bundid",
+      "vneid",
+      "gov.uk one login",
+      "national identity framework",
+      "sovereign identity",
+    ],
+    minimumPreferredHits: 1,
+    minimumNetEvidence: 1,
   },
   kyc: {
     minimumDomainScore: 12,
@@ -4631,6 +4701,8 @@ function getDigitalSubgroupHybridAssessment(article, interestId) {
     const strongKeywords = Array.isArray(interest.strong) ? interest.strong : [];
     const weakKeywords = Array.isArray(interest.weak) ? interest.weak : [];
     const relatedKeywords = Array.isArray(config.related) ? config.related : [];
+    const preferredKeywords = Array.isArray(config.preferred) ? config.preferred : [];
+    const crossKeywords = Array.isArray(config.cross) ? config.cross : [];
 
     const directStrongHits =
       countBoostKeywordMatches(context.titleText, strongKeywords) +
@@ -4647,13 +4719,38 @@ function getDigitalSubgroupHybridAssessment(article, interestId) {
       countBoostKeywordMatches(context.tagText, relatedKeywords) +
       countBoostKeywordMatches(context.metadataText, relatedKeywords) +
       countBoostKeywordMatches(context.bodyText, relatedKeywords);
+    const preferredHits =
+      countBoostKeywordMatches(context.titleText, preferredKeywords) +
+      countBoostKeywordMatches(context.tagText, preferredKeywords) +
+      countBoostKeywordMatches(context.metadataText, preferredKeywords) +
+      countBoostKeywordMatches(context.bodyText, preferredKeywords);
+    const crossHits =
+      countBoostKeywordMatches(context.titleText, crossKeywords) +
+      countBoostKeywordMatches(context.tagText, crossKeywords) +
+      countBoostKeywordMatches(context.metadataText, crossKeywords) +
+      countBoostKeywordMatches(context.bodyText, crossKeywords);
+    const minimumPreferredHits = Number(config.minimumPreferredHits || 0);
+    const minimumNetEvidence = Number(config.minimumNetEvidence || 0);
+    const netEvidence = (preferredHits + relatedHits + directStrongHits + directWeakHits) - crossHits;
+    const preferredSatisfied = minimumPreferredHits <= 0 || preferredHits >= minimumPreferredHits;
+    const conflictDominates = crossHits > 0 && netEvidence < minimumNetEvidence;
+    const directStrongMatch = directStrongHits > 0;
+    const directWeakOnlyMatch =
+      !directStrongMatch &&
+      directWeakHits > 0 &&
+      interestScore >= config.minimumInterestScore &&
+      preferredSatisfied &&
+      !conflictDominates;
 
-    const directMatch = directStrongHits > 0 || (directWeakHits > 0 && interestScore >= config.minimumInterestScore);
+    const directMatch = directStrongMatch || directWeakOnlyMatch;
     const hybridMatch =
       !directMatch &&
       domainContext.score >= config.minimumDomainScore &&
       interestScore >= config.minimumInterestScore &&
-      (directWeakHits > 0 || relatedHits > 0);
+      (directWeakHits > 0 || relatedHits > 0 || preferredHits > 0) &&
+      preferredSatisfied &&
+      netEvidence >= minimumNetEvidence &&
+      !conflictDominates;
     const beforeIncluded = interestScore >= DIGITAL_SUBGROUP_BASELINE_MINIMUM_SCORE;
     const included = directMatch || hybridMatch;
 
@@ -4666,6 +4763,9 @@ function getDigitalSubgroupHybridAssessment(article, interestId) {
       directStrongHits,
       directWeakHits,
       relatedHits,
+      preferredHits,
+      crossHits,
+      netEvidence,
       interestScore,
       domainScore: domainContext.score,
     };
@@ -7709,6 +7809,10 @@ function logDigitalIdentitySubgroupDiagnostics(articles) {
     let directMatches = 0;
     let hybridMatches = 0;
     let excludedWeakMatches = 0;
+    let walletRelatedIncluded = 0;
+    let walletRelatedExcluded = 0;
+    let eidRelatedIncluded = 0;
+    let eidRelatedExcluded = 0;
 
     digitalArticles.forEach((article) => {
       const assessment = getDigitalSubgroupHybridAssessment(article, interest.id);
@@ -7727,16 +7831,52 @@ function logDigitalIdentitySubgroupDiagnostics(articles) {
       if (assessment.excludedWeakMatch) {
         excludedWeakMatches += 1;
       }
+      if (interest.id === "eid") {
+        if (assessment.crossHits > 0 && assessment.included) {
+          walletRelatedIncluded += 1;
+        }
+        if (assessment.crossHits > 0 && !assessment.included) {
+          walletRelatedExcluded += 1;
+        }
+      }
+      if (interest.id === "digital_wallet") {
+        if (assessment.crossHits > 0 && assessment.included) {
+          eidRelatedIncluded += 1;
+        }
+        if (assessment.crossHits > 0 && !assessment.included) {
+          eidRelatedExcluded += 1;
+        }
+      }
     });
 
-    return {
+    const row = {
       subgroup: interest.label,
       beforeCount,
       afterCount,
       directMatches,
       hybridMatches,
       excludedWeakMatches,
+      averageNetEvidence:
+        afterCount > 0
+          ? Math.round(
+            (digitalArticles
+              .filter((article) => getDigitalSubgroupHybridAssessment(article, interest.id).included)
+              .reduce((sum, article) => sum + (getDigitalSubgroupHybridAssessment(article, interest.id).netEvidence || 0), 0) / afterCount) * 10
+          ) / 10
+          : 0,
     };
+
+    if (interest.id === "eid") {
+      row.walletRelatedIncluded = walletRelatedIncluded;
+      row.walletRelatedExcluded = walletRelatedExcluded;
+    }
+
+    if (interest.id === "digital_wallet") {
+      row.eidRelatedIncluded = eidRelatedIncluded;
+      row.eidRelatedExcluded = eidRelatedExcluded;
+    }
+
+    return row;
   });
 
   debugPersonalDashboardLog("[digital-subgroup-hybrid-diagnostics]", diagnostics);
