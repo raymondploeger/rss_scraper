@@ -16,6 +16,7 @@
     "db:product-cleanup": "node scripts/cleanup-product-pages.js",
     "db:product-cleanup:execute": "node scripts/cleanup-product-pages.js --execute",
     "db:optimize-poll-indexes": "node scripts/optimize-poll-log-indexes.js",
+    "digital-subgroup:diagnostics": "node scripts/digital-subgroup-overlap-diagnostics.js",
     "image:compare-google-news": "node scripts/image-compare-google-news.js",
     "image:diagnostics": "node scripts/image-diagnostics.js",
     "google-news:inspect-raw-rss": "node scripts/google-news-raw-rss-inspect.js",
