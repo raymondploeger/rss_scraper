@@ -102,6 +102,59 @@ const PERSONAL_DASHBOARD_MODES = {
   broad: 0.5,
 };
 const PERSONAL_DASHBOARD_GENERIC_INTEREST_IDS = new Set(["rollout", "release", "issuance", "redesign"]);
+const DIGITAL_SUBGROUP_BASELINE_MINIMUM_SCORE = 18;
+const DIGITAL_SUBGROUP_HYBRID_FILTERS = {
+  digital_identity: {
+    minimumDomainScore: 10,
+    minimumInterestScore: 20,
+    related: ["identity verification", "mobile id", "electronic identity", "eid", "eudi wallet", "identity wallet"],
+  },
+  biometrics: {
+    minimumDomainScore: 10,
+    minimumInterestScore: 20,
+    related: ["face verification", "face authentication", "liveness", "presentation attack", "fingerprint", "iris"],
+  },
+  eid: {
+    minimumDomainScore: 12,
+    minimumInterestScore: 22,
+    related: ["eudi wallet", "electronic identification", "identity wallet", "digital credential", "eidas", "trust service"],
+  },
+  digital_wallet: {
+    minimumDomainScore: 12,
+    minimumInterestScore: 22,
+    related: ["eudi wallet", "identity wallet", "wallet issuer", "wallet framework", "verifiable credential", "mdoc"],
+  },
+  kyc: {
+    minimumDomainScore: 12,
+    minimumInterestScore: 22,
+    related: ["aml", "aml/kyc", "customer due diligence", "cdd", "fraud prevention", "identity proofing", "onboarding"],
+  },
+  onboarding: {
+    minimumDomainScore: 12,
+    minimumInterestScore: 22,
+    related: ["remote onboarding", "customer onboarding", "account opening", "identity proofing", "kyc onboarding"],
+  },
+  liveness: {
+    minimumDomainScore: 12,
+    minimumInterestScore: 22,
+    related: ["presentation attack", "anti-spoofing", "anti spoofing", "spoof detection", "face verification"],
+  },
+  artificial_intelligence: {
+    minimumDomainScore: 10,
+    minimumInterestScore: 20,
+    related: ["machine learning", "generative ai", "ai-powered", "ai powered", "deepfake", "synthetic identity"],
+  },
+  identity_verification: {
+    minimumDomainScore: 11,
+    minimumInterestScore: 20,
+    related: ["document verification", "id verification", "identity proofing", "proof of identity", "idv"],
+  },
+  authentication: {
+    minimumDomainScore: 11,
+    minimumInterestScore: 20,
+    related: ["passkey", "fido", "login", "multi-factor", "multi factor", "mfa", "access management"],
+  },
+};
 const SPECIALIST_SOURCE_INTERESTS = {
   banknotes: [
     "banknotenews",
@@ -4549,6 +4602,76 @@ function isBanknoteAuthoritySource(article) {
   });
 }
 
+function getDigitalSubgroupHybridAssessment(article, interestId) {
+  return getCachedArticleValue(article, `digitalSubgroupHybrid:${interestId}`, () => {
+    const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
+    if (!interest || interest.groupId !== "digital_identity_biometrics") {
+      return {
+        beforeIncluded: false,
+        included: false,
+        directMatch: false,
+        hybridMatch: false,
+        excludedWeakMatch: false,
+        directStrongHits: 0,
+        directWeakHits: 0,
+        relatedHits: 0,
+        interestScore: 0,
+        domainScore: 0,
+      };
+    }
+
+    const context = getPersonalBoostContext(article);
+    const domainContext = getPersonalDomainContextProfile(context, "digital_identity_biometrics");
+    const interestScore = computePersonalInterestBoost(article, interestId).score;
+    const config = DIGITAL_SUBGROUP_HYBRID_FILTERS[interestId] || {
+      minimumDomainScore: 11,
+      minimumInterestScore: 20,
+      related: [],
+    };
+    const strongKeywords = Array.isArray(interest.strong) ? interest.strong : [];
+    const weakKeywords = Array.isArray(interest.weak) ? interest.weak : [];
+    const relatedKeywords = Array.isArray(config.related) ? config.related : [];
+
+    const directStrongHits =
+      countBoostKeywordMatches(context.titleText, strongKeywords) +
+      countBoostKeywordMatches(context.tagText, strongKeywords) +
+      countBoostKeywordMatches(context.metadataText, strongKeywords) +
+      countBoostKeywordMatches(context.bodyText, strongKeywords);
+    const directWeakHits =
+      countBoostKeywordMatches(context.titleText, weakKeywords) +
+      countBoostKeywordMatches(context.tagText, weakKeywords) +
+      countBoostKeywordMatches(context.metadataText, weakKeywords) +
+      countBoostKeywordMatches(context.bodyText, weakKeywords);
+    const relatedHits =
+      countBoostKeywordMatches(context.titleText, relatedKeywords) +
+      countBoostKeywordMatches(context.tagText, relatedKeywords) +
+      countBoostKeywordMatches(context.metadataText, relatedKeywords) +
+      countBoostKeywordMatches(context.bodyText, relatedKeywords);
+
+    const directMatch = directStrongHits > 0 || (directWeakHits > 0 && interestScore >= config.minimumInterestScore);
+    const hybridMatch =
+      !directMatch &&
+      domainContext.score >= config.minimumDomainScore &&
+      interestScore >= config.minimumInterestScore &&
+      (directWeakHits > 0 || relatedHits > 0);
+    const beforeIncluded = interestScore >= DIGITAL_SUBGROUP_BASELINE_MINIMUM_SCORE;
+    const included = directMatch || hybridMatch;
+
+    return {
+      beforeIncluded,
+      included,
+      directMatch,
+      hybridMatch,
+      excludedWeakMatch: beforeIncluded && !included,
+      directStrongHits,
+      directWeakHits,
+      relatedHits,
+      interestScore,
+      domainScore: domainContext.score,
+    };
+  });
+}
+
 function isBanknoteSocialSource(article) {
   return getCachedArticleValue(article, "isBanknoteSocialSource", () => {
     const context = getPersonalBoostContext(article);
@@ -7072,7 +7195,7 @@ function articleMatchesPersonalDashboardSelection(article) {
       (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "digital_identity_biometrics"
     );
     return !selectedDigitalInterests.length
-      || selectedDigitalInterests.some((interestId) => computePersonalInterestBoost(article, interestId).score >= 18);
+      || selectedDigitalInterests.some((interestId) => getDigitalSubgroupHybridAssessment(article, interestId).included);
   }
 
   return true;
@@ -7564,6 +7687,59 @@ function logIdentityDocumentTopResults(articles) {
   });
 
   debugPersonalDashboardLog("[personal-dashboard-identity-top-results]", topResults);
+}
+
+function logDigitalIdentitySubgroupDiagnostics(articles) {
+  if (!DEBUG_PERSONAL_DASHBOARD) {
+    return;
+  }
+
+  const selectedMainDomains = getSelectedMainDomains();
+  if (selectedMainDomains.length !== 1 || selectedMainDomains[0] !== "digital_identity_biometrics") {
+    return;
+  }
+
+  const digitalInterests = PERSONAL_DASHBOARD_GROUPS.find((group) => group.id === "digital_identity_biometrics")?.interests || [];
+  const digitalArticles = (Array.isArray(articles) ? articles : [])
+    .filter((article) => getArticleDominantDomain(article) === "digital_identity_biometrics");
+
+  const diagnostics = digitalInterests.map((interest) => {
+    let beforeCount = 0;
+    let afterCount = 0;
+    let directMatches = 0;
+    let hybridMatches = 0;
+    let excludedWeakMatches = 0;
+
+    digitalArticles.forEach((article) => {
+      const assessment = getDigitalSubgroupHybridAssessment(article, interest.id);
+      if (assessment.beforeIncluded) {
+        beforeCount += 1;
+      }
+      if (assessment.included) {
+        afterCount += 1;
+      }
+      if (assessment.directMatch) {
+        directMatches += 1;
+      }
+      if (assessment.hybridMatch) {
+        hybridMatches += 1;
+      }
+      if (assessment.excludedWeakMatch) {
+        excludedWeakMatches += 1;
+      }
+    });
+
+    return {
+      subgroup: interest.label,
+      beforeCount,
+      afterCount,
+      directMatches,
+      hybridMatches,
+      excludedWeakMatches,
+    };
+  });
+
+  debugPersonalDashboardLog("[digital-subgroup-hybrid-diagnostics]", diagnostics);
 }
 
 function isFeedPanelCollapsed() {
@@ -17609,6 +17785,7 @@ function renderArticles() {
           finalRenderedCount: Array.isArray(articlesToRender) ? articlesToRender.length : 0,
         });
         logIdentityDocumentTopResults(articlesToRender);
+        logDigitalIdentitySubgroupDiagnostics(afterAdvancedFilters);
       }
 
     if (activeFeedId) {
