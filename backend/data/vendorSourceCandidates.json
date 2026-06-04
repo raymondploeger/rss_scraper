@@ -6,6 +6,23 @@
     "They are candidate definitions only and must be reviewed before any onboarding.",
     "No database records or live feed definitions are modified by this file."
   ],
+  "manualRssVerificationResults": [
+    {
+      "checkedWith": "Lighthouse Feed Finder",
+      "result": "no RSS found",
+      "action": "scraper candidate",
+      "vendors": [
+        "De La Rue",
+        "Crane Currency",
+        "Bundesdruckerei",
+        "Optaglio",
+        "Veridos",
+        "OVD Kinegram",
+        "Orell Fussli",
+        "Giesecke & Devrient"
+      ]
+    }
+  ],
   "rssCandidates": [
     {
       "id": "cetis-rss-candidate",
@@ -14,6 +31,8 @@
       "status": "candidate",
       "isActive": false,
       "sourceType": "rss",
+      "acquisitionMethod": "rss",
+      "rssAvailable": true,
       "currentSourceUrl": "http://www.cetis.si/?mod=aktualno&action=category&ID=3",
       "rssUrl": "http://www.cetis.si/?mod=aktualno&action=rss&lang=en",
       "notes": "Vendor workbook already includes a direct RSS endpoint candidate."
@@ -25,9 +44,11 @@
       "status": "candidate",
       "isActive": false,
       "sourceType": "rss",
+      "acquisitionMethod": "rss",
+      "rssAvailable": true,
       "currentSourceUrl": "http://authentix.com/industries/currency/",
       "rssUrl": "",
-      "notes": "RSS candidate requested for planning, but no verified feed URL is present in the local vendor workbook yet. Requires link-refresh confirmation."
+      "notes": "Kept as a verified RSS candidate per manual planning instruction, but the concrete feed URL still needs confirmation."
     },
     {
       "id": "security-foiling-rss-candidate",
@@ -36,9 +57,11 @@
       "status": "candidate",
       "isActive": false,
       "sourceType": "rss",
+      "acquisitionMethod": "rss",
+      "rssAvailable": true,
       "currentSourceUrl": "http://securityfoiling.co.uk/news",
       "rssUrl": "",
-      "notes": "News page is known, but a direct RSS endpoint still needs confirmation from link-refresh diagnostics."
+      "notes": "Kept as a verified RSS candidate per manual planning instruction, but the concrete feed URL still needs confirmation."
     }
   ],
   "scraperCandidates": [
@@ -49,6 +72,8 @@
       "status": "candidate",
       "isActive": false,
       "sourceType": "website",
+      "acquisitionMethod": "scraper",
+      "rssAvailable": false,
       "sourceUrl": "https://surys.com/follow-surys/#press",
       "extractionStrategy": "pressroom_listing"
     },
@@ -59,6 +84,8 @@
       "status": "candidate",
       "isActive": false,
       "sourceType": "website",
+      "acquisitionMethod": "scraper",
+      "rssAvailable": false,
       "sourceUrl": "http://www.sicpa.com/company-heritage/news",
       "extractionStrategy": "newsroom_listing"
     },
@@ -69,6 +96,8 @@
       "status": "candidate",
       "isActive": false,
       "sourceType": "website",
+      "acquisitionMethod": "scraper",
+      "rssAvailable": false,
       "sourceUrl": "http://www.iqstructures.com/",
       "extractionStrategy": "homepage_news_discovery"
     },
@@ -79,6 +108,8 @@
       "status": "candidate",
       "isActive": false,
       "sourceType": "website",
+      "acquisitionMethod": "scraper",
+      "rssAvailable": false,
       "sourceUrl": "https://regulaforensics.com/en/pressroom/news/",
       "extractionStrategy": "newsroom_listing"
     },
@@ -89,50 +120,107 @@
       "status": "candidate",
       "isActive": false,
       "sourceType": "website",
+      "acquisitionMethod": "scraper",
+      "rssAvailable": false,
       "sourceUrl": "http://www.hueck-folien.at/en/newsroom/",
+      "extractionStrategy": "newsroom_listing"
+    },
+    {
+      "id": "de-la-rue-scraper-candidate",
+      "name": "De La Rue",
+      "topic": "Shared Security Printing",
+      "status": "candidate",
+      "isActive": false,
+      "sourceType": "website",
+      "acquisitionMethod": "scraper",
+      "rssAvailable": false,
+      "sourceUrl": "http://www.delarue.com/media-centre/latest-news/2017",
+      "extractionStrategy": "newsroom_listing"
+    },
+    {
+      "id": "crane-currency-scraper-candidate",
+      "name": "Crane Currency",
+      "topic": "Shared Security Printing",
+      "status": "candidate",
+      "isActive": false,
+      "sourceType": "website",
+      "acquisitionMethod": "scraper",
+      "rssAvailable": false,
+      "sourceUrl": "http://www.cranecurrency.com/news-room/",
+      "extractionStrategy": "newsroom_listing"
+    },
+    {
+      "id": "bundesdruckerei-scraper-candidate",
+      "name": "Bundesdruckerei",
+      "topic": "Shared Security Printing",
+      "status": "candidate",
+      "isActive": false,
+      "sourceType": "website",
+      "acquisitionMethod": "scraper",
+      "rssAvailable": false,
+      "sourceUrl": "https://www.bundesdruckerei.de/en/Press-room",
+      "extractionStrategy": "newsroom_listing"
+    },
+    {
+      "id": "optaglio-scraper-candidate",
+      "name": "Optaglio",
+      "topic": "Shared Security Printing",
+      "status": "candidate",
+      "isActive": false,
+      "sourceType": "website",
+      "acquisitionMethod": "scraper",
+      "rssAvailable": false,
+      "sourceUrl": "http://www.optaglio.cz/en/news",
+      "extractionStrategy": "newsroom_listing"
+    },
+    {
+      "id": "veridos-scraper-candidate",
+      "name": "Veridos",
+      "topic": "Shared Security Printing",
+      "status": "candidate",
+      "isActive": false,
+      "sourceType": "website",
+      "acquisitionMethod": "scraper",
+      "rssAvailable": false,
+      "sourceUrl": "https://www.veridos.com/press-news",
+      "extractionStrategy": "newsroom_listing"
+    },
+    {
+      "id": "ovd-kinegram-scraper-candidate",
+      "name": "OVD Kinegram",
+      "topic": "Shared Security Printing",
+      "status": "candidate",
+      "isActive": false,
+      "sourceType": "website",
+      "acquisitionMethod": "scraper",
+      "rssAvailable": false,
+      "sourceUrl": "http://www.kinegram.com/en/news/",
+      "extractionStrategy": "newsroom_listing"
+    },
+    {
+      "id": "orell-fussli-scraper-candidate",
+      "name": "Orell Fussli Security Printing",
+      "topic": "Shared Security Printing",
+      "status": "candidate",
+      "isActive": false,
+      "sourceType": "website",
+      "acquisitionMethod": "scraper",
+      "rssAvailable": false,
+      "sourceUrl": "http://www.ofs.ch/",
+      "extractionStrategy": "homepage_news_discovery"
+    },
+    {
+      "id": "giesecke-devrient-scraper-candidate",
+      "name": "Giesecke & Devrient",
+      "topic": "Shared Security Printing",
+      "status": "candidate",
+      "isActive": false,
+      "sourceType": "website",
+      "acquisitionMethod": "scraper",
+      "rssAvailable": false,
+      "sourceUrl": "https://www.gi-de.com/usa/en/about_g_d/press/press.jsp",
       "extractionStrategy": "newsroom_listing"
     }
   ],
-  "failedVendorsRequiringUrlRefresh": [
-    {
-      "name": "De La Rue",
-      "currentSourceUrl": "http://www.delarue.com/media-centre/latest-news/2017",
-      "reason": "Current planned source points to an older news path and should be revalidated."
-    },
-    {
-      "name": "Crane Currency",
-      "currentSourceUrl": "http://www.cranecurrency.com/news-room/",
-      "reason": "Known news-room path should be verified for current structure and archive depth."
-    },
-    {
-      "name": "Bundesdruckerei",
-      "currentSourceUrl": "https://www.bundesdruckerei.de/en/Press-room",
-      "reason": "Press-room endpoint should be checked for stable article-list extraction."
-    },
-    {
-      "name": "Optaglio",
-      "currentSourceUrl": "http://www.optaglio.cz/en/news",
-      "reason": "News endpoint should be confirmed and normalized."
-    },
-    {
-      "name": "Veridos",
-      "currentSourceUrl": "https://www.veridos.com/press-news",
-      "reason": "Press/news endpoint should be refreshed before onboarding."
-    },
-    {
-      "name": "OVD Kinegram",
-      "currentSourceUrl": "http://www.kinegram.com/en/news/",
-      "reason": "Specialist OVD source should be checked for current canonical news location."
-    },
-    {
-      "name": "Orell Füssli Security Printing",
-      "currentSourceUrl": "http://www.ofs.ch/",
-      "reason": "Current source is homepage-level and needs a fresher newsroom or publication endpoint."
-    },
-    {
-      "name": "Giesecke & Devrient",
-      "currentSourceUrl": "https://www.gi-de.com/usa/en/about_g_d/press/press.jsp",
-      "reason": "Existing press path works as a candidate but should be refreshed against the latest site structure."
-    }
-  ]
+  "failedVendorsRequiringUrlRefresh": []
 }
