@@ -24,6 +24,7 @@
     "security-printing:diagnostics": "node scripts/security-printing-subgroup-diagnostics.js",
     "security-printing:top-level-diagnostics": "node scripts/security-printing-top-level-diagnostics.js",
     "sources:coverage-diagnostics": "node scripts/sources-coverage-diagnostics.js",
+    "vendor-source-priority": "node scripts/vendor-source-priority.js",
     "image:compare-google-news": "node scripts/image-compare-google-news.js",
     "image:diagnostics": "node scripts/image-diagnostics.js",
     "google-news:inspect-raw-rss": "node scripts/google-news-raw-rss-inspect.js",
