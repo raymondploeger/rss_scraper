@@ -2,6 +2,12 @@ import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import pg from "pg";
+import {
+  buildSecurityPrintingContext,
+  countMatches,
+  getSecurityPrintingProductionLikeAssessment,
+  matchedKeywords,
+} from "./lib/security-printing-production-like.js";
 
 const { Client } = pg;
 
@@ -23,7 +29,7 @@ const args = process.argv.slice(2);
 const limitArg = args.find((arg) => arg.startsWith("--limit="));
 const articleLimit = Math.max(500, Math.min(8000, Number(limitArg ? limitArg.split("=")[1] : 4000) || 4000));
 
-const DOMAIN_CONTEXTS = {
+const LEGACY_DOMAIN_CONTEXTS = {
   banknote_intelligence: {
     strong: [
       "banknote",
@@ -83,21 +89,6 @@ const DOMAIN_CONTEXTS = {
     ],
     weak: ["identity platform", "mobile id", "document verification", "verification platform"],
     excluded: ["commemorative banknote", "currency redesign", "central bank issuance", "banknote withdrawal", "demonetisation"],
-  },
-  security_printing: {
-    strong: [
-      "security printing",
-      "security inks",
-      "micro optics",
-      "holography",
-      "ovd",
-      "intaglio",
-      "anti-counterfeit",
-      "secure documents",
-      "personalization",
-    ],
-    weak: ["document security", "secure print", "specialty ink"],
-    excluded: ["wallet onboarding", "digital identity platform"],
   },
 };
 
@@ -179,62 +170,8 @@ function formatRows(rows = []) {
   );
 }
 
-function normalizeKeyword(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
-}
-
-function escapeRegExp(value) {
-  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function textMatchesKeyword(text, keyword) {
-  const normalizedKeyword = normalizeKeyword(keyword);
-  if (!normalizedKeyword) {
-    return false;
-  }
-
-  const escapedKeyword = escapeRegExp(normalizedKeyword);
-  const pattern = /^[a-z0-9\s-]+$/i.test(normalizedKeyword)
-    ? new RegExp(`(^|[^a-z0-9])${escapedKeyword}([^a-z0-9]|$)`, "i")
-    : new RegExp(escapedKeyword, "i");
-  return pattern.test(text);
-}
-
-function countBoostKeywordMatches(text, keywords = []) {
-  return keywords.filter((keyword) => textMatchesKeyword(text, keyword)).length;
-}
-
-function matchedKeywords(text, keywords = []) {
-  return keywords.filter((keyword) => textMatchesKeyword(text, keyword));
-}
-
-function getHostname(value) {
-  try {
-    return new URL(String(value || "")).hostname.replace(/^www\./, "").toLowerCase();
-  } catch {
-    return "";
-  }
-}
-
-function buildContext(article) {
-  const sourceText = [article.source, article.feedName].filter(Boolean).join(" ").toLowerCase();
-  const domainText = [getHostname(article.link), getHostname(article.canonicalLink)].filter(Boolean).join(" ").toLowerCase();
-  return {
-    titleText: [article.title].filter(Boolean).join(" ").toLowerCase(),
-    tagText: [article.keywords].filter(Boolean).join(" ").toLowerCase(),
-    metadataText: [article.topic, sourceText].filter(Boolean).join(" ").toLowerCase(),
-    bodyText: [article.summary, article.summaryShort, article.contentSnippet].filter(Boolean).join(" ").toLowerCase(),
-    sourceText,
-    domainText,
-    topic: normalizeKeyword(article.topic),
-  };
-}
-
-function getDomainContextProfile(context, groupId) {
-  const config = DOMAIN_CONTEXTS[groupId];
+function getLegacyDomainContextProfile(context, groupId) {
+  const config = LEGACY_DOMAIN_CONTEXTS[groupId];
   if (!config) {
     return { score: 0, excludedHits: 0 };
   }
@@ -243,18 +180,18 @@ function getDomainContextProfile(context, groupId) {
   const weakKeywords = Array.isArray(config.weak) ? config.weak : [];
   const excludedKeywords = Array.isArray(config.excluded) ? config.excluded : [];
 
-  const strongTitleHits = countBoostKeywordMatches(context.titleText, strongKeywords);
-  const strongTagHits = countBoostKeywordMatches(context.tagText, strongKeywords);
-  const strongMetaHits = countBoostKeywordMatches(context.metadataText, strongKeywords);
-  const strongBodyHits = countBoostKeywordMatches(context.bodyText, strongKeywords);
-  const weakTitleHits = countBoostKeywordMatches(context.titleText, weakKeywords);
-  const weakTagHits = countBoostKeywordMatches(context.tagText, weakKeywords);
-  const weakMetaHits = countBoostKeywordMatches(context.metadataText, weakKeywords);
-  const weakBodyHits = countBoostKeywordMatches(context.bodyText, weakKeywords);
+  const strongTitleHits = countMatches(context.titleText, strongKeywords);
+  const strongTagHits = countMatches(context.tagText, strongKeywords);
+  const strongMetaHits = countMatches(context.metadataText, strongKeywords);
+  const strongBodyHits = countMatches(context.bodyText, strongKeywords);
+  const weakTitleHits = countMatches(context.titleText, weakKeywords);
+  const weakTagHits = countMatches(context.tagText, weakKeywords);
+  const weakMetaHits = countMatches(context.metadataText, weakKeywords);
+  const weakBodyHits = countMatches(context.bodyText, weakKeywords);
   const excludedHits =
-    countBoostKeywordMatches(context.titleText, excludedKeywords) +
-    countBoostKeywordMatches(context.tagText, excludedKeywords) +
-    countBoostKeywordMatches(context.metadataText, excludedKeywords);
+    countMatches(context.titleText, excludedKeywords) +
+    countMatches(context.tagText, excludedKeywords) +
+    countMatches(context.metadataText, excludedKeywords);
 
   let score =
     (strongTitleHits * 5) +
@@ -266,9 +203,6 @@ function getDomainContextProfile(context, groupId) {
     (weakMetaHits * 1.25) +
     (weakBodyHits * 0.35);
 
-  if (groupId === "security_printing" && (context.topic === "banknotes" || context.topic === "identity documents")) {
-    score += 4;
-  }
   if (groupId === "digital_identity_biometrics" && context.topic === "digital id") {
     score += 10;
   }
@@ -282,17 +216,17 @@ function getDomainContextProfile(context, groupId) {
   return { score, excludedHits };
 }
 
-function getApproximateDominantDomain(article) {
-  const context = buildContext(article);
-  const banknoteSignals = getDomainContextProfile(context, "banknote_intelligence");
-  const identitySignals = getDomainContextProfile(context, "identity_documents");
-  const digitalSignals = getDomainContextProfile(context, "digital_identity_biometrics");
-  const securitySignals = getDomainContextProfile(context, "security_printing");
+function getLegacyApproximateDominantDomain(article) {
+  const context = buildSecurityPrintingContext(article);
+  const banknoteSignals = getLegacyDomainContextProfile(context, "banknote_intelligence");
+  const identitySignals = getLegacyDomainContextProfile(context, "identity_documents");
+  const digitalSignals = getLegacyDomainContextProfile(context, "digital_identity_biometrics");
+  const securityAssessment = getSecurityPrintingProductionLikeAssessment(article);
 
   const banknoteScore = banknoteSignals.score + (context.topic === "banknotes" || context.topic === "banknote" ? 18 : 0);
   const identityScore = identitySignals.score + (context.topic === "identity documents" ? 18 : 0);
   const digitalScore = digitalSignals.score + (context.topic === "digital id" ? 20 : 0);
-  const securityScore = securitySignals.score + (context.topic === "banknotes" || context.topic === "identity documents" ? 6 : 0);
+  const securityScore = securityAssessment.legacyScore + (context.topic === "banknotes" || context.topic === "identity documents" ? 6 : 0);
 
   const candidates = [
     { domain: "banknotes", score: banknoteScore },
@@ -310,27 +244,26 @@ function getApproximateDominantDomain(article) {
   return candidates[0].domain;
 }
 
-function computeSubgroupAssessment(article, subgroupId) {
+function computeSubgroupAssessment(article, subgroupId, productionAssessment = getSecurityPrintingProductionLikeAssessment(article)) {
   const subgroup = SUBGROUPS[subgroupId];
-  const context = buildContext(article);
-  const domainContext = getDomainContextProfile(context, "security_printing");
+  const context = productionAssessment.context;
   const strongKeywords = subgroup.strong;
   const weakKeywords = subgroup.weak;
   const relatedKeywords = subgroup.related;
 
-  const titleStrongHits = countBoostKeywordMatches(context.titleText, strongKeywords);
-  const tagStrongHits = countBoostKeywordMatches(context.tagText, strongKeywords);
-  const metaStrongHits = countBoostKeywordMatches(context.metadataText, strongKeywords);
-  const bodyStrongHits = countBoostKeywordMatches(context.bodyText, strongKeywords);
-  const titleWeakHits = countBoostKeywordMatches(context.titleText, weakKeywords);
-  const tagWeakHits = countBoostKeywordMatches(context.tagText, weakKeywords);
-  const metaWeakHits = countBoostKeywordMatches(context.metadataText, weakKeywords);
-  const bodyWeakHits = countBoostKeywordMatches(context.bodyText, weakKeywords);
+  const titleStrongHits = countMatches(context.titleText, strongKeywords);
+  const tagStrongHits = countMatches(context.tagText, strongKeywords);
+  const metaStrongHits = countMatches(context.metadataText, strongKeywords);
+  const bodyStrongHits = countMatches(context.bodyText, strongKeywords);
+  const titleWeakHits = countMatches(context.titleText, weakKeywords);
+  const tagWeakHits = countMatches(context.tagText, weakKeywords);
+  const metaWeakHits = countMatches(context.metadataText, weakKeywords);
+  const bodyWeakHits = countMatches(context.bodyText, weakKeywords);
 
-  let score = domainContext.score * 0.65;
+  let score = productionAssessment.productionScore * 0.65;
   score += (titleStrongHits * 5.5) + (tagStrongHits * 4.5) + (metaStrongHits * 3.5) + (bodyStrongHits * 1.5);
   score += (titleWeakHits * 1.5) + (tagWeakHits * 1.5) + (metaWeakHits * 1) + (bodyWeakHits * 0.35);
-  score -= domainContext.excludedHits * 10;
+  score -= productionAssessment.excludedHits * 10;
   score = Math.max(0, Math.round(score));
 
   const haystack = `${context.titleText} ${context.tagText} ${context.metadataText} ${context.bodyText}`;
@@ -341,7 +274,7 @@ function computeSubgroupAssessment(article, subgroupId) {
   const directMatch = directStrong.length > 0 || (directWeak.length > 0 && score >= 18);
   const hybridMatch =
     !directMatch &&
-    domainContext.score >= 7 &&
+    productionAssessment.productionScore >= 7 &&
     score >= 18 &&
     (directWeak.length > 0 || related.length > 0);
   const included = directMatch || hybridMatch;
@@ -349,7 +282,7 @@ function computeSubgroupAssessment(article, subgroupId) {
   return {
     subgroupId,
     score,
-    domainScore: domainContext.score,
+    domainScore: productionAssessment.productionScore,
     directMatch,
     hybridMatch,
     included,
@@ -444,19 +377,21 @@ async function main() {
     await client.query("BEGIN READ ONLY");
 
     const articles = await loadArticles(client);
-    const candidateArticles = articles.filter((article) => {
-      const dominant = getApproximateDominantDomain(article);
-      const securityDomain = getDomainContextProfile(buildContext(article), "security_printing").score >= 7;
+    const legacyCandidateArticles = articles.filter((article) => {
+      const dominant = getLegacyApproximateDominantDomain(article);
+      const securityDomain = getSecurityPrintingProductionLikeAssessment(article).includedLegacy;
       return dominant === "shared_security" || securityDomain;
     });
+    const candidateArticles = articles.filter((article) => getSecurityPrintingProductionLikeAssessment(article).includedProduction);
 
     const subgroupResults = new Map();
     Object.keys(SUBGROUPS).forEach((subgroupId) => subgroupResults.set(subgroupId, []));
     const specialOverlapResults = new Map(SPECIAL_OVERLAPS.map(([, , label]) => [label, []]));
 
     candidateArticles.forEach((article) => {
+      const productionAssessment = getSecurityPrintingProductionLikeAssessment(article);
       const assessments = Object.fromEntries(
-        Object.keys(SUBGROUPS).map((subgroupId) => [subgroupId, computeSubgroupAssessment(article, subgroupId)])
+        Object.keys(SUBGROUPS).map((subgroupId) => [subgroupId, computeSubgroupAssessment(article, subgroupId, productionAssessment)])
       );
 
       Object.entries(assessments).forEach(([subgroupId, assessment]) => {
@@ -513,7 +448,10 @@ async function main() {
     console.log("\n=== Shared Security Printing Diagnostics ===");
     console.table(formatRows([{
       scanned_articles: articles.length,
+      old_candidate_pool_size: legacyCandidateArticles.length,
       security_candidate_pool: candidateArticles.length,
+      production_helper_used: "getSecurityPrintingProductionLikeAssessment()",
+      legacy_logic_removed: "stale security_printing keyword copy and dominant-domain bottleneck from active candidate selection",
       subgroup_scope: Object.values(SUBGROUPS).map((subgroup) => subgroup.label).join(", "),
     }]));
 
