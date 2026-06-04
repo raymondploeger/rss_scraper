@@ -41,27 +41,27 @@
       "id": "authentix-rss-candidate",
       "name": "Authentix RSS",
       "topic": "Shared Security Printing",
-      "status": "active",
-      "isActive": true,
-      "sourceType": "rss",
-      "acquisitionMethod": "rss",
-      "rssAvailable": true,
-      "currentSourceUrl": "http://authentix.com/industries/currency/",
-      "rssUrl": "https://authentix.com/feed/",
-      "notes": "Activated in the strategic feed bootstrap for live RSS ingestion testing."
-    },
-    {
-      "id": "security-foiling-rss-candidate",
-      "name": "Security Foiling RSS",
-      "topic": "Shared Security Printing",
       "status": "candidate",
       "isActive": false,
       "sourceType": "rss",
       "acquisitionMethod": "rss",
       "rssAvailable": true,
+      "currentSourceUrl": "http://authentix.com/industries/currency/",
+      "rssUrl": "https://authentix.com/feed/",
+      "notes": "Returned to candidate status after validation showed the feed is valid but currently publishes zero items."
+    },
+    {
+      "id": "security-foiling-rss-candidate",
+      "name": "Security Foiling RSS",
+      "topic": "Shared Security Printing",
+      "status": "active",
+      "isActive": true,
+      "sourceType": "rss",
+      "acquisitionMethod": "rss",
+      "rssAvailable": true,
       "currentSourceUrl": "http://securityfoiling.co.uk/news",
-      "rssUrl": "",
-      "notes": "Kept as a verified RSS candidate per manual planning instruction, but the concrete feed URL still needs confirmation."
+      "rssUrl": "https://www.securityfoiling.com/feed/",
+      "notes": "Activated in the strategic feed bootstrap for live RSS ingestion testing."
     }
   ],
   "scraperCandidates": [

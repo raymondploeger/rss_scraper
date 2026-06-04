@@ -168,9 +168,9 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase1",
   },
   {
-    name: "Authentix RSS",
+    name: "Security Foiling RSS",
     topic: "Shared Security Printing",
-    rssUrl: "https://authentix.com/feed/",
+    rssUrl: "https://www.securityfoiling.com/feed/",
     sourceType: "rss",
     phase: "phase1",
   },
@@ -180,6 +180,10 @@ const RETIRED_STRATEGIC_FEEDS = [
   {
     name: "Cetis RSS",
     rssUrl: "http://www.cetis.si/?mod=aktualno&action=rss&lang=en",
+  },
+  {
+    name: "Authentix RSS",
+    rssUrl: "https://authentix.com/feed/",
   },
 ];
 
