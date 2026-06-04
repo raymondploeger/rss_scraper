@@ -44,13 +44,13 @@ const parser = new Parser({
   }
 });
 
-const CETIS_RSS_URL = "http://www.cetis.si/?mod=aktualno&action=rss&lang=en";
+const AUTHENTIX_RSS_URL = "https://authentix.com/feed/";
 
-function isCetisFeed(feed) {
+function isAuthentixFeed(feed) {
   return (
     Boolean(feed) &&
-    (String(feed.rssUrl || "").trim().toLowerCase() === CETIS_RSS_URL.toLowerCase() ||
-      String(feed.name || "").trim().toLowerCase() === "cetis rss")
+    (String(feed.rssUrl || "").trim().toLowerCase() === AUTHENTIX_RSS_URL.toLowerCase() ||
+      String(feed.name || "").trim().toLowerCase() === "authentix rss")
   );
 }
 
@@ -1194,7 +1194,7 @@ function queueThumbnailEnrichment(article) {
 export async function syncFeed(feed) {
   const startedAt = new Date();
   let newArticles = 0;
-  const cetisFeed = isCetisFeed(feed);
+  const authentixFeed = isAuthentixFeed(feed);
 
   try {
     console.log(`Starting feed sync for ${feed.id} (${feed.name || feed.rssUrl})`);
@@ -1209,14 +1209,14 @@ export async function syncFeed(feed) {
     } else {
       console.log(`Fetching RSS source ${feed.id} (${feed.rssUrl})`);
       const parsedFeed = await parser.parseURL(feed.rssUrl);
-      if (cetisFeed) {
-        console.log(`[CETIS_FEED] feed_loaded feedId=${feed.id} rssUrl=${feed.rssUrl}`);
+      if (authentixFeed) {
+        console.log(`[AUTHENTIX_FEED] feed_loaded feedId=${feed.id} rssUrl=${feed.rssUrl}`);
       }
       resolvedItems = Array.isArray(parsedFeed.items) ? parsedFeed.items : [];
     }
 
-    if (cetisFeed) {
-      console.log(`[CETIS_FEED] articles_found count=${resolvedItems.length}`);
+    if (authentixFeed) {
+      console.log(`[AUTHENTIX_FEED] articles_found count=${resolvedItems.length}`);
     }
 
     for (const item of resolvedItems) {
@@ -1247,8 +1247,8 @@ export async function syncFeed(feed) {
       }
     }
 
-    if (cetisFeed) {
-      console.log(`[CETIS_FEED] articles_imported count=${newArticles}`);
+    if (authentixFeed) {
+      console.log(`[AUTHENTIX_FEED] articles_imported count=${newArticles}`);
     }
 
     const updatedFeed = await updateFeedRecord(feed.id, {
@@ -1275,6 +1275,11 @@ export async function syncFeed(feed) {
     console.log(`Feed sync complete for ${feed.id}; inserted ${newArticles} new articles`);
     return { feedId: String(feed.id), newArticles };
   } catch (error) {
+    if (authentixFeed) {
+      console.log(
+        `[AUTHENTIX_FEED] feed_sync_error feedId=${feed.id} rssUrl=${feed.rssUrl} message=${error.message}`
+      );
+    }
     console.error(`Feed sync error for ${feed.id}:`, error?.stack || error);
     const updatedFeed = await updateFeedRecord(feed.id, {
       lastFetchedAt: new Date(),

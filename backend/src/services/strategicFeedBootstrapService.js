@@ -168,11 +168,18 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase1",
   },
   {
-    name: "Cetis RSS",
+    name: "Authentix RSS",
     topic: "Shared Security Printing",
-    rssUrl: "http://www.cetis.si/?mod=aktualno&action=rss&lang=en",
+    rssUrl: "https://authentix.com/feed/",
     sourceType: "rss",
     phase: "phase1",
+  },
+];
+
+const RETIRED_STRATEGIC_FEEDS = [
+  {
+    name: "Cetis RSS",
+    rssUrl: "http://www.cetis.si/?mod=aktualno&action=rss&lang=en",
   },
 ];
 
@@ -181,6 +188,27 @@ export async function ensureStrategicFeeds() {
   let updated = 0;
   let skipped = 0;
   let failed = 0;
+  let retired = 0;
+
+  for (const definition of RETIRED_STRATEGIC_FEEDS) {
+    try {
+      const existing = await findFeedByRssUrl(definition.rssUrl);
+      if (!existing || existing.isActive === false) {
+        continue;
+      }
+
+      await updateFeedRecord(existing.id, {
+        isActive: false,
+      });
+      retired += 1;
+    } catch (error) {
+      failed += 1;
+      console.error(
+        `[strategic-feeds] Failed to retire ${definition.name} (${definition.rssUrl}):`,
+        error?.stack || error
+      );
+    }
+  }
 
   for (const definition of PHASE_ONE_STRATEGIC_FEEDS) {
     try {
@@ -225,6 +253,6 @@ export async function ensureStrategicFeeds() {
   }
 
   console.log(
-    `[strategic-feeds] Phase 1 feed bootstrap complete: created=${created} updated=${updated} skipped=${skipped} failed=${failed}`
+    `[strategic-feeds] Phase 1 feed bootstrap complete: created=${created} updated=${updated} skipped=${skipped} retired=${retired} failed=${failed}`
   );
 }
