@@ -22,6 +22,7 @@
     "identity-subgroup:diagnostics": "node scripts/identity-subgroup-diagnostics.js",
     "identity-subgroup:passport-diagnostics": "node scripts/identity-passport-diagnostics.js",
     "security-printing:diagnostics": "node scripts/security-printing-subgroup-diagnostics.js",
+    "security-printing:top-level-diagnostics": "node scripts/security-printing-top-level-diagnostics.js",
     "image:compare-google-news": "node scripts/image-compare-google-news.js",
     "image:diagnostics": "node scripts/image-diagnostics.js",
     "google-news:inspect-raw-rss": "node scripts/google-news-raw-rss-inspect.js",
