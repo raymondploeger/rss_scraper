@@ -8,7 +8,7 @@ const sourceAnalysisDir = path.resolve(__dirname, "../data/source-analysis");
 const keesingWorkbookPath = path.join(sourceAnalysisDir, "keesing_platform_tags.xlsx");
 const vendorWorkbookPath = path.join(sourceAnalysisDir, "Uitklaptabel.xls");
 
-const DOMAIN_TERMS = {
+export const DOMAIN_TERMS = {
   shared_security_printing: [
     "security printing",
     "security feature",
@@ -73,7 +73,7 @@ const DOMAIN_TERMS = {
   ],
 };
 
-const NICHE_TERMS = {
+export const NICHE_TERMS = {
   ovd: ["ovd", "optically variable device", "optical security device"],
   holography: ["holography", "hologram", "holograms", "holographic foil"],
   security_inks: ["security ink", "security inks", "optically variable ink", "uv ink", "fluorescent ink", "magnetic ink"],
@@ -81,7 +81,7 @@ const NICHE_TERMS = {
   intaglio: ["intaglio", "engraved printing", "tactile printing", "raised print"],
 };
 
-const PRIORITY_VENDOR_MATCHERS = [
+export const PRIORITY_VENDOR_MATCHERS = [
   { label: "SICPA", terms: ["sicpa"] },
   { label: "KURZ", terms: ["kurz", "leonhard kurz"] },
   { label: "SURYS", terms: ["surys"] },
@@ -103,7 +103,7 @@ const PRIORITY_VENDOR_MATCHERS = [
   { label: "Covestro", terms: ["covestro", "bayer materialscience"] },
 ];
 
-const PRIORITY_VENDOR_HINTS = {
+export const PRIORITY_VENDOR_HINTS = {
   "sicpa": ["security inks", "banknote security", "authentication feature"],
   "kurz": ["holography", "hologram", "security foil", "ovd"],
   "surys": ["holography", "ovd", "optically variable device", "security features"],
@@ -125,21 +125,21 @@ const PRIORITY_VENDOR_HINTS = {
   "covestro": ["polycarbonate", "secure documents", "document security"],
 };
 
-const DOMAIN_WEIGHTS = {
+export const DOMAIN_WEIGHTS = {
   shared_security_printing: 4.5,
   identity_documents: 2.5,
   banknotes: 2.25,
   digital_identity_biometrics: 1.5,
 };
 
-function normalizeText(value) {
+export function normalizeText(value) {
   return String(value || "")
     .trim()
     .toLowerCase()
     .replace(/\s+/g, " ");
 }
 
-function formatRows(rows = []) {
+export function formatRows(rows = []) {
   return rows.map((row) =>
     Object.fromEntries(
       Object.entries(row).map(([key, value]) => [
@@ -150,15 +150,15 @@ function formatRows(rows = []) {
   );
 }
 
-function readWorkbook(filePath) {
+export function readWorkbook(filePath) {
   return XLSX.readFile(filePath, { cellDates: false });
 }
 
-function getSheetRows(workbook, sheetName) {
+export function getSheetRows(workbook, sheetName) {
   return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: "" });
 }
 
-function findHeaderRow(rows, requiredHeaders = []) {
+export function findHeaderRow(rows, requiredHeaders = []) {
   const normalizedRequired = requiredHeaders.map(normalizeText);
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index].map(normalizeText);
@@ -169,41 +169,41 @@ function findHeaderRow(rows, requiredHeaders = []) {
   return -1;
 }
 
-function rowsToObjects(rows, headerRowIndex) {
+export function rowsToObjects(rows, headerRowIndex) {
   const headers = rows[headerRowIndex].map((header, index) => normalizeText(header) || `column_${index + 1}`);
   return rows
     .slice(headerRowIndex + 1)
     .map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ""])));
 }
 
-function matchTerms(text, terms = []) {
+export function matchTerms(text, terms = []) {
   const haystack = normalizeText(text);
   return terms.filter((term) => haystack.includes(normalizeText(term)));
 }
 
-function looksLikeRss(text) {
+export function looksLikeRss(text) {
   return matchTerms(text, ["rss", ".xml", "/feed", "feedburner", "atom"]).length > 0;
 }
 
-function looksLikeNewsPage(text) {
+export function looksLikeNewsPage(text) {
   return matchTerms(text, ["news", "press", "media", "blog", "article", "insights", "updates"]).length > 0;
 }
 
-function looksLikeUsableLink(text) {
+export function looksLikeUsableLink(text) {
   return matchTerms(text, ["http://", "https://", "www."]).length > 0;
 }
 
-function isMarkedNvt(text) {
+export function isMarkedNvt(text) {
   return normalizeText(text) === "nvt";
 }
 
-function normalizeVendorName(name) {
+export function normalizeVendorName(name) {
   return normalizeText(name)
     .replace(/[’']/g, "")
     .replace(/\s*&\s*/g, " & ");
 }
 
-function getTagGapWeights() {
+export function getTagGapWeights() {
   const workbook = readWorkbook(keesingWorkbookPath);
   const tagRowsRaw = getSheetRows(workbook, "Tag_Summary");
   const headerRow = findHeaderRow(tagRowsRaw, ["Tag Name", "Tag Slug", "Posts Using Tag"]);
@@ -226,7 +226,7 @@ function getTagGapWeights() {
   return termWeights;
 }
 
-function getSourceState(vendor) {
+export function getSourceState(vendor) {
   const rssNews = String(vendor["rss / news"] || "");
   const website = String(vendor.website || "");
   const links = String(vendor.links || "");
@@ -252,14 +252,14 @@ function getSourceState(vendor) {
   };
 }
 
-function findPriorityVendorMatcher(company) {
+export function findPriorityVendorMatcher(company) {
   const normalizedCompany = normalizeVendorName(company);
   return PRIORITY_VENDOR_MATCHERS.find((matcher) =>
     matcher.terms.some((term) => normalizedCompany.includes(normalizeVendorName(term)))
   );
 }
 
-function chooseSourceUrl(vendor, sourceState) {
+export function chooseSourceUrl(vendor, sourceState) {
   const rssNews = String(vendor["rss / news"] || "").trim();
   const links = String(vendor.links || "").trim();
   const website = String(vendor.website || "").trim();
@@ -276,7 +276,7 @@ function chooseSourceUrl(vendor, sourceState) {
   return website || links || "";
 }
 
-function computeDomainScores(vendor, tagGapWeights) {
+export function computeDomainScores(vendor, tagGapWeights) {
   const vendorText = [
     vendor.company,
     vendor.website,
@@ -322,7 +322,7 @@ function computeDomainScores(vendor, tagGapWeights) {
   return { domainScores, nicheScores, matcher };
 }
 
-function buildVendorPriorityRows(vendorRows, tagGapWeights) {
+export function buildVendorPriorityRows(vendorRows, tagGapWeights) {
   return vendorRows
     .filter((row) => row.company)
     .map((row) => {
@@ -370,7 +370,7 @@ function buildVendorPriorityRows(vendorRows, tagGapWeights) {
     .sort((left, right) => right.totalPriorityScore - left.totalPriorityScore);
 }
 
-function printTop50(rows) {
+export function printTop50(rows) {
   console.log("\n=== Top 50 Vendor Source Priority ===");
   console.table(formatRows(
     rows.slice(0, 50).map((vendor, index) => ({
@@ -390,7 +390,7 @@ function printTop50(rows) {
   ));
 }
 
-function printTopNiche(rows) {
+export function printTopNiche(rows) {
   const nicheWeighted = rows
     .map((vendor) => ({
       ...vendor,
@@ -422,7 +422,7 @@ function printTopNiche(rows) {
   ));
 }
 
-function printSummary(rows) {
+export function printSummary(rows) {
   console.log("\n=== Vendor Source Priority Summary ===");
   console.table(formatRows([{
     total_vendors_scored: rows.length,
@@ -433,7 +433,7 @@ function printSummary(rows) {
   }]));
 }
 
-function main() {
+export function loadVendorPriorityRows() {
   const vendorWorkbook = readWorkbook(vendorWorkbookPath);
   const vendorRowsRaw = getSheetRows(vendorWorkbook, vendorWorkbook.SheetNames[0]);
   const vendorHeaderRow = findHeaderRow(vendorRowsRaw, ["Company", "WEBSITE", "RSS / NEWS"]);
@@ -444,13 +444,17 @@ function main() {
 
   const vendorRows = rowsToObjects(vendorRowsRaw, vendorHeaderRow);
   const tagGapWeights = getTagGapWeights();
-  const prioritizedVendors = buildVendorPriorityRows(vendorRows, tagGapWeights);
+  return buildVendorPriorityRows(vendorRows, tagGapWeights);
+}
+
+export function main() {
+  const prioritizedVendors = loadVendorPriorityRows();
 
   console.log("\n=== Vendor Source Priority Diagnostics ===");
   console.table(formatRows([{
     vendor_workbook: path.basename(vendorWorkbookPath),
     keesing_workbook: path.basename(keesingWorkbookPath),
-    vendors_loaded: vendorRows.filter((row) => row.company).length,
+    vendors_loaded: prioritizedVendors.length,
     priority_vendor_targets: PRIORITY_VENDOR_MATCHERS.length,
   }]));
 
@@ -459,10 +463,12 @@ function main() {
   printTopNiche(prioritizedVendors);
 }
 
-try {
-  main();
-} catch (error) {
-  console.error("Failed to run vendor source priority diagnostics.");
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  try {
+    main();
+  } catch (error) {
+    console.error("Failed to run vendor source priority diagnostics.");
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  }
 }
