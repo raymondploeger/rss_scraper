@@ -44,14 +44,33 @@ const parser = new Parser({
   }
 });
 
-const SECURITY_FOILING_RSS_URL = "https://www.securityfoiling.com/feed/";
+const VENDOR_FEED_LOG_CONFIG = [
+  {
+    label: "SICPA_FEED",
+    rssUrl: "https://www.sicpa.com/rss.xml",
+    name: "sicpa rss",
+  },
+  {
+    label: "SURYS_FEED",
+    rssUrl: "https://surys.com/feed/",
+    name: "surys rss",
+  },
+];
 
-function isSecurityFoilingFeed(feed) {
-  return (
-    Boolean(feed) &&
-    (String(feed.rssUrl || "").trim().toLowerCase() === SECURITY_FOILING_RSS_URL.toLowerCase() ||
-      String(feed.name || "").trim().toLowerCase() === "security foiling rss")
+function getVendorFeedLogLabel(feed) {
+  if (!feed) {
+    return "";
+  }
+
+  const normalizedUrl = String(feed.rssUrl || "").trim().toLowerCase();
+  const normalizedName = String(feed.name || "").trim().toLowerCase();
+  const matched = VENDOR_FEED_LOG_CONFIG.find(
+    (entry) =>
+      normalizedUrl === entry.rssUrl.toLowerCase() ||
+      normalizedName === entry.name
   );
+
+  return matched?.label || "";
 }
 
 const WEBSITE_NAV_TITLE_PATTERNS = [
@@ -1194,7 +1213,7 @@ function queueThumbnailEnrichment(article) {
 export async function syncFeed(feed) {
   const startedAt = new Date();
   let newArticles = 0;
-  const securityFoilingFeed = isSecurityFoilingFeed(feed);
+  const vendorFeedLogLabel = getVendorFeedLogLabel(feed);
 
   try {
     console.log(`Starting feed sync for ${feed.id} (${feed.name || feed.rssUrl})`);
@@ -1209,14 +1228,14 @@ export async function syncFeed(feed) {
     } else {
       console.log(`Fetching RSS source ${feed.id} (${feed.rssUrl})`);
       const parsedFeed = await parser.parseURL(feed.rssUrl);
-      if (securityFoilingFeed) {
-        console.log(`[SECURITY_FOILING_FEED] feed_loaded feedId=${feed.id} rssUrl=${feed.rssUrl}`);
+      if (vendorFeedLogLabel) {
+        console.log(`[${vendorFeedLogLabel}] feed_loaded feedId=${feed.id} rssUrl=${feed.rssUrl}`);
       }
       resolvedItems = Array.isArray(parsedFeed.items) ? parsedFeed.items : [];
     }
 
-    if (securityFoilingFeed) {
-      console.log(`[SECURITY_FOILING_FEED] articles_found count=${resolvedItems.length}`);
+    if (vendorFeedLogLabel) {
+      console.log(`[${vendorFeedLogLabel}] articles_found count=${resolvedItems.length}`);
     }
 
     for (const item of resolvedItems) {
@@ -1247,8 +1266,8 @@ export async function syncFeed(feed) {
       }
     }
 
-    if (securityFoilingFeed) {
-      console.log(`[SECURITY_FOILING_FEED] articles_imported count=${newArticles}`);
+    if (vendorFeedLogLabel) {
+      console.log(`[${vendorFeedLogLabel}] articles_imported count=${newArticles}`);
     }
 
     const updatedFeed = await updateFeedRecord(feed.id, {
@@ -1275,9 +1294,9 @@ export async function syncFeed(feed) {
     console.log(`Feed sync complete for ${feed.id}; inserted ${newArticles} new articles`);
     return { feedId: String(feed.id), newArticles };
   } catch (error) {
-    if (securityFoilingFeed) {
+    if (vendorFeedLogLabel) {
       console.log(
-        `[SECURITY_FOILING_FEED] feed_sync_error feedId=${feed.id} rssUrl=${feed.rssUrl} message=${error.message}`
+        `[${vendorFeedLogLabel}] feed_sync_error feedId=${feed.id} rssUrl=${feed.rssUrl} message=${error.message}`
       );
     }
     console.error(`Feed sync error for ${feed.id}:`, error?.stack || error);
