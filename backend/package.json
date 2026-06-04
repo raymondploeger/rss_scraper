@@ -23,6 +23,7 @@
     "identity-subgroup:passport-diagnostics": "node scripts/identity-passport-diagnostics.js",
     "security-printing:diagnostics": "node scripts/security-printing-subgroup-diagnostics.js",
     "security-printing:top-level-diagnostics": "node scripts/security-printing-top-level-diagnostics.js",
+    "sources:coverage-diagnostics": "node scripts/sources-coverage-diagnostics.js",
     "image:compare-google-news": "node scripts/image-compare-google-news.js",
     "image:diagnostics": "node scripts/image-diagnostics.js",
     "google-news:inspect-raw-rss": "node scripts/google-news-raw-rss-inspect.js",
@@ -48,6 +49,7 @@
     "node-cron": "^3.0.3",
     "pg": "^8.13.1",
     "prisma": "^6.8.2",
-    "rss-parser": "^3.13.0"
+    "rss-parser": "^3.13.0",
+    "xlsx": "^0.18.5"
   }
 }
