@@ -1967,6 +1967,67 @@ const PERSONAL_DASHBOARD_DOMAIN_CONTEXTS = {
     excluded: ["wallet onboarding", "digital identity platform"],
   },
 };
+const SECURITY_PRINTING_TOP_LEVEL_STRONG_SIGNALS = [
+  "security feature",
+  "security features",
+  "security thread",
+  "security threads",
+  "banknote security",
+  "banknote security feature",
+  "banknote security features",
+  "hologram",
+  "holograms",
+];
+const SECURITY_PRINTING_TOP_LEVEL_MEDIUM_SIGNALS = [
+  "document security",
+  "security foil",
+  "holographic foil",
+  "optical security feature",
+  "optical security device",
+];
+const SECURITY_PRINTING_TOP_LEVEL_SUPPORT_TERMS = [
+  "banknote",
+  "banknotes",
+  "currency",
+  "note",
+  "passport",
+  "passports",
+  "id card",
+  "identity card",
+  "travel document",
+  "secure document",
+  "secure documents",
+  "security document",
+  "document protection",
+  "document security",
+  "credential",
+  "credentials",
+  "document authentication",
+  "document printing",
+  "security printing",
+  "security printer",
+  "printing works",
+  "banknote printing",
+  "residence permit",
+  "visa sticker",
+];
+const SECURITY_PRINTING_TOP_LEVEL_NEGATIVE_TECH_TERMS = [
+  "windows security feature",
+  "browser security feature",
+  "cloud security feature",
+  "app security feature",
+  "software security feature",
+  "phone security feature",
+  "pc security feature",
+  "cybersecurity feature",
+  "microsoft",
+  "apple",
+  "android",
+  "iphone",
+  "browser update",
+  "software update",
+  "operating system",
+];
 const PERSONAL_DASHBOARD_MAIN_DOMAIN_GROUP_IDS = new Set([
   "banknote_intelligence",
   "identity_documents",
@@ -4195,6 +4256,50 @@ function countBoostKeywordMatches(text, keywords = []) {
   return keywords.filter((keyword) => textMatchesKeyword(text, keyword)).length;
 }
 
+function getSecurityPrintingTopLevelAdjustment(context) {
+  const haystack = [
+    context.titleText,
+    context.tagText,
+    context.metadataText,
+    context.bodyText,
+    context.sourceText,
+    context.domainText,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const matchedStrongSignals = SECURITY_PRINTING_TOP_LEVEL_STRONG_SIGNALS.filter((term) => textMatchesKeyword(haystack, term));
+  const matchedMediumSignals = SECURITY_PRINTING_TOP_LEVEL_MEDIUM_SIGNALS.filter((term) => textMatchesKeyword(haystack, term));
+  const matchedSupportTerms = SECURITY_PRINTING_TOP_LEVEL_SUPPORT_TERMS.filter((term) => textMatchesKeyword(haystack, term));
+  const matchedNegativeTerms = SECURITY_PRINTING_TOP_LEVEL_NEGATIVE_TECH_TERMS.filter((term) => textMatchesKeyword(haystack, term));
+
+  let bonus = 0;
+
+  if (matchedStrongSignals.length && matchedSupportTerms.length) {
+    bonus += 6 + (matchedStrongSignals.length * 4);
+  }
+  if (matchedMediumSignals.length && matchedSupportTerms.length) {
+    bonus += 3 + (matchedMediumSignals.length * 3);
+  }
+  if ((matchedStrongSignals.length + matchedMediumSignals.length) >= 2 && matchedSupportTerms.length) {
+    bonus += 5;
+  }
+  if (matchedSupportTerms.length >= 2 && (matchedStrongSignals.length || matchedMediumSignals.length)) {
+    bonus += 4;
+  }
+  if (matchedNegativeTerms.length) {
+    bonus -= matchedSupportTerms.length ? 6 : 14;
+  }
+
+  return {
+    bonus,
+    matchedStrongSignals,
+    matchedMediumSignals,
+    matchedSupportTerms,
+    matchedNegativeTerms,
+  };
+}
+
 function getPersonalDomainContextProfile(context, groupId) {
   const config = PERSONAL_DASHBOARD_DOMAIN_CONTEXTS[groupId];
   if (!config) {
@@ -4265,6 +4370,8 @@ function getPersonalDomainContextProfile(context, groupId) {
   }
   if (groupId === "security_printing" && (context.domain === "banknote" || context.topicType === "identity_document")) {
     score += 4;
+    const securityPrintingAdjustment = getSecurityPrintingTopLevelAdjustment(context);
+    score += securityPrintingAdjustment.bonus;
   }
 
   return {

@@ -45,6 +45,67 @@ const CURRENT_TOP_LEVEL_EXCLUDED = [
   "wallet onboarding",
   "digital identity platform",
 ];
+const PROPOSED_TOP_LEVEL_STRONG_SIGNALS = [
+  "security feature",
+  "security features",
+  "security thread",
+  "security threads",
+  "banknote security",
+  "banknote security feature",
+  "banknote security features",
+  "hologram",
+  "holograms",
+];
+const PROPOSED_TOP_LEVEL_MEDIUM_SIGNALS = [
+  "document security",
+  "security foil",
+  "holographic foil",
+  "optical security feature",
+  "optical security device",
+];
+const PROPOSED_TOP_LEVEL_SUPPORT_TERMS = [
+  "banknote",
+  "banknotes",
+  "currency",
+  "note",
+  "passport",
+  "passports",
+  "id card",
+  "identity card",
+  "travel document",
+  "secure document",
+  "secure documents",
+  "security document",
+  "document protection",
+  "document security",
+  "credential",
+  "credentials",
+  "document authentication",
+  "document printing",
+  "security printing",
+  "security printer",
+  "printing works",
+  "banknote printing",
+  "residence permit",
+  "visa sticker",
+];
+const PROPOSED_TOP_LEVEL_NEGATIVE_TECH_TERMS = [
+  "windows security feature",
+  "browser security feature",
+  "cloud security feature",
+  "app security feature",
+  "software security feature",
+  "phone security feature",
+  "pc security feature",
+  "cybersecurity feature",
+  "microsoft",
+  "apple",
+  "android",
+  "iphone",
+  "browser update",
+  "software update",
+  "operating system",
+];
 
 const EXPECTED_TRIGGERS = [
   "hologram",
@@ -186,6 +247,64 @@ function getTopLevelAssessment(article) {
   };
 }
 
+function getProposedTopLevelAdjustment(context) {
+  const haystack = [
+    context.titleText,
+    context.tagText,
+    context.metadataText,
+    context.bodyText,
+    context.sourceText,
+    context.domainText,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const matchedStrongSignals = matchedKeywords(haystack, PROPOSED_TOP_LEVEL_STRONG_SIGNALS);
+  const matchedMediumSignals = matchedKeywords(haystack, PROPOSED_TOP_LEVEL_MEDIUM_SIGNALS);
+  const matchedSupportTerms = matchedKeywords(haystack, PROPOSED_TOP_LEVEL_SUPPORT_TERMS);
+  const matchedNegativeTerms = matchedKeywords(haystack, PROPOSED_TOP_LEVEL_NEGATIVE_TECH_TERMS);
+
+  let bonus = 0;
+  if (matchedStrongSignals.length && matchedSupportTerms.length) {
+    bonus += 6 + (matchedStrongSignals.length * 4);
+  }
+  if (matchedMediumSignals.length && matchedSupportTerms.length) {
+    bonus += 3 + (matchedMediumSignals.length * 3);
+  }
+  if ((matchedStrongSignals.length + matchedMediumSignals.length) >= 2 && matchedSupportTerms.length) {
+    bonus += 5;
+  }
+  if (matchedSupportTerms.length >= 2 && (matchedStrongSignals.length || matchedMediumSignals.length)) {
+    bonus += 4;
+  }
+  if (matchedNegativeTerms.length) {
+    bonus -= matchedSupportTerms.length ? 6 : 14;
+  }
+
+  return {
+    bonus,
+    matchedStrongSignals,
+    matchedMediumSignals,
+    matchedSupportTerms,
+    matchedNegativeTerms,
+  };
+}
+
+function getProposedTopLevelAssessment(article) {
+  const baseline = getTopLevelAssessment(article);
+  const adjustment = getProposedTopLevelAdjustment(baseline.context);
+  return {
+    ...baseline,
+    proposedScore: Math.round(baseline.score + adjustment.bonus),
+    proposedMatched: Array.from(new Set([
+      ...baseline.currentMatched,
+      ...adjustment.matchedStrongSignals,
+      ...adjustment.matchedMediumSignals,
+    ])),
+    adjustment,
+  };
+}
+
 async function loadArticles(client) {
   const result = await client.query(
     `
@@ -226,11 +345,13 @@ async function main() {
     const articles = await loadArticles(client);
     const currentTriggerCounts = new Map();
     const expectedTriggerCounts = new Map();
-    const candidatePool = [];
+    const candidatePoolBefore = [];
+    const candidatePoolAfter = [];
+    const newlyCaptured = [];
     const expectedOnlyPool = [];
 
     articles.forEach((article) => {
-      const assessment = getTopLevelAssessment(article);
+      const assessment = getProposedTopLevelAssessment(article);
 
       assessment.currentMatched.forEach((keyword) => {
         currentTriggerCounts.set(keyword, (currentTriggerCounts.get(keyword) || 0) + 1);
@@ -240,7 +361,7 @@ async function main() {
       });
 
       if (assessment.score >= 7) {
-        candidatePool.push({
+        candidatePoolBefore.push({
           id: article.id,
           title: article.title || "",
           source: article.source || article.feedName || "",
@@ -249,7 +370,36 @@ async function main() {
           currentMatched: assessment.currentMatched,
           expectedMatched: assessment.expectedMatched,
         });
-      } else if (assessment.expectedMatched.length > 0) {
+      }
+
+      if (assessment.proposedScore >= 7) {
+        candidatePoolAfter.push({
+          id: article.id,
+          title: article.title || "",
+          source: article.source || article.feedName || "",
+          link: article.link || "",
+          score: assessment.proposedScore,
+          currentMatched: assessment.proposedMatched,
+          expectedMatched: assessment.expectedMatched,
+        });
+      }
+
+      if (assessment.score < 7 && assessment.proposedScore >= 7) {
+        newlyCaptured.push({
+          id: article.id,
+          title: article.title || "",
+          source: article.source || article.feedName || "",
+          link: article.link || "",
+          score_before: assessment.score,
+          score_after: assessment.proposedScore,
+          current_triggers: assessment.currentMatched,
+          new_signals: [
+            ...assessment.adjustment.matchedStrongSignals,
+            ...assessment.adjustment.matchedMediumSignals,
+          ],
+          support_terms: assessment.adjustment.matchedSupportTerms,
+        });
+      } else if (assessment.expectedMatched.length > 0 && assessment.proposedScore < 7) {
         expectedOnlyPool.push({
           id: article.id,
           title: article.title || "",
@@ -275,7 +425,9 @@ async function main() {
     console.log("\n=== Shared Security Printing Top-level Diagnostics ===");
     console.table(formatRows([{
       scanned_articles: articles.length,
-      security_candidate_pool: candidatePool.length,
+      estimated_candidate_pool_before: candidatePoolBefore.length,
+      estimated_candidate_pool_after: candidatePoolAfter.length,
+      newly_captured_articles: newlyCaptured.length,
       expected_only_matches: expectedOnlyPool.length,
       current_threshold: "score >= 7",
     }]));
@@ -324,9 +476,27 @@ async function main() {
         }))
     ));
 
-    console.log("\n=== Candidate pool examples ===");
+    console.log("\n=== Newly captured article examples ===");
     console.table(formatRows(
-      candidatePool
+      newlyCaptured
+        .slice()
+        .sort((left, right) => right.score_after - left.score_after)
+        .slice(0, 25)
+        .map((row) => ({
+          title: row.title,
+          source: row.source,
+          top_level_score_before: row.score_before,
+          top_level_score_after: row.score_after,
+          new_signals: row.new_signals,
+          support_terms: row.support_terms,
+          current_triggers: row.current_triggers,
+          link: row.link,
+        }))
+    ));
+
+    console.log("\n=== Candidate pool examples after change ===");
+    console.table(formatRows(
+      candidatePoolAfter
         .slice()
         .sort((left, right) => right.score - left.score)
         .slice(0, 20)
