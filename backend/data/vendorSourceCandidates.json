@@ -1,0 +1,138 @@
+{
+  "generatedFor": "vendor source integration planning",
+  "status": "planning_only",
+  "notes": [
+    "These entries are not active feeds or active scrapers.",
+    "They are candidate definitions only and must be reviewed before any onboarding.",
+    "No database records or live feed definitions are modified by this file."
+  ],
+  "rssCandidates": [
+    {
+      "id": "cetis-rss-candidate",
+      "name": "Cetis RSS",
+      "topic": "Shared Security Printing",
+      "status": "candidate",
+      "isActive": false,
+      "sourceType": "rss",
+      "currentSourceUrl": "http://www.cetis.si/?mod=aktualno&action=category&ID=3",
+      "rssUrl": "http://www.cetis.si/?mod=aktualno&action=rss&lang=en",
+      "notes": "Vendor workbook already includes a direct RSS endpoint candidate."
+    },
+    {
+      "id": "authentix-rss-candidate",
+      "name": "Authentix RSS",
+      "topic": "Shared Security Printing",
+      "status": "candidate",
+      "isActive": false,
+      "sourceType": "rss",
+      "currentSourceUrl": "http://authentix.com/industries/currency/",
+      "rssUrl": "",
+      "notes": "RSS candidate requested for planning, but no verified feed URL is present in the local vendor workbook yet. Requires link-refresh confirmation."
+    },
+    {
+      "id": "security-foiling-rss-candidate",
+      "name": "Security Foiling RSS",
+      "topic": "Shared Security Printing",
+      "status": "candidate",
+      "isActive": false,
+      "sourceType": "rss",
+      "currentSourceUrl": "http://securityfoiling.co.uk/news",
+      "rssUrl": "",
+      "notes": "News page is known, but a direct RSS endpoint still needs confirmation from link-refresh diagnostics."
+    }
+  ],
+  "scraperCandidates": [
+    {
+      "id": "surys-scraper-candidate",
+      "name": "SURYS",
+      "topic": "Shared Security Printing",
+      "status": "candidate",
+      "isActive": false,
+      "sourceType": "website",
+      "sourceUrl": "https://surys.com/follow-surys/#press",
+      "extractionStrategy": "pressroom_listing"
+    },
+    {
+      "id": "sicpa-scraper-candidate",
+      "name": "SICPA",
+      "topic": "Shared Security Printing",
+      "status": "candidate",
+      "isActive": false,
+      "sourceType": "website",
+      "sourceUrl": "http://www.sicpa.com/company-heritage/news",
+      "extractionStrategy": "newsroom_listing"
+    },
+    {
+      "id": "iq-structures-scraper-candidate",
+      "name": "IQ Structures",
+      "topic": "Shared Security Printing",
+      "status": "candidate",
+      "isActive": false,
+      "sourceType": "website",
+      "sourceUrl": "http://www.iqstructures.com/",
+      "extractionStrategy": "homepage_news_discovery"
+    },
+    {
+      "id": "regula-scraper-candidate",
+      "name": "Regula",
+      "topic": "Shared Security Printing",
+      "status": "candidate",
+      "isActive": false,
+      "sourceType": "website",
+      "sourceUrl": "https://regulaforensics.com/en/pressroom/news/",
+      "extractionStrategy": "newsroom_listing"
+    },
+    {
+      "id": "hueck-folien-scraper-candidate",
+      "name": "Hueck Folien",
+      "topic": "Shared Security Printing",
+      "status": "candidate",
+      "isActive": false,
+      "sourceType": "website",
+      "sourceUrl": "http://www.hueck-folien.at/en/newsroom/",
+      "extractionStrategy": "newsroom_listing"
+    }
+  ],
+  "failedVendorsRequiringUrlRefresh": [
+    {
+      "name": "De La Rue",
+      "currentSourceUrl": "http://www.delarue.com/media-centre/latest-news/2017",
+      "reason": "Current planned source points to an older news path and should be revalidated."
+    },
+    {
+      "name": "Crane Currency",
+      "currentSourceUrl": "http://www.cranecurrency.com/news-room/",
+      "reason": "Known news-room path should be verified for current structure and archive depth."
+    },
+    {
+      "name": "Bundesdruckerei",
+      "currentSourceUrl": "https://www.bundesdruckerei.de/en/Press-room",
+      "reason": "Press-room endpoint should be checked for stable article-list extraction."
+    },
+    {
+      "name": "Optaglio",
+      "currentSourceUrl": "http://www.optaglio.cz/en/news",
+      "reason": "News endpoint should be confirmed and normalized."
+    },
+    {
+      "name": "Veridos",
+      "currentSourceUrl": "https://www.veridos.com/press-news",
+      "reason": "Press/news endpoint should be refreshed before onboarding."
+    },
+    {
+      "name": "OVD Kinegram",
+      "currentSourceUrl": "http://www.kinegram.com/en/news/",
+      "reason": "Specialist OVD source should be checked for current canonical news location."
+    },
+    {
+      "name": "Orell Füssli Security Printing",
+      "currentSourceUrl": "http://www.ofs.ch/",
+      "reason": "Current source is homepage-level and needs a fresher newsroom or publication endpoint."
+    },
+    {
+      "name": "Giesecke & Devrient",
+      "currentSourceUrl": "https://www.gi-de.com/usa/en/about_g_d/press/press.jsp",
+      "reason": "Existing press path works as a candidate but should be refreshed against the latest site structure."
+    }
+  ]
+}
