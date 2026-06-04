@@ -28,14 +28,14 @@
       "id": "cetis-rss-candidate",
       "name": "Cetis RSS",
       "topic": "Shared Security Printing",
-      "status": "candidate",
-      "isActive": false,
+      "status": "active",
+      "isActive": true,
       "sourceType": "rss",
       "acquisitionMethod": "rss",
       "rssAvailable": true,
       "currentSourceUrl": "http://www.cetis.si/?mod=aktualno&action=category&ID=3",
       "rssUrl": "http://www.cetis.si/?mod=aktualno&action=rss&lang=en",
-      "notes": "Vendor workbook already includes a direct RSS endpoint candidate."
+      "notes": "Activated in the strategic feed bootstrap so it participates in normal RSS ingestion."
     },
     {
       "id": "authentix-rss-candidate",

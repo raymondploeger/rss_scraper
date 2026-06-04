@@ -44,6 +44,16 @@ const parser = new Parser({
   }
 });
 
+const CETIS_RSS_URL = "http://www.cetis.si/?mod=aktualno&action=rss&lang=en";
+
+function isCetisFeed(feed) {
+  return (
+    Boolean(feed) &&
+    (String(feed.rssUrl || "").trim().toLowerCase() === CETIS_RSS_URL.toLowerCase() ||
+      String(feed.name || "").trim().toLowerCase() === "cetis rss")
+  );
+}
+
 const WEBSITE_NAV_TITLE_PATTERNS = [
   "home",
   "projects",
@@ -1184,6 +1194,7 @@ function queueThumbnailEnrichment(article) {
 export async function syncFeed(feed) {
   const startedAt = new Date();
   let newArticles = 0;
+  const cetisFeed = isCetisFeed(feed);
 
   try {
     console.log(`Starting feed sync for ${feed.id} (${feed.name || feed.rssUrl})`);
@@ -1198,7 +1209,14 @@ export async function syncFeed(feed) {
     } else {
       console.log(`Fetching RSS source ${feed.id} (${feed.rssUrl})`);
       const parsedFeed = await parser.parseURL(feed.rssUrl);
+      if (cetisFeed) {
+        console.log(`[CETIS_FEED] feed_loaded feedId=${feed.id} rssUrl=${feed.rssUrl}`);
+      }
       resolvedItems = Array.isArray(parsedFeed.items) ? parsedFeed.items : [];
+    }
+
+    if (cetisFeed) {
+      console.log(`[CETIS_FEED] articles_found count=${resolvedItems.length}`);
     }
 
     for (const item of resolvedItems) {
@@ -1227,6 +1245,10 @@ export async function syncFeed(feed) {
       } catch (itemError) {
         console.error(`Article ingestion error for feed ${feed.id}:`, itemError?.stack || itemError);
       }
+    }
+
+    if (cetisFeed) {
+      console.log(`[CETIS_FEED] articles_imported count=${newArticles}`);
     }
 
     const updatedFeed = await updateFeedRecord(feed.id, {

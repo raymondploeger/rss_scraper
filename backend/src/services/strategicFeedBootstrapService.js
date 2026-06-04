@@ -167,6 +167,13 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     sourceType: "website",
     phase: "phase1",
   },
+  {
+    name: "Cetis RSS",
+    topic: "Shared Security Printing",
+    rssUrl: "http://www.cetis.si/?mod=aktualno&action=rss&lang=en",
+    sourceType: "rss",
+    phase: "phase1",
+  },
 ];
 
 export async function ensureStrategicFeeds() {
