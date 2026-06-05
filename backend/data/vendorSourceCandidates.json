@@ -67,14 +67,14 @@
       "id": "sicpa-rss-candidate",
       "name": "SICPA RSS",
       "topic": "Shared Security Printing",
-      "status": "active",
-      "isActive": true,
+      "status": "candidate",
+      "isActive": false,
       "sourceType": "rss",
       "acquisitionMethod": "rss",
       "rssAvailable": true,
       "currentSourceUrl": "https://www.sicpa.com/newsroom",
       "rssUrl": "https://www.sicpa.com/rss.xml",
-      "notes": "Activated in the strategic feed bootstrap for live RSS ingestion testing."
+      "notes": "Returned to candidate status after production integration moved to the SICPA newsroom website source."
     },
     {
       "id": "surys-rss-candidate",
@@ -107,13 +107,13 @@
       "id": "sicpa-scraper-candidate",
       "name": "SICPA",
       "topic": "Shared Security Printing",
-      "status": "candidate",
-      "isActive": false,
+      "status": "active",
+      "isActive": true,
       "sourceType": "website",
       "acquisitionMethod": "scraper",
       "rssAvailable": false,
-      "sourceUrl": "http://www.sicpa.com/company-heritage/news",
-      "extractionStrategy": "newsroom_listing"
+      "sourceUrl": "https://www.sicpa.com/all-press-releases",
+      "extractionStrategy": "sicpa_newsroom_listing"
     },
     {
       "id": "iq-structures-scraper-candidate",

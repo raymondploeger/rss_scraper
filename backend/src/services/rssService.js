@@ -44,11 +44,13 @@ const parser = new Parser({
   }
 });
 
+const SICPA_NEWSROOM_URL = "https://www.sicpa.com/all-press-releases";
+
 const VENDOR_FEED_LOG_CONFIG = [
   {
-    label: "SICPA_FEED",
-    rssUrl: "https://www.sicpa.com/rss.xml",
-    name: "sicpa rss",
+    label: "SICPA_NEWSROOM",
+    rssUrl: SICPA_NEWSROOM_URL,
+    name: "sicpa newsroom",
   },
   {
     label: "SURYS_FEED",
@@ -71,6 +73,14 @@ function getVendorFeedLogLabel(feed) {
   );
 
   return matched?.label || "";
+}
+
+function isSicpaNewsroomFeed(feed) {
+  return (
+    Boolean(feed) &&
+    (String(feed.rssUrl || "").trim().toLowerCase() === SICPA_NEWSROOM_URL.toLowerCase() ||
+      String(feed.name || "").trim().toLowerCase() === "sicpa newsroom")
+  );
 }
 
 const WEBSITE_NAV_TITLE_PATTERNS = [
@@ -858,11 +868,147 @@ function scoreWebsiteAnchor($, anchor, pageUrl) {
   return score;
 }
 
+function parseWebsiteDateFromText(value) {
+  const text = sanitizeFeedText(value, "");
+  if (!text) {
+    return null;
+  }
+
+  const monthDateMatch = text.match(
+    /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}\s+\d{4}\b/i
+  );
+  if (monthDateMatch) {
+    const parsed = parseWebsiteDate(monthDateMatch[0]);
+    if (parsed) {
+      return parsed;
+    }
+  }
+
+  const dotDateMatch = text.match(/\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/);
+  if (dotDateMatch) {
+    const normalized = dotDateMatch[0].replace(/[./]/g, "-");
+    const parts = normalized.split("-");
+    const [left, middle, right] = parts;
+    const year = right.length === 2 ? `20${right}` : right;
+    return parseWebsiteDate(`${year}-${String(middle).padStart(2, "0")}-${String(left).padStart(2, "0")}`);
+  }
+
+  return null;
+}
+
+function buildSicpaNewsroomCandidate($, block, pageUrl) {
+  const node = $(block);
+  const href =
+    node.find("a.full-link").first().attr("href") ||
+    node.find("a[href]").first().attr("href") ||
+    "";
+  const link = href ? new URL(href, pageUrl).toString() : "";
+  if (!link) {
+    return null;
+  }
+
+  const title =
+    sanitizeFeedText(node.find(".list-title").first().text(), "") ||
+    sanitizeFeedText(node.find("h1, h2, h3, h4").first().text(), "") ||
+    sanitizeFeedText(node.find("a[href]").first().text(), "");
+  const excerpt =
+    sanitizeFeedText(node.find(".list-description").first().text(), "") ||
+    sanitizeFeedText(node.text(), "");
+  const date =
+    parseWebsiteDate(node.find("time").first().attr("datetime") || "") ||
+    parseWebsiteDateFromText(node.find("time").first().text()) ||
+    parseWebsiteDateFromText(node.text());
+
+  return {
+    title,
+    link,
+    excerpt,
+    date,
+  };
+}
+
+async function extractSicpaNewsroomItems(feed, $, pageUrl) {
+  const discoveredCandidates = [];
+  const seenLinks = new Set();
+  const items = [];
+  let validatedCount = 0;
+  let skippedCount = 0;
+
+  $(".views-row, .media--type-document.media--view-mode-document-card")
+    .toArray()
+    .forEach((block) => {
+      const candidate = buildSicpaNewsroomCandidate($, block, pageUrl);
+      if (!candidate?.link) {
+        return;
+      }
+
+      const canonicalLink = canonicalizeUrl(candidate.link);
+      if (!canonicalLink || seenLinks.has(canonicalLink)) {
+        return;
+      }
+
+      seenLinks.add(canonicalLink);
+      discoveredCandidates.push(candidate);
+    });
+
+  console.log(`[SICPA_NEWSROOM] articles_discovered count=${discoveredCandidates.length}`);
+
+  for (const candidate of discoveredCandidates) {
+    const lowerLink = String(candidate.link || "").toLowerCase();
+
+    if (
+      !lowerLink.includes("/news/") ||
+      lowerLink.includes("/events/") ||
+      lowerLink.endsWith(".pdf") ||
+      lowerLink.includes("?page=") ||
+      lowerLink.includes("#")
+    ) {
+      skippedCount += 1;
+      continue;
+    }
+
+    const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch((error) => {
+      console.warn(`Website article validation failed for ${candidate.link}:`, error?.message || error);
+      return null;
+    });
+
+    if (!validated?.accepted) {
+      skippedCount += 1;
+      if (validated?.reason) {
+        console.log(`Rejected website candidate ${candidate.link}: ${validated.reason}`);
+      }
+      continue;
+    }
+
+    validatedCount += 1;
+    items.push({
+      title: validated.title || candidate.title,
+      link: candidate.link,
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
+      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+      author: "",
+      source: getSourceName(candidate.link),
+    });
+  }
+
+  console.log(`[SICPA_NEWSROOM] articles_validated count=${validatedCount}`);
+  console.log(`[SICPA_NEWSROOM] articles_skipped count=${skippedCount}`);
+
+  return items;
+}
+
 async function extractWebsiteItems(feed) {
   console.log(`Parsing website source ${feed.id} (${feed.rssUrl})`);
   const response = await fetchWebsiteHtml(feed.rssUrl);
   const html = String(response.data || "");
   const $ = cheerio.load(html);
+
+  if (isSicpaNewsroomFeed(feed)) {
+    const items = await extractSicpaNewsroomItems(feed, $, response.request?.res?.responseUrl || feed.rssUrl);
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
   const anchors = $("main a, article a, [role='main'] a, .content a, .entry-content a, .post a, a").toArray();
   const items = [];
   const seenLinks = new Set();
@@ -1225,6 +1371,9 @@ export async function syncFeed(feed) {
     let resolvedItems = [];
     if (feed.sourceType === "website") {
       resolvedItems = await extractWebsiteItems(feed);
+      if (vendorFeedLogLabel) {
+        console.log(`[${vendorFeedLogLabel}] feed_loaded feedId=${feed.id} rssUrl=${feed.rssUrl}`);
+      }
     } else {
       console.log(`Fetching RSS source ${feed.id} (${feed.rssUrl})`);
       const parsedFeed = await parser.parseURL(feed.rssUrl);
@@ -1268,6 +1417,7 @@ export async function syncFeed(feed) {
 
     if (vendorFeedLogLabel) {
       console.log(`[${vendorFeedLogLabel}] articles_imported count=${newArticles}`);
+      console.log(`[${vendorFeedLogLabel}] articles_skipped count=${Math.max(0, resolvedItems.length - newArticles)}`);
     }
 
     const updatedFeed = await updateFeedRecord(feed.id, {

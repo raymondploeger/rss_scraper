@@ -168,10 +168,10 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase1",
   },
   {
-    name: "SICPA RSS",
+    name: "SICPA Newsroom",
     topic: "Shared Security Printing",
-    rssUrl: "https://www.sicpa.com/rss.xml",
-    sourceType: "rss",
+    rssUrl: "https://www.sicpa.com/all-press-releases",
+    sourceType: "website",
     phase: "phase1",
   },
   {
@@ -195,6 +195,10 @@ const RETIRED_STRATEGIC_FEEDS = [
   {
     name: "Security Foiling RSS",
     rssUrl: "https://www.securityfoiling.com/feed/",
+  },
+  {
+    name: "SICPA RSS",
+    rssUrl: "https://www.sicpa.com/rss.xml",
   },
 ];
 
