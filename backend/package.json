@@ -27,6 +27,7 @@
     "vendor-source-priority": "node scripts/vendor-source-priority.js",
     "vendor-activity-diagnostics": "node scripts/vendor-activity-diagnostics.js",
     "vendor-link-refresh-diagnostics": "node scripts/vendor-link-refresh-diagnostics.js",
+    "sicpa:newsroom-diagnostics": "node scripts/sicpa-newsroom-diagnostics.js",
     "image:compare-google-news": "node scripts/image-compare-google-news.js",
     "image:diagnostics": "node scripts/image-diagnostics.js",
     "google-news:inspect-raw-rss": "node scripts/google-news-raw-rss-inspect.js",
