@@ -181,6 +181,13 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     sourceType: "website",
     phase: "phase1",
   },
+  {
+    name: "IQ Structures Newsroom",
+    topic: "Shared Security Printing",
+    rssUrl: "https://www.iqstructures.com/en/blog",
+    sourceType: "website",
+    phase: "phase1",
+  },
 ];
 
 const RETIRED_STRATEGIC_FEEDS = [

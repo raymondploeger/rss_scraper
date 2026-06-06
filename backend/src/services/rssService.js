@@ -46,6 +46,7 @@ const parser = new Parser({
 
 const SICPA_NEWSROOM_URL = "https://www.sicpa.com/all-press-releases";
 const SURYS_NEWSROOM_URL = "https://surys.com/surys-blog/";
+const IQ_STRUCTURES_NEWSROOM_URL = "https://www.iqstructures.com/en/blog";
 
 const VENDOR_FEED_LOG_CONFIG = [
   {
@@ -57,6 +58,11 @@ const VENDOR_FEED_LOG_CONFIG = [
     label: "SURYS_NEWSROOM",
     rssUrl: SURYS_NEWSROOM_URL,
     name: "surys newsroom",
+  },
+  {
+    label: "IQ_STRUCTURES_NEWSROOM",
+    rssUrl: IQ_STRUCTURES_NEWSROOM_URL,
+    name: "iq structures newsroom",
   },
 ];
 
@@ -89,6 +95,14 @@ function isSurysNewsroomFeed(feed) {
     Boolean(feed) &&
     (String(feed.rssUrl || "").trim().toLowerCase() === SURYS_NEWSROOM_URL.toLowerCase() ||
       String(feed.name || "").trim().toLowerCase() === "surys newsroom")
+  );
+}
+
+function isIqStructuresNewsroomFeed(feed) {
+  return (
+    Boolean(feed) &&
+    (String(feed.rssUrl || "").trim().toLowerCase() === IQ_STRUCTURES_NEWSROOM_URL.toLowerCase() ||
+      String(feed.name || "").trim().toLowerCase() === "iq structures newsroom")
   );
 }
 
@@ -970,6 +984,39 @@ function buildSurysNewsroomCandidate($, block, pageUrl) {
   };
 }
 
+function buildIqStructuresNewsroomCandidate($, block, pageUrl) {
+  const node = $(block);
+  const href =
+    node.find("a.blog__item-link").first().attr("href") ||
+    node.find("a.blog__item-box").first().attr("href") ||
+    node.find("a[href*='/en/article/']").first().attr("href") ||
+    node.find("a[href]").first().attr("href") ||
+    "";
+  const link = href ? new URL(href, pageUrl).toString() : "";
+  if (!link) {
+    return null;
+  }
+
+  const title =
+    sanitizeFeedText(node.find(".title-5, h1, h2, h3, h4").first().text(), "") ||
+    sanitizeFeedText(node.find("a.blog__item-link").first().text(), "") ||
+    sanitizeFeedText(node.find("a[href]").first().text(), "");
+  const excerpt =
+    sanitizeFeedText(node.find(".blog__item-perex, .perex, .excerpt, p").first().text(), "") ||
+    sanitizeFeedText(node.text(), "");
+  const date =
+    parseWebsiteDate(node.find("time").first().attr("datetime") || "") ||
+    parseWebsiteDateFromText(node.find(".blog__info-text, .date, .published").first().text()) ||
+    parseWebsiteDateFromText(node.text());
+
+  return {
+    title,
+    link,
+    excerpt,
+    date,
+  };
+}
+
 async function extractSicpaNewsroomItems(feed, $, pageUrl) {
   const discoveredCandidates = [];
   const seenLinks = new Set();
@@ -1130,6 +1177,87 @@ async function extractSurysNewsroomItems(feed, $, pageUrl) {
   return items;
 }
 
+async function extractIqStructuresNewsroomItems(feed, $, pageUrl) {
+  const discoveredCandidates = [];
+  const seenLinks = new Set();
+  const items = [];
+  let validatedCount = 0;
+  let skippedCount = 0;
+
+  $(".blog__item, .blog__border")
+    .toArray()
+    .forEach((block) => {
+      const candidate = buildIqStructuresNewsroomCandidate($, block, pageUrl);
+      if (!candidate?.link || !candidate.title) {
+        return;
+      }
+
+      const canonicalLink = canonicalizeUrl(candidate.link);
+      if (!canonicalLink || seenLinks.has(canonicalLink)) {
+        return;
+      }
+
+      seenLinks.add(canonicalLink);
+      discoveredCandidates.push(candidate);
+    });
+
+  console.log(`[IQ_STRUCTURES_NEWSROOM] articles_discovered count=${discoveredCandidates.length}`);
+
+  for (const candidate of discoveredCandidates) {
+    const lowerLink = String(candidate.link || "").toLowerCase();
+    const hostname = getHostname(candidate.link);
+
+    if (
+      !hostname.includes("iqstructures.com") &&
+      !hostname.includes("iqstructures") &&
+      !hostname.includes("iq-structures")
+    ) {
+      skippedCount += 1;
+      continue;
+    }
+
+    if (
+      !lowerLink.includes("/en/article/") ||
+      lowerLink.includes("/en/tag/") ||
+      lowerLink.includes("/en/media") ||
+      lowerLink.endsWith(".pdf") ||
+      lowerLink.includes("?page=") ||
+      lowerLink.includes("#")
+    ) {
+      skippedCount += 1;
+      continue;
+    }
+
+    const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch((error) => {
+      console.warn(`Website article validation failed for ${candidate.link}:`, error?.message || error);
+      return null;
+    });
+
+    if (!validated?.accepted) {
+      skippedCount += 1;
+      if (validated?.reason) {
+        console.log(`Rejected website candidate ${candidate.link}: ${validated.reason}`);
+      }
+      continue;
+    }
+
+    validatedCount += 1;
+    items.push({
+      title: validated.title || candidate.title,
+      link: candidate.link,
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
+      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+      author: "",
+      source: getSourceName(candidate.link),
+    });
+  }
+
+  console.log(`[IQ_STRUCTURES_NEWSROOM] articles_validated count=${validatedCount}`);
+  console.log(`[IQ_STRUCTURES_NEWSROOM] articles_skipped count=${skippedCount}`);
+
+  return items;
+}
+
 async function extractWebsiteItems(feed) {
   console.log(`Parsing website source ${feed.id} (${feed.rssUrl})`);
   const response = await fetchWebsiteHtml(feed.rssUrl);
@@ -1144,6 +1272,12 @@ async function extractWebsiteItems(feed) {
 
   if (isSurysNewsroomFeed(feed)) {
     const items = await extractSurysNewsroomItems(feed, $, response.request?.res?.responseUrl || feed.rssUrl);
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isIqStructuresNewsroomFeed(feed)) {
+    const items = await extractIqStructuresNewsroomItems(feed, $, response.request?.res?.responseUrl || feed.rssUrl);
     console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
     return items;
   }

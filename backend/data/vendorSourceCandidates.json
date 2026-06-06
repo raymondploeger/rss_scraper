@@ -119,13 +119,13 @@
       "id": "iq-structures-scraper-candidate",
       "name": "IQ Structures",
       "topic": "Shared Security Printing",
-      "status": "candidate",
-      "isActive": false,
+      "status": "active",
+      "isActive": true,
       "sourceType": "website",
       "acquisitionMethod": "scraper",
       "rssAvailable": false,
-      "sourceUrl": "http://www.iqstructures.com/",
-      "extractionStrategy": "homepage_news_discovery"
+      "sourceUrl": "https://www.iqstructures.com/en/blog",
+      "extractionStrategy": "iq_structures_blog_listing"
     },
     {
       "id": "regula-scraper-candidate",
