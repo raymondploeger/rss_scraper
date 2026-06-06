@@ -219,6 +219,7 @@ export async function ensureStrategicFeeds() {
   let skipped = 0;
   let failed = 0;
   let retired = 0;
+  const feedsNeedingInitialSync = [];
 
   for (const definition of RETIRED_STRATEGIC_FEEDS) {
     try {
@@ -244,13 +245,17 @@ export async function ensureStrategicFeeds() {
     try {
       const existing = await findFeedByRssUrl(definition.rssUrl);
       if (!existing) {
-        await createFeedRecord({
+        const createdFeed = await createFeedRecord({
           name: definition.name,
           topic: definition.topic,
           rssUrl: definition.rssUrl,
           sourceType: definition.sourceType,
           isActive: true,
         });
+        feedsNeedingInitialSync.push(createdFeed);
+        console.log(
+          `[strategic-feeds] created name=${definition.name} sourceType=${definition.sourceType} rssUrl=${definition.rssUrl}`
+        );
         created += 1;
         continue;
       }
@@ -262,16 +267,28 @@ export async function ensureStrategicFeeds() {
         existing.isActive !== true;
 
       if (!needsUpdate) {
+        if (existing.isActive !== false && !existing.lastFetchedAt) {
+          feedsNeedingInitialSync.push(existing);
+          console.log(
+            `[strategic-feeds] initial-sync-pending name=${existing.name} sourceType=${existing.sourceType} feedId=${existing.id} rssUrl=${existing.rssUrl}`
+          );
+        }
         skipped += 1;
         continue;
       }
 
-      await updateFeedRecord(existing.id, {
+      const updatedFeed = await updateFeedRecord(existing.id, {
         name: definition.name,
         topic: definition.topic,
         sourceType: definition.sourceType,
         isActive: true,
       });
+      if (updatedFeed?.isActive !== false && !updatedFeed?.lastFetchedAt) {
+        feedsNeedingInitialSync.push(updatedFeed);
+      }
+      console.log(
+        `[strategic-feeds] updated name=${definition.name} sourceType=${definition.sourceType} feedId=${existing.id} rssUrl=${definition.rssUrl}`
+      );
       updated += 1;
     } catch (error) {
       failed += 1;
@@ -285,4 +302,13 @@ export async function ensureStrategicFeeds() {
   console.log(
     `[strategic-feeds] Phase 1 feed bootstrap complete: created=${created} updated=${updated} skipped=${skipped} retired=${retired} failed=${failed}`
   );
+
+  return {
+    created,
+    updated,
+    skipped,
+    retired,
+    failed,
+    feedsNeedingInitialSync,
+  };
 }

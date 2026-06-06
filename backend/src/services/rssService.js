@@ -1184,6 +1184,10 @@ async function extractIqStructuresNewsroomItems(feed, $, pageUrl) {
   let validatedCount = 0;
   let skippedCount = 0;
 
+  console.log(
+    `[IQ_STRUCTURES_NEWSROOM] source id=${feed.id} name=${feed.name} requestedUrl=${feed.rssUrl} fetchedUrl=${pageUrl}`
+  );
+
   $(".blog__item, .blog__border")
     .toArray()
     .forEach((block) => {
@@ -1213,6 +1217,7 @@ async function extractIqStructuresNewsroomItems(feed, $, pageUrl) {
       !hostname.includes("iq-structures")
     ) {
       skippedCount += 1;
+      console.log(`[IQ_STRUCTURES_NEWSROOM] skipped link=${candidate.link} reason=unexpected-hostname`);
       continue;
     }
 
@@ -1225,6 +1230,7 @@ async function extractIqStructuresNewsroomItems(feed, $, pageUrl) {
       lowerLink.includes("#")
     ) {
       skippedCount += 1;
+      console.log(`[IQ_STRUCTURES_NEWSROOM] skipped link=${candidate.link} reason=non-article-url`);
       continue;
     }
 
@@ -1236,7 +1242,7 @@ async function extractIqStructuresNewsroomItems(feed, $, pageUrl) {
     if (!validated?.accepted) {
       skippedCount += 1;
       if (validated?.reason) {
-        console.log(`Rejected website candidate ${candidate.link}: ${validated.reason}`);
+        console.log(`[IQ_STRUCTURES_NEWSROOM] rejected link=${candidate.link} reason=${validated.reason}`);
       }
       continue;
     }
@@ -1263,21 +1269,22 @@ async function extractWebsiteItems(feed) {
   const response = await fetchWebsiteHtml(feed.rssUrl);
   const html = String(response.data || "");
   const $ = cheerio.load(html);
+  const fetchedUrl = response.request?.res?.responseUrl || feed.rssUrl;
 
   if (isSicpaNewsroomFeed(feed)) {
-    const items = await extractSicpaNewsroomItems(feed, $, response.request?.res?.responseUrl || feed.rssUrl);
+    const items = await extractSicpaNewsroomItems(feed, $, fetchedUrl);
     console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
     return items;
   }
 
   if (isSurysNewsroomFeed(feed)) {
-    const items = await extractSurysNewsroomItems(feed, $, response.request?.res?.responseUrl || feed.rssUrl);
+    const items = await extractSurysNewsroomItems(feed, $, fetchedUrl);
     console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
     return items;
   }
 
   if (isIqStructuresNewsroomFeed(feed)) {
-    const items = await extractIqStructuresNewsroomItems(feed, $, response.request?.res?.responseUrl || feed.rssUrl);
+    const items = await extractIqStructuresNewsroomItems(feed, $, fetchedUrl);
     console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
     return items;
   }
@@ -1636,6 +1643,11 @@ export async function syncFeed(feed) {
 
   try {
     console.log(`Starting feed sync for ${feed.id} (${feed.name || feed.rssUrl})`);
+    if (vendorFeedLogLabel) {
+      console.log(
+        `[${vendorFeedLogLabel}] source id=${feed.id} name=${feed.name || ""} sourceType=${feed.sourceType || ""} rssUrl=${feed.rssUrl || ""}`
+      );
+    }
     await updateFeedRecord(feed.id, {
       lastStatus: "refreshing",
       lastError: null
@@ -1675,16 +1687,31 @@ export async function syncFeed(feed) {
 
         const result = await upsertArticle(normalized);
         if (!result.created) {
+          if (vendorFeedLogLabel) {
+            console.log(
+              `[${vendorFeedLogLabel}] article_skipped_existing articleId=${normalized.id} title=${JSON.stringify(normalized.title || "")} link=${normalized.link || ""}`
+            );
+          }
           queueThumbnailEnrichment(result.article);
           continue;
         }
 
         newArticles += 1;
         console.log(`Stored new article ${result.article.id} for feed ${feed.id}`);
+        if (vendorFeedLogLabel) {
+          console.log(
+            `[${vendorFeedLogLabel}] article_imported articleId=${result.article.id} title=${JSON.stringify(result.article.title || "")} link=${result.article.link || ""}`
+          );
+        }
 
         queueThumbnailEnrichment(result.article);
       } catch (itemError) {
         console.error(`Article ingestion error for feed ${feed.id}:`, itemError?.stack || itemError);
+        if (vendorFeedLogLabel) {
+          console.log(
+            `[${vendorFeedLogLabel}] article_error title=${JSON.stringify(item?.title || "")} link=${resolveItemLink(item) || ""} message=${itemError?.message || itemError}`
+          );
+        }
       }
     }
 

@@ -3,6 +3,7 @@ import { connectDatabase, disconnectDatabase } from "./config/db.js";
 import { env, envFilePath } from "./config/env.js";
 import { startScheduler } from "./services/schedulerService.js";
 import { ensureStrategicFeeds } from "./services/strategicFeedBootstrapService.js";
+import { syncFeed } from "./services/rssService.js";
 import { spawn } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -56,7 +57,21 @@ async function bootstrapRuntime() {
   markDatabaseConnected(true);
   await runMigrationsInBackground();
   markMigrationsApplied(true);
-  await ensureStrategicFeeds();
+  const strategicFeedResult = await ensureStrategicFeeds();
+
+  for (const feed of strategicFeedResult?.feedsNeedingInitialSync || []) {
+    try {
+      console.log(
+        `[strategic-feeds] bootstrapping-initial-sync feedId=${feed.id} name=${feed.name} sourceType=${feed.sourceType} rssUrl=${feed.rssUrl}`
+      );
+      await syncFeed(feed);
+    } catch (error) {
+      console.error(
+        `[strategic-feeds] initial sync failed for ${feed?.name || feed?.rssUrl}:`,
+        error?.stack || error
+      );
+    }
+  }
 
   if (!schedulerStarted) {
     startScheduler();
