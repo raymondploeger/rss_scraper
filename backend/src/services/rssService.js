@@ -45,6 +45,7 @@ const parser = new Parser({
 });
 
 const SICPA_NEWSROOM_URL = "https://www.sicpa.com/all-press-releases";
+const SURYS_NEWSROOM_URL = "https://surys.com/surys-blog/";
 
 const VENDOR_FEED_LOG_CONFIG = [
   {
@@ -53,9 +54,9 @@ const VENDOR_FEED_LOG_CONFIG = [
     name: "sicpa newsroom",
   },
   {
-    label: "SURYS_FEED",
-    rssUrl: "https://surys.com/feed/",
-    name: "surys rss",
+    label: "SURYS_NEWSROOM",
+    rssUrl: SURYS_NEWSROOM_URL,
+    name: "surys newsroom",
   },
 ];
 
@@ -80,6 +81,14 @@ function isSicpaNewsroomFeed(feed) {
     Boolean(feed) &&
     (String(feed.rssUrl || "").trim().toLowerCase() === SICPA_NEWSROOM_URL.toLowerCase() ||
       String(feed.name || "").trim().toLowerCase() === "sicpa newsroom")
+  );
+}
+
+function isSurysNewsroomFeed(feed) {
+  return (
+    Boolean(feed) &&
+    (String(feed.rssUrl || "").trim().toLowerCase() === SURYS_NEWSROOM_URL.toLowerCase() ||
+      String(feed.name || "").trim().toLowerCase() === "surys newsroom")
   );
 }
 
@@ -927,6 +936,40 @@ function buildSicpaNewsroomCandidate($, block, pageUrl) {
   };
 }
 
+function buildSurysNewsroomCandidate($, block, pageUrl) {
+  const node = $(block);
+  const titleNode = node.find("h1, h2, h3, h4, .entry-title, .post-title").first();
+  const linkNode =
+    titleNode.find("a[href]").first().length > 0
+      ? titleNode.find("a[href]").first()
+      : node.find("a[rel='bookmark'], a[href]").first();
+  const href = linkNode.attr("href") || "";
+  const link = href ? new URL(href, pageUrl).toString() : "";
+  if (!link) {
+    return null;
+  }
+
+  const title =
+    sanitizeFeedText(titleNode.text(), "") ||
+    sanitizeFeedText(linkNode.text(), "") ||
+    sanitizeFeedText(node.find("a[href]").first().text(), "");
+  const excerpt =
+    sanitizeFeedText(node.find(".entry-summary, .post-excerpt, .excerpt, .entry-content p, p").first().text(), "") ||
+    sanitizeFeedText(node.text(), "");
+  const date =
+    parseWebsiteDate(node.find("time").first().attr("datetime") || "") ||
+    parseWebsiteDate(node.find(".entry-date, .post-date, .published, .date").first().attr("datetime") || "") ||
+    parseWebsiteDateFromText(node.find("time, .entry-date, .post-date, .published, .date").first().text()) ||
+    parseWebsiteDateFromText(node.text());
+
+  return {
+    title,
+    link,
+    excerpt,
+    date,
+  };
+}
+
 async function extractSicpaNewsroomItems(feed, $, pageUrl) {
   const discoveredCandidates = [];
   const seenLinks = new Set();
@@ -997,6 +1040,96 @@ async function extractSicpaNewsroomItems(feed, $, pageUrl) {
   return items;
 }
 
+async function extractSurysNewsroomItems(feed, $, pageUrl) {
+  const discoveredCandidates = [];
+  const seenLinks = new Set();
+  const items = [];
+  let validatedCount = 0;
+  let skippedCount = 0;
+
+  $("article, .post, .blog-item, .post-item, .entry")
+    .toArray()
+    .forEach((block) => {
+      const candidate = buildSurysNewsroomCandidate($, block, pageUrl);
+      if (!candidate?.link || !candidate.title) {
+        return;
+      }
+
+      const canonicalLink = canonicalizeUrl(candidate.link);
+      if (!canonicalLink || seenLinks.has(canonicalLink)) {
+        return;
+      }
+
+      seenLinks.add(canonicalLink);
+      discoveredCandidates.push(candidate);
+    });
+
+  console.log(`[SURYS_NEWSROOM] articles_discovered count=${discoveredCandidates.length}`);
+
+  for (const candidate of discoveredCandidates) {
+    const lowerLink = String(candidate.link || "").toLowerCase();
+    const hostname = getHostname(candidate.link);
+
+    if (
+      !hostname.includes("surys.com") ||
+      lowerLink.endsWith(".pdf") ||
+      lowerLink.includes("/category/") ||
+      lowerLink.includes("/tag/") ||
+      lowerLink.includes("/author/") ||
+      lowerLink.includes("/page/") ||
+      lowerLink.includes("#")
+    ) {
+      skippedCount += 1;
+      continue;
+    }
+
+    const pathname = (() => {
+      try {
+        return new URL(candidate.link).pathname.toLowerCase();
+      } catch {
+        return "";
+      }
+    })();
+    const pathSegments = pathname.split("/").filter(Boolean);
+    const looksLikeArticlePath =
+      pathSegments.length >= 1 &&
+      !["surys-blog", "follow-surys"].includes(pathSegments[pathSegments.length - 1]);
+
+    if (!looksLikeArticlePath) {
+      skippedCount += 1;
+      continue;
+    }
+
+    const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch((error) => {
+      console.warn(`Website article validation failed for ${candidate.link}:`, error?.message || error);
+      return null;
+    });
+
+    if (!validated?.accepted) {
+      skippedCount += 1;
+      if (validated?.reason) {
+        console.log(`Rejected website candidate ${candidate.link}: ${validated.reason}`);
+      }
+      continue;
+    }
+
+    validatedCount += 1;
+    items.push({
+      title: validated.title || candidate.title,
+      link: candidate.link,
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
+      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+      author: "",
+      source: getSourceName(candidate.link),
+    });
+  }
+
+  console.log(`[SURYS_NEWSROOM] articles_validated count=${validatedCount}`);
+  console.log(`[SURYS_NEWSROOM] articles_skipped count=${skippedCount}`);
+
+  return items;
+}
+
 async function extractWebsiteItems(feed) {
   console.log(`Parsing website source ${feed.id} (${feed.rssUrl})`);
   const response = await fetchWebsiteHtml(feed.rssUrl);
@@ -1005,6 +1138,12 @@ async function extractWebsiteItems(feed) {
 
   if (isSicpaNewsroomFeed(feed)) {
     const items = await extractSicpaNewsroomItems(feed, $, response.request?.res?.responseUrl || feed.rssUrl);
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isSurysNewsroomFeed(feed)) {
+    const items = await extractSurysNewsroomItems(feed, $, response.request?.res?.responseUrl || feed.rssUrl);
     console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
     return items;
   }

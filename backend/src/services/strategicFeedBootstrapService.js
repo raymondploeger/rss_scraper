@@ -175,10 +175,10 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase1",
   },
   {
-    name: "SURYS RSS",
+    name: "SURYS Newsroom",
     topic: "Shared Security Printing",
-    rssUrl: "https://surys.com/feed/",
-    sourceType: "rss",
+    rssUrl: "https://surys.com/surys-blog/",
+    sourceType: "website",
     phase: "phase1",
   },
 ];
@@ -199,6 +199,10 @@ const RETIRED_STRATEGIC_FEEDS = [
   {
     name: "SICPA RSS",
     rssUrl: "https://www.sicpa.com/rss.xml",
+  },
+  {
+    name: "SURYS RSS",
+    rssUrl: "https://surys.com/feed/",
   },
 ];
 

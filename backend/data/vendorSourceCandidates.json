@@ -80,14 +80,14 @@
       "id": "surys-rss-candidate",
       "name": "SURYS RSS",
       "topic": "Shared Security Printing",
-      "status": "active",
-      "isActive": true,
+      "status": "candidate",
+      "isActive": false,
       "sourceType": "rss",
       "acquisitionMethod": "rss",
       "rssAvailable": true,
       "currentSourceUrl": "https://surys.com/follow-surys/",
       "rssUrl": "https://surys.com/feed/",
-      "notes": "Activated in the strategic feed bootstrap for live RSS ingestion testing."
+      "notes": "Returned to candidate status after validation showed the feed is valid but currently publishes zero items."
     }
   ],
   "scraperCandidates": [
@@ -95,13 +95,13 @@
       "id": "surys-scraper-candidate",
       "name": "SURYS",
       "topic": "Shared Security Printing",
-      "status": "candidate",
-      "isActive": false,
+      "status": "active",
+      "isActive": true,
       "sourceType": "website",
       "acquisitionMethod": "scraper",
       "rssAvailable": false,
-      "sourceUrl": "https://surys.com/follow-surys/#press",
-      "extractionStrategy": "pressroom_listing"
+      "sourceUrl": "https://surys.com/surys-blog/",
+      "extractionStrategy": "surys_blog_listing"
     },
     {
       "id": "sicpa-scraper-candidate",
