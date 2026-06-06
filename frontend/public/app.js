@@ -3692,6 +3692,15 @@ function getSelectedIdentityDocumentSubinterests(selectedInterests = normalizePe
     .filter((interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "identity_documents");
 }
 
+function getSelectedSharedSecuritySubinterests(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  return normalizePersonalDashboardInterests(selectedInterests)
+    .filter((interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === PERSONAL_DASHBOARD_SHARED_GROUP_ID);
+}
+
+function isSharedSecurityOnlyPersonalSelection(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  return !getSelectedMainDomains(selectedInterests).length && getSelectedSharedSecuritySubinterests(selectedInterests).length > 0;
+}
+
 // Identity Documents retrieval should start from secure-document intent, not generic travel/passport mentions.
 const IDENTITY_DOCUMENT_RETRIEVAL_EXCLUSION_TERMS = [
   "agritourism passport",
@@ -4930,6 +4939,55 @@ function getDigitalSubgroupHybridAssessment(article, interestId) {
       preferredHits,
       crossHits,
       netEvidence,
+      interestScore,
+      domainScore: domainContext.score,
+    };
+  });
+}
+
+function getSharedSecurityStandaloneAssessment(article, interestId) {
+  return getCachedArticleValue(article, `sharedSecurityStandalone:${interestId}`, () => {
+    const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
+    if (!interest || interest.groupId !== PERSONAL_DASHBOARD_SHARED_GROUP_ID) {
+      return {
+        included: false,
+        directMatch: false,
+        directStrongHits: 0,
+        directWeakHits: 0,
+        interestScore: 0,
+        domainScore: 0,
+      };
+    }
+
+    const context = getPersonalBoostContext(article);
+    const domainContext = getPersonalDomainContextProfile(context, PERSONAL_DASHBOARD_SHARED_GROUP_ID);
+    const interestScore = computePersonalInterestBoost(article, interestId).score;
+    const strongKeywords = Array.isArray(interest.strong) ? interest.strong : [];
+    const weakKeywords = Array.isArray(interest.weak) ? interest.weak : [];
+    const directStrongHits =
+      countBoostKeywordMatches(context.titleText, strongKeywords) +
+      countBoostKeywordMatches(context.tagText, strongKeywords) +
+      countBoostKeywordMatches(context.metadataText, strongKeywords) +
+      countBoostKeywordMatches(context.bodyText, strongKeywords);
+    const directWeakHits =
+      countBoostKeywordMatches(context.titleText, weakKeywords) +
+      countBoostKeywordMatches(context.tagText, weakKeywords) +
+      countBoostKeywordMatches(context.metadataText, weakKeywords) +
+      countBoostKeywordMatches(context.bodyText, weakKeywords);
+
+    const directMatch = directStrongHits > 0 || (directWeakHits > 0 && interestScore >= 18);
+    const hybridMatch =
+      !directMatch &&
+      domainContext.score >= 8 &&
+      interestScore >= 22 &&
+      (directWeakHits > 0 || directStrongHits > 0);
+
+    return {
+      included: directMatch || hybridMatch,
+      directMatch,
+      hybridMatch,
+      directStrongHits,
+      directWeakHits,
       interestScore,
       domainScore: domainContext.score,
     };
@@ -7414,6 +7472,28 @@ function articleMatchesPersonalDashboardSelection(article) {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   if (!selectedInterests.length) {
     return true;
+  }
+
+  if (isSharedSecurityOnlyPersonalSelection(selectedInterests)) {
+    const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
+    const matched = selectedSharedInterests.some((interestId) =>
+      getSharedSecurityStandaloneAssessment(article, interestId).included
+    );
+
+    if (DEBUG_PERSONAL_DASHBOARD && selectedSharedInterests.length) {
+      debugPersonalDashboardLog("[shared-security-standalone-filter]", {
+        title: article?.title || "Untitled article",
+        source: article?.source || article?.feedTitle || "",
+        selectedSharedInterests,
+        matched,
+        assessments: selectedSharedInterests.map((interestId) => ({
+          interestId,
+          ...getSharedSecurityStandaloneAssessment(article, interestId),
+        })),
+      });
+    }
+
+    return matched;
   }
 
   const primaryDomain = getArticleDominantDomain(article);
