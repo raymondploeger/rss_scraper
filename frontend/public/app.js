@@ -4946,6 +4946,37 @@ function getDigitalSubgroupHybridAssessment(article, interestId) {
 }
 
 const SHARED_SECURITY_STANDALONE_RULES = {
+  security_printing_core: {
+    strong: [
+      "security printing",
+      "secure printing",
+      "security printer",
+      "banknote printing",
+      "document security",
+      "security feature",
+      "security features",
+      "security thread",
+      "security foil",
+      "holographic security feature",
+      "optical security feature",
+      "secure document",
+      "secure documents",
+    ],
+    weak: ["document printing", "secure print", "document protection"],
+    negative: [
+      "digital identity",
+      "digital wallet",
+      "wallet onboarding",
+      "travel guide",
+      "tourism",
+      "iata",
+      "sap quality awards",
+      "campus",
+      "appointed to the board",
+    ],
+    weakOnlyMinScore: 24,
+    minimumBodyStrongHits: 2,
+  },
   security_inks: {
     strong: [
       "security ink",
@@ -5019,13 +5050,12 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
     }
 
     const context = getPersonalBoostContext(article);
-    const domainContext = getPersonalDomainContextProfile(context, PERSONAL_DASHBOARD_SHARED_GROUP_ID);
-    const interestScore = computePersonalInterestBoost(article, interestId).score;
     const tunedRule = SHARED_SECURITY_STANDALONE_RULES[interestId] || null;
     const strongKeywords = Array.isArray(tunedRule?.strong) ? tunedRule.strong : Array.isArray(interest.strong) ? interest.strong : [];
     const weakKeywords = Array.isArray(tunedRule?.weak) ? tunedRule.weak : Array.isArray(interest.weak) ? interest.weak : [];
     const negativeKeywords = Array.isArray(tunedRule?.negative) ? tunedRule.negative : [];
     const weakOnlyMinScore = Number(tunedRule?.weakOnlyMinScore || 22);
+    const minimumBodyStrongHits = Number(tunedRule?.minimumBodyStrongHits || 2);
 
     const titleStrongHits = countBoostKeywordMatches(context.titleText, strongKeywords);
     const tagStrongHits = countBoostKeywordMatches(context.tagText, strongKeywords);
@@ -5044,19 +5074,28 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
     const foregroundWeakHits = titleWeakHits + tagWeakHits + metaWeakHits;
     const directStrongHits = foregroundStrongHits + bodyStrongHits;
     const directWeakHits = foregroundWeakHits + bodyWeakHits;
+    const contentOnlyScore =
+      (titleStrongHits * 5.5) +
+      (tagStrongHits * 4.5) +
+      (metaStrongHits * 3.5) +
+      (bodyStrongHits * 1.5) +
+      (titleWeakHits * 1.5) +
+      (tagWeakHits * 1.5) +
+      (metaWeakHits * 1) +
+      (bodyWeakHits * 0.35) -
+      (negativeHits * 8);
 
     // Standalone technique filters should depend on explicit technique language,
     // not merely on vendor/source affinity inside the broader shared-security layer.
     const directMatch =
       foregroundStrongHits > 0 ||
-      (foregroundWeakHits > 0 && interestScore >= weakOnlyMinScore) ||
-      (bodyStrongHits >= 2 && domainContext.score >= 8);
+      (foregroundWeakHits > 0 && contentOnlyScore >= weakOnlyMinScore) ||
+      (bodyStrongHits >= minimumBodyStrongHits && contentOnlyScore >= weakOnlyMinScore);
     const hybridMatch =
       !directMatch &&
       negativeHits === 0 &&
-      domainContext.score >= 10 &&
-      interestScore >= weakOnlyMinScore &&
-      foregroundWeakHits > 0;
+      contentOnlyScore >= weakOnlyMinScore + 2 &&
+      (foregroundWeakHits > 0 || bodyStrongHits >= minimumBodyStrongHits + 1);
     const included = (directMatch || hybridMatch) && !(negativeHits > 0 && foregroundStrongHits === 0);
 
     return {
@@ -5070,8 +5109,8 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       negativeHits,
       directStrongHits,
       directWeakHits,
-      interestScore,
-      domainScore: domainContext.score,
+      interestScore: Math.max(0, Math.round(contentOnlyScore)),
+      domainScore: 0,
     };
   });
 }
