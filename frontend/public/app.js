@@ -5139,6 +5139,9 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
     }
 
     const context = getPersonalBoostContext(article);
+    const metadataTextForMatching = interestId === "security_printing_core"
+      ? String(context.metadataText || "").replace(/\bshared security printing\b/gi, " ").replace(/\s+/g, " ").trim()
+      : context.metadataText;
     const tunedRule = SHARED_SECURITY_STANDALONE_RULES[interestId] || null;
     const strongKeywords = Array.isArray(tunedRule?.strong) ? tunedRule.strong : Array.isArray(interest.strong) ? interest.strong : [];
     const weakKeywords = Array.isArray(tunedRule?.weak) ? tunedRule.weak : Array.isArray(interest.weak) ? interest.weak : [];
@@ -5149,20 +5152,20 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
 
     const titleStrongHits = countBoostKeywordMatches(context.titleText, strongKeywords);
     const tagStrongHits = countBoostKeywordMatches(context.tagText, strongKeywords);
-    const metaStrongHits = countBoostKeywordMatches(context.metadataText, strongKeywords);
+    const metaStrongHits = countBoostKeywordMatches(metadataTextForMatching, strongKeywords);
     const bodyStrongHits = countBoostKeywordMatches(context.bodyText, strongKeywords);
     const titleWeakHits = countBoostKeywordMatches(context.titleText, weakKeywords);
     const tagWeakHits = countBoostKeywordMatches(context.tagText, weakKeywords);
-    const metaWeakHits = countBoostKeywordMatches(context.metadataText, weakKeywords);
+    const metaWeakHits = countBoostKeywordMatches(metadataTextForMatching, weakKeywords);
     const bodyWeakHits = countBoostKeywordMatches(context.bodyText, weakKeywords);
     const negativeHits =
       countBoostKeywordMatches(context.titleText, negativeKeywords) +
-      countBoostKeywordMatches(context.metadataText, negativeKeywords) +
+      countBoostKeywordMatches(metadataTextForMatching, negativeKeywords) +
       countBoostKeywordMatches(context.bodyText, negativeKeywords);
     const supportHits =
       countBoostKeywordMatches(context.titleText, supportKeywords) +
       countBoostKeywordMatches(context.tagText, supportKeywords) +
-      countBoostKeywordMatches(context.metadataText, supportKeywords) +
+      countBoostKeywordMatches(metadataTextForMatching, supportKeywords) +
       countBoostKeywordMatches(context.bodyText, supportKeywords);
 
     const foregroundStrongHits = titleStrongHits + tagStrongHits + metaStrongHits;
