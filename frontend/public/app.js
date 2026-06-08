@@ -1029,6 +1029,77 @@ const IDENTITY_SUBINTEREST_INTENTS = {
   },
 };
 const IDENTITY_INTELLIGENCE_PROFILES = {
+  id_cards: {
+    strongPositive: [
+      "identity card",
+      "id card",
+      "national id",
+      "electronic identity card",
+      "hybrid id documents",
+      "national identity guard",
+      "identity document protection",
+      "physical identity documents",
+      "national id documents",
+      "polycarbonate id",
+      "czech id",
+    ],
+    mediumPositive: [
+      "identity documents",
+      "id documents",
+      "secure id documents",
+      "physical document",
+      "id protection",
+      "document protection",
+      "security feature",
+      "security features",
+      "hologram",
+      "holograms",
+      "ovd",
+      "micro optics",
+      "anti-counterfeiting",
+      "anti-counterfeiting protection",
+    ],
+    weakPositive: [
+      "card issuance",
+      "card design",
+      "identity card design",
+      "optical security features",
+    ],
+    strongNegative: [
+      "digital identity wallet",
+      "identity wallet",
+      "wallet ecosystem",
+      "digital identity conference",
+      "authentication platform",
+      "kyc platform",
+      "biometric onboarding",
+      "passport office",
+      "travel tips",
+    ],
+    requiredContextGroups: [
+      ["identity card", "id card", "national id", "identity documents", "id documents", "national id documents", "physical identity documents", "czech id", "national identity guard"],
+      ["protection", "security feature", "security features", "hologram", "holography", "ovd", "micro optics", "polycarbonate", "anti-counterfeiting", "document protection", "physical document"],
+    ],
+    authorityBoostSources: [
+      "keesing",
+      "biometric update",
+      "regula",
+      "hid",
+      "entrust",
+      "veridos",
+      "bundesdruckerei",
+      "idemia",
+      "in groupe",
+      "thales",
+      "laxton",
+      "security document world",
+      "ovd kinegram",
+      "de la rue",
+      "giesecke+devrient",
+      "iq structures",
+      "iqstructures.com",
+    ],
+  },
   passports: {
     strongPositive: [
       "biometric passport",
@@ -2057,7 +2128,7 @@ const PERSONAL_DASHBOARD_GROUPS = [
     label: "Identity Documents",
     interests: [
       { id: "passports", label: "Passports", strong: ["passport", "passports", "travel document"], weak: ["passport office"], topicSignals: ["passport"], eventTypes: ["passport_issuance", "passport_renewal", "passport_revocation", "passport_fraud"] },
-      { id: "id_cards", label: "ID cards", strong: ["id card", "identity card", "national id"], weak: ["id issuance"], topicSignals: ["id card"] },
+      { id: "id_cards", label: "ID cards", strong: ["id card", "identity card", "national id", "hybrid id documents", "national identity guard"], weak: ["id issuance", "identity documents", "id documents", "identity document protection", "id protection"], topicSignals: ["id card"] },
       { id: "residence_permits", label: "Residence permits", strong: ["residence permit", "residence permits"], weak: ["permit card"] },
       { id: "drivers_licenses", label: "Driver's licenses", strong: ["driver license", "driver's license", "driving licence"], weak: ["license card"] },
       { id: "visas", label: "Visas", strong: ["visa", "visas", "visa policy"], weak: ["travel authorization"], eventTypes: ["visa_policy", "etias_event"] },
@@ -3936,6 +4007,16 @@ function getPersonalDashboardBackendDomainPlan() {
           "identity card",
           "national id",
           "electronic identity card",
+          "identity documents",
+          "id documents",
+          "physical identity documents",
+          "secure id documents",
+          "national id documents",
+          "czech id",
+          "hybrid id documents",
+          "identity document protection",
+          "id protection",
+          "national identity guard",
           "card issuance",
           "polycarbonate id",
           "identity card design",
@@ -4083,6 +4164,11 @@ function getPersonalDashboardBackendDomainPlan() {
         "identity card",
         "id card",
         "electronic identity card",
+        "identity documents",
+        "id documents",
+        "hybrid id documents",
+        "identity document protection",
+        "national identity guard",
         "card issuance",
         "polycarbonate id",
       ]);
@@ -4600,6 +4686,8 @@ function computePersonalInterestBoost(article, interestId) {
         }
       } else if (interestId === "id_cards") {
         score += Math.min(90, Math.round(signals.idCardHits * 1.25));
+        score += Math.min(120, Math.round((selectedProfile?.score || 0) * 0.85));
+        score += Math.min(45, Math.round(signals.polycarbonateHits * 0.5));
         score -= Math.min(45, Math.round(signals.passportHits * 0.35));
       } else if (interestId === "residence_permits") {
         score += Math.min(110, Math.round((signals.residencePermitHits * 1.35) + (selectedIntent.score * 0.9)));
@@ -5487,6 +5575,16 @@ function getIdentityDocumentInterestSignals(article) {
       "id card",
       "national id",
       "electronic identity card",
+      "identity documents",
+      "id documents",
+      "physical identity documents",
+      "secure id documents",
+      "national id documents",
+      "czech id",
+      "hybrid id documents",
+      "national identity guard",
+      "identity document protection",
+      "id protection",
       "polycarbonate id",
       "card issuance",
       "card design",
@@ -6644,6 +6742,7 @@ function getIdentityDocumentSubinterestScore(article, selectedInterests = normal
     const signals = getIdentityDocumentInterestSignals(article);
     const intentByInterest = getIdentityDocumentIntentBreakdown(article);
     const profileByInterest = {
+      id_cards: calculateIdentityProfileScore(article, "id_cards"),
       passports: calculateIdentityProfileScore(article, "passports"),
       visas: calculateIdentityProfileScore(article, "visas"),
       residence_permits: calculateIdentityProfileScore(article, "residence_permits"),
@@ -6669,7 +6768,8 @@ function getIdentityDocumentSubinterestScore(article, selectedInterests = normal
         (signals.issuanceHits * 0.4) -
         (signals.driverLicenseHits * 0.75) -
         (signals.passportHits * 0.45) -
-        (signals.noisyHits * 0.4),
+        (signals.noisyHits * 0.4) +
+        (profileByInterest.id_cards.score * 1.05),
       residence_permits:
         (signals.residencePermitHits * 1.95) +
         (signals.issuanceHits * 0.45) +
@@ -7650,6 +7750,10 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
           score += Math.min(135, Math.round((identitySignals.passportHits * 0.45) + (identitySignals.icaoHits * 0.45) + (selectedIntent.score * 1.1)));
           score -= Math.min(220, Math.round(identitySignals.driverLicenseHits * 1.05));
           score -= Math.min(95, Math.round(identitySignals.visaHits * 0.4));
+        } else if (selectedSubinterest === "id_cards") {
+          score += Math.min(145, Math.round((identitySignals.idCardHits * 1.0) + ((selectedProfile?.score || 0) * 1.05)));
+          score += Math.min(55, Math.round(identitySignals.polycarbonateHits * 0.65));
+          score -= Math.min(120, Math.round(identitySignals.passportHits * 0.45));
         } else if (selectedSubinterest === "visas") {
           score += Math.min(145, Math.round((identitySignals.visaHits * 0.95) + (selectedIntent.score * 1.15)));
           score -= Math.min(240, Math.round(identitySignals.driverLicenseHits * 1.2));
