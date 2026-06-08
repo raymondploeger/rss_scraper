@@ -4952,21 +4952,87 @@ const SHARED_SECURITY_STANDALONE_RULES = {
       "secure printing",
       "security printer",
       "banknote printing",
-      "document security",
-      "security feature",
-      "security features",
+      "passport printing",
+      "id card printing",
+      "id document printing",
+      "secure document production",
+      "banknote security feature",
+      "banknote security features",
+      "passport security feature",
+      "passport security features",
+      "id card security feature",
+      "id card security features",
+      "mykad security feature",
+      "mykad security features",
       "security thread",
+      "security threads",
       "security foil",
+      "security foils",
       "holographic security feature",
+      "holographic security features",
       "optical security feature",
+      "optical security features",
       "secure document",
       "secure documents",
+      "physical security document",
+      "physical security documents",
+      "document security",
     ],
-    weak: ["document printing", "secure print", "document protection"],
+    weak: [
+      "document printing",
+      "secure print",
+      "document protection",
+      "anti-counterfeiting feature",
+      "anti-counterfeiting features",
+      "security feature",
+      "security features",
+    ],
+    support: [
+      "banknote",
+      "banknotes",
+      "passport",
+      "passports",
+      "id card",
+      "identity card",
+      "secure document",
+      "secure documents",
+      "travel document",
+      "credential",
+      "credentials",
+      "document",
+      "documents",
+      "security printing",
+      "printing works",
+      "printer",
+      "foil",
+      "thread",
+      "mykad",
+      "residence permit",
+      "visa sticker",
+      "physical document",
+    ],
     negative: [
       "digital identity",
       "digital wallet",
       "wallet onboarding",
+      "cybersecurity",
+      "cloud security",
+      "ai security",
+      "home security",
+      "smart home",
+      "phone security",
+      "national security",
+      "opensearch",
+      "aws",
+      "password",
+      "account security",
+      "domain security",
+      "malware",
+      "zero trust",
+      "trump",
+      "white house",
+      "ballroom",
+      "real estate",
       "travel guide",
       "tourism",
       "iata",
@@ -5053,6 +5119,7 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
     const tunedRule = SHARED_SECURITY_STANDALONE_RULES[interestId] || null;
     const strongKeywords = Array.isArray(tunedRule?.strong) ? tunedRule.strong : Array.isArray(interest.strong) ? interest.strong : [];
     const weakKeywords = Array.isArray(tunedRule?.weak) ? tunedRule.weak : Array.isArray(interest.weak) ? interest.weak : [];
+    const supportKeywords = Array.isArray(tunedRule?.support) ? tunedRule.support : [];
     const negativeKeywords = Array.isArray(tunedRule?.negative) ? tunedRule.negative : [];
     const weakOnlyMinScore = Number(tunedRule?.weakOnlyMinScore || 22);
     const minimumBodyStrongHits = Number(tunedRule?.minimumBodyStrongHits || 2);
@@ -5069,6 +5136,11 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       countBoostKeywordMatches(context.titleText, negativeKeywords) +
       countBoostKeywordMatches(context.metadataText, negativeKeywords) +
       countBoostKeywordMatches(context.bodyText, negativeKeywords);
+    const supportHits =
+      countBoostKeywordMatches(context.titleText, supportKeywords) +
+      countBoostKeywordMatches(context.tagText, supportKeywords) +
+      countBoostKeywordMatches(context.metadataText, supportKeywords) +
+      countBoostKeywordMatches(context.bodyText, supportKeywords);
 
     const foregroundStrongHits = titleStrongHits + tagStrongHits + metaStrongHits;
     const foregroundWeakHits = titleWeakHits + tagWeakHits + metaWeakHits;
@@ -5085,15 +5157,19 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       (bodyWeakHits * 0.35) -
       (negativeHits * 8);
 
+    const requiresSupportContext = interestId === "security_printing_core";
+    const hasSupportContext = !requiresSupportContext || supportHits > 0;
+
     // Standalone technique filters should depend on explicit technique language,
     // not merely on vendor/source affinity inside the broader shared-security layer.
     const directMatch =
-      foregroundStrongHits > 0 ||
-      (foregroundWeakHits > 0 && contentOnlyScore >= weakOnlyMinScore) ||
-      (bodyStrongHits >= minimumBodyStrongHits && contentOnlyScore >= weakOnlyMinScore);
+      (foregroundStrongHits > 0 && hasSupportContext) ||
+      (foregroundWeakHits > 0 && contentOnlyScore >= weakOnlyMinScore && hasSupportContext) ||
+      (bodyStrongHits >= minimumBodyStrongHits && contentOnlyScore >= weakOnlyMinScore && hasSupportContext);
     const hybridMatch =
       !directMatch &&
       negativeHits === 0 &&
+      hasSupportContext &&
       contentOnlyScore >= weakOnlyMinScore + 2 &&
       (foregroundWeakHits > 0 || bodyStrongHits >= minimumBodyStrongHits + 1);
     const included = (directMatch || hybridMatch) && !(negativeHits > 0 && foregroundStrongHits === 0);
@@ -5106,6 +5182,7 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       foregroundWeakHits,
       bodyStrongHits,
       bodyWeakHits,
+      supportHits,
       negativeHits,
       directStrongHits,
       directWeakHits,
