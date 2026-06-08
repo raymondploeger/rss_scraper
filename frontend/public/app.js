@@ -3701,6 +3701,17 @@ function isSharedSecurityOnlyPersonalSelection(selectedInterests = normalizePers
   return !getSelectedMainDomains(selectedInterests).length && getSelectedSharedSecuritySubinterests(selectedInterests).length > 0;
 }
 
+function matchesSelectedSharedSecurityTechnique(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
+  if (!selectedSharedInterests.length) {
+    return true;
+  }
+
+  return selectedSharedInterests.some((interestId) =>
+    getSharedSecurityStandaloneAssessment(article, interestId).included
+  );
+}
+
 // Identity Documents retrieval should start from secure-document intent, not generic travel/passport mentions.
 const IDENTITY_DOCUMENT_RETRIEVAL_EXCLUSION_TERMS = [
   "agritourism passport",
@@ -7789,9 +7800,7 @@ function articleMatchesPersonalDashboardSelection(article) {
 
   if (isSharedSecurityOnlyPersonalSelection(selectedInterests)) {
     const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
-    const matched = selectedSharedInterests.some((interestId) =>
-      getSharedSecurityStandaloneAssessment(article, interestId).included
-    );
+    const matched = matchesSelectedSharedSecurityTechnique(article, selectedInterests);
 
     if (DEBUG_PERSONAL_DASHBOARD && selectedSharedInterests.length) {
       debugPersonalDashboardLog("[shared-security-standalone-filter]", {
@@ -7815,9 +7824,16 @@ function articleMatchesPersonalDashboardSelection(article) {
   }
 
   const selectedMainDomains = getSelectedMainDomains(selectedInterests);
+  const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
   if (selectedMainDomains.length && !selectedMainDomains.includes(primaryDomain)) {
     return false;
   }
+
+  // Main filters define the scope ("what document / market is this about?").
+  // Shared Security Printing filters define the technique ("which security-printing method is involved?").
+  // When both are selected together, the article must satisfy scope AND technique.
+  const sharedSecurityTechniqueMatched = !selectedSharedInterests.length
+    || matchesSelectedSharedSecurityTechnique(article, selectedInterests);
 
   if (isBanknotesOnlyPersonalSelection(selectedInterests)) {
     if (isBanknoteContaminated(article)) {
@@ -7829,10 +7845,11 @@ function articleMatchesPersonalDashboardSelection(article) {
     );
 
     if (!banknoteInterestIds.length) {
-      return isBanknotePrimary(article) || isBanknoteAdjacent(article);
+      return (isBanknotePrimary(article) || isBanknoteAdjacent(article)) && sharedSecurityTechniqueMatched;
     }
 
-    return banknoteInterestIds.some((interestId) => matchesBanknoteInterest(article, interestId));
+    return banknoteInterestIds.some((interestId) => matchesBanknoteInterest(article, interestId))
+      && sharedSecurityTechniqueMatched;
   }
 
   if (primaryDomain === "identity_documents") {
@@ -7843,19 +7860,21 @@ function articleMatchesPersonalDashboardSelection(article) {
     const selectedIdentityInterests = selectedInterests.filter(
       (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "identity_documents"
     );
-    return !selectedIdentityInterests.length
+    const identityScopeMatched = !selectedIdentityInterests.length
       || selectedIdentityInterests.some((interestId) => computePersonalInterestBoost(article, interestId).score >= 18);
+    return identityScopeMatched && sharedSecurityTechniqueMatched;
   }
 
   if (primaryDomain === "digital_identity_biometrics") {
     const selectedDigitalInterests = selectedInterests.filter(
       (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "digital_identity_biometrics"
     );
-    return !selectedDigitalInterests.length
+    const digitalScopeMatched = !selectedDigitalInterests.length
       || selectedDigitalInterests.some((interestId) => getDigitalSubgroupHybridAssessment(article, interestId).included);
+    return digitalScopeMatched && sharedSecurityTechniqueMatched;
   }
 
-  return true;
+  return sharedSecurityTechniqueMatched;
 }
 
 function getPersonalIntelligenceLane(article) {
