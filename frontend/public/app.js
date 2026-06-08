@@ -5124,6 +5124,54 @@ const SHARED_SECURITY_STANDALONE_RULES = {
   },
 };
 
+const SECURITY_PRINTING_TECHNIQUE_BRIDGE_KEYWORDS = [
+  "holography",
+  "holographic",
+  "hologram",
+  "holograms",
+  "dovid",
+  "dovids",
+  "nano dovid",
+  "nanodovid",
+  "machine-readable holograms",
+  "optically variable device",
+  "optically variable devices",
+  "optically variable feature",
+  "optically variable features",
+  "optical security device",
+  "optical security feature",
+  "optical security features",
+  "micro optics",
+  "micro-optics",
+  "micro optical",
+  "microlens",
+  "micro-optic structures",
+  "nano optics",
+  "nanostructures",
+  "optical microstructures",
+  "anti-counterfeit",
+  "anti counterfeit",
+  "counterfeit prevention",
+  "counterfeit protection",
+  "anti-forgery",
+  "brand protection",
+];
+
+const SECURITY_PRINTING_TECHNIQUE_BRIDGE_DOCUMENT_CONTEXT = [
+  "banknote",
+  "banknotes",
+  "passport",
+  "passports",
+  "id card",
+  "id cards",
+  "identity document",
+  "identity documents",
+  "secure document",
+  "secure documents",
+  "physical document",
+  "physical documents",
+];
+
 function getSharedSecurityStandaloneAssessment(article, interestId) {
   return getCachedArticleValue(article, `sharedSecurityStandalone:${interestId}`, () => {
     const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
@@ -5167,11 +5215,37 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       countBoostKeywordMatches(context.tagText, supportKeywords) +
       countBoostKeywordMatches(metadataTextForMatching, supportKeywords) +
       countBoostKeywordMatches(context.bodyText, supportKeywords);
+    const bridgeDocumentContextHits = interestId === "security_printing_core"
+      ? (
+        countBoostKeywordMatches(context.titleText, SECURITY_PRINTING_TECHNIQUE_BRIDGE_DOCUMENT_CONTEXT) +
+        countBoostKeywordMatches(context.tagText, SECURITY_PRINTING_TECHNIQUE_BRIDGE_DOCUMENT_CONTEXT) +
+        countBoostKeywordMatches(context.bodyText, SECURITY_PRINTING_TECHNIQUE_BRIDGE_DOCUMENT_CONTEXT)
+      )
+      : 0;
+    const bridgeTitleHits = interestId === "security_printing_core"
+      ? countBoostKeywordMatches(context.titleText, SECURITY_PRINTING_TECHNIQUE_BRIDGE_KEYWORDS)
+      : 0;
+    const bridgeTagHits = interestId === "security_printing_core"
+      ? countBoostKeywordMatches(context.tagText, SECURITY_PRINTING_TECHNIQUE_BRIDGE_KEYWORDS)
+      : 0;
+    const bridgeBodyHits = interestId === "security_printing_core"
+      ? countBoostKeywordMatches(context.bodyText, SECURITY_PRINTING_TECHNIQUE_BRIDGE_KEYWORDS)
+      : 0;
 
     const foregroundStrongHits = titleStrongHits + tagStrongHits + metaStrongHits;
     const foregroundWeakHits = titleWeakHits + tagWeakHits + metaWeakHits;
     const directStrongHits = foregroundStrongHits + bodyStrongHits;
     const directWeakHits = foregroundWeakHits + bodyWeakHits;
+    const bridgeForegroundHits = bridgeTitleHits + bridgeTagHits;
+    const hasTechniqueBridgeContext = interestId === "security_printing_core" && (bridgeDocumentContextHits > 0 || supportHits > 0);
+    const bridgeEvidenceHits = hasTechniqueBridgeContext ? bridgeForegroundHits + bridgeBodyHits : 0;
+    const bridgeScore = hasTechniqueBridgeContext
+      ? (
+        (bridgeTitleHits * 3) +
+        (bridgeTagHits * 2.5) +
+        (bridgeBodyHits * 1.25)
+      )
+      : 0;
     const contentOnlyScore =
       (titleStrongHits * 5.5) +
       (tagStrongHits * 4.5) +
@@ -5182,23 +5256,36 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       (metaWeakHits * 1) +
       (bodyWeakHits * 0.35) -
       (negativeHits * 8);
+    const effectiveContentScore = contentOnlyScore + bridgeScore;
 
     const requiresSupportContext = interestId === "security_printing_core";
     const hasSupportContext = !requiresSupportContext || supportHits > 0;
+    const hasBridgeDrivenSupportContext = hasSupportContext || hasTechniqueBridgeContext;
 
     // Standalone technique filters should depend on explicit technique language,
     // not merely on vendor/source affinity inside the broader shared-security layer.
     const directMatch =
       (foregroundStrongHits > 0 && hasSupportContext) ||
       (foregroundWeakHits > 0 && contentOnlyScore >= weakOnlyMinScore && hasSupportContext) ||
-      (bodyStrongHits >= minimumBodyStrongHits && contentOnlyScore >= weakOnlyMinScore && hasSupportContext);
+      (bodyStrongHits >= minimumBodyStrongHits && contentOnlyScore >= weakOnlyMinScore && hasSupportContext) ||
+      (
+        hasBridgeDrivenSupportContext &&
+        (
+          bridgeForegroundHits > 0 ||
+          (bridgeBodyHits >= 2 && (bodyStrongHits > 0 || bodyWeakHits > 0))
+        )
+      );
     const hybridMatch =
       !directMatch &&
       negativeHits === 0 &&
-      hasSupportContext &&
-      contentOnlyScore >= weakOnlyMinScore + 2 &&
-      (foregroundWeakHits > 0 || bodyStrongHits >= minimumBodyStrongHits + 1);
-    const included = (directMatch || hybridMatch) && !(negativeHits > 0 && foregroundStrongHits === 0);
+      hasBridgeDrivenSupportContext &&
+      effectiveContentScore >= weakOnlyMinScore + 2 &&
+      (foregroundWeakHits > 0 || bodyStrongHits >= minimumBodyStrongHits + 1 || bridgeBodyHits >= 2);
+    const included = (directMatch || hybridMatch) && !(
+      negativeHits > 0 &&
+      foregroundStrongHits === 0 &&
+      bridgeEvidenceHits === 0
+    );
 
     return {
       included,
@@ -5209,10 +5296,12 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       bodyStrongHits,
       bodyWeakHits,
       supportHits,
+      bridgeDocumentContextHits,
+      bridgeEvidenceHits,
       negativeHits,
       directStrongHits,
       directWeakHits,
-      interestScore: Math.max(0, Math.round(contentOnlyScore)),
+      interestScore: Math.max(0, Math.round(effectiveContentScore)),
       domainScore: 0,
     };
   });
