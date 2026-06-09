@@ -2000,7 +2000,7 @@ const PERSONAL_DASHBOARD_DOMAIN_CONTEXTS = {
       "driver license",
       "driver's license",
     ],
-    weak: ["issuance office", "document issuance", "immigration authority", "passport office"],
+    weak: ["issuance office", "document issuance", "immigration authority", "passport office", "id documents", "identity documents"],
     excluded: ["banknote", "banknotes", "central bank", "currency redesign", "polymer note", "commemorative note"],
   },
   digital_identity_biometrics: {
