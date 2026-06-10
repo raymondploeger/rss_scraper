@@ -168,13 +168,6 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase1",
   },
   {
-    name: "IDEMIA Pressroom",
-    topic: "Identity Documents",
-    rssUrl: "https://www.idemia.com/pressroom",
-    sourceType: "website",
-    phase: "phase1",
-  },
-  {
     name: "IN Groupe Newsroom",
     topic: "Identity Documents",
     rssUrl: "https://ingroupe.com/newsroom/",
@@ -252,6 +245,10 @@ const RETIRED_STRATEGIC_FEEDS = [
   {
     name: "SURYS RSS",
     rssUrl: "https://surys.com/feed/",
+  },
+  {
+    name: "IDEMIA Pressroom",
+    rssUrl: "https://www.idemia.com/pressroom",
   },
 ];
 

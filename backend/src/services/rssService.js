@@ -106,6 +106,187 @@ function isIqStructuresNewsroomFeed(feed) {
   );
 }
 
+const SOURCE_RELEVANCE_RULES = [
+  {
+    name: "G+D Press Releases",
+    sourceKeys: ["g+d press releases", "gi-de.com/en/about-us/press/press-releases"],
+    include: [
+      "authentication",
+      "banknote",
+      "banknotes",
+      "cash",
+      "credential",
+      "credentials",
+      "currency",
+      "government",
+      "government identity",
+      "identity",
+      "identity documents",
+      "identity technology",
+      "passport",
+      "passports",
+      "public sector identity",
+      "secure document",
+      "secure documents",
+      "secure identities",
+      "secure identity",
+      "security printing",
+      "veridos",
+      "xtec",
+    ],
+    exclude: [
+      "5g",
+      "asset tracking",
+      "banking market",
+      "cloud-based remote esim",
+      "compliance expert",
+      "connected car",
+      "connectivity",
+      "crypto",
+      "digital payments",
+      "esim",
+      "iot",
+      "mobile ticketing",
+      "netcetera",
+      "payment",
+      "payments",
+      "rabo investments",
+      "remote esim",
+      "rivian",
+      "sim",
+      "telecom",
+      "trusted software",
+      "wearable",
+    ],
+  },
+  {
+    name: "KURZ Press Releases",
+    sourceKeys: ["kurz press releases", "kurz-world.com/en/newsroom/press"],
+    include: [
+      "anti-counterfeit",
+      "anticounterfeit",
+      "banknote",
+      "banknotes",
+      "card",
+      "cards",
+      "counterfeit",
+      "currency",
+      "high security",
+      "hologram",
+      "holograms",
+      "holography",
+      "identity",
+      "ovd",
+      "optical security",
+      "secure document",
+      "secure documents",
+      "security feature",
+      "security features",
+      "security printing",
+      "trustseal",
+    ],
+    exclude: [
+      "automotive",
+      "beverage",
+      "consumer electronics",
+      "cosmetics",
+      "decoration",
+      "decorative",
+      "embellishment",
+      "home appliances",
+      "jersey",
+      "labels",
+      "luxe pack",
+      "packaging",
+      "pentawards",
+      "rpet",
+      "surface finishing",
+      "textile",
+      "vestel",
+      "wine",
+    ],
+  },
+  {
+    name: "Bundesdruckerei Press Releases",
+    sourceKeys: ["bundesdruckerei press releases", "bundesdruckerei.de/en/newsroom/press-releases"],
+    include: [
+      "ausweis",
+      "banknote",
+      "banknotes",
+      "d-trust",
+      "eid",
+      "government",
+      "identity document",
+      "identity documents",
+      "id card",
+      "id cards",
+      "passport",
+      "passports",
+      "secure identities",
+      "secure identity",
+      "security printing",
+      "trust service",
+      "trust services",
+    ],
+    exclude: [
+      "adva network",
+      "company restructures",
+      "cooperates with start-ups",
+      "corporate",
+      "event",
+      "events",
+      "genua",
+      "group structure",
+      "innovation hub",
+      "industrial remote maintenance",
+      "management board",
+      "remote maintenance",
+      "secunet",
+      "start-ups",
+      "supervisory board",
+      "telematics infrastructure",
+    ],
+  },
+];
+
+function getSourceRelevanceRule(feed) {
+  const fingerprint = [
+    feed?.name,
+    feed?.rssUrl,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return SOURCE_RELEVANCE_RULES.find((rule) =>
+    rule.sourceKeys.some((sourceKey) => fingerprint.includes(sourceKey))
+  ) || null;
+}
+
+function textContainsAny(text, terms = []) {
+  return terms.some((term) => text.includes(term));
+}
+
+function articleMatchesSourceRelevanceRule(feed, article) {
+  const rule = getSourceRelevanceRule(feed);
+  if (!rule) {
+    return true;
+  }
+
+  const articleText = [
+    article?.title,
+    article?.link,
+    article?.contentSnippet,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const hasRelevantContent = textContainsAny(articleText, rule.include);
+  const hasExcludedContent = textContainsAny(articleText, rule.exclude);
+
+  return hasRelevantContent && !hasExcludedContent;
+}
+
 const WEBSITE_NAV_TITLE_PATTERNS = [
   "home",
   "projects",
@@ -1320,6 +1501,14 @@ async function extractWebsiteItems(feed) {
       if (validated?.reason) {
         console.log(`Rejected website candidate ${link}: ${validated.reason}`);
       }
+      continue;
+    }
+    if (!articleMatchesSourceRelevanceRule(feed, {
+      title: validated.title || text,
+      link,
+      contentSnippet: validated.contentSnippet || "",
+    })) {
+      console.log(`Rejected website candidate ${link}: source-relevance-filter`);
       continue;
     }
 
