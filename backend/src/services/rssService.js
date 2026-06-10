@@ -118,7 +118,6 @@ const SOURCE_RELEVANCE_RULES = [
       "credential",
       "credentials",
       "currency",
-      "government",
       "government identity",
       "identity",
       "identity documents",
@@ -131,6 +130,7 @@ const SOURCE_RELEVANCE_RULES = [
       "secure identities",
       "secure identity",
       "security printing",
+      "sovereign solutions",
       "veridos",
       "xtec",
     ],
@@ -145,16 +145,20 @@ const SOURCE_RELEVANCE_RULES = [
       "crypto",
       "digital payments",
       "esim",
+      "e-sim",
       "iot",
       "mobile ticketing",
       "netcetera",
+      "payment security",
       "payment",
       "payments",
       "rabo investments",
       "remote esim",
       "rivian",
+      "secunet",
       "sim",
       "telecom",
+      "telecommunications",
       "trusted software",
       "wearable",
     ],
@@ -188,22 +192,28 @@ const SOURCE_RELEVANCE_RULES = [
     exclude: [
       "automotive",
       "beverage",
+      "brand enhancement",
       "consumer electronics",
       "cosmetics",
       "decoration",
       "decorative",
+      "decorative finishing",
       "embellishment",
       "home appliances",
       "jersey",
       "labels",
       "luxe pack",
+      "mobility",
       "packaging",
       "pentawards",
       "rpet",
+      "spirits",
       "surface finishing",
       "textile",
+      "textiles",
       "vestel",
       "wine",
+      "wine & spirits",
     ],
   },
   {
@@ -215,7 +225,8 @@ const SOURCE_RELEVANCE_RULES = [
       "banknotes",
       "d-trust",
       "eid",
-      "government",
+      "government identity",
+      "government solutions",
       "identity document",
       "identity documents",
       "id card",
@@ -225,14 +236,19 @@ const SOURCE_RELEVANCE_RULES = [
       "secure identities",
       "secure identity",
       "security printing",
+      "self-sovereign identity",
       "trust service",
       "trust services",
     ],
     exclude: [
+      "accessibility",
+      "accessibility statement",
       "adva network",
       "company restructures",
+      "company structure",
       "cooperates with start-ups",
       "corporate",
+      "corporate governance",
       "event",
       "events",
       "genua",
@@ -245,6 +261,7 @@ const SOURCE_RELEVANCE_RULES = [
       "start-ups",
       "supervisory board",
       "telematics infrastructure",
+      "whistleblowing",
     ],
   },
 ];
@@ -263,8 +280,24 @@ function getSourceRelevanceRule(feed) {
   ) || null;
 }
 
-function textContainsAny(text, terms = []) {
-  return terms.some((term) => text.includes(term));
+function buildSourceTermPattern(term) {
+  const normalizedTerm = String(term || "").trim().toLowerCase();
+  if (!normalizedTerm) {
+    return null;
+  }
+
+  const escaped = normalizedTerm
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    .replace(/\s+/g, "[\\s\\-/&]+");
+
+  return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i");
+}
+
+function findSourceRuleMatches(text, terms = []) {
+  return terms.filter((term) => {
+    const pattern = buildSourceTermPattern(term);
+    return pattern ? pattern.test(text) : false;
+  });
 }
 
 function articleMatchesSourceRelevanceRule(feed, article) {
@@ -281,10 +314,12 @@ function articleMatchesSourceRelevanceRule(feed, article) {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
-  const hasRelevantContent = textContainsAny(articleText, rule.include);
-  const hasExcludedContent = textContainsAny(articleText, rule.exclude);
+  const matchedExclusions = findSourceRuleMatches(articleText, rule.exclude);
+  if (matchedExclusions.length) {
+    return false;
+  }
 
-  return hasRelevantContent && !hasExcludedContent;
+  return findSourceRuleMatches(articleText, rule.include).length > 0;
 }
 
 const WEBSITE_NAV_TITLE_PATTERNS = [
