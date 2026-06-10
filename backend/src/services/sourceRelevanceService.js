@@ -66,7 +66,10 @@ export const SOURCE_RELEVANCE_RULES = [
       "card",
       "cards",
       "counterfeit",
+      "counterfeits",
       "currency",
+      "forgeries",
+      "forgery",
       "high security",
       "hologram",
       "holograms",
@@ -80,6 +83,25 @@ export const SOURCE_RELEVANCE_RULES = [
       "security features",
       "security printing",
       "trustseal",
+    ],
+    protectedInclude: [
+      "anti-counterfeit",
+      "anticounterfeit",
+      "banknote",
+      "banknotes",
+      "counterfeit protection",
+      "counterfeit",
+      "counterfeits",
+      "forgeries",
+      "forgery",
+      "hologram",
+      "holograms",
+      "holography",
+      "ovd",
+      "security against counterfeits",
+      "security feature",
+      "security features",
+      "security printing",
     ],
     exclude: [
       "automotive",
@@ -212,6 +234,25 @@ export function getSourceRelevanceAssessment(feed, article) {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+  const protectedText = [
+    article?.title,
+    article?.link,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const protectedTerms = findSourceRuleMatches(protectedText, rule.protectedInclude || []);
+  if (protectedTerms.length) {
+    return {
+      accepted: true,
+      rule,
+      includedTerms: findSourceRuleMatches(articleText, rule.include),
+      excludedTerms: findSourceRuleMatches(articleText, rule.exclude),
+      protectedTerms,
+      reason: `protected-source-term:${protectedTerms.join(", ")}`,
+    };
+  }
+
   const excludedTerms = findSourceRuleMatches(articleText, rule.exclude);
   if (excludedTerms.length) {
     return {
