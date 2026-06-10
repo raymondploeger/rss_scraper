@@ -3850,6 +3850,27 @@ function matchesIdCardsHolographyOvdCombinationBridge(article, selectedIdentityI
   return hasStrongTechniqueEvidence && hasDocumentSecurityContext;
 }
 
+function articleMatchesSelectedIdentityTechniqueBridge(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
+  const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
+  const selectedBridgeTechniqueInterests = selectedSharedInterests.filter((interestId) =>
+    interestId === "holography" || interestId === "ovd"
+  );
+
+  if (!selectedIdentityInterests.includes("id_cards") || !selectedBridgeTechniqueInterests.length) {
+    return false;
+  }
+
+  const idCardsScopeMatched = computePersonalInterestBoost(article, "id_cards").score >= 18;
+  if (!idCardsScopeMatched) {
+    return false;
+  }
+
+  return selectedBridgeTechniqueInterests.some((interestId) =>
+    getSharedSecurityStandaloneAssessment(article, interestId).included
+  );
+}
+
 // Identity Documents retrieval should start from secure-document intent, not generic travel/passport mentions.
 const IDENTITY_DOCUMENT_RETRIEVAL_EXCLUSION_TERMS = [
   "agritourism passport",
@@ -8028,15 +8049,18 @@ function articleMatchesPersonalDashboardSelection(article) {
     return matched;
   }
 
+  const selectedMainDomains = getSelectedMainDomains(selectedInterests);
+  const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
+  const identityTechniqueBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, selectedInterests);
   const primaryDomain = getArticleDominantDomain(article);
-  if (primaryDomain === "other") {
+  if (primaryDomain === "other" && !identityTechniqueBridgeMatched) {
     return false;
   }
 
-  const selectedMainDomains = getSelectedMainDomains(selectedInterests);
-  const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
   if (selectedMainDomains.length && !selectedMainDomains.includes(primaryDomain)) {
-    return false;
+    if (!identityTechniqueBridgeMatched || !selectedMainDomains.includes("identity_documents")) {
+      return false;
+    }
   }
 
   // Main filters define the scope ("what document / market is this about?").
