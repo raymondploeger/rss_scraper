@@ -3783,6 +3783,73 @@ function matchesSelectedSharedSecurityTechnique(article, selectedInterests = nor
   );
 }
 
+const ID_CARDS_HOLOGRAPHY_OVD_BRIDGE_TECHNIQUE_TERMS = [
+  "hologram",
+  "holograms",
+  "holography",
+  "holographic",
+  "dovid",
+  "dovids",
+  "nano dovid",
+  "nanodovid",
+  "ovd",
+  "optically variable device",
+  "optically variable feature",
+];
+
+const ID_CARDS_HOLOGRAPHY_OVD_BRIDGE_DOCUMENT_TERMS = [
+  "id documents",
+  "identity documents",
+  "id card",
+  "id cards",
+  "identity card",
+  "identity cards",
+  "secure document",
+  "secure documents",
+  "document protection",
+  "identity document protection",
+  "security feature",
+  "security features",
+  "physical document",
+  "physical documents",
+];
+
+function matchesIdCardsHolographyOvdCombinationBridge(article, selectedIdentityInterests = [], selectedSharedInterests = []) {
+  const hasIdCardsSelected = selectedIdentityInterests.includes("id_cards");
+  const selectedBridgeTechniqueInterests = selectedSharedInterests.filter((interestId) =>
+    interestId === "holography" || interestId === "ovd"
+  );
+
+  if (!hasIdCardsSelected || !selectedBridgeTechniqueInterests.length) {
+    return false;
+  }
+
+  const techniqueMatched = selectedBridgeTechniqueInterests.some((interestId) =>
+    getSharedSecurityStandaloneAssessment(article, interestId).included
+  );
+  if (!techniqueMatched) {
+    return false;
+  }
+
+  const context = getPersonalBoostContext(article);
+  const articleText = [
+    context.titleText,
+    context.tagText,
+    context.bodyText,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const hasStrongTechniqueEvidence = ID_CARDS_HOLOGRAPHY_OVD_BRIDGE_TECHNIQUE_TERMS.some((term) =>
+    textMatchesKeyword(articleText, term)
+  );
+  const hasDocumentSecurityContext = ID_CARDS_HOLOGRAPHY_OVD_BRIDGE_DOCUMENT_TERMS.some((term) =>
+    textMatchesKeyword(articleText, term)
+  );
+
+  return hasStrongTechniqueEvidence && hasDocumentSecurityContext;
+}
+
 // Identity Documents retrieval should start from secure-document intent, not generic travel/passport mentions.
 const IDENTITY_DOCUMENT_RETRIEVAL_EXCLUSION_TERMS = [
   "agritourism passport",
@@ -8003,8 +8070,14 @@ function articleMatchesPersonalDashboardSelection(article) {
     const selectedIdentityInterests = selectedInterests.filter(
       (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "identity_documents"
     );
+    const idCardsHolographyOvdBridgeMatched = matchesIdCardsHolographyOvdCombinationBridge(
+      article,
+      selectedIdentityInterests,
+      selectedSharedInterests
+    );
     const identityScopeMatched = !selectedIdentityInterests.length
-      || selectedIdentityInterests.some((interestId) => computePersonalInterestBoost(article, interestId).score >= 18);
+      || selectedIdentityInterests.some((interestId) => computePersonalInterestBoost(article, interestId).score >= 18)
+      || idCardsHolographyOvdBridgeMatched;
     return identityScopeMatched && sharedSecurityTechniqueMatched;
   }
 
