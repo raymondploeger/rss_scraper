@@ -2103,6 +2103,7 @@ const STRONG_BANKNOTE_DOMAIN_SIGNAL_TERMS = [
   "banknote",
   "banknotes",
   "currency",
+  "ariary",
   "central bank",
   "security thread",
   "substrate",
@@ -12035,6 +12036,20 @@ function getArticleTopicType(article) {
   return "noise";
 }
 
+function getArticleCardTopic(article) {
+  const storedTopic = article?.topic || "General";
+  const strongBanknoteSignals = getStrongBanknoteDomainSignalAssessment(article);
+
+  if (
+    strongBanknoteSignals.matched &&
+    !strongBanknoteSignals.concreteIdentityMatches.length
+  ) {
+    return "Banknotes";
+  }
+
+  return storedTopic;
+}
+
 function getPassportEventType(article) {
   return getCachedArticleValue(article, "passportEventType", () => {
     const text = getArticleTopicClassifierText(article);
@@ -17840,7 +17855,7 @@ function renderArticleCard(article) {
     image.src = PLACEHOLDER_IMAGE;
   };
 
-  topic.textContent = article.topic || "General";
+  topic.textContent = getArticleCardTopic(article);
   source.textContent = article.source || "Unknown source";
   date.textContent = formatDate(article.pubDate);
   title.textContent = article.title || "Untitled article";
