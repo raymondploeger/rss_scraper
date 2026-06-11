@@ -9,6 +9,7 @@
     "setup": "prisma generate && prisma migrate deploy",
     "dev": "node --watch src/server.js",
     "start": "node src/start.js",
+    "audit:storage": "node scripts/audit-storage.js",
     "db:size": "node scripts/database-size-report.js",
     "db:poll-logs": "node scripts/poll-logs-analysis.js",
     "db:poll-indexes": "node scripts/poll-logs-index-analysis.js",

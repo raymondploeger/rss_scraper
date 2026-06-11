@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "npm --prefix backend run dev",
     "start": "npm --prefix backend start",
+    "audit:storage": "npm --prefix backend run audit:storage",
     "cleanup:vendor-noise": "npm --prefix backend run cleanup:vendor-noise",
     "cleanup:vendor-noise:apply": "npm --prefix backend run cleanup:vendor-noise:apply",
     "prisma:generate": "npm --prefix backend run prisma:generate",
