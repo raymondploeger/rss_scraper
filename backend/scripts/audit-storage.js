@@ -87,14 +87,19 @@ async function main() {
       "Index Sizes",
       `
         SELECT
-          schemaname AS schema_name,
-          tablename AS table_name,
-          indexname AS index_name,
-          pg_size_pretty(pg_relation_size(indexrelid)) AS index_size,
-          pg_relation_size(indexrelid) AS index_size_bytes,
-          idx_scan
-        FROM pg_stat_user_indexes
-        ORDER BY pg_relation_size(indexrelid) DESC
+          ns.nspname AS schema_name,
+          tbl.relname AS table_name,
+          idx.relname AS index_name,
+          pg_size_pretty(pg_relation_size(idx.oid)) AS index_size,
+          pg_relation_size(idx.oid) AS index_size_bytes,
+          COALESCE(stats.idx_scan, 0)::bigint AS idx_scan
+        FROM pg_index i
+        JOIN pg_class idx ON idx.oid = i.indexrelid
+        JOIN pg_class tbl ON tbl.oid = i.indrelid
+        JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
+        LEFT JOIN pg_stat_user_indexes stats ON stats.indexrelid = idx.oid
+        WHERE ns.nspname NOT IN ('pg_catalog', 'information_schema')
+        ORDER BY pg_relation_size(idx.oid) DESC
       `
     );
 
@@ -172,6 +177,23 @@ async function main() {
           COUNT(*) FILTER (WHERE "startedAt" < NOW() - INTERVAL '60 days')::bigint AS older_than_60_days,
           COUNT(*) FILTER (WHERE "startedAt" < NOW() - INTERVAL '90 days')::bigint AS older_than_90_days
         FROM poll_logs
+      `
+    );
+
+    await runQuery(
+      "Poll Logs By Status",
+      `
+        SELECT
+          status,
+          COUNT(*)::bigint AS poll_log_count,
+          COUNT(*) FILTER (WHERE "startedAt" < NOW() - INTERVAL '30 days')::bigint AS older_than_30_days,
+          COUNT(*) FILTER (WHERE "startedAt" < NOW() - INTERVAL '60 days')::bigint AS older_than_60_days,
+          COUNT(*) FILTER (WHERE "startedAt" < NOW() - INTERVAL '90 days')::bigint AS older_than_90_days,
+          MIN("startedAt") AS oldest_started_at,
+          MAX("startedAt") AS newest_started_at
+        FROM poll_logs
+        GROUP BY status
+        ORDER BY poll_log_count DESC
       `
     );
 
