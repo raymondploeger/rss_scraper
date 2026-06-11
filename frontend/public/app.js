@@ -2099,6 +2099,42 @@ const SECURITY_PRINTING_TOP_LEVEL_NEGATIVE_TECH_TERMS = [
   "software update",
   "operating system",
 ];
+const STRONG_BANKNOTE_DOMAIN_SIGNAL_TERMS = [
+  "banknote",
+  "banknotes",
+  "currency",
+  "central bank",
+  "security thread",
+  "substrate",
+  "banknote security",
+  "security feature",
+  "note issuance",
+  "denomination",
+  "anti-counterfeit banknote",
+  "polymer banknote",
+];
+const STRONG_BANKNOTE_CORE_TERMS = [
+  "banknote",
+  "banknotes",
+  "banknote security",
+  "anti-counterfeit banknote",
+  "polymer banknote",
+];
+const CONCRETE_IDENTITY_DOCUMENT_ANCHOR_TERMS = [
+  "passport",
+  "passports",
+  "id card",
+  "id cards",
+  "identity card",
+  "identity cards",
+  "residence permit",
+  "residence permits",
+  "driver license",
+  "driver licenses",
+  "driver's license",
+  "travel document",
+  "travel documents",
+];
 const PERSONAL_DASHBOARD_MAIN_DOMAIN_GROUP_IDS = new Set([
   "banknote_intelligence",
   "identity_documents",
@@ -4450,6 +4486,49 @@ function countBoostKeywordMatches(text, keywords = []) {
   return keywords.filter((keyword) => textMatchesKeyword(text, keyword)).length;
 }
 
+function getStrongBanknoteDomainSignalAssessment(article) {
+  return getCachedArticleValue(article, "strongBanknoteDomainSignalAssessment", () => {
+    const context = getPersonalBoostContext(article);
+    const titleMatches = STRONG_BANKNOTE_DOMAIN_SIGNAL_TERMS.filter((term) => textMatchesKeyword(context.titleText, term));
+    const tagMatches = STRONG_BANKNOTE_DOMAIN_SIGNAL_TERMS.filter((term) => textMatchesKeyword(context.tagText, term));
+    const metadataMatches = STRONG_BANKNOTE_DOMAIN_SIGNAL_TERMS.filter((term) => textMatchesKeyword(context.metadataText, term));
+    const bodyMatches = STRONG_BANKNOTE_DOMAIN_SIGNAL_TERMS.filter((term) => textMatchesKeyword(context.bodyText, term));
+    const allMatchedTerms = Array.from(new Set([
+      ...titleMatches,
+      ...tagMatches,
+      ...metadataMatches,
+      ...bodyMatches,
+    ]));
+    const concreteIdentityMatches = CONCRETE_IDENTITY_DOCUMENT_ANCHOR_TERMS.filter((term) =>
+      textMatchesKeyword(`${context.titleText} ${context.tagText} ${context.bodyText}`, term)
+    );
+    const hasCoreBanknoteSignal = STRONG_BANKNOTE_CORE_TERMS.some((term) =>
+      textMatchesKeyword(`${context.titleText} ${context.tagText} ${context.metadataText} ${context.bodyText}`, term)
+    );
+    const hasCentralBankSecurityThreadCombo =
+      allMatchedTerms.includes("central bank") && allMatchedTerms.includes("security thread");
+    const weightedScore =
+      (titleMatches.length * 8) +
+      (tagMatches.length * 5) +
+      (metadataMatches.length * 4) +
+      (bodyMatches.length * 1.25);
+    const matched = weightedScore >= 8 && (hasCoreBanknoteSignal || hasCentralBankSecurityThreadCombo);
+    const boost = matched ? Math.min(46, Math.round(16 + weightedScore + (allMatchedTerms.length * 3))) : 0;
+    const identityPenalty = matched && !concreteIdentityMatches.length
+      ? Math.min(42, Math.round(12 + weightedScore))
+      : 0;
+
+    return {
+      matched,
+      boost,
+      identityPenalty,
+      matchedTerms: allMatchedTerms,
+      concreteIdentityMatches,
+      weightedScore,
+    };
+  });
+}
+
 function getSecurityPrintingTopLevelAdjustment(context) {
   const haystack = [
     context.titleText,
@@ -4633,6 +4712,8 @@ function computePersonalInterestBoost(article, interestId) {
     }
 
     if (groupId === "banknote_intelligence") {
+      const strongBanknoteSignals = getStrongBanknoteDomainSignalAssessment(article);
+      score += strongBanknoteSignals.boost;
       const banknoteNoise = getBanknoteNoiseAssessment(article);
       score += Math.min(90, Math.round(banknoteNoise.positiveHits * 0.75));
       score -= Math.min(260, Math.round(banknoteNoise.totalNoiseHits * 2.4));
@@ -4813,6 +4894,7 @@ function computePersonalInterestBoost(article, interestId) {
         score += Math.min(95, Math.round(signals.laminateHits * 1.5));
         score -= Math.min(140, Math.round(signals.driverLicenseHits * 0.7));
       }
+      score -= getStrongBanknoteDomainSignalAssessment(article).identityPenalty;
 
       if (DEBUG_PERSONAL_DASHBOARD && selectedSubinterest) {
         const intentScore = selectedIntent || {
@@ -7360,16 +7442,19 @@ function getArticleDominantDomain(article) {
     const identitySignals = getPersonalDomainContextProfile(context, "identity_documents");
     const digitalSignals = getPersonalDomainContextProfile(context, "digital_identity_biometrics");
     const banknoteInterestSignals = getBanknoteInterestSignals(article);
+    const strongBanknoteSignals = getStrongBanknoteDomainSignalAssessment(article);
 
     const banknoteScore =
       banknoteSignals.score
       + (banknoteInterestSignals.hasBanknoteTopic ? 18 : 0)
       + (banknoteInterestSignals.isAuthoritySource ? 28 : 0)
-      + Math.min(18, Math.round(banknoteInterestSignals.contextHits / 2));
+      + Math.min(18, Math.round(banknoteInterestSignals.contextHits / 2))
+      + strongBanknoteSignals.boost;
     const identityScore =
       identitySignals.score
       + (["travel_passport", "identity_document", "dmv_driver_license"].includes(context.topicType) ? 18 : 0)
-      + (contextMatchesSpecialistSource(context, "identity_documents") ? 14 : 0);
+      + (contextMatchesSpecialistSource(context, "identity_documents") ? 14 : 0)
+      - strongBanknoteSignals.identityPenalty;
     const digitalScore =
       digitalSignals.score
       + (context.topicType === "digital_identity" || context.domain === "digital_identity" ? 20 : 0)
@@ -7635,6 +7720,7 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
     const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
     const effectiveDomains = getEffectivePersonalDashboardDomains();
     const { mainDomainSelections, sharedInterestSelections } = getPersonalDashboardSelectedDomainConfig();
+    const strongBanknoteSignals = getStrongBanknoteDomainSignalAssessment(article);
 
     let bestDomain = "";
     let bestScore = -120;
@@ -7678,6 +7764,7 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         if (countBoostKeywordMatches(`${context.titleText} ${context.tagText} ${context.metadataText}`, ["banknote", "banknotes", "currency", "cash", "note", "central bank", "circulation", "mint"]) >= 2) {
           score += 55;
         }
+        score += strongBanknoteSignals.boost * 4;
         score += Math.min(120, Math.round(banknoteNoise.positiveHits * 0.9));
         score -= Math.min(320, Math.round(banknoteNoise.totalNoiseHits * 3.2));
         if (banknoteNoise.weakTrumpDebate) {
@@ -7878,6 +7965,7 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
           `${context.titleText} ${context.tagText} ${context.metadataText}`,
           ["banknote", "banknotes", "central bank", "currency", "commemorative note", "cash circulation"]
         ) * 32;
+        score -= strongBanknoteSignals.identityPenalty * 4;
         score = Math.round(score * borderAuthorityAdjustment.multiplier);
       } else if (groupId === "digital_identity_biometrics") {
         if (context.topicType === "digital_identity" || context.domain === "digital_identity") {
@@ -7962,6 +8050,7 @@ function getPersonalDashboardDomainMatch(article) {
         ? ["banknote_intelligence", "identity_documents"]
         : [];
     const domainScores = {};
+    const strongBanknoteSignals = getStrongBanknoteDomainSignalAssessment(article);
 
     effectiveDomains.forEach((groupId) => {
       const domainContext = getPersonalDomainContextProfile(context, groupId);
@@ -7989,6 +8078,12 @@ function getPersonalDashboardDomainMatch(article) {
 
       if (!selectedDomainInterests.length && !sharedInterestSelections.length) {
         score = domainContext.score;
+      }
+
+      if (groupId === "banknote_intelligence") {
+        score += strongBanknoteSignals.boost;
+      } else if (groupId === "identity_documents") {
+        score -= strongBanknoteSignals.identityPenalty;
       }
 
       const hasExplicitDomainAffinity =
