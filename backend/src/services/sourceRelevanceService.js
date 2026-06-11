@@ -2,6 +2,24 @@ export const SOURCE_RELEVANCE_RULES = [
   {
     name: "G+D Press Releases",
     sourceKeys: ["g+d press releases", "gi-de.com/en/about-us/press/press-releases"],
+    rejectPagePatterns: [
+      "/about-us/ventures",
+      "/currency-technology/software",
+      "/currency-technology/cash",
+      "/currency-technology/cash-management",
+      "/identity-technologies/veridos",
+      "/veridos",
+    ],
+    rejectExactPaths: [
+      "/en",
+      "/en/about-us/press/press-releases",
+    ],
+    rejectTitlePatterns: [
+      "end-to-end cash and currency management",
+      "g+d ventures",
+      "secure cash management software",
+      "veridos - your trusted identity partner",
+    ],
     include: [
       "authentication",
       "banknote",
@@ -133,6 +151,25 @@ export const SOURCE_RELEVANCE_RULES = [
   {
     name: "Bundesdruckerei Press Releases",
     sourceKeys: ["bundesdruckerei press releases", "bundesdruckerei.de/en/newsroom/press-releases"],
+    rejectPagePatterns: [
+      "/fields-of-use/",
+      "/fields-use/",
+      "/group/",
+      "/portal",
+      "/solutions/",
+      "/trust-services/",
+    ],
+    rejectExactPaths: [
+      "/en/newsroom",
+      "/en/newsroom/latest-news",
+      "/en/newsroom/press-releases",
+    ],
+    rejectTitlePatterns: [
+      "d-trust ehealth antragsportal",
+      "d-trust portal",
+      "latest news",
+      "press releases of the bundesdruckerei-group",
+    ],
     include: [
       "ausweis",
       "banknote",
@@ -214,6 +251,41 @@ export function findSourceRuleMatches(text, terms = []) {
   });
 }
 
+function getArticlePath(article) {
+  const rawUrl = String(article?.link || "").trim();
+  if (!rawUrl) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(rawUrl, "https://example.invalid");
+    const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
+    return pathname.toLowerCase();
+  } catch {
+    return rawUrl.split("?")[0].replace(/\/+$/, "").toLowerCase();
+  }
+}
+
+function findRejectedPageMatches(rule, article) {
+  const articlePath = getArticlePath(article);
+  const title = String(article?.title || "").trim().toLowerCase();
+  const rejectedExactPaths = (rule.rejectExactPaths || []).filter((path) =>
+    articlePath === String(path || "").replace(/\/+$/, "").toLowerCase()
+  );
+  const rejectedPathPatterns = (rule.rejectPagePatterns || []).filter((pattern) =>
+    articlePath.includes(String(pattern || "").toLowerCase())
+  );
+  const rejectedTitlePatterns = (rule.rejectTitlePatterns || []).filter((pattern) =>
+    title.includes(String(pattern || "").toLowerCase())
+  );
+
+  return [
+    ...rejectedExactPaths.map((match) => `path:${match}`),
+    ...rejectedPathPatterns.map((match) => `path-pattern:${match}`),
+    ...rejectedTitlePatterns.map((match) => `title:${match}`),
+  ];
+}
+
 export function getSourceRelevanceAssessment(feed, article) {
   const rule = getSourceRelevanceRule(feed);
   if (!rule) {
@@ -234,6 +306,18 @@ export function getSourceRelevanceAssessment(feed, article) {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+  const rejectedPageMatches = findRejectedPageMatches(rule, article);
+  if (rejectedPageMatches.length) {
+    return {
+      accepted: false,
+      rule,
+      includedTerms: findSourceRuleMatches(articleText, rule.include),
+      excludedTerms: findSourceRuleMatches(articleText, rule.exclude),
+      rejectedPageMatches,
+      reason: `rejected-page:${rejectedPageMatches.join(", ")}`,
+    };
+  }
+
   const protectedText = [
     article?.title,
     article?.link,
