@@ -18,6 +18,8 @@
     "db:product-cleanup:execute": "node scripts/cleanup-product-pages.js --execute",
     "cleanup:vendor-noise": "node scripts/cleanup-vendor-noise.js",
     "cleanup:vendor-noise:apply": "node scripts/cleanup-vendor-noise.js --apply",
+    "cleanup:vendor-quality": "node scripts/cleanup-vendor-quality.js",
+    "cleanup:vendor-quality:apply": "node scripts/cleanup-vendor-quality.js --apply",
     "db:optimize-poll-indexes": "node scripts/optimize-poll-log-indexes.js",
     "digital-subgroup:diagnostics": "node scripts/digital-subgroup-overlap-diagnostics.js",
     "digital-subgroup:kyc-diagnostics": "node scripts/digital-kyc-diagnostics.js",
