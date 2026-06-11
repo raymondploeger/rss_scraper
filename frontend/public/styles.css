@@ -150,6 +150,31 @@ img {
   gap: 12px;
 }
 
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+}
+
+.app-logo {
+  width: clamp(84px, 11vw, 132px);
+  height: auto;
+  max-height: 64px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+:root[data-theme="dark"] .app-logo {
+  background: #ffffff;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.28);
+}
+
 .dashboard-layout {
   display: grid;
   grid-template-columns: 360px minmax(0, 1fr);
@@ -2062,11 +2087,17 @@ button.grouped-sources-more {
 
   .app-header,
   .header-actions,
+  .header-brand,
   .content-head,
   .panel-head,
   .panel-head-actions {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .app-logo {
+    width: 112px;
+    max-height: 58px;
   }
 
   .filter-grid,
