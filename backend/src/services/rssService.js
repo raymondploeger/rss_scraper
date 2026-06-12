@@ -954,11 +954,59 @@ function buildSicpaNewsroomCandidate($, block, pageUrl) {
 function buildSurysNewsroomCandidate($, block, pageUrl) {
   const node = $(block);
   const titleNode = node.find("h1, h2, h3, h4, .entry-title, .post-title").first();
-  const linkNode =
-    titleNode.find("a[href]").first().length > 0
-      ? titleNode.find("a[href]").first()
-      : node.find("a[rel='bookmark'], a[href]").first();
-  const href = linkNode.attr("href") || "";
+  const titleLinks = titleNode.find("a[href]").toArray();
+  const allLinks = node.find("a[href]").toArray();
+  const isBlockedSurysArticleHref = (href) => {
+    const normalized = String(href || "").trim().toLowerCase();
+    if (
+      !normalized ||
+      normalized.startsWith("#") ||
+      normalized.startsWith("mailto:") ||
+      normalized.startsWith("tel:") ||
+      normalized.startsWith("javascript:")
+    ) {
+      return true;
+    }
+
+    try {
+      const parsed = new URL(href, pageUrl);
+      const pathname = parsed.pathname.toLowerCase();
+      return (
+        pathname.includes("/category/") ||
+        pathname.includes("/tag/") ||
+        pathname.includes("/author/") ||
+        pathname.includes("/page/") ||
+        parsed.hash.length > 0
+      );
+    } catch {
+      return true;
+    }
+  };
+  const scoreSurysArticleLink = (element, index) => {
+    const link = $(element);
+    const text = sanitizeFeedText(link.text(), "").toLowerCase();
+    const href = link.attr("href") || "";
+    if (isBlockedSurysArticleHref(href)) {
+      return -1;
+    }
+
+    if (titleLinks.includes(element)) {
+      return 100 - index;
+    }
+    if (text === "read more" || text.includes("read more")) {
+      return 80 - index;
+    }
+    if (String(link.attr("rel") || "").toLowerCase().includes("bookmark")) {
+      return 70 - index;
+    }
+
+    return 10 - index;
+  };
+  const linkNode = allLinks
+    .map((element, index) => ({ element, score: scoreSurysArticleLink(element, index) }))
+    .filter((entry) => entry.score >= 0)
+    .sort((left, right) => right.score - left.score)[0]?.element;
+  const href = linkNode ? $(linkNode).attr("href") || "" : "";
   const link = href ? new URL(href, pageUrl).toString() : "";
   if (!link) {
     return null;
@@ -966,7 +1014,7 @@ function buildSurysNewsroomCandidate($, block, pageUrl) {
 
   const title =
     sanitizeFeedText(titleNode.text(), "") ||
-    sanitizeFeedText(linkNode.text(), "") ||
+    sanitizeFeedText(linkNode ? $(linkNode).text() : "", "") ||
     sanitizeFeedText(node.find("a[href]").first().text(), "");
   const excerpt =
     sanitizeFeedText(node.find(".entry-summary, .post-excerpt, .excerpt, .entry-content p, p").first().text(), "") ||
