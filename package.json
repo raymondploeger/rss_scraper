@@ -19,6 +19,8 @@
     "cleanup:sicpa-quality:apply": "npm --prefix backend run cleanup:sicpa-quality:apply",
     "cleanup:sicpa-thumbnails": "npm --prefix backend run cleanup:sicpa-thumbnails",
     "cleanup:sicpa-thumbnails:apply": "npm --prefix backend run cleanup:sicpa-thumbnails:apply",
+    "cleanup:bundesdruckerei-homepage": "npm --prefix backend run cleanup:bundesdruckerei-homepage",
+    "cleanup:bundesdruckerei-homepage:apply": "npm --prefix backend run cleanup:bundesdruckerei-homepage:apply",
     "prisma:generate": "npm --prefix backend run prisma:generate",
     "prisma:migrate": "npm --prefix backend run prisma:migrate",
     "prisma:deploy": "npm --prefix backend run prisma:deploy"
