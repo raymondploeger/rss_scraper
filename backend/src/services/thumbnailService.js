@@ -112,13 +112,28 @@ function tokenizeForMatch(value) {
 
 function isLikelyGenericMetadataImage(imageUrl) {
   const value = String(imageUrl || "").toLowerCase();
-  return [
+
+  let filename = value;
+  try {
+    const parsed = new URL(imageUrl);
+    filename = decodeURIComponent(parsed.pathname.split("/").filter(Boolean).pop() || "");
+  } catch {
+    filename = value.split("?")[0].split("#")[0].split("/").filter(Boolean).pop() || value;
+  }
+
+  const normalizedFilename = filename.toLowerCase();
+  const hasGenericFilename = [
+    /^default(?:[-_.]|$)/,
+    /(?:^|[-_.])default(?:[-_.]|$)/,
+    /^no[-_.]?image(?:[-_.]|$)/,
+  ].some((pattern) => pattern.test(normalizedFilename));
+
+  return hasGenericFilename || [
     "logo",
     "icon",
     "favicon",
     "avatar",
     "banner",
-    "default",
     "placeholder",
     "siteimage",
     "social-share",
