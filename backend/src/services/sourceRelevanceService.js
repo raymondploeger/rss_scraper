@@ -436,6 +436,27 @@ export const SOURCE_RELEVANCE_RULES = [
       "trust service",
       "trust services",
     ],
+    protectedPagePatterns: [
+      "/newsroom/press-releases/",
+      "/newsroom/pressemitteilungen/",
+    ],
+    protectedInclude: [
+      "banknote",
+      "banknotes",
+      "banknote of the future",
+      "concept banknote",
+      "eid",
+      "identity document",
+      "identity documents",
+      "id card",
+      "id cards",
+      "passport",
+      "passports",
+      "quantum computers",
+      "secure identity document",
+      "secure identity documents",
+      "security printing",
+    ],
     exclude: [
       "accessibility",
       "accessibility statement",
@@ -531,6 +552,18 @@ function findRejectedPageMatches(rule, article) {
   ];
 }
 
+function articleMatchesProtectedPagePattern(rule, article) {
+  const protectedPagePatterns = rule.protectedPagePatterns || [];
+  if (!protectedPagePatterns.length) {
+    return true;
+  }
+
+  const articlePath = getArticlePath(article);
+  return protectedPagePatterns.some((pattern) =>
+    articlePath.includes(String(pattern || "").toLowerCase())
+  );
+}
+
 export function getSourceRelevanceAssessment(feed, article) {
   const rule = getSourceRelevanceRule(feed);
   if (!rule) {
@@ -571,7 +604,7 @@ export function getSourceRelevanceAssessment(feed, article) {
     .join(" ")
     .toLowerCase();
   const protectedTerms = findSourceRuleMatches(protectedText, rule.protectedInclude || []);
-  if (protectedTerms.length) {
+  if (protectedTerms.length && articleMatchesProtectedPagePattern(rule, article)) {
     return {
       accepted: true,
       rule,
