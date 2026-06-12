@@ -22,6 +22,8 @@
     "cleanup:vendor-quality:apply": "node scripts/cleanup-vendor-quality.js --apply",
     "cleanup:hid-quality": "node scripts/cleanup-hid-quality.js",
     "cleanup:hid-quality:apply": "node scripts/cleanup-hid-quality.js --apply",
+    "cleanup:hid-thumbnails": "node scripts/cleanup-hid-thumbnails.js",
+    "cleanup:hid-thumbnails:apply": "node scripts/cleanup-hid-thumbnails.js --apply",
     "db:optimize-poll-indexes": "node scripts/optimize-poll-log-indexes.js",
     "digital-subgroup:diagnostics": "node scripts/digital-subgroup-overlap-diagnostics.js",
     "digital-subgroup:kyc-diagnostics": "node scripts/digital-kyc-diagnostics.js",
