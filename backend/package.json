@@ -26,6 +26,8 @@
     "cleanup:hid-thumbnails:apply": "node scripts/cleanup-hid-thumbnails.js --apply",
     "cleanup:sicpa-quality": "node scripts/cleanup-sicpa-quality.js",
     "cleanup:sicpa-quality:apply": "node scripts/cleanup-sicpa-quality.js --apply",
+    "cleanup:sicpa-thumbnails": "node scripts/cleanup-sicpa-thumbnails.js",
+    "cleanup:sicpa-thumbnails:apply": "node scripts/cleanup-sicpa-thumbnails.js --apply",
     "db:optimize-poll-indexes": "node scripts/optimize-poll-log-indexes.js",
     "digital-subgroup:diagnostics": "node scripts/digital-subgroup-overlap-diagnostics.js",
     "digital-subgroup:kyc-diagnostics": "node scripts/digital-kyc-diagnostics.js",

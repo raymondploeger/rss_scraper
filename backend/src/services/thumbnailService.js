@@ -58,6 +58,20 @@ export function isGoogleNewsPlaceholderImage(value) {
   );
 }
 
+export function isMalformedSicpaThumbnailUrl(value) {
+  return /^https:\/\/(?:www\.)?sicpa\.com[^/?#]/i.test(String(value || "").trim());
+}
+
+function isSicpaDrupalArticleImage(value) {
+  try {
+    const parsed = new URL(String(value || ""));
+    const hostname = parsed.hostname.replace(/^www\./, "").toLowerCase();
+    return hostname === "sicpa.com" && parsed.pathname.includes("/sites/default/files/");
+  } catch {
+    return false;
+  }
+}
+
 function decodeBase64Url(value) {
   const normalized = String(value || "")
     .replace(/-/g, "+")
@@ -112,6 +126,10 @@ function tokenizeForMatch(value) {
 
 function isLikelyGenericMetadataImage(imageUrl) {
   const value = String(imageUrl || "").toLowerCase();
+
+  if (isSicpaDrupalArticleImage(imageUrl)) {
+    return false;
+  }
 
   let filename = value;
   try {
@@ -827,6 +845,7 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
       ].filter(
         (candidate) =>
           candidate.url &&
+          !isMalformedSicpaThumbnailUrl(candidate.url) &&
           !isLikelyGenericMetadataImage(candidate.url) &&
           !isRejectedGoogleNewsImage(candidate.url, link)
       );
