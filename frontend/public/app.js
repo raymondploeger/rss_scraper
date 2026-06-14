@@ -11729,6 +11729,35 @@ function applyAnalyticsFeedFilter({ feedId, todayOnly = false }) {
   renderDashboard();
 }
 
+function applySourceListFeedFilter(feedId) {
+  const selectedFeed = state.feeds.find((feed) => feed.id === feedId);
+  if (!selectedFeed) {
+    return;
+  }
+
+  clearExactArticleFilter();
+  state.filters.feedId = getUniqueFeedIdentity(selectedFeed);
+  state.filters.dmvFeedId = "";
+  state.filters.canadaDmvFeedPath = "";
+  state.filters.canadaDmvAll = false;
+  state.dashboardMode = "normal";
+
+  if (elements.feedFilter) {
+    elements.feedFilter.value = state.filters.feedId;
+  }
+  if (elements.dmvFeedFilter) {
+    elements.dmvFeedFilter.value = "";
+  }
+  if (elements.canadaDmvFilter) {
+    elements.canadaDmvFilter.value = "";
+  }
+
+  renderFeedList();
+  renderDmvOfficialLink();
+  renderDmvModeIndicator();
+  scheduleRenderArticles("source-list-view-feed", { mode: "frame" });
+}
+
 function getTodaySummaryCardFromEvent(event) {
   const target = event.target instanceof Element ? event.target : event.target?.parentElement;
   return target?.closest('[data-action="filter-today"]');
@@ -14480,6 +14509,7 @@ function renderFeedItem(feed) {
   const title = node.querySelector(".feed-item-title");
   const meta = node.querySelector(".feed-item-meta");
   const status = node.querySelector(".feed-status");
+  const viewButton = node.querySelector(".feed-view-button");
   const editButton = node.querySelector(".feed-edit-button");
   const deleteButton = node.querySelector(".feed-delete-button");
   const actions = node.querySelector(".feed-item-actions");
@@ -14511,6 +14541,7 @@ function renderFeedItem(feed) {
   status.classList.add(statusPresentation.tone);
 
   if (isCatalogOnly) {
+    viewButton.hidden = true;
     editButton.hidden = true;
     deleteButton.hidden = true;
     if (feed.officialUrl && actions) {
@@ -14523,8 +14554,10 @@ function renderFeedItem(feed) {
       actions.appendChild(officialLink);
     }
   } else {
+    viewButton.dataset.feedId = feed.id;
     editButton.dataset.feedId = feed.id;
     deleteButton.dataset.feedId = feed.id;
+    viewButton.dataset.action = "view-feed-articles";
     editButton.dataset.action = "edit-feed";
     deleteButton.dataset.action = "delete-feed";
   }
@@ -20229,8 +20262,15 @@ function bindEvents() {
   }
 
   elements.feedList.addEventListener("click", async (event) => {
+    const viewButton = event.target.closest('[data-action="view-feed-articles"]');
     const editButton = event.target.closest('[data-action="edit-feed"]');
     const deleteButton = event.target.closest('[data-action="delete-feed"]');
+
+    if (viewButton) {
+      const feedId = viewButton.dataset.feedId;
+      applySourceListFeedFilter(feedId);
+      return;
+    }
 
     if (editButton) {
       const feedId = editButton.dataset.feedId;
