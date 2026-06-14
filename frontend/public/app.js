@@ -3248,6 +3248,26 @@ function toDate(value) {
   return new Date(value);
 }
 
+function compareArticlesByPublicationDate(left, right) {
+  const leftPubDate = toDate(left?.pubDate).getTime() || 0;
+  const rightPubDate = toDate(right?.pubDate).getTime() || 0;
+  if (rightPubDate !== leftPubDate) {
+    return rightPubDate - leftPubDate;
+  }
+
+  const leftCreatedAt = toDate(left?.createdAt).getTime() || 0;
+  const rightCreatedAt = toDate(right?.createdAt).getTime() || 0;
+  if (rightCreatedAt !== leftCreatedAt) {
+    return rightCreatedAt - leftCreatedAt;
+  }
+
+  return String(left?.title || "").localeCompare(String(right?.title || ""));
+}
+
+function sortArticlesByPublicationDate(articles) {
+  return Array.isArray(articles) ? articles.slice().sort(compareArticlesByPublicationDate) : [];
+}
+
 function formatDate(value) {
   return new Intl.DateTimeFormat(undefined, {
     year: "numeric",
@@ -8936,11 +8956,14 @@ function getCachedGroupedFeedResult(feedIdentity) {
   const candidateArticles = selectedFeedResolution?.selectedFeedId
     ? (runtime.articlesByFeedId.get(selectedFeedResolution.selectedFeedId) || [])
     : state.articles.filter((article) => articleMatchesSelectedFeed(article, feedIdentity));
-  const rawMatches = candidateArticles.slice().sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
-  const filteredMatches = sortArticlesForCurrentDashboardMode(
-    candidateArticles.filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
-  );
-  const groupedArticles = groupArticlesByEvent(filteredMatches);
+  const rawMatches = sortArticlesByPublicationDate(candidateArticles);
+  const filteredCandidates = candidateArticles.filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }));
+  const filteredMatches = hasPersonalDashboardSelections()
+    ? sortArticlesForCurrentDashboardMode(filteredCandidates)
+    : sortArticlesByPublicationDate(filteredCandidates);
+  const groupedArticles = hasPersonalDashboardSelections()
+    ? groupArticlesByEvent(filteredMatches)
+    : sortArticlesByPublicationDate(groupArticlesByEvent(filteredMatches));
   const result = {
     selectedFeedResolution,
     rawMatches,
@@ -18703,10 +18726,14 @@ function renderArticlesFallback(error) {
             const candidateArticles = selectedFeedResolution.selectedFeedId
               ? (runtime.articlesByFeedId.get(selectedFeedResolution.selectedFeedId) || [])
               : state.articles.filter((article) => articleMatchesSelectedFeed(article, state.filters.feedId));
-            const rawFeedMatches = sortArticlesForCurrentDashboardMode(
-              candidateArticles.filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
-            );
-            return groupArticlesByEvent(rawFeedMatches);
+            const feedMatches = candidateArticles.filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }));
+            const rawFeedMatches = hasPersonalDashboardSelections()
+              ? sortArticlesForCurrentDashboardMode(feedMatches)
+              : sortArticlesByPublicationDate(feedMatches);
+            const groupedFeedMatches = groupArticlesByEvent(rawFeedMatches);
+            return hasPersonalDashboardSelections()
+              ? groupedFeedMatches
+              : sortArticlesByPublicationDate(groupedFeedMatches);
           })()
         : (() => {
           const visibleArticles = getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping });
