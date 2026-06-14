@@ -34,6 +34,24 @@ function normalizeSourceType(value) {
   return normalizedValue || "rss";
 }
 
+function normalizeFeedName(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function isGoogleAlertsRssUrl(value) {
+  try {
+    const parsed = new URL(value);
+    const hostname = parsed.hostname.toLowerCase();
+    return (
+      ["http:", "https:"].includes(parsed.protocol) &&
+      (hostname === "www.google.com" || hostname === "google.com") &&
+      parsed.pathname.toLowerCase().startsWith("/alerts/feeds/")
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function parseFeedFromUrl(url) {
   try {
     return await parser.parseURL(url);
@@ -199,6 +217,142 @@ export async function createFeed(request, response) {
   } catch (error) {
     console.error("Create feed error:", error?.stack || error);
     response.status(400).json({ error: error?.message || "Failed to create feed" });
+  }
+}
+
+export async function batchImportGoogleAlertsFeeds(request, response) {
+  try {
+    const rawFeeds = Array.isArray(request.body?.feeds) ? request.body.feeds : [];
+    if (!rawFeeds.length) {
+      return response.status(400).json({ error: "At least one Google Alerts feed is required." });
+    }
+
+    const existingFeeds = await listFeedRecords();
+    const existingUrls = new Set(existingFeeds.map((feed) => String(feed.rssUrl || "").trim()).filter(Boolean));
+    const existingNames = new Set(existingFeeds.map((feed) => normalizeFeedName(feed.name)).filter(Boolean));
+    const seenUrls = new Set();
+    const seenNames = new Set();
+    let rssFeedCount = await countFeeds({ sourceType: "rss" });
+
+    const added = [];
+    const skippedDuplicate = [];
+    const invalid = [];
+
+    for (const [index, rawFeed] of rawFeeds.entries()) {
+      const lineNumber = index + 1;
+      const name = String(rawFeed?.name || "").trim();
+      const rssUrl = String(rawFeed?.rssUrl || "").trim();
+      const topic = String(rawFeed?.topic || rawFeed?.category || "").trim();
+      const normalizedName = normalizeFeedName(name);
+
+      if (!name || !rssUrl || !topic) {
+        invalid.push({ lineNumber, name, rssUrl, topic, reason: "Missing feed name, RSS URL, or topic." });
+        continue;
+      }
+
+      if (!isGoogleAlertsRssUrl(rssUrl)) {
+        invalid.push({ lineNumber, name, rssUrl, topic, reason: "URL must be a Google Alerts RSS feed URL." });
+        continue;
+      }
+
+      let resolvedFeedUrl;
+      try {
+        resolvedFeedUrl = await resolveSourceUrl(rssUrl, "rss");
+      } catch (error) {
+        invalid.push({
+          lineNumber,
+          name,
+          rssUrl,
+          topic,
+          reason: error?.message || "Invalid or unreachable RSS feed URL.",
+        });
+        continue;
+      }
+
+      if (!isGoogleAlertsRssUrl(resolvedFeedUrl)) {
+        invalid.push({ lineNumber, name, rssUrl, topic, reason: "Resolved URL is not a Google Alerts RSS feed." });
+        continue;
+      }
+
+      if (
+        existingUrls.has(resolvedFeedUrl) ||
+        seenUrls.has(resolvedFeedUrl) ||
+        existingNames.has(normalizedName) ||
+        seenNames.has(normalizedName)
+      ) {
+        skippedDuplicate.push({
+          lineNumber,
+          name,
+          rssUrl: resolvedFeedUrl,
+          topic,
+          reason: "Duplicate feed name or RSS URL.",
+        });
+        continue;
+      }
+
+      if (rssFeedCount >= env.maxFeeds) {
+        invalid.push({
+          lineNumber,
+          name,
+          rssUrl: resolvedFeedUrl,
+          topic,
+          reason: `Maximum of ${env.maxFeeds} RSS feeds reached.`,
+        });
+        continue;
+      }
+
+      let createdFeed;
+      try {
+        createdFeed = await createFeedRecord({
+          name,
+          topic,
+          rssUrl: resolvedFeedUrl,
+          sourceType: "rss",
+          isActive: true,
+        });
+      } catch (error) {
+        if (String(error?.code || "") === "P2002") {
+          skippedDuplicate.push({
+            lineNumber,
+            name,
+            rssUrl: resolvedFeedUrl,
+            topic,
+            reason: "Duplicate feed name or RSS URL.",
+          });
+          continue;
+        }
+
+        invalid.push({
+          lineNumber,
+          name,
+          rssUrl: resolvedFeedUrl,
+          topic,
+          reason: error?.message || "Could not save feed.",
+        });
+        continue;
+      }
+
+      rssFeedCount += 1;
+      seenUrls.add(resolvedFeedUrl);
+      seenNames.add(normalizedName);
+      added.push(toFeedDto(createdFeed));
+      broadcast("feed:update", { type: "feed:update", action: "created", feed: toFeedDto(createdFeed) });
+    }
+
+    response.status(201).json({
+      summary: {
+        added: added.length,
+        skippedDuplicate: skippedDuplicate.length,
+        invalid: invalid.length,
+        totalImported: added.length,
+      },
+      added,
+      skippedDuplicate,
+      invalid,
+    });
+  } catch (error) {
+    console.error("Batch Google Alerts import error:", error?.stack || error);
+    response.status(400).json({ error: error?.message || "Failed to import Google Alerts feeds" });
   }
 }
 

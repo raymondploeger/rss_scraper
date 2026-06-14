@@ -27,7 +27,7 @@ const DEBUG_PERSONAL_DASHBOARD =
 const HARD_SUBINTEREST_MISMATCH_THRESHOLD = 12;
 const MAX_ARTICLES_IN_MEMORY = 1500;
 const MAX_VISIBLE_SOURCES_IN_LIST = 100;
-const MAX_RSS_FEEDS = 150;
+const MAX_RSS_FEEDS = 300;
 const MAX_RSS_FEEDS_MESSAGE = `Maximum of ${MAX_RSS_FEEDS} RSS feeds reached`;
 const FEED_FORM_HELPER_TEXT = `Monitor up to ${MAX_RSS_FEEDS} RSS feeds and websites.`;
 
@@ -3166,6 +3166,9 @@ const elements = {
   feedUrl: document.getElementById("feed-url"),
   feedSourceType: document.getElementById("feed-source-type"),
   feedFormStatus: document.getElementById("feed-form-status"),
+  googleAlertsBatchInput: document.getElementById("google-alerts-batch-input"),
+  googleAlertsBatchSubmit: document.getElementById("google-alerts-batch-submit"),
+  googleAlertsBatchStatus: document.getElementById("google-alerts-batch-status"),
   feedCount: document.getElementById("feed-count"),
   feedList: document.getElementById("feed-list"),
   feedPanelSearch: document.getElementById("feed-panel-search"),
@@ -14351,6 +14354,78 @@ function resetFeedForm(options = {}) {
   }
 }
 
+function parseGoogleAlertsBatchLine(line, index) {
+  const trimmed = String(line || "").trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const lowerLine = trimmed.toLowerCase();
+  if (index === 0 && lowerLine.includes("feed name") && lowerLine.includes("rss")) {
+    return null;
+  }
+
+  const delimiter = trimmed.includes("\t") ? "\t" : trimmed.includes("|") ? "|" : ",";
+  const parts = trimmed.split(delimiter).map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 3) {
+    return {
+      invalid: true,
+      lineNumber: index + 1,
+      reason: "Use: feed name | RSS URL | topic.",
+      raw: trimmed,
+    };
+  }
+
+  const urlIndex = parts.findIndex((part) => /^https?:\/\//i.test(part));
+  if (urlIndex === -1) {
+    return {
+      invalid: true,
+      lineNumber: index + 1,
+      reason: "Missing RSS URL.",
+      raw: trimmed,
+    };
+  }
+
+  const name = parts.slice(0, urlIndex).join(" ").trim();
+  const rssUrl = parts[urlIndex];
+  const topic = parts.slice(urlIndex + 1).join(" ").trim();
+
+  if (!name || !topic) {
+    return {
+      invalid: true,
+      lineNumber: index + 1,
+      reason: "Missing feed name or topic.",
+      raw: trimmed,
+    };
+  }
+
+  return {
+    name,
+    rssUrl,
+    topic,
+  };
+}
+
+function parseGoogleAlertsBatchInput(value) {
+  const parsed = [];
+  const invalid = [];
+  String(value || "")
+    .split(/\r?\n/)
+    .forEach((line, index) => {
+      const entry = parseGoogleAlertsBatchLine(line, index);
+      if (!entry) {
+        return;
+      }
+      if (entry.invalid) {
+        invalid.push(entry);
+      } else {
+        parsed.push(entry);
+      }
+    });
+
+  return { parsed, invalid };
+}
+
 function startFeedEdit(feed) {
   if (!feed) {
     return;
@@ -19950,6 +20025,74 @@ function bindEvents() {
   if (elements.importDmvButton) {
     elements.importDmvButton.addEventListener("click", async () => {
       await importDmvFeeds();
+    });
+  }
+
+  if (elements.googleAlertsBatchSubmit) {
+    elements.googleAlertsBatchSubmit.addEventListener("click", async () => {
+      const { parsed, invalid: clientInvalid } = parseGoogleAlertsBatchInput(elements.googleAlertsBatchInput?.value || "");
+      if (!parsed.length && clientInvalid.length) {
+        elements.googleAlertsBatchStatus.textContent = `No valid rows found. ${clientInvalid.length} row${clientInvalid.length === 1 ? "" : "s"} need the format: feed name | RSS URL | topic.`;
+        showNotification({
+          title: "Google Alerts import needs review",
+          message: elements.googleAlertsBatchStatus.textContent,
+          type: "warning",
+        });
+        return;
+      }
+      if (!parsed.length) {
+        elements.googleAlertsBatchStatus.textContent = "Paste at least one Google Alerts RSS feed.";
+        return;
+      }
+
+      elements.googleAlertsBatchSubmit.disabled = true;
+      elements.googleAlertsBatchStatus.textContent = `Validating ${parsed.length} Google Alerts feed${parsed.length === 1 ? "" : "s"}...`;
+
+      try {
+        const result = await apiRequest("/api/feeds/batch-google-alerts", {
+          method: "POST",
+          body: JSON.stringify({ feeds: parsed }),
+        });
+        const addedFeeds = Array.isArray(result.added) ? result.added : [];
+        if (addedFeeds.length) {
+          state.feeds = addedFeeds.concat(
+            state.feeds.filter((feed) => !addedFeeds.some((addedFeed) => addedFeed.id === feed.id))
+          );
+          rebuildFeedLookupCaches();
+          clearFeedRenderCaches();
+          renderSummary();
+          renderFeedOptions();
+          renderFeedList();
+        }
+
+        const summary = result.summary || {};
+        const invalidCount = Number(summary.invalid || 0) + clientInvalid.length;
+        const totalImported = Number(summary.totalImported ?? summary.added ?? 0);
+        elements.googleAlertsBatchStatus.textContent =
+          `Google Alerts import complete: ${Number(summary.added || 0)} added, ` +
+          `${Number(summary.skippedDuplicate || 0)} skipped duplicate, ${invalidCount} invalid, ` +
+          `${totalImported} total imported.`;
+        showNotification({
+          title: "Google Alerts import complete",
+          message: elements.googleAlertsBatchStatus.textContent,
+          type: Number(summary.added || 0) > 0 ? "success" : "warning",
+        });
+
+        if (Number(summary.added || 0) > 0 && elements.googleAlertsBatchInput) {
+          elements.googleAlertsBatchInput.value = "";
+        }
+      } catch (error) {
+        const errorMessage = error?.message || "Could not import Google Alerts feeds.";
+        elements.googleAlertsBatchStatus.textContent = `Could not import Google Alerts feeds: ${errorMessage}`;
+        showNotification({
+          title: "Google Alerts import failed",
+          message: errorMessage,
+          type: "warning",
+        });
+      } finally {
+        elements.googleAlertsBatchSubmit.disabled = false;
+        syncFeedFormMode();
+      }
     });
   }
 

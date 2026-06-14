@@ -5,7 +5,15 @@ import { fileURLToPath } from "url";
 import axios from "axios";
 import { env } from "./config/env.js";
 import { listArticles } from "./controllers/articleController.js";
-import { createFeed, deleteFeed, listFeeds, refreshAll, refreshFeed, updateFeed } from "./controllers/feedController.js";
+import {
+  batchImportGoogleAlertsFeeds,
+  createFeed,
+  deleteFeed,
+  listFeeds,
+  refreshAll,
+  refreshFeed,
+  updateFeed,
+} from "./controllers/feedController.js";
 import { asyncHandler } from "./utils/asyncHandler.js";
 import { canonicalizeUrl, normalizeText } from "./utils/text.js";
 import { importDmvFeeds } from "./controllers/dmvImportController.js";
@@ -36,6 +44,7 @@ export function createApp() {
     response.json(loadDmvCatalog().map(toDmvCatalogDto));
   });
   app.post("/api/feeds", asyncHandler(createFeed));
+  app.post("/api/feeds/batch-google-alerts", asyncHandler(batchImportGoogleAlertsFeeds));
   app.post("/api/admin/import-dmv", importDmvFeeds);
   app.post("/api/admin/cleanup-canada-feeds", asyncHandler(async (_request, response) => {
     response.json({

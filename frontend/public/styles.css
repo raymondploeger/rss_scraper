@@ -58,7 +58,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -1352,18 +1353,25 @@ h3 {
 
 .field input,
 .field select,
+.field textarea,
 .ghost-button,
 .primary-button {
   border-radius: var(--radius-sm);
 }
 
 .field input,
-.field select {
+.field select,
+.field textarea {
   width: 100%;
   padding: 11px 12px;
   border: 1px solid var(--line);
   background: var(--bg-elevated);
   color: var(--text);
+}
+
+.field textarea {
+  min-height: 112px;
+  resize: vertical;
 }
 
 .field select option {

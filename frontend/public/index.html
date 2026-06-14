@@ -224,7 +224,24 @@
                 </div>
               </form>
 
-              <p id="feed-form-status" class="status-line" role="status">Monitor up to 150 RSS feeds and websites.</p>
+              <div class="google-alerts-batch field-full">
+                <label class="field field-full">
+                  <span>Batch Google Alerts RSS feeds</span>
+                  <textarea
+                    id="google-alerts-batch-input"
+                    rows="5"
+                    placeholder="Feed name | https://www.google.com/alerts/feeds/... | Topic"
+                  ></textarea>
+                </label>
+                <div class="feed-form-actions">
+                  <button id="google-alerts-batch-submit" class="ghost-button" type="button">Import Google Alerts batch</button>
+                </div>
+                <p id="google-alerts-batch-status" class="status-line" role="status">
+                  Paste one feed per line: feed name | RSS URL | topic.
+                </p>
+              </div>
+
+              <p id="feed-form-status" class="status-line" role="status">Monitor up to 300 RSS feeds and websites.</p>
             </div>
             <div id="feed-panel-content" class="feed-panel-content" hidden>
               <label class="field">

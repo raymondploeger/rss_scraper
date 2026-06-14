@@ -13,7 +13,7 @@ const toNumber = (value, fallback) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-const MAX_RSS_FEEDS = 150;
+const MAX_RSS_FEEDS = 300;
 
 export const env = {
   port: toNumber(process.env.PORT, 4000),

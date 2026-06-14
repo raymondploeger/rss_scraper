@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  batchImportGoogleAlertsFeeds,
   createFeed,
   deleteFeed,
   listFeeds,
@@ -14,6 +15,7 @@ const router = Router();
 
 router.get("/", asyncHandler(listFeeds));
 router.post("/", asyncHandler(createFeed));
+router.post("/batch-google-alerts", asyncHandler(batchImportGoogleAlertsFeeds));
 router.post("/refresh", asyncHandler(refreshAll));
 router.post("/process", asyncHandler(processBacklog));
 router.put("/:feedId", asyncHandler(updateFeed));
