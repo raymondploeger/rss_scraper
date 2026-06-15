@@ -3283,10 +3283,15 @@ function promoteNewestArticleInSelectedFeedGroup(article) {
   };
 }
 
-function prepareSelectedFeedGroupedArticles(articles) {
+function prepareDateFirstGroupedArticles(articles) {
+  const dateSortedArticles = sortArticlesByPublicationDate(articles);
   return sortArticlesByPublicationDate(
-    groupArticlesByEvent(articles).map(promoteNewestArticleInSelectedFeedGroup)
+    groupArticlesByEvent(dateSortedArticles).map(promoteNewestArticleInSelectedFeedGroup)
   );
+}
+
+function prepareSelectedFeedGroupedArticles(articles) {
+  return prepareDateFirstGroupedArticles(articles);
 }
 
 function formatDate(value) {
@@ -8549,7 +8554,7 @@ function sortArticlesForCurrentDashboardMode(articles, options = {}) {
 
   return hasPersonalDashboardSelections()
     ? sortPersonalDashboardResults(articles, options)
-    : articles.slice().sort(compareArticlesForDisplay);
+    : sortArticlesByPublicationDate(articles);
 }
 
 function renderPersonalLaneSections(container, articles, laneCounts) {
@@ -18784,17 +18789,21 @@ function renderArticlesFallback(error) {
             const rawFeedMatches = hasPersonalDashboardSelections()
               ? sortArticlesForCurrentDashboardMode(feedMatches)
               : sortArticlesByPublicationDate(feedMatches);
-            const groupedFeedMatches = groupArticlesByEvent(rawFeedMatches);
             return hasPersonalDashboardSelections()
-              ? groupedFeedMatches
-              : sortArticlesByPublicationDate(groupedFeedMatches.map(promoteNewestArticleInSelectedFeedGroup));
+              ? groupArticlesByEvent(rawFeedMatches)
+              : prepareDateFirstGroupedArticles(rawFeedMatches);
           })()
         : (() => {
           const visibleArticles = getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping });
-          const groupedArticles = groupArticlesByEvent(visibleArticles);
-          return shouldIgnoreFeedIdForGrouping
+          const groupedArticles = hasPersonalDashboardSelections()
+            ? groupArticlesByEvent(visibleArticles)
+            : prepareDateFirstGroupedArticles(visibleArticles);
+          const feedScopedArticles = shouldIgnoreFeedIdForGrouping
             ? groupedArticles.filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
             : groupedArticles;
+          return hasPersonalDashboardSelections()
+            ? feedScopedArticles
+            : sortArticlesByPublicationDate(feedScopedArticles);
         })();
   } catch (innerError) {
     console.warn("[render-articles-fallback-inner]", {
@@ -18910,7 +18919,9 @@ function renderArticles() {
       filteredRawArticles = sortArticlesForCurrentDashboardMode(
         cachedQuery.articles.filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
       );
-      const groupedArticles = groupArticlesByEvent(filteredRawArticles);
+      const groupedArticles = hasPersonalDashboardSelections()
+        ? groupArticlesByEvent(filteredRawArticles)
+        : prepareDateFirstGroupedArticles(filteredRawArticles);
       groupedArticlesCount = groupedArticles.length;
       articles = groupedArticles;
     } else if (activeFeedId && !state.filters.date) {
@@ -18937,13 +18948,18 @@ function renderArticles() {
       personalDashboardBasePool = state.articles;
       const visibleArticles = getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping });
       filteredRawArticles = visibleArticles;
-      const groupedArticles = groupArticlesByEvent(visibleArticles);
+      const groupedArticles = hasPersonalDashboardSelections()
+        ? groupArticlesByEvent(visibleArticles)
+        : prepareDateFirstGroupedArticles(visibleArticles);
       groupedArticlesCount = groupedArticles.length;
       feedRenderFilteredCount = filteredRawArticles.length;
       feedRenderGroupedCount = groupedArticlesCount;
-      articles = shouldIgnoreFeedIdForGrouping
+      const feedScopedArticles = shouldIgnoreFeedIdForGrouping
         ? groupedArticles.filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
         : groupedArticles;
+      articles = hasPersonalDashboardSelections()
+        ? feedScopedArticles
+        : sortArticlesByPublicationDate(feedScopedArticles);
     }
 
     const selectedUsDmvEntry = getSelectedUsDmvCatalogEntry();
