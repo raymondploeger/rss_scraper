@@ -17,13 +17,12 @@ dotenv.config({ path: envFilePath });
 const databaseUrl = process.env.DATABASE_URL || "";
 const apply = process.argv.slice(2).includes("--apply");
 
-const TARGET_FEED_NAME = "banknotes";
-const BAD_FALLBACK_THUMBNAIL =
+const KNOWN_BAD_FALLBACK_THUMBNAIL =
   "https://prismreports.org/wp-content/uploads/2026/03/GettyImages-2260885470-scaled.jpg";
 
 const client = new Client({
   connectionString: databaseUrl,
-  application_name: "cleanup-banknotes-thumbnails",
+  application_name: "cleanup-google-alert-thumbnails",
 });
 
 function formatRows(rows = []) {
@@ -37,6 +36,16 @@ function formatRows(rows = []) {
   );
 }
 
+function isGoogleAlertsFeedUrl(value) {
+  try {
+    const parsed = new URL(String(value || ""));
+    const hostname = parsed.hostname.replace(/^www\./, "").toLowerCase();
+    return hostname === "google.com" && parsed.pathname.startsWith("/alerts/feeds/");
+  } catch {
+    return false;
+  }
+}
+
 function isValidPublisherThumbnail(value) {
   const thumbnail = String(value || "").trim();
   return Boolean(thumbnail) && thumbnail !== env.placeholderImage && !isGoogleNewsPlaceholderImage(thumbnail);
@@ -46,7 +55,7 @@ function isSuccessfulImageHttpStatus(value) {
   return /^2\d\d\s+image\//i.test(String(value || "").trim());
 }
 
-async function fetchBanknotesThumbnailCandidates() {
+async function fetchGoogleAlertThumbnailCandidates() {
   const result = await client.query(
     `
       SELECT
@@ -57,24 +66,36 @@ async function fetchBanknotesThumbnailCandidates() {
         a.thumbnail,
         a.summary,
         a."contentSnippet",
+        a."feedId",
         a."feedName",
         a."pubDate",
-        a."createdAt"
+        a."createdAt",
+        f.name AS feed_name,
+        f."rssUrl" AS feed_url,
+        f."sourceFallbackImage" AS feed_fallback_image
       FROM articles a
       INNER JOIN feeds f
         ON f.id = a."feedId"
       WHERE
-        f.name = $1
-        AND a."feedName" = $1
-        AND a.thumbnail = $2
+        (
+          LOWER(f."rssUrl") LIKE 'https://www.google.com/alerts/feeds/%'
+          OR LOWER(f."rssUrl") LIKE 'https://google.com/alerts/feeds/%'
+        )
+        AND a.thumbnail IS NOT NULL
+        AND a.thumbnail <> ''
+        AND (
+          a.thumbnail = f."sourceFallbackImage"
+          OR a.thumbnail = $1
+        )
       ORDER BY
+        f.name ASC,
         a."pubDate" DESC,
         a."createdAt" DESC
     `,
-    [TARGET_FEED_NAME, BAD_FALLBACK_THUMBNAIL]
+    [KNOWN_BAD_FALLBACK_THUMBNAIL]
   );
 
-  return result.rows;
+  return result.rows.filter((row) => isGoogleAlertsFeedUrl(row.feed_url));
 }
 
 async function getImageHttpStatus(imageUrl, referer) {
@@ -140,6 +161,8 @@ async function diagnoseCandidate(article) {
 
   return {
     id: article.id,
+    feedId: article.feedId,
+    feedName: article.feed_name || article.feedName || "",
     title: article.title || "",
     url,
     currentThumbnail: article.thumbnail || "",
@@ -171,36 +194,84 @@ async function mapWithConcurrency(items, limit, mapper) {
   return results;
 }
 
+function buildFeedSummary(candidates = [], diagnostics = []) {
+  const summaries = new Map();
+
+  candidates.forEach((candidate) => {
+    const feedName = candidate.feed_name || candidate.feedName || "Unknown feed";
+    if (!summaries.has(feedName)) {
+      summaries.set(feedName, {
+        feed_name: feedName,
+        matched_rows: 0,
+        recoverable_thumbnails: 0,
+        would_become_no_image: 0,
+        rows_would_update: 0,
+      });
+    }
+    summaries.get(feedName).matched_rows += 1;
+  });
+
+  diagnostics.forEach((row) => {
+    if (!summaries.has(row.feedName)) {
+      summaries.set(row.feedName, {
+        feed_name: row.feedName,
+        matched_rows: 0,
+        recoverable_thumbnails: 0,
+        would_become_no_image: 0,
+        rows_would_update: 0,
+      });
+    }
+    const summary = summaries.get(row.feedName);
+    if (row.validPublisherThumbnail) {
+      summary.recoverable_thumbnails += 1;
+    } else {
+      summary.would_become_no_image += 1;
+    }
+    if (row.wouldUpdate) {
+      summary.rows_would_update += 1;
+    }
+  });
+
+  return Array.from(summaries.values()).sort((left, right) =>
+    String(left.feed_name).localeCompare(String(right.feed_name))
+  );
+}
+
 function printSummary(candidates = [], diagnostics = []) {
   const recoverable = diagnostics.filter((row) => row.validPublisherThumbnail).length;
   const wouldSetPlaceholder = diagnostics.filter((row) => !row.validPublisherThumbnail && row.wouldUpdate).length;
   const wouldUpdate = diagnostics.filter((row) => row.wouldUpdate).length;
+  const affectedFeeds = new Set(candidates.map((row) => row.feed_name || row.feedName || "Unknown feed"));
 
-  console.log("\n=== Banknotes Thumbnail Backfill Summary ===");
+  console.log("\n=== Google Alerts Thumbnail Backfill Summary ===");
   console.table(
     formatRows([
       {
-        feed_name: TARGET_FEED_NAME,
-        matching_bad_thumbnails: candidates.length,
+        matched_rows: candidates.length,
         recoverable_thumbnails: recoverable,
-        would_set_placeholder: wouldSetPlaceholder,
+        would_become_no_image: wouldSetPlaceholder,
         rows_would_update: wouldUpdate,
+        affected_feeds: affectedFeeds.size,
         mode: apply ? "apply" : "dry-run",
       },
     ])
   );
+
+  console.log("\n=== Affected Google Alerts Feeds ===");
+  console.table(formatRows(buildFeedSummary(candidates, diagnostics)));
 }
 
 function printDiagnostics(diagnostics = []) {
-  console.log("\n=== Banknotes Thumbnail Candidates ===");
+  console.log("\n=== Google Alerts Thumbnail Candidates ===");
   if (!diagnostics.length) {
-    console.log("(no matching banknotes fallback thumbnails)");
+    console.log("(no matching Google Alerts fallback thumbnails)");
     return;
   }
 
   console.table(
     formatRows(
       diagnostics.map((row) => ({
+        feed_name: row.feedName,
         title: row.title,
         url: row.url,
         current_thumbnail: row.currentThumbnail,
@@ -222,7 +293,7 @@ async function applyUpdates(diagnostics = []) {
   }
 
   console.warn("\nWARNING: --apply mode is enabled.");
-  console.warn("This will update only the thumbnail field for selected banknotes feed articles.");
+  console.warn("This will update only the thumbnail field for selected Google Alerts feed articles.");
   console.warn(`Rows selected for thumbnail update: ${updates.length}`);
 
   await client.query("BEGIN");
@@ -231,15 +302,18 @@ async function applyUpdates(diagnostics = []) {
     for (const row of updates) {
       const result = await client.query(
         `
-          SELECT thumbnail
-          FROM articles
-          WHERE id = $1
-            AND "feedName" = $2
-            AND thumbnail = $3
+          SELECT a.thumbnail, f."rssUrl" AS feed_url
+          FROM articles a
+          INNER JOIN feeds f
+            ON f.id = a."feedId"
+          WHERE a.id = $1
+            AND a."feedId" = $2
+            AND a.thumbnail = $3
         `,
-        [row.id, TARGET_FEED_NAME, BAD_FALLBACK_THUMBNAIL]
+        [row.id, row.feedId, row.currentThumbnail]
       );
-      if (!result.rows[0]) {
+      const currentArticle = result.rows[0];
+      if (!currentArticle || !isGoogleAlertsFeedUrl(currentArticle.feed_url)) {
         continue;
       }
 
@@ -248,10 +322,10 @@ async function applyUpdates(diagnostics = []) {
           UPDATE articles
           SET thumbnail = $1
           WHERE id = $2
-            AND "feedName" = $3
+            AND "feedId" = $3
             AND thumbnail = $4
         `,
-        [row.nextThumbnail, row.id, TARGET_FEED_NAME, BAD_FALLBACK_THUMBNAIL]
+        [row.nextThumbnail, row.id, row.feedId, row.currentThumbnail]
       );
       updatedRows += Number(updateResult.rowCount || 0);
     }
@@ -282,7 +356,7 @@ async function main() {
       await client.query("BEGIN READ ONLY");
     }
 
-    const candidates = await fetchBanknotesThumbnailCandidates();
+    const candidates = await fetchGoogleAlertThumbnailCandidates();
     const diagnostics = await mapWithConcurrency(candidates, 4, diagnoseCandidate);
 
     printSummary(candidates, diagnostics);
@@ -302,7 +376,7 @@ async function main() {
         // Ignore rollback errors when the connection failed before the transaction started.
       }
     }
-    console.error("Failed to run banknotes thumbnail backfill.");
+    console.error("Failed to run Google Alerts thumbnail backfill.");
     console.error(error?.stack || error);
     process.exitCode = 1;
   } finally {

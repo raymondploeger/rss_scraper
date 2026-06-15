@@ -23,6 +23,8 @@
     "cleanup:bundesdruckerei-homepage:apply": "npm --prefix backend run cleanup:bundesdruckerei-homepage:apply",
     "cleanup:banknotes-thumbnails": "npm --prefix backend run cleanup:banknotes-thumbnails",
     "cleanup:banknotes-thumbnails:apply": "npm --prefix backend run cleanup:banknotes-thumbnails:apply",
+    "cleanup:google-alert-thumbnails": "npm --prefix backend run cleanup:google-alert-thumbnails",
+    "cleanup:google-alert-thumbnails:apply": "npm --prefix backend run cleanup:google-alert-thumbnails:apply",
     "prisma:generate": "npm --prefix backend run prisma:generate",
     "prisma:migrate": "npm --prefix backend run prisma:migrate",
     "prisma:deploy": "npm --prefix backend run prisma:deploy"

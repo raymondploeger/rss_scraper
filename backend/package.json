@@ -32,6 +32,8 @@
     "cleanup:bundesdruckerei-homepage:apply": "node scripts/cleanup-bundesdruckerei-homepage.js --apply",
     "cleanup:banknotes-thumbnails": "node scripts/cleanup-banknotes-thumbnails.js",
     "cleanup:banknotes-thumbnails:apply": "node scripts/cleanup-banknotes-thumbnails.js --apply",
+    "cleanup:google-alert-thumbnails": "node scripts/cleanup-google-alert-thumbnails.js",
+    "cleanup:google-alert-thumbnails:apply": "node scripts/cleanup-google-alert-thumbnails.js --apply",
     "db:optimize-poll-indexes": "node scripts/optimize-poll-log-indexes.js",
     "digital-subgroup:diagnostics": "node scripts/digital-subgroup-overlap-diagnostics.js",
     "digital-subgroup:kyc-diagnostics": "node scripts/digital-kyc-diagnostics.js",
