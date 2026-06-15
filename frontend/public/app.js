@@ -5515,7 +5515,30 @@ const SHARED_SECURITY_STANDALONE_RULES = {
       "organ-on-chip",
       "mosque",
       "microneedles",
+      "medical research",
+      "photonic research",
+      "photonics research",
     ],
+    support: [
+      "security feature",
+      "security features",
+      "security printing",
+      "secure document",
+      "secure documents",
+      "document security",
+      "passport",
+      "passports",
+      "id card",
+      "identity card",
+      "identity document",
+      "banknote",
+      "banknotes",
+      "anti-counterfeit",
+      "counterfeit protection",
+      "optical security",
+    ],
+    requiresSupportContext: true,
+    allowForegroundStrongWithoutSupport: true,
     weakOnlyMinScore: 3,
     minimumBodyStrongHits: 2,
   },
@@ -5534,13 +5557,41 @@ const SHARED_SECURITY_STANDALONE_RULES = {
       "holographic foil",
     ],
     weak: ["diffractive", "diffractive optical"],
-    negative: ["appointed", "board", "expo", "exhibition", "grand winner", "sap quality awards"],
+    negative: [
+      "appointed",
+      "board",
+      "expo",
+      "exhibition",
+      "grand winner",
+      "sap quality awards",
+      "academic research",
+      "university research",
+    ],
+    support: [
+      "security feature",
+      "security features",
+      "security printing",
+      "secure document",
+      "secure documents",
+      "document security",
+      "passport",
+      "passports",
+      "id card",
+      "identity card",
+      "identity document",
+      "banknote",
+      "banknotes",
+      "anti-counterfeit",
+      "counterfeit protection",
+      "ovd",
+      "optically variable",
+    ],
+    requiresSupportContext: true,
+    allowForegroundStrongWithoutSupport: true,
     weakOnlyMinScore: 24,
   },
   ovd: {
     strong: [
-      "ovd",
-      "ovds",
       "optically variable device",
       "optically variable devices",
       "optically variable feature",
@@ -5552,8 +5603,46 @@ const SHARED_SECURITY_STANDALONE_RULES = {
       "nano dovid",
       "nanodovid",
     ],
-    weak: ["optically variable", "diffractive feature", "diffractive optical"],
-    negative: ["digital identity", "wallet onboarding", "sap quality awards"],
+    weak: ["ovd", "ovds", "optically variable", "diffractive feature", "diffractive optical"],
+    negative: [
+      "digital identity",
+      "wallet onboarding",
+      "sap quality awards",
+      "brandweer",
+      "alarmering",
+      "alarmeringen",
+      "112",
+      "officier van dienst",
+      "middelbrand",
+      "hoge urgentie",
+      "normale urgentie",
+      "p2000",
+      "ambulance",
+      "politie",
+    ],
+    support: [
+      "optically variable",
+      "optically variable device",
+      "dovid",
+      "dovids",
+      "security feature",
+      "security features",
+      "secure document",
+      "secure documents",
+      "passport",
+      "passports",
+      "id card",
+      "identity card",
+      "identity document",
+      "banknote",
+      "banknotes",
+      "hologram",
+      "holograms",
+      "holographic",
+      "security printing",
+    ],
+    requiresSupportContext: true,
+    allowForegroundStrongWithoutSupport: true,
     weakOnlyMinScore: 22,
   },
 };
@@ -5692,14 +5781,15 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       (negativeHits * 8);
     const effectiveContentScore = contentOnlyScore + bridgeScore;
 
-    const requiresSupportContext = interestId === "security_printing_core";
+    const requiresSupportContext = interestId === "security_printing_core" || Boolean(tunedRule?.requiresSupportContext);
+    const allowForegroundStrongWithoutSupport = Boolean(tunedRule?.allowForegroundStrongWithoutSupport);
     const hasSupportContext = !requiresSupportContext || supportHits > 0;
     const hasBridgeDrivenSupportContext = hasSupportContext || hasTechniqueBridgeContext;
 
     // Standalone technique filters should depend on explicit technique language,
     // not merely on vendor/source affinity inside the broader shared-security layer.
     const directMatch =
-      (foregroundStrongHits > 0 && hasSupportContext) ||
+      (foregroundStrongHits > 0 && (hasSupportContext || allowForegroundStrongWithoutSupport)) ||
       (foregroundWeakHits > 0 && contentOnlyScore >= weakOnlyMinScore && hasSupportContext) ||
       (bodyStrongHits >= minimumBodyStrongHits && contentOnlyScore >= weakOnlyMinScore && hasSupportContext) ||
       (
