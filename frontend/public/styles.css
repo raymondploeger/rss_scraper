@@ -1497,9 +1497,9 @@ h3 {
 }
 
 .feed-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-items: flex-start;
-  justify-content: space-between;
   gap: 12px;
   min-width: 0;
   padding: 15px;
@@ -1552,7 +1552,8 @@ h3 {
 
 .feed-item-title {
   margin-bottom: 5px;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
   line-height: 1.35;
 }
 
@@ -1565,12 +1566,17 @@ h3 {
 }
 
 .feed-item-side {
-  flex: 0 0 auto;
-  flex-direction: column;
-  align-items: flex-end;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  justify-content: space-between;
+  min-width: 0;
+  width: 100%;
 }
 
 .feed-item-actions {
+  display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   row-gap: 8px;
@@ -2133,7 +2139,7 @@ button.grouped-sources-more {
   }
 
   .feed-item {
-    flex-direction: column;
+    grid-template-columns: 1fr;
   }
 
   .feed-item-side,
