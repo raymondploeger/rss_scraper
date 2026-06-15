@@ -5477,7 +5477,38 @@ const SHARED_SECURITY_STANDALONE_RULES = {
       "colour-shifting ink",
     ],
     weak: ["specialty ink", "security pigment", "pigment ink"],
-    negative: ["sap quality awards", "sap", "digital identity", "wallet", "tourism", "expo"],
+    support: [
+      "banknote",
+      "banknotes",
+      "passport",
+      "passports",
+      "identity document",
+      "identity documents",
+      "secure document",
+      "secure documents",
+      "security feature",
+      "security features",
+      "counterfeit",
+      "counterfeiting",
+      "currency",
+      "document security",
+      "security printing",
+    ],
+    negative: [
+      "sap quality awards",
+      "sap",
+      "digital identity",
+      "wallet",
+      "tourism",
+      "expo",
+      "definition",
+      "grammar",
+      "pronunciation",
+      "synonyms",
+      "glosbe",
+    ],
+    requiresSupportContext: true,
+    allowForegroundStrongWithoutSupport: true,
     weakOnlyMinScore: 26,
   },
   micro_optics: {
@@ -5518,6 +5549,8 @@ const SHARED_SECURITY_STANDALONE_RULES = {
       "medical research",
       "photonic research",
       "photonics research",
+      "vinyl",
+      "vinyl records",
     ],
     support: [
       "security feature",
@@ -5539,6 +5572,7 @@ const SHARED_SECURITY_STANDALONE_RULES = {
     ],
     requiresSupportContext: true,
     allowForegroundStrongWithoutSupport: true,
+    rejectNegativeMatches: true,
     weakOnlyMinScore: 3,
     minimumBodyStrongHits: 2,
   },
@@ -5566,6 +5600,15 @@ const SHARED_SECURITY_STANDALONE_RULES = {
       "sap quality awards",
       "academic research",
       "university research",
+      "vinyl",
+      "vinyl records",
+      "coin assortment",
+      "commemorative coins",
+      "precious metals",
+      "investment packaging",
+      "decorative holographic",
+      "holographic decorative",
+      "reddit",
     ],
     support: [
       "security feature",
@@ -5588,6 +5631,7 @@ const SHARED_SECURITY_STANDALONE_RULES = {
     ],
     requiresSupportContext: true,
     allowForegroundStrongWithoutSupport: true,
+    rejectNegativeMatches: true,
     weakOnlyMinScore: 24,
   },
   ovd: {
@@ -5643,8 +5687,48 @@ const SHARED_SECURITY_STANDALONE_RULES = {
     ],
     requiresSupportContext: true,
     allowForegroundStrongWithoutSupport: true,
+    rejectNegativeMatches: true,
     weakOnlyMinScore: 22,
   },
+};
+
+const SHARED_SECURITY_STANDALONE_BODY_CONTEXT = {
+  securityVendors: [
+    "iq structures",
+    "surys",
+    "kurz",
+    "sicpa",
+    "in groupe",
+    "ingroupe",
+    "bundesdruckerei",
+    "hid",
+    "veridos",
+    "idemia",
+    "louisenthal",
+  ],
+  ovdExplicitBodyTerms: [
+    "dovid",
+    "dovids",
+    "nano dovid",
+    "nanodovid",
+    "optically variable device",
+    "optically variable devices",
+    "optically variable feature",
+    "optically variable features",
+  ],
+  securityInkStrongBodyTerms: [
+    "security ink",
+    "security inks",
+    "fluorescent ink",
+    "magnetic ink",
+    "intaglio ink",
+    "uv ink",
+    "ir ink",
+    "infrared ink",
+    "color-shifting ink",
+    "colour-shifting ink",
+    "optically variable ink",
+  ],
 };
 
 const SECURITY_PRINTING_TECHNIQUE_BRIDGE_KEYWORDS = [
@@ -5785,6 +5869,48 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
     const allowForegroundStrongWithoutSupport = Boolean(tunedRule?.allowForegroundStrongWithoutSupport);
     const hasSupportContext = !requiresSupportContext || supportHits > 0;
     const hasBridgeDrivenSupportContext = hasSupportContext || hasTechniqueBridgeContext;
+    const sourceSecurityContextHits = countBoostKeywordMatches(
+      `${context.sourceText} ${context.domainText} ${metadataTextForMatching}`,
+      SHARED_SECURITY_STANDALONE_BODY_CONTEXT.securityVendors
+    );
+    const hasVendorSecurityContext = sourceSecurityContextHits > 0;
+    const hasDocumentSecurityBodyContext = supportHits >= 3 || hasVendorSecurityContext;
+    const ovdExplicitBodyHits = countBoostKeywordMatches(
+      context.bodyText,
+      SHARED_SECURITY_STANDALONE_BODY_CONTEXT.ovdExplicitBodyTerms
+    );
+    const securityInkBodyHits = countBoostKeywordMatches(
+      context.bodyText,
+      SHARED_SECURITY_STANDALONE_BODY_CONTEXT.securityInkStrongBodyTerms
+    );
+    const bodyContextBridgeMatch =
+      negativeHits === 0 &&
+      (
+        (
+          interestId === "holography" &&
+          (
+            (bodyStrongHits >= 3 && supportHits >= 3) ||
+            (bodyStrongHits >= 2 && hasDocumentSecurityBodyContext)
+          )
+        ) ||
+        (
+          interestId === "ovd" &&
+          ovdExplicitBodyHits > 0 &&
+          supportHits >= 4
+        ) ||
+        (
+          interestId === "micro_optics" &&
+          bodyStrongHits > 0 &&
+          (bodyWeakHits >= 2 || supportHits >= 4 || hasVendorSecurityContext) &&
+          hasDocumentSecurityBodyContext
+        ) ||
+        (
+          interestId === "security_inks" &&
+          securityInkBodyHits > 0 &&
+          supportHits >= 2
+        )
+      );
+    const hardNegativeRejected = Boolean(tunedRule?.rejectNegativeMatches) && negativeHits > 0;
 
     // Standalone technique filters should depend on explicit technique language,
     // not merely on vendor/source affinity inside the broader shared-security layer.
@@ -5805,21 +5931,23 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       hasBridgeDrivenSupportContext &&
       effectiveContentScore >= weakOnlyMinScore + 2 &&
       (foregroundWeakHits > 0 || bodyStrongHits >= minimumBodyStrongHits + 1 || bridgeBodyHits >= 2);
-    const included = (directMatch || hybridMatch) && !(
+    const included = (directMatch || hybridMatch || bodyContextBridgeMatch) && !(
       negativeHits > 0 &&
       foregroundStrongHits === 0 &&
       bridgeEvidenceHits === 0
-    );
+    ) && !hardNegativeRejected;
 
     return {
       included,
       directMatch,
       hybridMatch,
+      bodyContextBridgeMatch,
       foregroundStrongHits,
       foregroundWeakHits,
       bodyStrongHits,
       bodyWeakHits,
       supportHits,
+      sourceSecurityContextHits,
       bridgeDocumentContextHits,
       bridgeEvidenceHits,
       negativeHits,
