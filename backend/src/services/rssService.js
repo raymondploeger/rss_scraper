@@ -1483,6 +1483,16 @@ function isGoogleNewsLink(link) {
   return getHostname(link) === "news.google.com";
 }
 
+function isGoogleAlertsFeed(feed) {
+  try {
+    const parsed = new URL(String(feed?.rssUrl || ""));
+    const hostname = parsed.hostname.replace(/^www\./, "").toLowerCase();
+    return hostname === "google.com" && parsed.pathname.startsWith("/alerts/feeds/");
+  } catch {
+    return false;
+  }
+}
+
 function extractItemSourceMetadata(item) {
   const entries = Array.isArray(item?.source) ? item.source : item?.source ? [item.source] : [];
 
@@ -1526,7 +1536,9 @@ function normalizeItem(feed, item) {
   const contentSnippet = sanitizeFeedText(item.contentSnippet || item.content || item.summary || item.description, "");
   const title = sanitizeFeedText(item.title, "Untitled Article");
   const extractedThumbnail = extractFeedThumbnail(link, item);
-  const feedFallbackThumbnail = resolveFeedImageCandidate(link, feed.sourceFallbackImage || "");
+  const feedFallbackThumbnail = isGoogleAlertsFeed(feed)
+    ? ""
+    : resolveFeedImageCandidate(link, feed.sourceFallbackImage || "");
   const thumbnail = normalizeText(extractedThumbnail.url || feedFallbackThumbnail, env.placeholderImage);
   const hasUsableThumbnail =
     Boolean(thumbnail) &&
