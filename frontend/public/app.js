@@ -8348,13 +8348,6 @@ function getPersonalLaneRenderPlan(articles) {
 }
 
 function getPersonalDashboardSortMode() {
-  const selectedMainDomains = getSelectedMainDomains();
-  if (selectedMainDomains.length === 1 && selectedMainDomains[0] === "banknotes") {
-    return "relevance";
-  }
-  if (selectedMainDomains.length === 1 && selectedMainDomains[0] === "identity_documents") {
-    return "relevance";
-  }
   return DEFAULT_PERSONAL_DASHBOARD_SORT;
 }
 
@@ -8364,23 +8357,7 @@ function getArticlePublishedTimestamp(article) {
 }
 
 function comparePersonalDashboardArticlesByNewest(left, right) {
-  const leftTimestamp = getArticlePublishedTimestamp(left);
-  const rightTimestamp = getArticlePublishedTimestamp(right);
-
-  if (leftTimestamp !== rightTimestamp) {
-    return rightTimestamp - leftTimestamp;
-  }
-
-  const relevanceOrder = compareArticlesForDisplay(left, right);
-  if (relevanceOrder !== 0) {
-    return relevanceOrder;
-  }
-
-  if (rightTimestamp !== leftTimestamp) {
-    return rightTimestamp - leftTimestamp;
-  }
-
-  return String(left?.title || "").localeCompare(String(right?.title || ""));
+  return compareArticlesByPublicationDate(left, right);
 }
 
 function comparePersonalDashboardArticlesByRelevance(left, right) {
@@ -8526,25 +8503,21 @@ function sortPersonalDashboardResults(articles, options = {}) {
     if (sortMode === "relevance") {
       return comparePersonalDashboardArticlesByRelevance(left, right);
     }
-    if (sortMode === "newest") {
-      return comparePersonalDashboardArticlesByNewest(left, right);
-    }
-    return compareArticlesForDisplay(left, right);
+    return comparePersonalDashboardArticlesByNewest(left, right);
   });
-  const diversifiedArticles = diversifyPersonalDashboardResults(sortedArticles);
 
   if (DEBUG_PERSONAL_DASHBOARD) {
-    const firstArticle = diversifiedArticles[0] || null;
-    const lastArticle = diversifiedArticles[diversifiedArticles.length - 1] || null;
+    const firstArticle = sortedArticles[0] || null;
+    const lastArticle = sortedArticles[sortedArticles.length - 1] || null;
     debugPersonalDashboardLog("[personal-dashboard-sort]", {
       sortMode,
       firstDate: firstArticle?.pubDate || "",
       lastDate: lastArticle?.pubDate || "",
-      totalArticles: diversifiedArticles.length,
+      totalArticles: sortedArticles.length,
     });
   }
 
-  return diversifiedArticles;
+  return sortedArticles;
 }
 
 function sortArticlesForCurrentDashboardMode(articles, options = {}) {
@@ -8988,7 +8961,7 @@ function getCachedGroupedFeedResult(feedIdentity) {
     ? sortArticlesForCurrentDashboardMode(filteredCandidates)
     : sortArticlesByPublicationDate(filteredCandidates);
   const groupedArticles = hasPersonalDashboardSelections()
-    ? groupArticlesByEvent(filteredMatches)
+    ? prepareDateFirstGroupedArticles(filteredMatches)
     : prepareSelectedFeedGroupedArticles(filteredMatches);
   const result = {
     selectedFeedResolution,
@@ -18789,21 +18762,15 @@ function renderArticlesFallback(error) {
             const rawFeedMatches = hasPersonalDashboardSelections()
               ? sortArticlesForCurrentDashboardMode(feedMatches)
               : sortArticlesByPublicationDate(feedMatches);
-            return hasPersonalDashboardSelections()
-              ? groupArticlesByEvent(rawFeedMatches)
-              : prepareDateFirstGroupedArticles(rawFeedMatches);
+            return prepareDateFirstGroupedArticles(rawFeedMatches);
           })()
         : (() => {
           const visibleArticles = getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping });
-          const groupedArticles = hasPersonalDashboardSelections()
-            ? groupArticlesByEvent(visibleArticles)
-            : prepareDateFirstGroupedArticles(visibleArticles);
+          const groupedArticles = prepareDateFirstGroupedArticles(visibleArticles);
           const feedScopedArticles = shouldIgnoreFeedIdForGrouping
             ? groupedArticles.filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
             : groupedArticles;
-          return hasPersonalDashboardSelections()
-            ? feedScopedArticles
-            : sortArticlesByPublicationDate(feedScopedArticles);
+          return sortArticlesByPublicationDate(feedScopedArticles);
         })();
   } catch (innerError) {
     console.warn("[render-articles-fallback-inner]", {
@@ -18919,9 +18886,7 @@ function renderArticles() {
       filteredRawArticles = sortArticlesForCurrentDashboardMode(
         cachedQuery.articles.filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
       );
-      const groupedArticles = hasPersonalDashboardSelections()
-        ? groupArticlesByEvent(filteredRawArticles)
-        : prepareDateFirstGroupedArticles(filteredRawArticles);
+      const groupedArticles = prepareDateFirstGroupedArticles(filteredRawArticles);
       groupedArticlesCount = groupedArticles.length;
       articles = groupedArticles;
     } else if (activeFeedId && !state.filters.date) {
@@ -18948,18 +18913,14 @@ function renderArticles() {
       personalDashboardBasePool = state.articles;
       const visibleArticles = getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping });
       filteredRawArticles = visibleArticles;
-      const groupedArticles = hasPersonalDashboardSelections()
-        ? groupArticlesByEvent(visibleArticles)
-        : prepareDateFirstGroupedArticles(visibleArticles);
+      const groupedArticles = prepareDateFirstGroupedArticles(visibleArticles);
       groupedArticlesCount = groupedArticles.length;
       feedRenderFilteredCount = filteredRawArticles.length;
       feedRenderGroupedCount = groupedArticlesCount;
       const feedScopedArticles = shouldIgnoreFeedIdForGrouping
         ? groupedArticles.filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
         : groupedArticles;
-      articles = hasPersonalDashboardSelections()
-        ? feedScopedArticles
-        : sortArticlesByPublicationDate(feedScopedArticles);
+      articles = sortArticlesByPublicationDate(feedScopedArticles);
     }
 
     const selectedUsDmvEntry = getSelectedUsDmvCatalogEntry();
