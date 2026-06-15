@@ -3900,6 +3900,67 @@ const ID_CARDS_HOLOGRAPHY_OVD_BRIDGE_DOCUMENT_TERMS = [
   "physical documents",
 ];
 
+const IDENTITY_SHARED_SECURITY_COMBINATION_TECHNIQUE_TERMS = {
+  security_inks: [
+    "security ink",
+    "security inks",
+    "intaglio ink",
+    "optically variable ink",
+    "ovi",
+    "spark ink",
+    "spark security ink",
+    "magnetic ink",
+    "fluorescent ink",
+    "uv ink",
+  ],
+  holography: [
+    "hologram",
+    "holograms",
+    "holographic",
+    "holography",
+    "dovid",
+    "dovids",
+    "holographic foil",
+  ],
+  ovd: [
+    "ovd",
+    "ovds",
+    "optically variable device",
+    "optically variable devices",
+    "optically variable",
+    "dovid",
+    "dovids",
+  ],
+  micro_optics: [
+    "micro optics",
+    "micro-optics",
+    "micro lens",
+    "microlens",
+    "micro-lens",
+    "micro lens array",
+    "micro-optic",
+    "nano optics",
+    "nano-optics",
+    "nanoswitch",
+    "nanovista",
+  ],
+  security_printing_core: [
+    "security printing",
+    "secure printing",
+    "anti-counterfeit printing",
+    "document security",
+    "secure document",
+    "secure documents",
+  ],
+  secure_documents: [
+    "secure document",
+    "secure documents",
+    "document security",
+    "security document",
+    "security documents",
+  ],
+};
+
 function matchesIdCardsHolographyOvdCombinationBridge(article, selectedIdentityInterests = [], selectedSharedInterests = []) {
   const hasIdCardsSelected = selectedIdentityInterests.includes("id_cards");
   const selectedBridgeTechniqueInterests = selectedSharedInterests.filter((interestId) =>
@@ -3939,22 +4000,37 @@ function matchesIdCardsHolographyOvdCombinationBridge(article, selectedIdentityI
 function articleMatchesSelectedIdentityTechniqueBridge(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
   const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
   const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
-  const selectedBridgeTechniqueInterests = selectedSharedInterests.filter((interestId) =>
-    interestId === "holography" || interestId === "ovd"
-  );
 
-  if (!selectedIdentityInterests.includes("id_cards") || !selectedBridgeTechniqueInterests.length) {
+  if (!selectedIdentityInterests.length || !selectedSharedInterests.length) {
     return false;
   }
 
-  const idCardsScopeMatched = computePersonalInterestBoost(article, "id_cards").score >= 18;
-  if (!idCardsScopeMatched) {
+  const identityScopeMatched = selectedIdentityInterests.some((interestId) =>
+    computePersonalInterestBoost(article, interestId).score >= 18
+  );
+  if (!identityScopeMatched) {
     return false;
   }
 
-  return selectedBridgeTechniqueInterests.some((interestId) =>
-    getSharedSecurityStandaloneAssessment(article, interestId).included
-  );
+  const context = getPersonalBoostContext(article);
+  const articleText = [
+    context.titleText,
+    context.tagText,
+    context.metadataText,
+    context.bodyText,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return selectedSharedInterests.some((interestId) => {
+    const standaloneAssessment = getSharedSecurityStandaloneAssessment(article, interestId);
+    if (standaloneAssessment.included) {
+      return true;
+    }
+
+    const combinationTerms = IDENTITY_SHARED_SECURITY_COMBINATION_TECHNIQUE_TERMS[interestId] || [];
+    return combinationTerms.some((term) => textMatchesKeyword(articleText, term));
+  });
 }
 
 // Identity Documents retrieval should start from secure-document intent, not generic travel/passport mentions.
@@ -8212,7 +8288,8 @@ function articleMatchesPersonalDashboardSelection(article) {
   // Shared Security Printing filters define the technique ("which security-printing method is involved?").
   // When both are selected together, the article must satisfy scope AND technique.
   const sharedSecurityTechniqueMatched = !selectedSharedInterests.length
-    || matchesSelectedSharedSecurityTechnique(article, selectedInterests);
+    || matchesSelectedSharedSecurityTechnique(article, selectedInterests)
+    || identityTechniqueBridgeMatched;
 
   if (isBanknotesOnlyPersonalSelection(selectedInterests)) {
     if (isBanknoteContaminated(article)) {
