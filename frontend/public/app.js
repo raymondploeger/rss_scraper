@@ -3268,6 +3268,27 @@ function sortArticlesByPublicationDate(articles) {
   return Array.isArray(articles) ? articles.slice().sort(compareArticlesByPublicationDate) : [];
 }
 
+function promoteNewestArticleInSelectedFeedGroup(article) {
+  const sources = Array.isArray(article?.sources) && article.sources.length
+    ? sortArticlesByPublicationDate(article.sources)
+    : [article].filter(Boolean);
+  const newest = sources[0] || article;
+
+  return {
+    ...article,
+    ...newest,
+    sources,
+    sourceCount: Number(article?.sourceCount) || sources.length,
+    groupedArticlesCount: Number(article?.groupedArticlesCount) || Math.max(0, sources.length - 1),
+  };
+}
+
+function prepareSelectedFeedGroupedArticles(articles) {
+  return sortArticlesByPublicationDate(
+    groupArticlesByEvent(articles).map(promoteNewestArticleInSelectedFeedGroup)
+  );
+}
+
 function formatDate(value) {
   return new Intl.DateTimeFormat(undefined, {
     year: "numeric",
@@ -8963,7 +8984,7 @@ function getCachedGroupedFeedResult(feedIdentity) {
     : sortArticlesByPublicationDate(filteredCandidates);
   const groupedArticles = hasPersonalDashboardSelections()
     ? groupArticlesByEvent(filteredMatches)
-    : sortArticlesByPublicationDate(groupArticlesByEvent(filteredMatches));
+    : prepareSelectedFeedGroupedArticles(filteredMatches);
   const result = {
     selectedFeedResolution,
     rawMatches,
@@ -18766,7 +18787,7 @@ function renderArticlesFallback(error) {
             const groupedFeedMatches = groupArticlesByEvent(rawFeedMatches);
             return hasPersonalDashboardSelections()
               ? groupedFeedMatches
-              : sortArticlesByPublicationDate(groupedFeedMatches);
+              : sortArticlesByPublicationDate(groupedFeedMatches.map(promoteNewestArticleInSelectedFeedGroup));
           })()
         : (() => {
           const visibleArticles = getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping });
