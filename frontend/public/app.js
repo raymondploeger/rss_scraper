@@ -4158,10 +4158,89 @@ function shouldExcludeIdentityDocumentsRetrievalCandidate(
   return !hasSecureAnchor;
 }
 
+const SHARED_SECURITY_BACKEND_RETRIEVAL_SEARCH_TERMS = {
+  holography: [
+    "hologram",
+    "holograms",
+    "holographic",
+    "holography",
+    "DOVID",
+    "DOVIDs",
+    "holographic foil",
+  ],
+  ovd: [
+    "DOVID",
+    "DOVIDs",
+    "optically variable",
+    "optically variable device",
+    "optically variable feature",
+    "OVD",
+    "OVDs",
+  ],
+  micro_optics: [
+    "micro optics",
+    "micro-optics",
+    "micro optic",
+    "micro-optic",
+    "micro lens",
+    "micro-lens",
+    "microlens",
+    "nano optics",
+    "nano-optics",
+    "nanoDOVID",
+    "Nanoswitch",
+    "Nanovista",
+  ],
+  security_inks: [
+    "security ink",
+    "security inks",
+    "fluorescent ink",
+    "magnetic ink",
+    "UV ink",
+    "IR ink",
+    "infrared ink",
+    "color-shifting ink",
+    "optically variable ink",
+    "intaglio ink",
+    "counterfeit cash",
+    "Inkjet Passport Printer",
+    "UV curable inks",
+  ],
+};
+
 function getPersonalDashboardBackendDomainPlan() {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const selectedMainDomains = getSelectedMainDomains(selectedInterests);
   const hasInterest = (interestId) => selectedInterests.includes(interestId);
+  const selectedSharedSecurityInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
+  const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
+  const selectedBanknoteInterests = selectedInterests.filter(
+    (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "banknote_intelligence"
+  );
+  const selectedDigitalIdentityInterests = selectedInterests.filter(
+    (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "digital_identity_biometrics"
+  );
+
+  if (
+    selectedSharedSecurityInterests.length > 0 &&
+    selectedIdentityInterests.length === 0 &&
+    selectedBanknoteInterests.length === 0 &&
+    selectedDigitalIdentityInterests.length === 0
+  ) {
+    const sharedSecuritySearches = new Set();
+    selectedSharedSecurityInterests.forEach((interestId) => {
+      (SHARED_SECURITY_BACKEND_RETRIEVAL_SEARCH_TERMS[interestId] || [])
+        .forEach((term) => sharedSecuritySearches.add(term));
+    });
+
+    if (sharedSecuritySearches.size) {
+      return {
+        domain: "shared_security",
+        includeTopicBaseline: false,
+        searches: Array.from(sharedSecuritySearches),
+      };
+    }
+  }
 
   if (!selectedInterests.length || !selectedMainDomains.length) {
     return null;
