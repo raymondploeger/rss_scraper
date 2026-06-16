@@ -4034,6 +4034,40 @@ function articleMatchesSelectedIdentityTechniqueBridge(article, selectedInterest
   });
 }
 
+function articleMatchesSelectedBanknoteTechniqueBridge(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
+  const selectedBanknoteInterests = normalizePersonalDashboardInterests(selectedInterests).filter(
+    (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "banknote_intelligence"
+  );
+
+  if (!selectedBanknoteInterests.length || !selectedSharedInterests.length) {
+    return false;
+  }
+
+  const techniqueMatched = selectedSharedInterests.some((interestId) =>
+    getSharedSecurityStandaloneAssessment(article, interestId).included
+  );
+  if (!techniqueMatched) {
+    return false;
+  }
+
+  const primaryDomain = getArticleDominantDomain(article);
+  const banknoteScore = computePersonalInterestBoost(article, "banknotes").score;
+  const strongBanknoteSignals = getStrongBanknoteDomainSignalAssessment(article);
+  const banknoteSignals = getBanknoteInterestSignals(article);
+  const hasBanknoteAdjacentSecurityEvidence =
+    isBanknoteAdjacent(article) ||
+    (
+      banknoteSignals.contextHits >= 3 &&
+      (banknoteSignals.securityFeatureHits >= 3 || banknoteSignals.securityPrintingHits >= 3)
+    );
+
+  return primaryDomain === "banknotes" ||
+    banknoteScore >= 18 ||
+    strongBanknoteSignals.matched ||
+    hasBanknoteAdjacentSecurityEvidence;
+}
+
 // Identity Documents retrieval should start from secure-document intent, not generic travel/passport mentions.
 const IDENTITY_DOCUMENT_RETRIEVAL_EXCLUSION_TERMS = [
   "agritourism passport",
@@ -4432,6 +4466,12 @@ function getPersonalDashboardBackendDomainPlan() {
       (BANKNOTE_BACKEND_RETRIEVAL_SEARCH_TERMS[interestId] || [])
         .forEach((term) => banknoteSearches.add(term));
     });
+    if (selectedSharedSecurityInterests.length) {
+      selectedSharedSecurityInterests.forEach((interestId) => {
+        (SHARED_SECURITY_BACKEND_RETRIEVAL_SEARCH_TERMS[interestId] || [])
+          .forEach((term) => banknoteSearches.add(term));
+      });
+    }
     if (!banknoteSearches.size) {
       BANKNOTE_BACKEND_RETRIEVAL_BASE_SEARCH_TERMS.forEach((term) => banknoteSearches.add(term));
     }
@@ -8747,13 +8787,16 @@ function articleMatchesPersonalDashboardSelection(article) {
   const selectedMainDomains = getSelectedMainDomains(selectedInterests);
   const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
   const identityTechniqueBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, selectedInterests);
+  const banknoteTechniqueBridgeMatched = articleMatchesSelectedBanknoteTechniqueBridge(article, selectedInterests);
   const primaryDomain = getArticleDominantDomain(article);
-  if (primaryDomain === "other" && !identityTechniqueBridgeMatched) {
+  if (primaryDomain === "other" && !identityTechniqueBridgeMatched && !banknoteTechniqueBridgeMatched) {
     return false;
   }
 
   if (selectedMainDomains.length && !selectedMainDomains.includes(primaryDomain)) {
-    if (!identityTechniqueBridgeMatched || !selectedMainDomains.includes("identity_documents")) {
+    const selectedIdentityBridgeMatched = identityTechniqueBridgeMatched && selectedMainDomains.includes("identity_documents");
+    const selectedBanknoteBridgeMatched = banknoteTechniqueBridgeMatched && selectedMainDomains.includes("banknotes");
+    if (!selectedIdentityBridgeMatched && !selectedBanknoteBridgeMatched) {
       return false;
     }
   }
@@ -8763,7 +8806,8 @@ function articleMatchesPersonalDashboardSelection(article) {
   // When both are selected together, the article must satisfy scope AND technique.
   const sharedSecurityTechniqueMatched = !selectedSharedInterests.length
     || matchesSelectedSharedSecurityTechnique(article, selectedInterests)
-    || identityTechniqueBridgeMatched;
+    || identityTechniqueBridgeMatched
+    || banknoteTechniqueBridgeMatched;
 
   if (isBanknotesOnlyPersonalSelection(selectedInterests)) {
     if (isBanknoteContaminated(article)) {
@@ -8778,7 +8822,10 @@ function articleMatchesPersonalDashboardSelection(article) {
       return (isBanknotePrimary(article) || isBanknoteAdjacent(article)) && sharedSecurityTechniqueMatched;
     }
 
-    return banknoteInterestIds.some((interestId) => matchesBanknoteInterest(article, interestId))
+    return (
+      banknoteInterestIds.some((interestId) => matchesBanknoteInterest(article, interestId)) ||
+      banknoteTechniqueBridgeMatched
+    )
       && sharedSecurityTechniqueMatched;
   }
 
