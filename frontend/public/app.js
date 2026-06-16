@@ -26,6 +26,7 @@ const DEBUG_PERSONAL_DASHBOARD =
   localStorage.getItem("DEBUG_PERSONAL_DASHBOARD") === "true";
 const HARD_SUBINTEREST_MISMATCH_THRESHOLD = 12;
 const MAX_ARTICLES_IN_MEMORY = 1500;
+const PERSONAL_DASHBOARD_TARGETED_MAX_ARTICLES = 4000;
 const MAX_VISIBLE_SOURCES_IN_LIST = 100;
 const MAX_RSS_FEEDS = 300;
 const MAX_RSS_FEEDS_MESSAGE = `Maximum of ${MAX_RSS_FEEDS} RSS feeds reached`;
@@ -4158,6 +4159,183 @@ function shouldExcludeIdentityDocumentsRetrievalCandidate(
   return !hasSecureAnchor;
 }
 
+const BANKNOTE_BACKEND_RETRIEVAL_SEARCH_TERMS = {
+  banknotes: [
+    "banknote",
+    "banknotes",
+    "currency note",
+    "commemorative note",
+    "note issuance",
+  ],
+  polymer: [
+    "polymer",
+    "polymer banknote",
+    "polymer note",
+    "polymer substrate",
+  ],
+  substrate: [
+    "substrate",
+    "paper substrate",
+    "polymer substrate",
+    "banknote substrate",
+  ],
+  security_features: [
+    "security feature",
+    "security features",
+    "security thread",
+    "watermark",
+    "hologram",
+    "banknote security",
+  ],
+  security_printing: [
+    "security printing",
+    "security printer",
+    "banknote printing",
+    "secure printing",
+  ],
+  redesign: [
+    "redesign",
+    "banknote redesign",
+    "new design",
+    "new family",
+    "new series",
+    "new portrait",
+    "new artwork",
+  ],
+  rollout: [
+    "rollout",
+    "banknote rollout",
+    "new banknote launch",
+    "circulation rollout",
+    "launch",
+    "introduction",
+  ],
+  release: [
+    "release",
+    "issued",
+    "new banknote released",
+    "commemorative note issue",
+    "note issuance",
+  ],
+  withdrawal: [
+    "withdrawal",
+    "withdrawn from circulation",
+    "legal tender deadline",
+    "demonetisation",
+    "demonetization",
+  ],
+  counterfeit: [
+    "counterfeit",
+    "counterfeit banknote",
+    "counterfeit notes",
+    "counterfeit currency",
+    "fake note",
+    "forged banknote",
+  ],
+  central_bank: [
+    "central bank",
+    "national bank",
+    "reserve bank",
+    "banknote issuer",
+    "bank of england",
+    "ecb",
+    "rbi",
+  ],
+};
+const BANKNOTE_BACKEND_RETRIEVAL_BASE_SEARCH_TERMS = [
+  "banknote",
+  "currency",
+  "central bank",
+  "counterfeit",
+  "polymer",
+  "substrate",
+  "security printing",
+  "banknotenews",
+  "notafilia",
+  "mriguide",
+  "reform.news",
+];
+
+const DIGITAL_IDENTITY_BACKEND_RETRIEVAL_SEARCH_TERMS = {
+  digital_identity: [
+    "digital identity",
+    "digital id",
+    "mobile id",
+    "decentralized identity",
+    "self-sovereign identity",
+  ],
+  biometrics: [
+    "biometric",
+    "biometrics",
+    "face match",
+    "fingerprint",
+    "facial recognition",
+    "biometric verification",
+  ],
+  eid: [
+    "eid",
+    "e-id",
+    "electronic identity",
+    "electronic id",
+    "national eid",
+  ],
+  digital_wallet: [
+    "digital wallet",
+    "identity wallet",
+    "eudi wallet",
+    "mobile wallet",
+  ],
+  kyc: [
+    "kyc",
+    "know your customer",
+    "customer verification",
+    "customer identity",
+  ],
+  onboarding: [
+    "onboarding",
+    "remote onboarding",
+    "digital onboarding",
+    "identity onboarding",
+  ],
+  liveness: [
+    "liveness",
+    "liveness detection",
+    "presentation attack",
+    "face liveness",
+  ],
+  artificial_intelligence: [
+    "artificial intelligence",
+    "ai verification",
+    "ai identity",
+    "machine learning identity",
+  ],
+  identity_verification: [
+    "identity verification",
+    "document verification",
+    "id verification",
+    "verification platform",
+  ],
+  authentication: [
+    "authentication",
+    "strong authentication",
+    "passwordless",
+    "passkey",
+    "biometric authentication",
+  ],
+};
+const DIGITAL_IDENTITY_BACKEND_RETRIEVAL_BASE_SEARCH_TERMS = [
+  "digital identity",
+  "biometric",
+  "eid",
+  "digital wallet",
+  "kyc",
+  "onboarding",
+  "liveness",
+  "identity verification",
+  "artificial intelligence",
+  "authentication",
+];
+
 const SHARED_SECURITY_BACKEND_RETRIEVAL_SEARCH_TERMS = {
   holography: [
     "hologram",
@@ -4247,22 +4425,20 @@ function getPersonalDashboardBackendDomainPlan() {
   }
 
   if (selectedMainDomains.length === 1 && selectedMainDomains[0] === "banknotes") {
+    const banknoteSearches = new Set(
+      selectedBanknoteInterests.length === 1 ? [] : BANKNOTE_BACKEND_RETRIEVAL_BASE_SEARCH_TERMS
+    );
+    selectedBanknoteInterests.forEach((interestId) => {
+      (BANKNOTE_BACKEND_RETRIEVAL_SEARCH_TERMS[interestId] || [])
+        .forEach((term) => banknoteSearches.add(term));
+    });
+    if (!banknoteSearches.size) {
+      BANKNOTE_BACKEND_RETRIEVAL_BASE_SEARCH_TERMS.forEach((term) => banknoteSearches.add(term));
+    }
     return {
       domain: "banknotes",
       topic: "Banknotes",
-      searches: [
-        "banknote",
-        "currency",
-        "central bank",
-        "counterfeit",
-        "polymer",
-        "substrate",
-        "security printing",
-        "banknotenews",
-        "notafilia",
-        "mriguide",
-        "reform.news",
-      ],
+      searches: Array.from(banknoteSearches),
     };
   }
 
@@ -4603,19 +4779,20 @@ function getPersonalDashboardBackendDomainPlan() {
   }
 
   if (selectedMainDomains.length === 1 && selectedMainDomains[0] === "digital_identity_biometrics") {
+    const digitalIdentitySearches = new Set(
+      selectedDigitalIdentityInterests.length === 1 ? [] : DIGITAL_IDENTITY_BACKEND_RETRIEVAL_BASE_SEARCH_TERMS
+    );
+    selectedDigitalIdentityInterests.forEach((interestId) => {
+      (DIGITAL_IDENTITY_BACKEND_RETRIEVAL_SEARCH_TERMS[interestId] || [])
+        .forEach((term) => digitalIdentitySearches.add(term));
+    });
+    if (!digitalIdentitySearches.size) {
+      DIGITAL_IDENTITY_BACKEND_RETRIEVAL_BASE_SEARCH_TERMS.forEach((term) => digitalIdentitySearches.add(term));
+    }
     return {
       domain: "digital_identity_biometrics",
       topic: "Digital Identity & Biometrics",
-      searches: [
-        "digital identity",
-        "biometric",
-        "eid",
-        "digital wallet",
-        "kyc",
-        "onboarding",
-        "liveness",
-        "identity verification",
-      ],
+      searches: Array.from(digitalIdentitySearches),
     };
   }
 
@@ -18672,11 +18849,14 @@ async function ensureBackendArticleQueryData() {
   const queryKey = getBackendArticleQueryKey();
   if (runtime.backendArticleQueryCache.has(queryKey)) {
     const cached = runtime.backendArticleQueryCache.get(queryKey);
+    const cachedCandidateLimit = getPersonalDashboardBackendDomainPlan() && hasPersonalDashboardSelections()
+      ? PERSONAL_DASHBOARD_TARGETED_MAX_ARTICLES
+      : MAX_ARTICLES_IN_MEMORY;
     state.remoteQuery = {
       activeKey: queryKey,
       totalCount: cached.totalCount,
       page: 1,
-      limit: MAX_ARTICLES_IN_MEMORY,
+      limit: cachedCandidateLimit,
     };
     return cached;
   }
@@ -18690,6 +18870,9 @@ async function ensureBackendArticleQueryData() {
   }
 
   const personalDomainPlan = getPersonalDashboardBackendDomainPlan();
+  const backendCandidateLimit = personalDomainPlan && hasPersonalDashboardSelections()
+    ? PERSONAL_DASHBOARD_TARGETED_MAX_ARTICLES
+    : MAX_ARTICLES_IN_MEMORY;
   const queryParamsList =
     personalDomainPlan && hasPersonalDashboardSelections()
       ? buildPersonalDashboardBackendQueryParamsList()
@@ -18722,7 +18905,7 @@ async function ensureBackendArticleQueryData() {
 
   const dedupedRawArticles = Array.from(dedupedRawArticleMap.values())
     .sort((left, right) => new Date(right?.pubDate || 0) - new Date(left?.pubDate || 0))
-    .slice(0, MAX_ARTICLES_IN_MEMORY);
+    .slice(0, backendCandidateLimit);
   let normalizedArticles = dedupedRawArticles.map(normalizeLoadedArticle);
   if (personalDomainPlan?.domain === "identity_documents") {
     normalizedArticles = normalizedArticles.filter((article) => !shouldExcludeIdentityDocumentsRetrievalCandidate(article));
@@ -18761,7 +18944,7 @@ async function ensureBackendArticleQueryData() {
     activeKey: queryKey,
     totalCount,
     page: 1,
-    limit: MAX_ARTICLES_IN_MEMORY,
+    limit: backendCandidateLimit,
   };
   runtime.backendArticleQueryLoading = false;
   return payload;
