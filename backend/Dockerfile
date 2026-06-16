@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY backend/package.json backend/package-lock.json* ./backend/
 COPY backend/prisma ./backend/prisma
-RUN cd backend && npm install
+RUN cd backend && npm ci --omit=dev --no-audit --no-fund
 
 COPY backend/src ./backend/src
 COPY backend/data ./backend/data
