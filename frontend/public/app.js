@@ -3907,7 +3907,6 @@ const IDENTITY_SHARED_SECURITY_COMBINATION_TECHNIQUE_TERMS = {
     "security inks",
     "intaglio ink",
     "optically variable ink",
-    "ovi",
     "spark ink",
     "spark security ink",
     "magnetic ink",
@@ -4054,6 +4053,17 @@ function articleMatchesSelectedBanknoteTechniqueBridge(article, selectedInterest
   const primaryDomain = getArticleDominantDomain(article);
   const banknoteScore = computePersonalInterestBoost(article, "banknotes").score;
   const strongBanknoteSignals = getStrongBanknoteDomainSignalAssessment(article);
+  const securityInksSelectedAndMatched =
+    selectedSharedInterests.includes("security_inks") &&
+    getSharedSecurityStandaloneAssessment(article, "security_inks").included;
+
+  if (securityInksSelectedAndMatched) {
+    return primaryDomain === "banknotes" ||
+      banknoteScore >= 18 ||
+      strongBanknoteSignals.matched ||
+      articleHasExplicitBanknoteCurrencyContext(article);
+  }
+
   const banknoteSignals = getBanknoteInterestSignals(article);
   const hasBanknoteAdjacentSecurityEvidence =
     isBanknoteAdjacent(article) ||
@@ -4906,6 +4916,41 @@ function getPersonalBoostContext(article) {
 
 function countBoostKeywordMatches(text, keywords = []) {
   return keywords.filter((keyword) => textMatchesKeyword(text, keyword)).length;
+}
+
+function textMatchesStandaloneAcronym(text, acronym) {
+  const escaped = String(acronym || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (!escaped) {
+    return false;
+  }
+  return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i").test(String(text || ""));
+}
+
+function countSecurityInkKeywordMatches(text, keywords = [], options = {}) {
+  const normalizedText = String(text || "");
+  const baseHits = keywords.filter((keyword) => textMatchesKeyword(normalizedText, keyword)).length;
+  const includeStandaloneOvi = options.includeStandaloneOvi !== false;
+  return baseHits + (includeStandaloneOvi && textMatchesStandaloneAcronym(normalizedText, "ovi") ? 1 : 0);
+}
+
+function articleHasExplicitBanknoteCurrencyContext(article) {
+  const context = getPersonalBoostContext(article);
+  const haystack = [
+    context.titleText,
+    context.tagText,
+    context.metadataText,
+    context.bodyText,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return [
+    "banknote",
+    "banknotes",
+    "currency",
+    "currency note",
+    "currency notes",
+    "central bank",
+  ].some((term) => textMatchesKeyword(haystack, term));
 }
 
 function getStrongBanknoteDomainSignalAssessment(article) {
@@ -5765,7 +5810,6 @@ const SHARED_SECURITY_STANDALONE_RULES = {
       "fluorescent ink",
       "fluorescent security ink",
       "optically variable ink",
-      "ovi",
       "magnetic ink",
       "magnetic security ink",
       "intaglio ink",
@@ -6045,7 +6089,6 @@ const SHARED_SECURITY_STANDALONE_BODY_CONTEXT = {
     "color shifting ink",
     "colour shifting ink",
     "optically variable ink",
-    "ovi",
   ],
 };
 
@@ -6123,10 +6166,15 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
     const weakOnlyMinScore = Number(tunedRule?.weakOnlyMinScore || 22);
     const minimumBodyStrongHits = Number(tunedRule?.minimumBodyStrongHits || 2);
 
-    const titleStrongHits = countBoostKeywordMatches(context.titleText, strongKeywords);
-    const tagStrongHits = countBoostKeywordMatches(context.tagText, strongKeywords);
-    const metaStrongHits = countBoostKeywordMatches(metadataTextForMatching, strongKeywords);
-    const bodyStrongHits = countBoostKeywordMatches(context.bodyText, strongKeywords);
+    const countStrongKeywordMatches = interestId === "security_inks"
+      ? countSecurityInkKeywordMatches
+      : countBoostKeywordMatches;
+    const titleStrongHits = countStrongKeywordMatches(context.titleText, strongKeywords);
+    const tagStrongHits = countStrongKeywordMatches(context.tagText, strongKeywords);
+    const metaStrongHits = countStrongKeywordMatches(metadataTextForMatching, strongKeywords);
+    const bodyStrongHits = interestId === "security_inks"
+      ? countSecurityInkKeywordMatches(context.bodyText, strongKeywords, { includeStandaloneOvi: false })
+      : countStrongKeywordMatches(context.bodyText, strongKeywords);
     const titleWeakHits = countBoostKeywordMatches(context.titleText, weakKeywords);
     const tagWeakHits = countBoostKeywordMatches(context.tagText, weakKeywords);
     const metaWeakHits = countBoostKeywordMatches(metadataTextForMatching, weakKeywords);
@@ -6197,9 +6245,10 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       context.bodyText,
       SHARED_SECURITY_STANDALONE_BODY_CONTEXT.ovdExplicitBodyTerms
     );
-    const securityInkBodyHits = countBoostKeywordMatches(
+    const securityInkBodyHits = countSecurityInkKeywordMatches(
       context.bodyText,
-      SHARED_SECURITY_STANDALONE_BODY_CONTEXT.securityInkStrongBodyTerms
+      SHARED_SECURITY_STANDALONE_BODY_CONTEXT.securityInkStrongBodyTerms,
+      { includeStandaloneOvi: false }
     );
     const bodyContextBridgeMatch =
       negativeHits === 0 &&
