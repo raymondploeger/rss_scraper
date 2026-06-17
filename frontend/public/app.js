@@ -2149,7 +2149,7 @@ const PERSONAL_DASHBOARD_GROUPS = [
     label: "Banknote Intelligence",
     interests: [
       { id: "banknotes", label: "Banknotes", strong: ["banknote", "banknotes", "currency note", "commemorative note", "note issuance"], weak: ["cash", "payment"], topicSignals: ["banknotes"], tagSignals: ["banknotes"], eventTypes: ["banknote_withdrawal", "new_banknote_series", "banknote_redesign", "commemorative_issue"] },
-      { id: "polymer", label: "Polymer", strong: ["polymer note", "polymer banknote", "polymer substrate"], weak: ["polymer"], eventTypes: ["polymer_migration", "banknote_redesign"] },
+      { id: "polymer", label: "Polymer", strong: ["polymer note", "polymer banknote", "polymer banknotes", "polymer substrate"], weak: ["polymer"], eventTypes: ["polymer_migration", "banknote_redesign"] },
       { id: "substrate", label: "Substrate", strong: ["substrate", "polymer substrate", "paper substrate"], weak: ["substrate migration"], eventTypes: ["polymer_migration", "security_feature_update"] },
       { id: "security_features", label: "Security features", strong: ["security feature", "security features", "security thread", "watermark", "hologram"], weak: ["uv feature"], signalIds: ["security-features", "counterfeit"] },
       { id: "security_printing", label: "Security printing", strong: ["security printing", "security printer", "banknote printing"], weak: ["secure print"], eventTypes: ["banknote_production", "security_feature_update"] },
@@ -2233,6 +2233,9 @@ const PERSONAL_DASHBOARD_INTEREST_MAP = new Map(
     group.interests.map((interest) => [interest.id, { ...interest, groupId: group.id }])
   )
 );
+const PERSONAL_DASHBOARD_PARENT_INTEREST_BY_GROUP = new Map([
+  ["banknote_intelligence", "banknotes"],
+]);
 const DEFAULT_TAGS = [
   "identity",
   "identity verification",
@@ -5240,6 +5243,12 @@ function computePersonalInterestBoost(article, interestId) {
       const activeIdentityProfile = selectedSubinterest || interestId || "";
       const recencyAdjustment = getIdentityRecencyAdjustment(article);
       const googleNewsPenalty = getIdentityGoogleNewsPenalty(article, activeIdentityProfile);
+      const selectedSubinterestHasStrongEvidence = Boolean(selectedSubinterest) && (
+        subinterestScore.bestSelectedScore >= 18 ||
+        selectedIntent.score >= 18 ||
+        requiredContext.matched ||
+        selectedProfileSourcePriority.boost >= 18
+      );
 
       score += Math.min(80, Math.round(signals.primaryContextHits * 0.9));
       score += Math.round(authority.boost * borderAuthorityAdjustment.sourceBoostScale);
@@ -5260,7 +5269,7 @@ function computePersonalInterestBoost(article, interestId) {
       if (selectedSubinterest && subinterestScore.bestSelectedScore < 8 && selectedSubinterest !== "drivers_licenses") {
         score -= 400;
       }
-      if (subinterestScore.mismatchPenalty > HARD_SUBINTEREST_MISMATCH_THRESHOLD) {
+      if (subinterestScore.mismatchPenalty > HARD_SUBINTEREST_MISMATCH_THRESHOLD && !selectedSubinterestHasStrongEvidence) {
         score -= 500;
       }
       if (genericDmvNoise && selectedSubinterest && selectedSubinterest !== "drivers_licenses") {
@@ -5568,6 +5577,26 @@ function getSelectedMainDomains(selectedInterests = normalizePersonalDashboardIn
   });
 
   return Array.from(mainDomains);
+}
+
+function resolvePersonalDashboardParentChildInterests(selectedInterests, groupId) {
+  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  const parentId = PERSONAL_DASHBOARD_PARENT_INTEREST_BY_GROUP.get(groupId) || "";
+  const groupInterestIds = normalizedInterests.filter(
+    (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === groupId
+  );
+  const hasParent = Boolean(parentId && groupInterestIds.includes(parentId));
+  const childIds = groupInterestIds.filter((interestId) => interestId !== parentId);
+  const parentActsAsDomainGate = hasParent && childIds.length > 0;
+
+  return {
+    parentId,
+    hasParent,
+    childIds,
+    groupInterestIds,
+    parentActsAsDomainGate,
+    effectiveInterestIds: parentActsAsDomainGate ? childIds : groupInterestIds,
+  };
 }
 
 function isBanknotesOnlyPersonalSelection(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
@@ -7903,6 +7932,7 @@ function getBanknoteInterestSignals(article) {
     const polymerTerms = [
       "polymer note",
       "polymer banknote",
+      "polymer banknotes",
       "polymer substrate",
       "polymer currency",
       "guardian substrate",
@@ -8552,6 +8582,13 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
             rejectionReasons: [],
           })
           : null;
+        const selectedSubinterestHasStrongEvidence = Boolean(selectedSubinterest) && (
+          identitySubinterest.bestSelectedScore >= 18 ||
+          selectedIntent.score >= 18 ||
+          requiredContext.matched ||
+          selectedProfileSourcePriority.boost >= 18 ||
+          (selectedProfile?.score || 0) >= 18
+        );
         if (["travel_passport", "identity_document", "dmv_driver_license"].includes(context.topicType)) {
           score += 170;
         }
@@ -8595,7 +8632,7 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         if (selectedSubinterest && identitySubinterest.bestSelectedScore < 8 && selectedSubinterest !== "drivers_licenses") {
           score -= 400;
         }
-        if (identitySubinterest.mismatchPenalty > HARD_SUBINTEREST_MISMATCH_THRESHOLD) {
+        if (identitySubinterest.mismatchPenalty > HARD_SUBINTEREST_MISMATCH_THRESHOLD && !selectedSubinterestHasStrongEvidence) {
           score -= 500;
         }
         if (genericDmvNoise && selectedSubinterest && selectedSubinterest !== "drivers_licenses") {
@@ -8885,12 +8922,19 @@ function articleMatchesPersonalDashboardSelection(article) {
       return false;
     }
 
-    const banknoteInterestIds = selectedInterests.filter(
-      (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "banknote_intelligence"
+    const banknoteInterestResolution = resolvePersonalDashboardParentChildInterests(
+      selectedInterests,
+      "banknote_intelligence"
     );
+    const banknoteInterestIds = banknoteInterestResolution.effectiveInterestIds;
 
     if (!banknoteInterestIds.length) {
       return (isBanknotePrimary(article) || isBanknoteAdjacent(article)) && sharedSecurityTechniqueMatched;
+    }
+
+    if (banknoteInterestResolution.parentActsAsDomainGate) {
+      return banknoteInterestIds.some((interestId) => matchesBanknoteInterest(article, interestId))
+        && sharedSecurityTechniqueMatched;
     }
 
     return (
