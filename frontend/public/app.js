@@ -21054,3 +21054,5 @@ window.addEventListener("beforeunload", () => {
 });
 
 void init();
+
+// Railway redeploy trigger 2026-06-17T14:53:10+02:00
