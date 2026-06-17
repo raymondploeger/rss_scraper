@@ -12,7 +12,7 @@ import {
 import { createPollLog } from "../database/pollLogRepository.js";
 import { listFeeds as listFeedRecords, updateFeed as updateFeedRecord } from "../database/feedRepository.js";
 import { broadcast } from "./realtimeService.js";
-import { articleMatchesSourceRelevanceRule } from "./sourceRelevanceService.js";
+import { articleMatchesSourceRelevanceRule, getSourceRelevanceAssessment } from "./sourceRelevanceService.js";
 import { enrichArticle, isGoogleNewsPlaceholderImage, scrapeArticleMetadata } from "./thumbnailService.js";
 import {
   canonicalizeUrl,
@@ -48,6 +48,10 @@ const parser = new Parser({
 const SICPA_NEWSROOM_URL = "https://www.sicpa.com/all-press-releases";
 const SURYS_NEWSROOM_URL = "https://surys.com/surys-blog/";
 const IQ_STRUCTURES_NEWSROOM_URL = "https://www.iqstructures.com/en/blog";
+const CRANE_CURRENCY_NEWSROOM_URL = "https://www.cranecurrency.com/news-insights/";
+const CRANE_CURRENCY_SITEMAP_URL = "https://www.cranecurrency.com/sitemap/";
+const CRANE_CURRENCY_MAX_ARCHIVE_PAGES = 8;
+const CRANE_CURRENCY_MAX_CANDIDATES = 80;
 
 const VENDOR_FEED_LOG_CONFIG = [
   {
@@ -64,6 +68,11 @@ const VENDOR_FEED_LOG_CONFIG = [
     label: "IQ_STRUCTURES_NEWSROOM",
     rssUrl: IQ_STRUCTURES_NEWSROOM_URL,
     name: "iq structures newsroom",
+  },
+  {
+    label: "CRANE_CURRENCY_NEWSROOM",
+    rssUrl: CRANE_CURRENCY_NEWSROOM_URL,
+    name: "crane currency news & insights",
   },
 ];
 
@@ -104,6 +113,14 @@ function isIqStructuresNewsroomFeed(feed) {
     Boolean(feed) &&
     (String(feed.rssUrl || "").trim().toLowerCase() === IQ_STRUCTURES_NEWSROOM_URL.toLowerCase() ||
       String(feed.name || "").trim().toLowerCase() === "iq structures newsroom")
+  );
+}
+
+function isCraneCurrencyNewsroomFeed(feed) {
+  return (
+    Boolean(feed) &&
+    (String(feed.rssUrl || "").trim().toLowerCase() === CRANE_CURRENCY_NEWSROOM_URL.toLowerCase() ||
+      String(feed.name || "").trim().toLowerCase() === "crane currency news & insights")
   );
 }
 
@@ -581,7 +598,11 @@ function parseWebsiteDate(value) {
     return null;
   }
 
-  const parsed = new Date(String(value));
+  const normalizedValue = String(value)
+    .replace(/\b(\d{1,2})(st|nd|rd|th)\b/gi, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+  const parsed = new Date(normalizedValue);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
@@ -593,6 +614,7 @@ function extractWebsitePublishedDate($, pageUrl = "") {
     'meta[name="pubdate"]',
     'meta[name="date"]',
     "time[datetime]",
+    "time",
     "[datetime]",
   ];
 
@@ -1066,6 +1088,391 @@ function buildIqStructuresNewsroomCandidate($, block, pageUrl) {
   };
 }
 
+function isCraneCurrencyArticleUrl(value) {
+  try {
+    const parsed = new URL(String(value || ""));
+    const hostname = parsed.hostname.replace(/^www\./, "").toLowerCase();
+    const pathname = parsed.pathname.toLowerCase();
+    return (
+      hostname === "cranecurrency.com" &&
+      /^\/news-insights\/[^/?#]+\/?$/.test(pathname) &&
+      pathname !== "/news-insights/"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function buildCraneCurrencyNewsCandidate($, block, pageUrl) {
+  const node = $(block);
+  const href =
+    node.find("a.stretched-link[href*='/news-insights/']").first().attr("href") ||
+    node.find("a[href*='/news-insights/']").first().attr("href") ||
+    "";
+  const link = href ? new URL(href, pageUrl).toString() : "";
+  if (!link || !isCraneCurrencyArticleUrl(link)) {
+    return null;
+  }
+
+  const title =
+    sanitizeFeedText(node.find("h1, h2, h3, h4").first().text(), "") ||
+    sanitizeFeedText(node.find("a[href]").first().text(), "");
+  const excerpt =
+    sanitizeFeedText(node.find("p").first().text(), "") ||
+    sanitizeFeedText(node.text(), "");
+  const date =
+    parseWebsiteDate(node.find("time").first().attr("datetime") || "") ||
+    parseWebsiteDateFromText(node.find("time").first().text()) ||
+    parseWebsiteDateFromText(node.text());
+  const category = node
+    .find("a.tag, .tag")
+    .toArray()
+    .map((element) => sanitizeFeedText($(element).text(), ""))
+    .find((value) => value && value.toLowerCase() !== "show all") || "";
+  const image =
+    node.find("img").first().attr("src") ||
+    node.find("img").first().attr("data-src") ||
+    pickImageFromSrcset(node.find("img").first().attr("srcset") || node.find("img").first().attr("data-srcset")) ||
+    "";
+
+  return {
+    title,
+    link,
+    excerpt,
+    date,
+    category,
+    image: image ? new URL(image, pageUrl).toString() : "",
+    discoverySource: pageUrl,
+  };
+}
+
+async function collectCraneCurrencyArchiveCandidates(feed, options = {}) {
+  const pageLimit = Number(options.pageLimit || CRANE_CURRENCY_MAX_ARCHIVE_PAGES);
+  const candidates = [];
+  const seenLinks = new Set();
+  const archivePages = [];
+  let consecutiveEmptyPages = 0;
+
+  for (let page = 1; page <= pageLimit; page += 1) {
+    const pageUrl = page === 1
+      ? CRANE_CURRENCY_NEWSROOM_URL
+      : `${CRANE_CURRENCY_NEWSROOM_URL}?q=&p=${page}&cat=`;
+    const response = await fetchWebsiteHtml(pageUrl);
+    const fetchedUrl = response.request?.res?.responseUrl || pageUrl;
+    const $ = cheerio.load(String(response.data || ""));
+    const pageCandidates = [];
+
+    $("article, .card, .teaser, .news-card, main li, main div")
+      .toArray()
+      .forEach((block) => {
+        const candidate = buildCraneCurrencyNewsCandidate($, block, fetchedUrl);
+        if (!candidate?.link || !candidate.title) {
+          return;
+        }
+
+        const canonicalLink = canonicalizeUrl(candidate.link);
+        if (!canonicalLink || seenLinks.has(canonicalLink)) {
+          return;
+        }
+
+        seenLinks.add(canonicalLink);
+        pageCandidates.push(candidate);
+      });
+
+    archivePages.push({
+      page,
+      url: pageUrl,
+      fetchedUrl,
+      candidates: pageCandidates.length,
+    });
+    candidates.push(...pageCandidates);
+
+    if (!pageCandidates.length) {
+      consecutiveEmptyPages += 1;
+      if (consecutiveEmptyPages >= 2) {
+        break;
+      }
+    } else {
+      consecutiveEmptyPages = 0;
+    }
+
+    if (candidates.length >= CRANE_CURRENCY_MAX_CANDIDATES) {
+      break;
+    }
+  }
+
+  return {
+    candidates,
+    archivePages,
+  };
+}
+
+async function collectCraneCurrencySitemapCandidates() {
+  const response = await fetchWebsiteHtml(CRANE_CURRENCY_SITEMAP_URL);
+  const fetchedUrl = response.request?.res?.responseUrl || CRANE_CURRENCY_SITEMAP_URL;
+  const xml = String(response.data || "");
+  const urls = Array.from(xml.matchAll(/<loc>([^<]+)<\/loc>/gi))
+    .map((match) => sanitizeFeedText(match[1], ""))
+    .map((value) => value.replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16))))
+    .filter((value) => isCraneCurrencyArticleUrl(value));
+
+  return {
+    fetchedUrl,
+    urls: Array.from(new Set(urls)),
+  };
+}
+
+async function buildCraneCurrencyCandidateFromUrl(link) {
+  if (!isCraneCurrencyArticleUrl(link)) {
+    return null;
+  }
+
+  const response = await fetchWebsiteHtml(link);
+  const fetchedUrl = response.request?.res?.responseUrl || link;
+  const html = String(response.data || "");
+  const $ = cheerio.load(html);
+  const canonicalLink =
+    $("link[rel='canonical']").first().attr("href") ||
+    $('link[rel="canonical"]').first().attr("href") ||
+    fetchedUrl;
+  const resolvedLink = new URL(canonicalLink, fetchedUrl).toString();
+  if (!isCraneCurrencyArticleUrl(resolvedLink)) {
+    return null;
+  }
+
+  const title =
+    sanitizeFeedText($("h1").first().text(), "") ||
+    sanitizeFeedText($('meta[property="og:title"]').attr("content"), "") ||
+    sanitizeFeedText($("title").first().text(), "");
+  const body = extractWebsiteArticleBody($);
+  const date =
+    extractWebsitePublishedDate($, resolvedLink) ||
+    parseWebsiteDateFromText($("time").first().text()) ||
+    null;
+
+  return {
+    title,
+    link: resolvedLink,
+    excerpt: body,
+    date,
+    category: "",
+    image: "",
+    discoverySource: CRANE_CURRENCY_SITEMAP_URL,
+  };
+}
+
+async function discoverCraneCurrencyCandidates(feed, options = {}) {
+  const archive = await collectCraneCurrencyArchiveCandidates(feed, options);
+  const candidateMap = new Map();
+
+  archive.candidates.forEach((candidate) => {
+    const canonicalLink = canonicalizeUrl(candidate.link);
+    if (canonicalLink) {
+      candidateMap.set(canonicalLink, candidate);
+    }
+  });
+
+  const sitemap = await collectCraneCurrencySitemapCandidates().catch((error) => {
+    console.warn("[CRANE_CURRENCY_NEWSROOM] sitemap discovery failed:", error?.message || error);
+    return { fetchedUrl: CRANE_CURRENCY_SITEMAP_URL, urls: [] };
+  });
+  const sitemapLimit = Number(options.sitemapLimit || CRANE_CURRENCY_MAX_CANDIDATES);
+  for (const url of sitemap.urls.slice(0, sitemapLimit)) {
+    const canonicalLink = canonicalizeUrl(url);
+    if (!canonicalLink || candidateMap.has(canonicalLink)) {
+      continue;
+    }
+
+    const candidate = await buildCraneCurrencyCandidateFromUrl(url).catch((error) => {
+      console.warn(`[CRANE_CURRENCY_NEWSROOM] failed to inspect sitemap URL ${url}:`, error?.message || error);
+      return null;
+    });
+    if (candidate?.link && candidate.title) {
+      candidateMap.set(canonicalLink, candidate);
+    }
+
+    if (candidateMap.size >= CRANE_CURRENCY_MAX_CANDIDATES) {
+      break;
+    }
+  }
+
+  return {
+    archivePages: archive.archivePages,
+    sitemapUrl: sitemap.fetchedUrl,
+    sitemapUrlsScanned: sitemap.urls.length,
+    candidates: Array.from(candidateMap.values()),
+  };
+}
+
+async function assessCraneCurrencyCandidate(feed, candidate) {
+  const lowerLink = String(candidate.link || "").toLowerCase();
+
+  if (!isCraneCurrencyArticleUrl(candidate.link)) {
+    return {
+      accepted: false,
+      reason: "non-article-url",
+      candidate,
+      validation: null,
+      sourceRelevance: null,
+    };
+  }
+
+  if (
+    lowerLink.includes("/solutions/") ||
+    lowerLink.includes("/media/") ||
+    lowerLink.includes("?") ||
+    lowerLink.includes("#")
+  ) {
+    return {
+      accepted: false,
+      reason: "blocked-crane-url",
+      candidate,
+      validation: null,
+      sourceRelevance: null,
+    };
+  }
+
+  const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch((error) => ({
+    accepted: false,
+    reason: `validation-error:${error?.message || error}`,
+  }));
+
+  if (!validated?.accepted) {
+    return {
+      accepted: false,
+      reason: validated?.reason || "validation-rejected",
+      candidate,
+      validation: validated,
+      sourceRelevance: null,
+    };
+  }
+
+  const article = {
+    title: validated.title || candidate.title,
+    link: candidate.link,
+    contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+  };
+  const sourceRelevance = getSourceRelevanceAssessment(feed, article);
+
+  if (!sourceRelevance.accepted) {
+    return {
+      accepted: false,
+      reason: "source-relevance-filter",
+      candidate,
+      validation: validated,
+      sourceRelevance,
+    };
+  }
+
+  return {
+    accepted: true,
+    reason: "accepted",
+    candidate,
+    validation: validated,
+    sourceRelevance,
+    item: {
+      title: validated.title || candidate.title,
+      link: candidate.link,
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
+      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+      category: candidate.category || undefined,
+      image: candidate.image || undefined,
+      author: "",
+      source: getSourceName(candidate.link),
+    },
+  };
+}
+
+async function extractCraneCurrencyNewsroomItems(feed, options = {}) {
+  const discovery = await discoverCraneCurrencyCandidates(feed, options);
+  const items = [];
+  let skippedCount = 0;
+
+  console.log(`[CRANE_CURRENCY_NEWSROOM] archive_pages_scanned count=${discovery.archivePages.length}`);
+  console.log(`[CRANE_CURRENCY_NEWSROOM] sitemap_urls_scanned count=${discovery.sitemapUrlsScanned}`);
+  console.log(`[CRANE_CURRENCY_NEWSROOM] candidates_discovered count=${discovery.candidates.length}`);
+
+  for (const candidate of discovery.candidates) {
+    const assessment = await assessCraneCurrencyCandidate(feed, candidate);
+    if (!assessment.accepted) {
+      skippedCount += 1;
+      console.log(`[CRANE_CURRENCY_NEWSROOM] rejected link=${candidate.link} reason=${assessment.reason}`);
+      continue;
+    }
+
+    items.push(assessment.item);
+  }
+
+  console.log(`[CRANE_CURRENCY_NEWSROOM] articles_validated count=${items.length}`);
+  console.log(`[CRANE_CURRENCY_NEWSROOM] articles_skipped count=${skippedCount}`);
+
+  return items;
+}
+
+export async function auditCraneCurrencyNewsroom(options = {}) {
+  const feed = {
+    id: "crane-currency-audit",
+    name: "Crane Currency News & Insights",
+    rssUrl: CRANE_CURRENCY_NEWSROOM_URL,
+    topic: "Banknotes",
+    sourceType: "website",
+  };
+  const discovery = await discoverCraneCurrencyCandidates(feed, options);
+  const results = [];
+
+  for (const candidate of discovery.candidates) {
+    const assessment = await assessCraneCurrencyCandidate(feed, candidate);
+    let thumbnail = "";
+    let thumbnailSource = "";
+    let thumbnailStatus = "";
+    if (assessment.accepted) {
+      const metadata = await scrapeArticleMetadata(
+        assessment.item.link,
+        assessment.item.contentSnippet || "",
+        assessment.item.title || ""
+      ).catch((error) => ({ error: error?.message || String(error) }));
+      thumbnail = metadata.thumbnail || "";
+      thumbnailSource = metadata.thumbnailSource || metadata.source || "";
+      thumbnailStatus = metadata.error || (thumbnail ? "detected" : "missing");
+    }
+
+    results.push({
+      title: assessment.item?.title || assessment.validation?.title || candidate.title,
+      url: candidate.link,
+      date: assessment.item?.isoDate || assessment.validation?.isoDate || (candidate.date ? candidate.date.toISOString() : ""),
+      thumbnail,
+      thumbnailSource,
+      thumbnailStatus,
+      category: assessment.item?.category || candidate.category || "",
+      accepted: assessment.accepted,
+      decision: assessment.accepted ? "would-import" : "reject",
+      reason: assessment.reason,
+      validationReason: assessment.validation?.reason || "",
+      sourceRelevanceReason: assessment.sourceRelevance?.reason || "",
+      sourceRelevanceIncludedTerms: assessment.sourceRelevance?.includedTerms || [],
+      sourceRelevanceExcludedTerms: assessment.sourceRelevance?.excludedTerms || [],
+      discoverySource: candidate.discoverySource || "",
+    });
+  }
+
+  return {
+    archivePagesScanned: discovery.archivePages.length,
+    archivePages: discovery.archivePages,
+    sitemapUrl: discovery.sitemapUrl,
+    sitemapUrlsScanned: discovery.sitemapUrlsScanned,
+    candidateUrlsFound: discovery.candidates.length,
+    duplicatesRemoved: Math.max(
+      0,
+      discovery.archivePages.reduce((sum, page) => sum + Number(page.candidates || 0), 0) +
+        Number(discovery.sitemapUrlsScanned || 0) -
+        discovery.candidates.length
+    ),
+    validationAccepted: results.filter((entry) => entry.accepted).length,
+    validationRejected: results.filter((entry) => !entry.accepted).length,
+    results,
+  };
+}
+
 async function extractSicpaNewsroomItems(feed, $, pageUrl) {
   const discoveredCandidates = [];
   const seenLinks = new Set();
@@ -1334,6 +1741,12 @@ async function extractWebsiteItems(feed) {
 
   if (isIqStructuresNewsroomFeed(feed)) {
     const items = await extractIqStructuresNewsroomItems(feed, $, fetchedUrl);
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isCraneCurrencyNewsroomFeed(feed)) {
+    const items = await extractCraneCurrencyNewsroomItems(feed);
     console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
     return items;
   }

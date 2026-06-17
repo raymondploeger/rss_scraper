@@ -10,6 +10,7 @@
     "dev": "node --watch src/server.js",
     "start": "node src/start.js",
     "audit:storage": "node scripts/audit-storage.js",
+    "audit:crane-currency": "node scripts/audit-crane-currency.js",
     "db:size": "node scripts/database-size-report.js",
     "db:poll-logs": "node scripts/poll-logs-analysis.js",
     "db:poll-indexes": "node scripts/poll-logs-index-analysis.js",

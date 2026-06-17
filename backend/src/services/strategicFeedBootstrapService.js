@@ -189,6 +189,13 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase1",
   },
   {
+    name: "Crane Currency News & Insights",
+    topic: "Banknotes",
+    rssUrl: "https://www.cranecurrency.com/news-insights/",
+    sourceType: "website",
+    phase: "phase1",
+  },
+  {
     name: "HID Press Releases",
     topic: "Identity Documents",
     rssUrl: "https://newsroom.hidglobal.com/press-releases",
