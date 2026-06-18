@@ -4559,12 +4559,122 @@ function classifyAdvancedFilterRejection(article, options = {}) {
   return { category: "other", reason: "advanced filter rejected article" };
 }
 
+function getSerializableFilterPipelineDiagnostics(diagnostics) {
+  if (!diagnostics) {
+    return null;
+  }
+
+  return {
+    renderId: diagnostics.renderId || "",
+    timestamp: diagnostics.timestamp || "",
+    branch: diagnostics.branch || "",
+    normalizedFilterState: diagnostics.normalizedFilterState || null,
+    normalizedFilterStateKey: diagnostics.normalizedFilterStateKey || "",
+    candidateStrategy: diagnostics.candidateStrategy || null,
+    candidateStrategyKey: diagnostics.candidateStrategyKey || "",
+    candidatePoolContext: diagnostics.candidatePoolContext || null,
+    candidateBuilderResult: diagnostics.candidateBuilderResult || null,
+    selectedFeedFullPool: diagnostics.selectedFeedFullPool || null,
+    counts: diagnostics.counts || {},
+    rejections: diagnostics.rejections || {},
+    rejectionExamples: diagnostics.rejectionExamples || {},
+    largestRejection: diagnostics.largestRejection || null,
+    filters: diagnostics.filters || {},
+    cache: diagnostics.cache || {},
+    backendRequests: diagnostics.backendRequests || [],
+    notes: diagnostics.notes || [],
+  };
+}
+
+function getFilterPipelineDiagnosticsExportPayload() {
+  const diagnostics = Array.isArray(window.__FILTER_PIPELINE_DIAGNOSTICS__)
+    ? window.__FILTER_PIPELINE_DIAGNOSTICS__
+    : [];
+  return {
+    exportedAt: new Date().toISOString(),
+    appBuild: APP_BUILD,
+    diagnosticsCount: diagnostics.length,
+    diagnostics,
+  };
+}
+
+function downloadJsonFile(filename, payload) {
+  const json = JSON.stringify(payload, null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function ensureFilterPipelineDiagnosticsExportTools() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (!Array.isArray(window.__FILTER_PIPELINE_DIAGNOSTICS__)) {
+    window.__FILTER_PIPELINE_DIAGNOSTICS__ = [];
+  }
+
+  if (typeof window.exportFilterPipelineDiagnostics !== "function") {
+    window.exportFilterPipelineDiagnostics = () => {
+      const payload = getFilterPipelineDiagnosticsExportPayload();
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      downloadJsonFile(`filter-pipeline-diagnostics-${timestamp}.json`, payload);
+      return payload;
+    };
+  }
+
+  if (typeof window.copyFilterPipelineDiagnostics !== "function") {
+    window.copyFilterPipelineDiagnostics = async () => {
+      const payload = getFilterPipelineDiagnosticsExportPayload();
+      const json = JSON.stringify(payload, null, 2);
+      if (!navigator?.clipboard?.writeText) {
+        console.warn("Clipboard API is not available. Use window.exportFilterPipelineDiagnostics() instead.");
+        return payload;
+      }
+      await navigator.clipboard.writeText(json);
+      console.info("FilterPipeline diagnostics copied to clipboard.");
+      return payload;
+    };
+  }
+
+  if (!window.__FILTER_PIPELINE_EXPORT_HINT_SHOWN__) {
+    window.__FILTER_PIPELINE_EXPORT_HINT_SHOWN__ = true;
+    console.info(
+      "FilterPipeline diagnostics export available:\nwindow.exportFilterPipelineDiagnostics()\nwindow.copyFilterPipelineDiagnostics()"
+    );
+  }
+}
+
+function storeFilterPipelineDiagnostics(diagnostics) {
+  if (!diagnostics?.enabled || typeof window === "undefined") {
+    return;
+  }
+
+  ensureFilterPipelineDiagnosticsExportTools();
+  const serialized = getSerializableFilterPipelineDiagnostics(diagnostics);
+  if (!serialized) {
+    return;
+  }
+
+  window.__FILTER_PIPELINE_DIAGNOSTICS__.push(serialized);
+  if (window.__FILTER_PIPELINE_DIAGNOSTICS__.length > 50) {
+    window.__FILTER_PIPELINE_DIAGNOSTICS__.splice(0, window.__FILTER_PIPELINE_DIAGNOSTICS__.length - 50);
+  }
+}
+
 function flushFilterPipelineDiagnostics(diagnostics) {
   if (!diagnostics?.enabled || typeof console === "undefined") {
     return;
   }
 
   diagnostics.largestRejection = getLargestPipelineRejection(diagnostics);
+  storeFilterPipelineDiagnostics(diagnostics);
   const groupLabel = `[FilterPipeline] ${diagnostics.renderId} ${diagnostics.branch}`;
   if (typeof console.groupCollapsed === "function") {
     console.groupCollapsed(groupLabel);
