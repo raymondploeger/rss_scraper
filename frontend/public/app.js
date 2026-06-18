@@ -3495,21 +3495,88 @@ function isFilterPipelineDiagnosticsEnabled() {
   }
 }
 
-function getActiveFilterPipelineSnapshot() {
+function freezeNormalizedFilterState(value) {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) {
+    return value;
+  }
+
+  Object.values(value).forEach((childValue) => {
+    freezeNormalizedFilterState(childValue);
+  });
+  return Object.freeze(value);
+}
+
+function createNormalizedFilterState() {
+  const selectedPersonalInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const selectedFeed = state.filters.feedId ? resolveFeedByIdentity(state.filters.feedId) : null;
+  const selectedBanknoteInterests = selectedPersonalInterests.filter(
+    (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "banknote_intelligence"
+  );
+  const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedPersonalInterests);
+  const selectedSharedSecurityInterests = getSelectedSharedSecuritySubinterests(selectedPersonalInterests);
+  const selectedDigitalIdentityInterests = selectedPersonalInterests.filter(
+    (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "digital_identity_biometrics"
+  );
+
+  return freezeNormalizedFilterState({
+    feed: {
+      id: state.filters.feedId || "",
+      resolvedId: selectedFeed?.id || "",
+      name: getSelectedFeedLabel(),
+      sourceGroup: state.filters.sourceGroup || "all",
+      dmvFeedId: state.filters.dmvFeedId || "",
+      canadaDmvFeedPath: state.filters.canadaDmvFeedPath || "",
+      canadaDmvAll: Boolean(state.filters.canadaDmvAll),
+    },
+    dashboard: {
+      enabled: selectedPersonalInterests.length > 0,
+      mode: normalizePersonalDashboardMode(state.personalDashboard.mode),
+      mainDomains: getSelectedMainDomains(selectedPersonalInterests),
+      selectedInterests: selectedPersonalInterests,
+      banknotes: selectedBanknoteInterests,
+      identityDocuments: selectedIdentityInterests,
+      sharedSecurity: selectedSharedSecurityInterests,
+      digitalIdentity: selectedDigitalIdentityInterests,
+    },
+    filters: {
+      search: state.filters.search || "",
+      topic: state.filters.topic || "",
+      tag: state.filters.tag || "",
+      signal: state.filters.signalCategory || "",
+      date: state.filters.date || "",
+      articleIds: Array.isArray(state.filters.articleIds) ? state.filters.articleIds.slice() : [],
+      alertLabel: state.filters.alertLabel || "",
+    },
+    keywords: {
+      include: Array.isArray(state.keywordFilters?.include) ? state.keywordFilters.include.slice() : [],
+      exclude: Array.isArray(state.keywordFilters?.exclude) ? state.keywordFilters.exclude.slice() : [],
+    },
+    sorting: {
+      mode: selectedPersonalInterests.length ? "date_desc_personal_dashboard" : "date_desc",
+    },
+    pagination: {
+      page: Number(state.pagination?.page) || 1,
+      pageSize: Number(state.pagination?.pageSize) || ARTICLE_RENDER_PAGE_SIZE,
+    },
+    dashboardMode: state.dashboardMode || "normal",
+  });
+}
+
+function getActiveFilterPipelineSnapshot(normalizedFilterState = createNormalizedFilterState()) {
   return {
-    feedId: state.filters.feedId || "",
-    feedName: getSelectedFeedLabel(),
-    search: state.filters.search || "",
-    topic: state.filters.topic || "",
-    tag: state.filters.tag || "",
-    signal: state.filters.signalCategory || "",
-    date: state.filters.date || "",
-    sourceGroup: state.filters.sourceGroup || "all",
-    selectedPersonalInterests: normalizePersonalDashboardInterests(state.personalDashboard.interests),
+    feedId: normalizedFilterState.feed.id,
+    feedName: normalizedFilterState.feed.name,
+    search: normalizedFilterState.filters.search,
+    topic: normalizedFilterState.filters.topic,
+    tag: normalizedFilterState.filters.tag,
+    signal: normalizedFilterState.filters.signal,
+    date: normalizedFilterState.filters.date,
+    sourceGroup: normalizedFilterState.feed.sourceGroup,
+    selectedPersonalInterests: normalizedFilterState.dashboard.selectedInterests,
   };
 }
 
-function createFilterPipelineDiagnostics() {
+function createFilterPipelineDiagnostics(normalizedFilterState = createNormalizedFilterState()) {
   const enabled = isFilterPipelineDiagnosticsEnabled();
   const renderId = `render-${runtime.filterPipelineRenderId += 1}`;
   return {
@@ -3524,7 +3591,8 @@ function createFilterPipelineDiagnostics() {
       groupedFeedCacheKey: "",
       groupedFeedCacheHit: false,
     },
-    filters: getActiveFilterPipelineSnapshot(),
+    normalizedFilterState,
+    filters: getActiveFilterPipelineSnapshot(normalizedFilterState),
     counts: {
       candidatePool: 0,
       afterFeedScope: 0,
@@ -3657,8 +3725,43 @@ function getPipelineRejectionExamples(diagnostics, rejection) {
   return diagnostics?.rejectionExamples?.[rejection.stage]?.[rejection.category] || [];
 }
 
+function getCompactNormalizedFilterStateLines(normalizedFilterState) {
+  if (!normalizedFilterState) {
+    return ["none"];
+  }
+
+  const dashboard = normalizedFilterState.dashboard || {};
+  const filters = normalizedFilterState.filters || {};
+  const feed = normalizedFilterState.feed || {};
+  const pagination = normalizedFilterState.pagination || {};
+  const activeFilters = [
+    filters.search ? `search=${filters.search}` : "",
+    filters.topic ? `topic=${filters.topic}` : "",
+    filters.tag ? `tag=${filters.tag}` : "",
+    filters.signal ? `signal=${filters.signal}` : "",
+    filters.date ? `date=${filters.date}` : "",
+  ].filter(Boolean);
+
+  return [
+    `feed: ${feed.name || feed.id || "all"}${feed.id ? ` (${feed.id})` : ""}`,
+    `sourceGroup: ${feed.sourceGroup || "all"}`,
+    `dashboard: ${dashboard.enabled ? "enabled" : "off"}${dashboard.mode ? ` (${dashboard.mode})` : ""}`,
+    `mainDomains: ${dashboard.mainDomains?.length ? dashboard.mainDomains.join(", ") : "none"}`,
+    `interests: ${dashboard.selectedInterests?.length ? dashboard.selectedInterests.join(", ") : "none"}`,
+    `filters: ${activeFilters.length ? activeFilters.join(", ") : "none"}`,
+    `sorting: ${normalizedFilterState.sorting?.mode || "default"}`,
+    `pagination: page ${pagination.page || 1}, size ${pagination.pageSize || ARTICLE_RENDER_PAGE_SIZE}`,
+  ];
+}
+
 function logCompactFilterPipelineSummary(diagnostics) {
-  const lines = ["Counts"];
+  const lines = ["Normalized Filter State"];
+  getCompactNormalizedFilterStateLines(diagnostics.normalizedFilterState).forEach((line) => {
+    lines.push(line);
+  });
+
+  lines.push("");
+  lines.push("Counts");
   Object.entries(diagnostics.counts || {}).forEach(([stage, count]) => {
     lines.push(formatPipelineSummaryLine(stage, count));
   });
@@ -3905,6 +4008,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
     console.log(groupLabel);
   }
   logCompactFilterPipelineSummary(diagnostics);
+  console.log("normalizedFilterState", diagnostics.normalizedFilterState);
   console.table(diagnostics.counts);
   console.log("rejections", diagnostics.rejections);
   console.log("rejectionExamples", diagnostics.rejectionExamples);
@@ -19992,7 +20096,8 @@ function renderArticles() {
   let feedRenderGroupedCount = 0;
   let feedRenderFilteredCount = 0;
   const renderReason = runtime.lastRenderedReason || "render";
-  const pipelineDiagnostics = createFilterPipelineDiagnostics();
+  const normalizedFilterState = createNormalizedFilterState();
+  const pipelineDiagnostics = createFilterPipelineDiagnostics(normalizedFilterState);
   let pipelineDiagnosticsFlushed = false;
   const flushPipelineDiagnosticsOnce = () => {
     if (pipelineDiagnosticsFlushed) {
