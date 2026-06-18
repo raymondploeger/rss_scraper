@@ -3624,6 +3624,91 @@ function hasNormalizedAdvancedFilters(normalizedFilterState) {
   );
 }
 
+function resolveCandidateStrategy(normalizedFilterState, candidatePoolContext = null) {
+  const filters = normalizedFilterState?.filters || {};
+  const dashboard = normalizedFilterState?.dashboard || {};
+  const feed = normalizedFilterState?.feed || {};
+  const hasFeedScope = Boolean(feed.id);
+  const hasPersonalDashboard = Boolean(dashboard.enabled);
+  const hasSearch = Boolean(filters.search);
+  const hasDate = Boolean(filters.date);
+  const hasBackendScopedFilter = Boolean(filters.topic || filters.tag || filters.signal || filters.articleIds?.length);
+
+  let strategy = "global_newest_pool";
+  let reason = "no feed, dashboard, search, or date filters active";
+  let sourceScope = "all_feeds";
+  let expectedCompleteness = "partial";
+  let expectedCandidateSource = "legacy global in-memory candidate source";
+
+  if (hasDate) {
+    strategy = "date_scoped_pool";
+    reason = "date filter active";
+    sourceScope = hasFeedScope ? "selected_feed" : "all_feeds";
+    expectedCompleteness = "partial";
+    expectedCandidateSource = "legacy backend date-scoped query";
+  } else if (hasSearch) {
+    strategy = "search_scoped_pool";
+    reason = "search filter active";
+    sourceScope = hasFeedScope ? "selected_feed" : "all_feeds";
+    expectedCompleteness = "partial";
+    expectedCandidateSource = "legacy backend search-scoped query";
+  } else if (hasFeedScope && hasPersonalDashboard) {
+    strategy = "selected_feed_dashboard_full_pool";
+    reason = "feed selected; dashboard active";
+    sourceScope = "selected_feed";
+    expectedCompleteness = "unknown";
+    expectedCandidateSource = "legacy feed-scoped dashboard query";
+  } else if (hasFeedScope) {
+    strategy = "selected_feed_full_pool";
+    reason = "feed selected; dashboard inactive";
+    sourceScope = "selected_feed";
+    expectedCompleteness = "unknown";
+    expectedCandidateSource = "legacy selected-feed query/cache source";
+  } else if (hasPersonalDashboard) {
+    strategy = "dashboard_targeted_pool";
+    reason = "dashboard active; no feed selected";
+    sourceScope = "all_feeds";
+    expectedCompleteness = "targeted_partial";
+    expectedCandidateSource = "legacy dashboard targeted backend query";
+  } else if (hasBackendScopedFilter) {
+    strategy = "backend_query_pool";
+    reason = "backend-scoped advanced filter active";
+    sourceScope = "all_feeds";
+    expectedCompleteness = "partial";
+    expectedCandidateSource = "legacy backend filtered query";
+  }
+
+  const candidateLimit = Number(candidatePoolContext?.candidateLimit) || MAX_ARTICLES_IN_MEMORY;
+  const warnings = [
+    "legacy execution",
+    "candidate source not yet strategy driven",
+    "strategy diagnostics only",
+    "future phase will execute strategy",
+  ];
+  if (strategy === "selected_feed_full_pool" || strategy === "selected_feed_dashboard_full_pool") {
+    warnings.push("feed total is not consulted by this diagnostics-only strategy");
+  }
+  if (strategy === "selected_feed_paged_pool") {
+    warnings.push("paged selected-feed strategy is defined for future large-feed execution only");
+  }
+
+  const resolvedStrategy = {
+    strategy,
+    strategyKey: `strategy:${strategy}`,
+    reason,
+    sourceScope,
+    retrievalMode: candidatePoolContext?.retrievalMode || getRetrievalMode(normalizedFilterState),
+    expectedCompleteness,
+    expectedCandidateSource,
+    expectedLimit: candidateLimit,
+    candidateLimit,
+    featureFlag: "disabled",
+    warnings,
+  };
+
+  return freezeNormalizedFilterState(resolvedStrategy);
+}
+
 function getExpectedCandidateStrategy(normalizedFilterState) {
   const hasFeedScope = Boolean(normalizedFilterState?.feed?.id);
   const hasPersonalDashboard = Boolean(normalizedFilterState?.dashboard?.enabled);
@@ -3912,6 +3997,8 @@ function validateNormalizedFilterStateParity(normalizedFilterState) {
 function createFilterPipelineDiagnostics(normalizedFilterState = createNormalizedFilterState()) {
   const enabled = isFilterPipelineDiagnosticsEnabled();
   const renderId = `render-${runtime.filterPipelineRenderId += 1}`;
+  const candidatePoolContext = enabled ? createCandidatePoolContext(normalizedFilterState) : null;
+  const candidateStrategy = enabled ? resolveCandidateStrategy(normalizedFilterState, candidatePoolContext) : null;
   return {
     enabled,
     timestamp: new Date().toISOString(),
@@ -3928,7 +4015,9 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     normalizedFilterState,
     normalizedFilterStateKey: enabled ? getNormalizedFilterStateCacheKey(normalizedFilterState) : "",
     normalizedFilterStateParity: enabled ? validateNormalizedFilterStateParity(normalizedFilterState) : null,
-    candidatePoolContext: enabled ? createCandidatePoolContext(normalizedFilterState) : null,
+    candidateStrategy,
+    candidateStrategyKey: candidateStrategy?.strategyKey || "",
+    candidatePoolContext,
     candidateBuilderResult: null,
     filters: getActiveFilterPipelineSnapshot(normalizedFilterState),
     counts: {
@@ -3975,7 +4064,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
       advancedFilters: {},
     },
     largestRejection: null,
-    notes: [],
+    notes: candidateStrategy?.warnings?.length ? candidateStrategy.warnings.slice() : [],
   };
 }
 
@@ -4102,6 +4191,31 @@ function logCompactFilterPipelineSummary(diagnostics) {
   lines.push("");
   lines.push("Normalized Filter State Key");
   lines.push(diagnostics.normalizedFilterStateKey || "none");
+
+  const candidateStrategy = diagnostics.candidateStrategy;
+  lines.push("");
+  lines.push("Candidate Strategy");
+  if (candidateStrategy) {
+    lines.push(`strategy: ${candidateStrategy.strategy}`);
+    lines.push(`strategyKey: ${candidateStrategy.strategyKey}`);
+    lines.push(`reason: ${candidateStrategy.reason}`);
+    lines.push(`sourceScope: ${candidateStrategy.sourceScope}`);
+    lines.push(`retrievalMode: ${candidateStrategy.retrievalMode}`);
+    lines.push(`expectedCompleteness: ${candidateStrategy.expectedCompleteness}`);
+    lines.push(`expectedCandidateSource: ${candidateStrategy.expectedCandidateSource}`);
+    lines.push(`candidateLimit: ${candidateStrategy.candidateLimit}`);
+    lines.push(`featureFlag: ${candidateStrategy.featureFlag}`);
+    if (candidateStrategy.warnings?.length) {
+      lines.push("warnings:");
+      candidateStrategy.warnings.forEach((warning) => {
+        lines.push(`- ${warning}`);
+      });
+    } else {
+      lines.push("warnings: none");
+    }
+  } else {
+    lines.push("none");
+  }
 
   const candidateContext = diagnostics.candidatePoolContext;
   lines.push("");
@@ -4400,6 +4514,8 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   logCompactFilterPipelineSummary(diagnostics);
   console.log("normalizedFilterState", diagnostics.normalizedFilterState);
   console.log("normalizedFilterStateKey", diagnostics.normalizedFilterStateKey);
+  console.log("candidateStrategy", diagnostics.candidateStrategy);
+  console.log("candidateStrategyKey", diagnostics.candidateStrategyKey);
   console.log("candidatePoolContext", diagnostics.candidatePoolContext);
   console.log("candidateBuilderResult", diagnostics.candidateBuilderResult);
   if (diagnostics.normalizedFilterStateParity && !diagnostics.normalizedFilterStateParity.ok) {
