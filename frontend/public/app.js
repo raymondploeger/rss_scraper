@@ -3100,6 +3100,7 @@ const runtime = {
   backendArticleQueryRequestId: 0,
   backendArticleQueryActiveRequestId: 0,
   backendArticleQueryLoading: false,
+  filterPipelineRenderId: 0,
   paginationContextKey: "",
   scheduledRenderFrame: 0,
   scheduledRenderTimeout: 0,
@@ -3479,6 +3480,106 @@ function showNotification({ title, message = "", type = "info", timeout = NOTIFI
   if (timeout > 0) {
     const timer = window.setTimeout(() => dismissNotification(notificationId), timeout);
     runtime.notificationTimers.set(notificationId, timer);
+  }
+}
+
+function isFilterPipelineDiagnosticsEnabled() {
+  try {
+    const query = new URLSearchParams(window.location.search || "");
+    if (query.get("debugFilterPipeline") === "1") {
+      return true;
+    }
+    return window.localStorage?.getItem("debugFilterPipeline") === "1";
+  } catch {
+    return false;
+  }
+}
+
+function getActiveFilterPipelineSnapshot() {
+  return {
+    feedId: state.filters.feedId || "",
+    feedName: getSelectedFeedLabel(),
+    search: state.filters.search || "",
+    topic: state.filters.topic || "",
+    tag: state.filters.tag || "",
+    signal: state.filters.signalCategory || "",
+    date: state.filters.date || "",
+    sourceGroup: state.filters.sourceGroup || "all",
+    selectedPersonalInterests: normalizePersonalDashboardInterests(state.personalDashboard.interests),
+  };
+}
+
+function createFilterPipelineDiagnostics() {
+  const enabled = isFilterPipelineDiagnosticsEnabled();
+  const renderId = `render-${runtime.filterPipelineRenderId += 1}`;
+  return {
+    enabled,
+    timestamp: new Date().toISOString(),
+    renderId,
+    branch: "unknown",
+    backendRequests: [],
+    cache: {
+      backendQueryKey: "",
+      backendCacheHit: false,
+      groupedFeedCacheKey: "",
+      groupedFeedCacheHit: false,
+    },
+    filters: getActiveFilterPipelineSnapshot(),
+    counts: {
+      candidatePool: 0,
+      afterFeedScope: 0,
+      afterPersonalDashboard: 0,
+      afterAdvancedFilters: 0,
+      afterSorting: 0,
+      afterGrouping: 0,
+      afterPagination: 0,
+      rendered: 0,
+    },
+    notes: [],
+  };
+}
+
+function recordPipelineCount(diagnostics, stage, count) {
+  if (!diagnostics?.enabled || !Object.prototype.hasOwnProperty.call(diagnostics.counts, stage)) {
+    return;
+  }
+  diagnostics.counts[stage] = Number(count) || 0;
+}
+
+function addFilterPipelineNote(diagnostics, note) {
+  if (!diagnostics?.enabled || !note) {
+    return;
+  }
+  diagnostics.notes.push(note);
+}
+
+function setFilterPipelineBranch(diagnostics, branch) {
+  if (!diagnostics?.enabled) {
+    return;
+  }
+  diagnostics.branch = branch || diagnostics.branch;
+}
+
+function flushFilterPipelineDiagnostics(diagnostics) {
+  if (!diagnostics?.enabled || typeof console === "undefined") {
+    return;
+  }
+
+  const groupLabel = `[FilterPipeline] ${diagnostics.renderId} ${diagnostics.branch}`;
+  if (typeof console.groupCollapsed === "function") {
+    console.groupCollapsed(groupLabel);
+  } else {
+    console.log(groupLabel);
+  }
+  console.table(diagnostics.counts);
+  console.log("filters", diagnostics.filters);
+  console.log("cache", diagnostics.cache);
+  console.log("backendRequests", diagnostics.backendRequests);
+  if (diagnostics.notes.length) {
+    console.log("notes", diagnostics.notes);
+  }
+  if (typeof console.groupEnd === "function") {
+    console.groupEnd();
   }
 }
 
@@ -19100,6 +19201,7 @@ async function ensureBackendArticleQueryData() {
     queryKey,
     articles: normalizedArticles,
     totalCount,
+    backendRequests: queryParamsList.map((params) => Object.fromEntries(params.entries())),
   };
   runtime.backendArticleQueryCache.set(queryKey, payload);
   state.remoteQuery = {
@@ -19553,6 +19655,15 @@ function renderArticles() {
   let feedRenderGroupedCount = 0;
   let feedRenderFilteredCount = 0;
   const renderReason = runtime.lastRenderedReason || "render";
+  const pipelineDiagnostics = createFilterPipelineDiagnostics();
+  let pipelineDiagnosticsFlushed = false;
+  const flushPipelineDiagnosticsOnce = () => {
+    if (pipelineDiagnosticsFlushed) {
+      return;
+    }
+    pipelineDiagnosticsFlushed = true;
+    flushFilterPipelineDiagnostics(pipelineDiagnostics);
+  };
   if (shouldDebugFeedRender) {
     debugFeedFilterLog("[feed-render-start]", {
       selectedFeed: state.filters.feedId || "",
@@ -19568,6 +19679,25 @@ function renderArticles() {
     if (useBackendQuery) {
       const queryKey = getBackendArticleQueryKey();
       const cachedQuery = runtime.backendArticleQueryCache.get(queryKey);
+      if (pipelineDiagnostics.enabled) {
+        pipelineDiagnostics.cache.backendQueryKey = queryKey;
+        pipelineDiagnostics.cache.backendCacheHit = Boolean(cachedQuery);
+        setFilterPipelineBranch(pipelineDiagnostics, cachedQuery ? "backend-query" : "backend-query-loading");
+        addFilterPipelineNote(pipelineDiagnostics, "backend-query branch selected because shouldUseBackendArticleQuery() returned true");
+        if (state.filters.feedId) {
+          addFilterPipelineNote(pipelineDiagnostics, "selected feed used as backend retrieval param");
+        }
+        if (hasPersonalDashboardSelections()) {
+          addFilterPipelineNote(pipelineDiagnostics, "personal dashboard targeted retrieval active");
+        }
+        if (state.filters.feedId && hasPersonalDashboardSelections()) {
+          addFilterPipelineNote(pipelineDiagnostics, "feed + dashboard uses feed-scoped backend retrieval");
+        }
+        const plannedRequests = getPersonalDashboardBackendDomainPlan() && hasPersonalDashboardSelections()
+          ? buildPersonalDashboardBackendQueryParamsList()
+          : [getBackendArticleQueryParams()];
+        pipelineDiagnostics.backendRequests = cachedQuery?.backendRequests || plannedRequests.map((params) => Object.fromEntries(params.entries()));
+      }
       if (!cachedQuery) {
         if (!runtime.backendArticleQueryLoading) {
           void ensureBackendArticleQueryData()
@@ -19581,6 +19711,7 @@ function renderArticles() {
               elements.resultsCount.textContent = error?.message || "Failed to load filtered articles.";
             });
         }
+        flushPipelineDiagnosticsOnce();
         return;
       }
     }
@@ -19601,6 +19732,7 @@ function renderArticles() {
         articles: [],
         totalCount: 0,
       };
+      setFilterPipelineBranch(pipelineDiagnostics, "backend-query");
       personalDashboardBasePool = cachedQuery.articles;
       filteredRawArticles = sortArticlesForCurrentDashboardMode(
         cachedQuery.articles.filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
@@ -19609,6 +19741,13 @@ function renderArticles() {
       groupedArticlesCount = groupedArticles.length;
       articles = groupedArticles;
     } else if (activeFeedId && !state.filters.date) {
+      const groupedFeedCacheKey = getGroupedFeedCacheKey(activeFeedId);
+      if (pipelineDiagnostics.enabled) {
+        pipelineDiagnostics.cache.groupedFeedCacheKey = groupedFeedCacheKey;
+        pipelineDiagnostics.cache.groupedFeedCacheHit = runtime.groupedFeedCache.has(groupedFeedCacheKey);
+        addFilterPipelineNote(pipelineDiagnostics, "getCachedGroupedFeedResult fallback branch used");
+      }
+      setFilterPipelineBranch(pipelineDiagnostics, "selected-feed-fallback");
       const cachedFeedResult = getCachedGroupedFeedResult(activeFeedId);
       feedDebugRawMatches = cachedFeedResult.rawMatches;
       feedDebugAfterRelevanceMatches = cachedFeedResult.filteredMatches;
@@ -19620,6 +19759,7 @@ function renderArticles() {
       feedRenderGroupedCount = groupedArticlesCount;
       articles = groupedArticles;
     } else if (state.filters.date) {
+      setFilterPipelineBranch(pipelineDiagnostics, "date-filter");
       personalDashboardBasePool = state.articles;
       filteredRawArticles = sortArticlesForCurrentDashboardMode(
         state.articles.filter(articleMatchesFilters)
@@ -19629,6 +19769,7 @@ function renderArticles() {
       feedRenderFilteredCount = filteredRawArticles.length;
       feedRenderGroupedCount = groupedArticlesCount;
     } else {
+      setFilterPipelineBranch(pipelineDiagnostics, "global-visible-articles");
       personalDashboardBasePool = state.articles;
       const visibleArticles = getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping });
       filteredRawArticles = visibleArticles;
@@ -19640,6 +19781,28 @@ function renderArticles() {
         ? groupedArticles.filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
         : groupedArticles;
       articles = sortArticlesByPublicationDate(feedScopedArticles);
+    }
+
+    if (pipelineDiagnostics.enabled) {
+      const advancedFilterOptions =
+        useBackendQuery || (activeFeedId && !state.filters.date)
+          ? { ignoreFeedId: true, ignorePersonalDashboard: true }
+          : { ignorePersonalDashboard: true };
+      const afterFeedScope = activeFeedId
+        ? personalDashboardBasePool.filter((article) => articleMatchesSelectedFeed(article, activeFeedId))
+        : personalDashboardBasePool;
+      const afterPersonalDashboard = afterFeedScope.filter((article) =>
+        articleMatchesPersonalDashboardSelection(article)
+      );
+      const afterAdvancedFilters = afterPersonalDashboard.filter((article) =>
+        articleMatchesFilters(article, advancedFilterOptions)
+      );
+      recordPipelineCount(pipelineDiagnostics, "candidatePool", personalDashboardBasePool.length);
+      recordPipelineCount(pipelineDiagnostics, "afterFeedScope", afterFeedScope.length);
+      recordPipelineCount(pipelineDiagnostics, "afterPersonalDashboard", afterPersonalDashboard.length);
+      recordPipelineCount(pipelineDiagnostics, "afterAdvancedFilters", afterAdvancedFilters.length);
+      recordPipelineCount(pipelineDiagnostics, "afterSorting", filteredRawArticles.length);
+      recordPipelineCount(pipelineDiagnostics, "afterGrouping", groupedArticlesCount);
     }
 
     const selectedUsDmvEntry = getSelectedUsDmvCatalogEntry();
@@ -19668,6 +19831,8 @@ function renderArticles() {
       : Array.isArray(articles)
         ? articles.slice(0, MAX_RENDERED_ARTICLES)
         : [];
+    recordPipelineCount(pipelineDiagnostics, "afterPagination", Array.isArray(articlePagination.items) ? articlePagination.items.length : 0);
+    recordPipelineCount(pipelineDiagnostics, "rendered", articlesToRender.length);
 
     if (shouldDebugPersonalDashboard) {
       const advancedFilterOptions =
@@ -19927,6 +20092,7 @@ function renderArticles() {
   } catch (error) {
     renderArticlesFallback(error);
   } finally {
+    flushPipelineDiagnosticsOnce();
     intelligenceTimeEnd("renderArticles");
     if (shouldDebugFeedRender) {
       const durationMs = Math.round(performance.now() - feedRenderStartedAt);
