@@ -3756,14 +3756,18 @@ function buildArticleCandidatePool(candidateContext, resolver) {
   const resolved = typeof resolver === "function" ? resolver() : {};
   const articles = Array.isArray(resolved.articles) ? resolved.articles : [];
   const candidatePool = Array.isArray(resolved.candidatePool) ? resolved.candidatePool : articles;
+  const filteredRawArticles = Array.isArray(resolved.filteredRawArticles) ? resolved.filteredRawArticles : articles;
+  const groupedArticles = Array.isArray(resolved.groupedArticles) ? resolved.groupedArticles : articles;
   const branch = resolved.branch || candidateContext?.branch || "unknown";
   const backendRequests = resolved.backendRequests || candidateContext?.backendRequests || [];
+  const groupedCount = Number(resolved.groupedArticlesCount) || groupedArticles.length;
 
   return {
     articles,
+    groupedArticles,
     candidatePool,
-    filteredRawArticles: Array.isArray(resolved.filteredRawArticles) ? resolved.filteredRawArticles : articles,
-    groupedArticlesCount: Number(resolved.groupedArticlesCount) || articles.length,
+    filteredRawArticles,
+    groupedArticlesCount: groupedCount,
     feedDebugRawMatches: Array.isArray(resolved.feedDebugRawMatches) ? resolved.feedDebugRawMatches : [],
     feedDebugAfterRelevanceMatches: Array.isArray(resolved.feedDebugAfterRelevanceMatches)
       ? resolved.feedDebugAfterRelevanceMatches
@@ -3780,6 +3784,9 @@ function buildArticleCandidatePool(candidateContext, resolver) {
     warnings: Array.isArray(candidateContext?.warnings) ? candidateContext.warnings.slice() : [],
     diagnostics: resolved.diagnostics || {},
     candidateCount: candidatePool.length,
+    filteredCount: filteredRawArticles.length,
+    groupedCount,
+    pending: Boolean(resolved.pending),
   };
 }
 
@@ -3793,6 +3800,8 @@ function summarizeCandidateBuilderResult(candidateBuilderResult) {
     retrievalMode: candidateBuilderResult.retrievalMode,
     sourceScope: candidateBuilderResult.sourceScope,
     candidateCount: candidateBuilderResult.candidateCount,
+    filteredCount: candidateBuilderResult.filteredCount,
+    groupedCount: candidateBuilderResult.groupedCount,
     articleCount: Array.isArray(candidateBuilderResult.articles) ? candidateBuilderResult.articles.length : 0,
     cacheKey: candidateBuilderResult.cacheKey,
     cacheHit: candidateBuilderResult.cacheHit,
@@ -3801,6 +3810,7 @@ function summarizeCandidateBuilderResult(candidateBuilderResult) {
       ? candidateBuilderResult.backendRequests.length
       : 0,
     warnings: candidateBuilderResult.warnings,
+    pending: Boolean(candidateBuilderResult.pending),
   };
 }
 
@@ -4118,6 +4128,8 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push(`retrievalMode: ${builderResult.retrievalMode}`);
     lines.push(`sourceScope: ${builderResult.sourceScope}`);
     lines.push(`candidateCount: ${builderResult.candidateCount}`);
+    lines.push(`filteredCount: ${builderResult.filteredCount}`);
+    lines.push(`groupedCount: ${builderResult.groupedCount}`);
     lines.push(`articleCount: ${builderResult.articleCount}`);
     lines.push(`cacheHit: ${builderResult.cacheHit}`);
     lines.push(`backendRequests: ${builderResult.backendRequestCount}`);
@@ -20381,6 +20393,134 @@ function groupedArticleMatchesFeedFilter(article, feedId) {
   return articleMatchesSelectedFeed(article, feedId);
 }
 
+function resolveArticleCandidatePool(candidateContext, options = {}) {
+  const diagnostics = options.diagnostics || null;
+  const useBackendQuery = Boolean(options.useBackendQuery);
+  const activeFeedId = options.activeFeedId || "";
+  const shouldIgnoreFeedIdForGrouping = Boolean(options.shouldIgnoreFeedIdForGrouping);
+
+  return buildArticleCandidatePool(candidateContext, () => {
+    if (useBackendQuery) {
+      const queryKey = getBackendArticleQueryKey();
+      const cachedQuery = runtime.backendArticleQueryCache.get(queryKey);
+      if (diagnostics?.enabled) {
+        diagnostics.cache.backendQueryKey = queryKey;
+        diagnostics.cache.backendCacheHit = Boolean(cachedQuery);
+        setFilterPipelineBranch(diagnostics, cachedQuery ? "backend-query" : "backend-query-loading");
+        updateCandidatePoolContext(diagnostics, { cacheKey: queryKey });
+        addFilterPipelineNote(diagnostics, "backend-query branch selected because shouldUseBackendArticleQuery() returned true");
+        if (state.filters.feedId) {
+          addFilterPipelineNote(diagnostics, "selected feed used as backend retrieval param");
+        }
+        if (hasPersonalDashboardSelections()) {
+          addFilterPipelineNote(diagnostics, "personal dashboard targeted retrieval active");
+        }
+        if (state.filters.feedId && hasPersonalDashboardSelections()) {
+          addFilterPipelineNote(diagnostics, "feed + dashboard uses feed-scoped backend retrieval");
+        }
+        const plannedRequests = getPersonalDashboardBackendDomainPlan() && hasPersonalDashboardSelections()
+          ? buildPersonalDashboardBackendQueryParamsList()
+          : [getBackendArticleQueryParams()];
+        diagnostics.backendRequests = cachedQuery?.backendRequests || plannedRequests.map((params) => Object.fromEntries(params.entries()));
+        updateCandidatePoolContext(diagnostics, {
+          backendRequests: diagnostics.backendRequests,
+        });
+      }
+      if (!cachedQuery) {
+        return {
+          articles: [],
+          candidatePool: [],
+          filteredRawArticles: [],
+          groupedArticlesCount: 0,
+          branch: "backend-query-loading",
+          cacheKey: queryKey,
+          cacheHit: false,
+          backendRequests: diagnostics?.backendRequests || [],
+          pending: true,
+        };
+      }
+
+      setFilterPipelineBranch(diagnostics, "backend-query");
+      const candidatePool = cachedQuery.articles;
+      const filteredRawArticles = sortArticlesForCurrentDashboardMode(
+        cachedQuery.articles.filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
+      );
+      const groupedArticles = prepareDateFirstGroupedArticles(filteredRawArticles);
+      return {
+        articles: groupedArticles,
+        candidatePool,
+        filteredRawArticles,
+        groupedArticlesCount: groupedArticles.length,
+        branch: "backend-query",
+        cacheKey: queryKey,
+        cacheHit: true,
+        backendRequests: diagnostics?.backendRequests || [],
+      };
+    }
+
+    if (activeFeedId && !state.filters.date) {
+      const groupedFeedCacheKey = getGroupedFeedCacheKey(activeFeedId);
+      if (diagnostics?.enabled) {
+        diagnostics.cache.groupedFeedCacheKey = groupedFeedCacheKey;
+        diagnostics.cache.groupedFeedCacheHit = runtime.groupedFeedCache.has(groupedFeedCacheKey);
+        updateCandidatePoolContext(diagnostics, { cacheKey: groupedFeedCacheKey });
+        addFilterPipelineNote(diagnostics, "getCachedGroupedFeedResult fallback branch used");
+      }
+      setFilterPipelineBranch(diagnostics, "selected-feed-fallback");
+      const cachedFeedResult = getCachedGroupedFeedResult(activeFeedId);
+      return {
+        articles: cachedFeedResult.groupedArticles,
+        candidatePool: cachedFeedResult.rawMatches,
+        filteredRawArticles: cachedFeedResult.filteredMatches,
+        groupedArticlesCount: cachedFeedResult.groupedArticles.length,
+        feedDebugRawMatches: cachedFeedResult.rawMatches,
+        feedDebugAfterRelevanceMatches: cachedFeedResult.filteredMatches,
+        feedRenderFilteredCount: cachedFeedResult.filteredMatches.length,
+        feedRenderGroupedCount: cachedFeedResult.groupedArticles.length,
+        branch: "selected-feed-fallback",
+        cacheKey: groupedFeedCacheKey,
+        cacheHit: diagnostics?.enabled
+          ? diagnostics.cache.groupedFeedCacheHit
+          : runtime.groupedFeedCache.has(groupedFeedCacheKey),
+      };
+    }
+
+    if (state.filters.date) {
+      setFilterPipelineBranch(diagnostics, "date-filter");
+      const candidatePool = state.articles;
+      const filteredRawArticles = sortArticlesForCurrentDashboardMode(
+        state.articles.filter(articleMatchesFilters)
+      );
+      return {
+        articles: filteredRawArticles,
+        candidatePool,
+        filteredRawArticles,
+        groupedArticlesCount: filteredRawArticles.length,
+        feedRenderFilteredCount: filteredRawArticles.length,
+        feedRenderGroupedCount: filteredRawArticles.length,
+        branch: "date-filter",
+      };
+    }
+
+    setFilterPipelineBranch(diagnostics, "global-visible-articles");
+    const candidatePool = state.articles;
+    const visibleArticles = getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping });
+    const groupedArticles = prepareDateFirstGroupedArticles(visibleArticles);
+    const feedScopedArticles = shouldIgnoreFeedIdForGrouping
+      ? groupedArticles.filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
+      : groupedArticles;
+    return {
+      articles: sortArticlesByPublicationDate(feedScopedArticles),
+      candidatePool,
+      filteredRawArticles: visibleArticles,
+      groupedArticlesCount: groupedArticles.length,
+      feedRenderFilteredCount: visibleArticles.length,
+      feedRenderGroupedCount: groupedArticles.length,
+      branch: "global-visible-articles",
+    };
+  });
+}
+
 function renderArticlesFallback(error) {
   console.warn("[render-articles-fallback]", {
     message: error instanceof Error ? error.message : String(error),
@@ -20497,49 +20637,6 @@ function renderArticles() {
     intelligenceTime("renderArticles:filter-group");
     syncPaginationContext();
     const useBackendQuery = shouldUseBackendArticleQuery();
-    if (useBackendQuery) {
-      const queryKey = getBackendArticleQueryKey();
-      const cachedQuery = runtime.backendArticleQueryCache.get(queryKey);
-      if (pipelineDiagnostics.enabled) {
-        pipelineDiagnostics.cache.backendQueryKey = queryKey;
-        pipelineDiagnostics.cache.backendCacheHit = Boolean(cachedQuery);
-        setFilterPipelineBranch(pipelineDiagnostics, cachedQuery ? "backend-query" : "backend-query-loading");
-        updateCandidatePoolContext(pipelineDiagnostics, { cacheKey: queryKey });
-        addFilterPipelineNote(pipelineDiagnostics, "backend-query branch selected because shouldUseBackendArticleQuery() returned true");
-        if (state.filters.feedId) {
-          addFilterPipelineNote(pipelineDiagnostics, "selected feed used as backend retrieval param");
-        }
-        if (hasPersonalDashboardSelections()) {
-          addFilterPipelineNote(pipelineDiagnostics, "personal dashboard targeted retrieval active");
-        }
-        if (state.filters.feedId && hasPersonalDashboardSelections()) {
-          addFilterPipelineNote(pipelineDiagnostics, "feed + dashboard uses feed-scoped backend retrieval");
-        }
-        const plannedRequests = getPersonalDashboardBackendDomainPlan() && hasPersonalDashboardSelections()
-          ? buildPersonalDashboardBackendQueryParamsList()
-          : [getBackendArticleQueryParams()];
-        pipelineDiagnostics.backendRequests = cachedQuery?.backendRequests || plannedRequests.map((params) => Object.fromEntries(params.entries()));
-        updateCandidatePoolContext(pipelineDiagnostics, {
-          backendRequests: pipelineDiagnostics.backendRequests,
-        });
-      }
-      if (!cachedQuery) {
-        if (!runtime.backendArticleQueryLoading) {
-          void ensureBackendArticleQueryData()
-            .then((result) => {
-              if (result) {
-                scheduleRenderArticles("backend-article-query-ready", { mode: "frame" });
-              }
-            })
-            .catch((error) => {
-              runtime.backendArticleQueryLoading = false;
-              elements.resultsCount.textContent = error?.message || "Failed to load filtered articles.";
-            });
-        }
-        flushPipelineDiagnosticsOnce();
-        return;
-      }
-    }
     let articles;
     const shouldIgnoreFeedIdForGrouping = Boolean(state.filters.feedId) && !state.filters.date;
     const totalRawArticles = Array.isArray(state.articles) ? state.articles.length : 0;
@@ -20552,90 +20649,30 @@ function renderArticles() {
     let feedDebugRawMatches = [];
     let feedDebugAfterRelevanceMatches = [];
 
-    const candidateBuilderResult = buildArticleCandidatePool(pipelineDiagnostics.candidatePoolContext, () => {
-      if (useBackendQuery) {
-        const backendQueryKey = getBackendArticleQueryKey();
-        const cachedQuery = runtime.backendArticleQueryCache.get(backendQueryKey) || {
-          articles: [],
-          totalCount: 0,
-        };
-        setFilterPipelineBranch(pipelineDiagnostics, "backend-query");
-        const candidatePool = cachedQuery.articles;
-        const nextFilteredRawArticles = sortArticlesForCurrentDashboardMode(
-          cachedQuery.articles.filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
-        );
-        const groupedArticles = prepareDateFirstGroupedArticles(nextFilteredRawArticles);
-        return {
-          articles: groupedArticles,
-          candidatePool,
-          filteredRawArticles: nextFilteredRawArticles,
-          groupedArticlesCount: groupedArticles.length,
-          branch: "backend-query",
-          cacheKey: backendQueryKey,
-          cacheHit: true,
-          backendRequests: pipelineDiagnostics.backendRequests,
-        };
-      }
-      if (activeFeedId && !state.filters.date) {
-        const groupedFeedCacheKey = getGroupedFeedCacheKey(activeFeedId);
-        if (pipelineDiagnostics.enabled) {
-          pipelineDiagnostics.cache.groupedFeedCacheKey = groupedFeedCacheKey;
-          pipelineDiagnostics.cache.groupedFeedCacheHit = runtime.groupedFeedCache.has(groupedFeedCacheKey);
-          updateCandidatePoolContext(pipelineDiagnostics, { cacheKey: groupedFeedCacheKey });
-          addFilterPipelineNote(pipelineDiagnostics, "getCachedGroupedFeedResult fallback branch used");
-        }
-        setFilterPipelineBranch(pipelineDiagnostics, "selected-feed-fallback");
-        const cachedFeedResult = getCachedGroupedFeedResult(activeFeedId);
-        return {
-          articles: cachedFeedResult.groupedArticles,
-          candidatePool: cachedFeedResult.rawMatches,
-          filteredRawArticles: cachedFeedResult.filteredMatches,
-          groupedArticlesCount: cachedFeedResult.groupedArticles.length,
-          feedDebugRawMatches: cachedFeedResult.rawMatches,
-          feedDebugAfterRelevanceMatches: cachedFeedResult.filteredMatches,
-          feedRenderFilteredCount: cachedFeedResult.filteredMatches.length,
-          feedRenderGroupedCount: cachedFeedResult.groupedArticles.length,
-          branch: "selected-feed-fallback",
-          cacheKey: groupedFeedCacheKey,
-          cacheHit: pipelineDiagnostics.enabled
-            ? pipelineDiagnostics.cache.groupedFeedCacheHit
-            : runtime.groupedFeedCache.has(groupedFeedCacheKey),
-        };
-      }
-      if (state.filters.date) {
-        setFilterPipelineBranch(pipelineDiagnostics, "date-filter");
-        const candidatePool = state.articles;
-        const nextFilteredRawArticles = sortArticlesForCurrentDashboardMode(
-          state.articles.filter(articleMatchesFilters)
-        );
-        return {
-          articles: nextFilteredRawArticles,
-          candidatePool,
-          filteredRawArticles: nextFilteredRawArticles,
-          groupedArticlesCount: nextFilteredRawArticles.length,
-          feedRenderFilteredCount: nextFilteredRawArticles.length,
-          feedRenderGroupedCount: nextFilteredRawArticles.length,
-          branch: "date-filter",
-        };
-      }
-
-      setFilterPipelineBranch(pipelineDiagnostics, "global-visible-articles");
-      const candidatePool = state.articles;
-      const visibleArticles = getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping });
-      const groupedArticles = prepareDateFirstGroupedArticles(visibleArticles);
-      const feedScopedArticles = shouldIgnoreFeedIdForGrouping
-        ? groupedArticles.filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
-        : groupedArticles;
-      return {
-        articles: sortArticlesByPublicationDate(feedScopedArticles),
-        candidatePool,
-        filteredRawArticles: visibleArticles,
-        groupedArticlesCount: groupedArticles.length,
-        feedRenderFilteredCount: visibleArticles.length,
-        feedRenderGroupedCount: groupedArticles.length,
-        branch: "global-visible-articles",
-      };
+    const candidateBuilderResult = resolveArticleCandidatePool(pipelineDiagnostics.candidatePoolContext, {
+      activeFeedId,
+      diagnostics: pipelineDiagnostics,
+      shouldIgnoreFeedIdForGrouping,
+      useBackendQuery,
     });
+    recordCandidateBuilderResult(pipelineDiagnostics, candidateBuilderResult);
+
+    if (candidateBuilderResult.pending) {
+      if (!runtime.backendArticleQueryLoading) {
+        void ensureBackendArticleQueryData()
+          .then((result) => {
+            if (result) {
+              scheduleRenderArticles("backend-article-query-ready", { mode: "frame" });
+            }
+          })
+          .catch((error) => {
+            runtime.backendArticleQueryLoading = false;
+            elements.resultsCount.textContent = error?.message || "Failed to load filtered articles.";
+          });
+      }
+      flushPipelineDiagnosticsOnce();
+      return;
+    }
 
     articles = candidateBuilderResult.articles;
     personalDashboardBasePool = candidateBuilderResult.candidatePool;
@@ -20645,7 +20682,6 @@ function renderArticles() {
     feedDebugAfterRelevanceMatches = candidateBuilderResult.feedDebugAfterRelevanceMatches;
     feedRenderFilteredCount = candidateBuilderResult.feedRenderFilteredCount;
     feedRenderGroupedCount = candidateBuilderResult.feedRenderGroupedCount;
-    recordCandidateBuilderResult(pipelineDiagnostics, candidateBuilderResult);
 
     if (pipelineDiagnostics.enabled) {
       const advancedFilterOptions =
