@@ -3898,6 +3898,8 @@ function buildArticleCandidatePool(candidateContext, resolver) {
     candidateLimit: candidateContext?.candidateLimit || MAX_ARTICLES_IN_MEMORY,
     warnings: Array.isArray(candidateContext?.warnings) ? candidateContext.warnings.slice() : [],
     diagnostics: resolved.diagnostics || {},
+    expectedTotal: Number.isFinite(Number(resolved.expectedTotal)) ? Number(resolved.expectedTotal) : null,
+    partial: Boolean(resolved.partial),
     candidateSourceCount: candidateSource.length,
     candidateCount: candidatePool.length,
     filteredCount: filteredRawArticles.length,
@@ -3920,6 +3922,8 @@ function summarizeCandidateBuilderResult(candidateBuilderResult) {
     filteredCount: candidateBuilderResult.filteredCount,
     groupedCount: candidateBuilderResult.groupedCount,
     articleCount: Array.isArray(candidateBuilderResult.articles) ? candidateBuilderResult.articles.length : 0,
+    expectedTotal: candidateBuilderResult.expectedTotal,
+    partial: candidateBuilderResult.partial,
     cacheKey: candidateBuilderResult.cacheKey,
     cacheHit: candidateBuilderResult.cacheHit,
     candidateLimit: candidateBuilderResult.candidateLimit,
@@ -4047,6 +4051,16 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     candidateStrategyKey: candidateStrategy?.strategyKey || "",
     candidatePoolContext,
     candidateBuilderResult: null,
+    selectedFeedFullPool: {
+      enabled: enabled ? isSelectedFeedFullPoolEnabled() : false,
+      attempted: false,
+      cacheKey: "",
+      cacheHit: false,
+      totalCount: null,
+      complete: false,
+      fallbackReason: "",
+      backendRequests: [],
+    },
     filters: getActiveFilterPipelineSnapshot(normalizedFilterState),
     counts: {
       candidatePool: 0,
@@ -4279,6 +4293,8 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push(`filteredCount: ${builderResult.filteredCount}`);
     lines.push(`groupedCount: ${builderResult.groupedCount}`);
     lines.push(`articleCount: ${builderResult.articleCount}`);
+    lines.push(`expectedTotal: ${builderResult.expectedTotal ?? "unknown"}`);
+    lines.push(`partial: ${builderResult.partial}`);
     lines.push(`cacheHit: ${builderResult.cacheHit}`);
     lines.push(`backendRequests: ${builderResult.backendRequestCount}`);
     if (builderResult.warnings?.length) {
@@ -4291,6 +4307,21 @@ function logCompactFilterPipelineSummary(diagnostics) {
     }
   } else {
     lines.push("none");
+  }
+
+  const selectedFeedFullPool = diagnostics.selectedFeedFullPool;
+  lines.push("");
+  lines.push("Selected Feed Full Pool");
+  if (selectedFeedFullPool?.enabled || selectedFeedFullPool?.attempted) {
+    lines.push(`enabled: ${selectedFeedFullPool.enabled}`);
+    lines.push(`attempted: ${selectedFeedFullPool.attempted}`);
+    lines.push(`cacheHit: ${selectedFeedFullPool.cacheHit}`);
+    lines.push(`totalCount: ${selectedFeedFullPool.totalCount ?? "unknown"}`);
+    lines.push(`complete: ${selectedFeedFullPool.complete}`);
+    lines.push(`fallbackReason: ${selectedFeedFullPool.fallbackReason || "none"}`);
+    lines.push(`backendRequests: ${selectedFeedFullPool.backendRequests?.length || 0}`);
+  } else {
+    lines.push("disabled");
   }
 
   lines.push("");
@@ -4547,6 +4578,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("candidateStrategyKey", diagnostics.candidateStrategyKey);
   console.log("candidatePoolContext", diagnostics.candidatePoolContext);
   console.log("candidateBuilderResult", diagnostics.candidateBuilderResult);
+  console.log("selectedFeedFullPool", diagnostics.selectedFeedFullPool);
   if (diagnostics.normalizedFilterStateParity && !diagnostics.normalizedFilterStateParity.ok) {
     console.warn("[FilterPipeline] normalized filter state parity mismatch", diagnostics.normalizedFilterStateParity);
   }
@@ -20105,6 +20137,22 @@ function updateCandidateStrategyExecution(diagnostics, updates = {}) {
   diagnostics.candidateStrategyKey = nextStrategy.strategyKey || diagnostics.candidateStrategyKey || "";
 }
 
+function recordSelectedFeedFullPoolDiagnostics(diagnostics, updates = {}) {
+  if (!diagnostics?.enabled || !diagnostics.selectedFeedFullPool) {
+    return;
+  }
+
+  diagnostics.selectedFeedFullPool = {
+    ...diagnostics.selectedFeedFullPool,
+    ...updates,
+    backendRequests: Array.isArray(updates.backendRequests)
+      ? updates.backendRequests
+      : Array.isArray(diagnostics.selectedFeedFullPool.backendRequests)
+        ? diagnostics.selectedFeedFullPool.backendRequests.slice()
+        : [],
+  };
+}
+
 async function ensureSelectedFeedFullPoolData(feedIdentity) {
   if (!feedIdentity) {
     return null;
@@ -20669,6 +20717,15 @@ function resolveArticleCandidatePool(candidateContext, options = {}) {
       const fullPoolKey = getSelectedFeedFullPoolKey(activeFeedId);
       const cachedFullPool = runtime.selectedFeedFullPoolCache.get(fullPoolKey);
       const plannedRequest = Object.fromEntries(getSelectedFeedFullPoolQueryParams(activeFeedId).entries());
+      recordSelectedFeedFullPoolDiagnostics(diagnostics, {
+        attempted: true,
+        cacheKey: fullPoolKey,
+        cacheHit: Boolean(cachedFullPool),
+        totalCount: Number.isFinite(Number(cachedFullPool?.totalCount)) ? Number(cachedFullPool.totalCount) : null,
+        complete: Boolean(cachedFullPool?.complete),
+        fallbackReason: cachedFullPool?.fallbackReason || "",
+        backendRequests: [plannedRequest],
+      });
 
       if (diagnostics?.enabled) {
         setFilterPipelineBranch(diagnostics, cachedFullPool?.complete ? "selected-feed-full-pool" : "selected-feed-full-pool-loading");
@@ -20695,6 +20752,8 @@ function resolveArticleCandidatePool(candidateContext, options = {}) {
           cacheKey: fullPoolKey,
           cacheHit: false,
           backendRequests: [plannedRequest],
+          expectedTotal: null,
+          partial: true,
           pending: true,
         };
       }
@@ -20724,6 +20783,8 @@ function resolveArticleCandidatePool(candidateContext, options = {}) {
           cacheKey: fullPoolKey,
           cacheHit: true,
           backendRequests: cachedFullPool.backendRequests || [plannedRequest],
+          expectedTotal: cachedFullPool.totalCount,
+          partial: false,
         };
       }
 
