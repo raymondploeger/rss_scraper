@@ -3535,6 +3535,40 @@ function createFilterPipelineDiagnostics() {
       afterPagination: 0,
       rendered: 0,
     },
+    rejections: {
+      feedScope: {
+        feedMismatch: 0,
+        sourceGroupMismatch: 0,
+      },
+      personalDashboard: {
+        primaryDomainMismatch: 0,
+        parentChildMismatch: 0,
+        sharedSecurityMismatch: 0,
+        identityMismatch: 0,
+        banknoteMismatch: 0,
+        scoreTooLow: 0,
+        bridgeRejected: 0,
+        techniqueRejected: 0,
+        unknown: 0,
+      },
+      advancedFilters: {
+        search: 0,
+        date: 0,
+        topic: 0,
+        tag: 0,
+        signal: 0,
+        keywordInclude: 0,
+        keywordExclude: 0,
+        noiseGuard: 0,
+        other: 0,
+      },
+    },
+    rejectionExamples: {
+      feedScope: {},
+      personalDashboard: {},
+      advancedFilters: {},
+    },
+    largestRejection: null,
     notes: [],
   };
 }
@@ -3560,11 +3594,243 @@ function setFilterPipelineBranch(diagnostics, branch) {
   diagnostics.branch = branch || diagnostics.branch;
 }
 
+function recordPipelineRejection(diagnostics, stage, category, article, reason = "") {
+  if (!diagnostics?.enabled || !diagnostics.rejections?.[stage]) {
+    return;
+  }
+  const bucket = diagnostics.rejections[stage];
+  const normalizedCategory = Object.prototype.hasOwnProperty.call(bucket, category) ? category : "unknown";
+  bucket[normalizedCategory] += 1;
+
+  const examplesByCategory = diagnostics.rejectionExamples[stage];
+  if (!examplesByCategory[normalizedCategory]) {
+    examplesByCategory[normalizedCategory] = [];
+  }
+  if (examplesByCategory[normalizedCategory].length < 10) {
+    examplesByCategory[normalizedCategory].push({
+      title: article?.title || "Untitled article",
+      reason: reason || normalizedCategory,
+    });
+  }
+}
+
+function getLargestPipelineRejection(diagnostics) {
+  if (!diagnostics?.enabled) {
+    return null;
+  }
+
+  let largest = null;
+  Object.entries(diagnostics.rejections || {}).forEach(([stage, categories]) => {
+    Object.entries(categories || {}).forEach(([category, count]) => {
+      if (!largest || count > largest.count) {
+        largest = { stage, category, count };
+      }
+    });
+  });
+
+  return largest && largest.count > 0 ? largest : null;
+}
+
+function classifyFeedScopeRejection(article, activeFeedId) {
+  if (activeFeedId && !articleMatchesSelectedFeed(article, activeFeedId)) {
+    return {
+      category: "feedMismatch",
+      reason: "article does not belong to selected feed",
+    };
+  }
+
+  return {
+    category: "sourceGroupMismatch",
+    reason: "article does not match selected source group",
+  };
+}
+
+function classifyPersonalDashboardRejection(article) {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const selectedMainDomains = getSelectedMainDomains(selectedInterests);
+  const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
+  const selectedIdentityInterests = selectedInterests.filter(
+    (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "identity_documents"
+  );
+  const primaryDomain = getArticleDominantDomain(article);
+
+  if (isSharedSecurityOnlyPersonalSelection(selectedInterests) && !matchesSelectedSharedSecurityTechnique(article, selectedInterests)) {
+    return {
+      category: "techniqueRejected",
+      reason: "selected shared security technique did not match",
+    };
+  }
+
+  const identityTechniqueBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, selectedInterests);
+  const banknoteTechniqueBridgeMatched = articleMatchesSelectedBanknoteTechniqueBridge(article, selectedInterests);
+  if (primaryDomain === "other" && !identityTechniqueBridgeMatched && !banknoteTechniqueBridgeMatched) {
+    return {
+      category: "primaryDomainMismatch",
+      reason: "primary domain is other and no bridge matched",
+    };
+  }
+
+  if (selectedMainDomains.length && !selectedMainDomains.includes(primaryDomain)) {
+    return {
+      category: "primaryDomainMismatch",
+      reason: `primary domain ${primaryDomain || "unknown"} is outside selected main domains`,
+    };
+  }
+
+  if (selectedSharedInterests.length && !matchesSelectedSharedSecurityTechnique(article, selectedInterests)) {
+    return {
+      category: "techniqueRejected",
+      reason: "selected shared security technique did not match",
+    };
+  }
+
+  if (isBanknotesOnlyPersonalSelection(selectedInterests)) {
+    const banknoteInterestResolution = resolvePersonalDashboardParentChildInterests(
+      selectedInterests,
+      "banknote_intelligence"
+    );
+    const matchedBanknoteInterests = banknoteInterestResolution.effectiveInterestIds.filter((interestId) =>
+      matchesBanknoteInterest(article, interestId)
+    );
+    if (banknoteInterestResolution.parentActsAsDomainGate && !matchedBanknoteInterests.length) {
+      return {
+        category: "parentChildMismatch",
+        reason: "banknote parent matched as domain gate but selected child did not match",
+      };
+    }
+    return {
+      category: "banknoteMismatch",
+      reason: "selected banknote interest did not match",
+    };
+  }
+
+  if (primaryDomain === "identity_documents") {
+    if (selectedIdentityInterests.length) {
+      const matchingScores = selectedIdentityInterests
+        .map((interestId) => computePersonalInterestBoost(article, interestId).score)
+        .filter((score) => score >= 18);
+      if (!matchingScores.length) {
+        return {
+          category: "scoreTooLow",
+          reason: "selected identity interest score below threshold",
+        };
+      }
+    }
+    return {
+      category: "identityMismatch",
+      reason: "identity document scope did not match",
+    };
+  }
+
+  if (selectedSharedInterests.length) {
+    return {
+      category: "sharedSecurityMismatch",
+      reason: "shared security selection did not match",
+    };
+  }
+
+  return {
+    category: "unknown",
+    reason: "personal dashboard filter rejected article",
+  };
+}
+
+function classifyAdvancedFilterRejection(article, options = {}) {
+  const ignoreFeedId = Boolean(options.ignoreFeedId);
+  const ignorePersonalDashboard = Boolean(options.ignorePersonalDashboard);
+
+  if (isOfficialFallbackArticle(article)) {
+    return { category: "noiseGuard", reason: "official fallback article" };
+  }
+
+  const activeKeywordRule = getActiveTopicKeywordRule();
+  if (activeKeywordRule && isKeywordRuleFalsePositive(article, activeKeywordRule)) {
+    return { category: "keywordExclude", reason: "active topic keyword exclusion matched" };
+  }
+
+  if (
+    !activeKeywordRule &&
+    (isPassportFalsePositive(article) ||
+      isDriverLicenseMusicFalsePositive(article) ||
+      isCoinGamingFalsePositive(article))
+  ) {
+    return { category: "noiseGuard", reason: "hard false-positive guard matched" };
+  }
+
+  const exactArticleIds = Array.isArray(state.filters.articleIds) ? state.filters.articleIds : [];
+  if (exactArticleIds.length && !exactArticleIds.includes(article.id)) {
+    return { category: "other", reason: "article not in exact article id filter" };
+  }
+
+  if (state.filters.signalCategory && !getArticleSignalCategories(article).includes(state.filters.signalCategory)) {
+    return { category: "signal", reason: "selected signal category did not match" };
+  }
+
+  const selectedUsDmvEntry = getSelectedUsDmvCatalogEntry();
+  if (selectedUsDmvEntry) {
+    if (isUsLinkOnlyEntry(selectedUsDmvEntry)) {
+      return { category: "other", reason: "selected USA DMV entry is link-only" };
+    }
+
+    const selectedUsFeed = getSelectedDmvFeed();
+    if (!selectedUsFeed || article.feedId !== selectedUsFeed.id) {
+      return { category: "other", reason: "article does not match selected USA DMV feed" };
+    }
+  }
+
+  if (state.filters.topic && article.topic !== state.filters.topic) {
+    return { category: "topic", reason: "selected topic did not match" };
+  }
+
+  if (state.filters.tag && !getArticleFilterTags(article).includes(normalizeFilterTag(state.filters.tag))) {
+    return { category: "tag", reason: "selected tag did not match" };
+  }
+
+  if (state.filters.canadaDmvFeedPath) {
+    const selectedCanadaFeed = getSelectedCanadaFeed();
+    if (!selectedCanadaFeed || article.feedId !== selectedCanadaFeed.id) {
+      return { category: "other", reason: "article does not match selected Canada DMV feed" };
+    }
+  }
+
+  if (!ignoreFeedId && getActiveArticleFeedId() && !articleMatchesSelectedFeed(article, getActiveArticleFeedId())) {
+    return { category: "other", reason: "active article feed did not match" };
+  }
+
+  if (!ignoreFeedId && !getActiveArticleFeedId() && state.filters.canadaDmvAll && !isCanadianDmvAbbr(
+    state.feeds.find((feed) => feed.id === article.feedId)?.dmvAbbr
+  )) {
+    return { category: "other", reason: "article does not match Canada DMV all scope" };
+  }
+
+  if (!ignoreFeedId && !getActiveArticleFeedId() && state.dashboardMode === "usa" && !isDmvFeedId(article.feedId)) {
+    return { category: "other", reason: "article does not match USA DMV dashboard mode" };
+  }
+
+  if (state.filters.date && toDateInputValue(article.pubDate) !== state.filters.date) {
+    return { category: "date", reason: "selected date did not match" };
+  }
+
+  if (state.filters.search) {
+    const haystack = getArticleSearchText(article);
+    if (!haystack.includes(state.filters.search.toLowerCase())) {
+      return { category: "search", reason: "search text did not match" };
+    }
+  }
+
+  if (!ignorePersonalDashboard && !articleMatchesPersonalDashboardSelection(article)) {
+    return { category: "other", reason: "personal dashboard filter rejected article" };
+  }
+
+  return { category: "other", reason: "advanced filter rejected article" };
+}
+
 function flushFilterPipelineDiagnostics(diagnostics) {
   if (!diagnostics?.enabled || typeof console === "undefined") {
     return;
   }
 
+  diagnostics.largestRejection = getLargestPipelineRejection(diagnostics);
   const groupLabel = `[FilterPipeline] ${diagnostics.renderId} ${diagnostics.branch}`;
   if (typeof console.groupCollapsed === "function") {
     console.groupCollapsed(groupLabel);
@@ -3572,6 +3838,9 @@ function flushFilterPipelineDiagnostics(diagnostics) {
     console.log(groupLabel);
   }
   console.table(diagnostics.counts);
+  console.log("rejections", diagnostics.rejections);
+  console.log("rejectionExamples", diagnostics.rejectionExamples);
+  console.log("largestRejection", diagnostics.largestRejection);
   console.log("filters", diagnostics.filters);
   console.log("cache", diagnostics.cache);
   console.log("backendRequests", diagnostics.backendRequests);
@@ -19788,15 +20057,36 @@ function renderArticles() {
         useBackendQuery || (activeFeedId && !state.filters.date)
           ? { ignoreFeedId: true, ignorePersonalDashboard: true }
           : { ignorePersonalDashboard: true };
-      const afterFeedScope = activeFeedId
-        ? personalDashboardBasePool.filter((article) => articleMatchesSelectedFeed(article, activeFeedId))
-        : personalDashboardBasePool;
-      const afterPersonalDashboard = afterFeedScope.filter((article) =>
-        articleMatchesPersonalDashboardSelection(article)
-      );
-      const afterAdvancedFilters = afterPersonalDashboard.filter((article) =>
-        articleMatchesFilters(article, advancedFilterOptions)
-      );
+      const afterFeedScope = [];
+      personalDashboardBasePool.forEach((article) => {
+        if (!activeFeedId || articleMatchesSelectedFeed(article, activeFeedId)) {
+          afterFeedScope.push(article);
+          return;
+        }
+        const rejection = classifyFeedScopeRejection(article, activeFeedId);
+        recordPipelineRejection(pipelineDiagnostics, "feedScope", rejection.category, article, rejection.reason);
+      });
+
+      const afterPersonalDashboard = [];
+      afterFeedScope.forEach((article) => {
+        if (articleMatchesPersonalDashboardSelection(article)) {
+          afterPersonalDashboard.push(article);
+          return;
+        }
+        const rejection = classifyPersonalDashboardRejection(article);
+        recordPipelineRejection(pipelineDiagnostics, "personalDashboard", rejection.category, article, rejection.reason);
+      });
+
+      const afterAdvancedFilters = [];
+      afterPersonalDashboard.forEach((article) => {
+        if (articleMatchesFilters(article, advancedFilterOptions)) {
+          afterAdvancedFilters.push(article);
+          return;
+        }
+        const rejection = classifyAdvancedFilterRejection(article, advancedFilterOptions);
+        recordPipelineRejection(pipelineDiagnostics, "advancedFilters", rejection.category, article, rejection.reason);
+      });
+
       recordPipelineCount(pipelineDiagnostics, "candidatePool", personalDashboardBasePool.length);
       recordPipelineCount(pipelineDiagnostics, "afterFeedScope", afterFeedScope.length);
       recordPipelineCount(pipelineDiagnostics, "afterPersonalDashboard", afterPersonalDashboard.length);
