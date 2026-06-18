@@ -3097,6 +3097,10 @@ const runtime = {
   groupedFeedCache: new Map(),
   articleDataRevision: 0,
   backendArticleQueryCache: new Map(),
+  selectedFeedFullPoolCache: new Map(),
+  selectedFeedFullPoolRequestId: 0,
+  selectedFeedFullPoolActiveRequestId: 0,
+  selectedFeedFullPoolLoadingKeys: new Set(),
   backendArticleQueryRequestId: 0,
   backendArticleQueryActiveRequestId: 0,
   backendArticleQueryLoading: false,
@@ -3495,6 +3499,18 @@ function isFilterPipelineDiagnosticsEnabled() {
   }
 }
 
+function isSelectedFeedFullPoolEnabled() {
+  try {
+    const query = new URLSearchParams(window.location.search || "");
+    if (query.get("enableSelectedFeedFullPool") === "1") {
+      return true;
+    }
+    return window.localStorage?.getItem("enableSelectedFeedFullPool") === "1";
+  } catch {
+    return false;
+  }
+}
+
 function freezeNormalizedFilterState(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) {
     return value;
@@ -3628,11 +3644,13 @@ function resolveCandidateStrategy(normalizedFilterState, candidatePoolContext = 
   const filters = normalizedFilterState?.filters || {};
   const dashboard = normalizedFilterState?.dashboard || {};
   const feed = normalizedFilterState?.feed || {};
+  const selectedFeedFullPoolEnabled = isSelectedFeedFullPoolEnabled();
   const hasFeedScope = Boolean(feed.id);
   const hasPersonalDashboard = Boolean(dashboard.enabled);
   const hasSearch = Boolean(filters.search);
   const hasDate = Boolean(filters.date);
   const hasBackendScopedFilter = Boolean(filters.topic || filters.tag || filters.signal || filters.articleIds?.length);
+  const hasRiskySelectedFeedFullPoolFilter = Boolean(hasDate || filters.topic || filters.tag || filters.signal || filters.articleIds?.length);
 
   let strategy = "global_newest_pool";
   let reason = "no feed, dashboard, search, or date filters active";
@@ -3646,12 +3664,6 @@ function resolveCandidateStrategy(normalizedFilterState, candidatePoolContext = 
     sourceScope = hasFeedScope ? "selected_feed" : "all_feeds";
     expectedCompleteness = "partial";
     expectedCandidateSource = "legacy backend date-scoped query";
-  } else if (hasSearch) {
-    strategy = "search_scoped_pool";
-    reason = "search filter active";
-    sourceScope = hasFeedScope ? "selected_feed" : "all_feeds";
-    expectedCompleteness = "partial";
-    expectedCandidateSource = "legacy backend search-scoped query";
   } else if (hasFeedScope && hasPersonalDashboard) {
     strategy = "selected_feed_dashboard_full_pool";
     reason = "feed selected; dashboard active";
@@ -3664,6 +3676,12 @@ function resolveCandidateStrategy(normalizedFilterState, candidatePoolContext = 
     sourceScope = "selected_feed";
     expectedCompleteness = "unknown";
     expectedCandidateSource = "legacy selected-feed query/cache source";
+  } else if (hasSearch) {
+    strategy = "search_scoped_pool";
+    reason = "search filter active";
+    sourceScope = "all_feeds";
+    expectedCompleteness = "partial";
+    expectedCandidateSource = "legacy backend search-scoped query";
   } else if (hasPersonalDashboard) {
     strategy = "dashboard_targeted_pool";
     reason = "dashboard active; no feed selected";
@@ -3687,6 +3705,9 @@ function resolveCandidateStrategy(normalizedFilterState, candidatePoolContext = 
   ];
   if (strategy === "selected_feed_full_pool" || strategy === "selected_feed_dashboard_full_pool") {
     warnings.push("feed total is not consulted by this diagnostics-only strategy");
+    if (selectedFeedFullPoolEnabled && hasRiskySelectedFeedFullPoolFilter) {
+      warnings.push("date/topic/tag/signal/article-id filters keep selected feed full pool on legacy execution for this phase");
+    }
   }
   if (strategy === "selected_feed_paged_pool") {
     warnings.push("paged selected-feed strategy is defined for future large-feed execution only");
@@ -3702,7 +3723,8 @@ function resolveCandidateStrategy(normalizedFilterState, candidatePoolContext = 
     expectedCandidateSource,
     expectedLimit: candidateLimit,
     candidateLimit,
-    featureFlag: "disabled",
+    featureFlag: selectedFeedFullPoolEnabled ? "enabled" : "disabled",
+    actualExecution: "legacy",
     warnings,
   };
 
@@ -3760,6 +3782,9 @@ function getActualCandidateStrategy(branch, normalizedFilterState) {
   if (branch === "selected-feed-fallback") {
     return "current_grouped_feed_cache_pool";
   }
+  if (branch === "selected-feed-full-pool" || branch === "selected-feed-full-pool-loading") {
+    return "selected_feed_full_pool_feature_flag";
+  }
   if (branch === "date-filter") {
     return "current_date_filtered_in_memory_pool";
   }
@@ -3795,6 +3820,9 @@ function getCandidatePoolContextWarnings(context) {
   }
   if (context.branch === "selected-feed-fallback") {
     warnings.push("Selected feed fallback uses grouped feed cache instead of backend retrieval.");
+  }
+  if (context.branch === "selected-feed-full-pool" || context.branch === "selected-feed-full-pool-loading") {
+    warnings.push("Selected feed full pool is executing behind a feature flag.");
   }
   return warnings;
 }
@@ -4203,6 +4231,7 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push(`retrievalMode: ${candidateStrategy.retrievalMode}`);
     lines.push(`expectedCompleteness: ${candidateStrategy.expectedCompleteness}`);
     lines.push(`expectedCandidateSource: ${candidateStrategy.expectedCandidateSource}`);
+    lines.push(`actualExecution: ${candidateStrategy.actualExecution}`);
     lines.push(`candidateLimit: ${candidateStrategy.candidateLimit}`);
     lines.push(`featureFlag: ${candidateStrategy.featureFlag}`);
     if (candidateStrategy.warnings?.length) {
@@ -10684,6 +10713,8 @@ function rebuildArticleFeedIndexes() {
 function clearFeedRenderCaches() {
   runtime.groupedFeedCache = new Map();
   runtime.backendArticleQueryCache = new Map();
+  runtime.selectedFeedFullPoolCache = new Map();
+  runtime.selectedFeedFullPoolLoadingKeys = new Set();
 }
 
 function getFeedRenderFilterSignature() {
@@ -20016,6 +20047,114 @@ function getBackendArticleQueryParams() {
   return applyBackendArticleQueryBaseParams();
 }
 
+function getSelectedFeedFullPoolKey(feedIdentity) {
+  return [
+    `revision:${runtime.articleDataRevision}`,
+    `selected-feed-full-pool:${String(feedIdentity || "").trim()}`,
+  ].join("|");
+}
+
+function getSelectedFeedFullPoolQueryParams(feedIdentity) {
+  const params = new URLSearchParams();
+  params.set("includePagination", "true");
+  params.set("showDuplicates", "true");
+  params.set("limit", String(MAX_ARTICLES_IN_MEMORY));
+  params.set("page", "1");
+
+  const resolvedFeed = feedIdentity ? resolveFeedByIdentity(feedIdentity) : null;
+  if (resolvedFeed?.id) {
+    params.set("feedId", String(resolvedFeed.id));
+  } else if (feedIdentity) {
+    params.set("feed", feedIdentity);
+  }
+
+  return params;
+}
+
+function shouldAttemptSelectedFeedFullPool(normalizedFilterState) {
+  const filters = normalizedFilterState?.filters || {};
+  return Boolean(
+    isSelectedFeedFullPoolEnabled() &&
+    normalizedFilterState?.feed?.id &&
+    !normalizedFilterState?.feed?.dmvFeedId &&
+    !normalizedFilterState?.feed?.canadaDmvFeedPath &&
+    !normalizedFilterState?.feed?.canadaDmvAll &&
+    !filters.date &&
+    !filters.topic &&
+    !filters.tag &&
+    !filters.signal &&
+    !filters.articleIds?.length
+  );
+}
+
+function updateCandidateStrategyExecution(diagnostics, updates = {}) {
+  if (!diagnostics?.enabled || !diagnostics.candidateStrategy) {
+    return;
+  }
+
+  const nextStrategy = {
+    ...diagnostics.candidateStrategy,
+    ...updates,
+    warnings: Array.isArray(updates.warnings)
+      ? updates.warnings
+      : Array.isArray(diagnostics.candidateStrategy.warnings)
+        ? diagnostics.candidateStrategy.warnings.slice()
+        : [],
+  };
+  diagnostics.candidateStrategy = freezeNormalizedFilterState(nextStrategy);
+  diagnostics.candidateStrategyKey = nextStrategy.strategyKey || diagnostics.candidateStrategyKey || "";
+}
+
+async function ensureSelectedFeedFullPoolData(feedIdentity) {
+  if (!feedIdentity) {
+    return null;
+  }
+
+  const queryKey = getSelectedFeedFullPoolKey(feedIdentity);
+  if (runtime.selectedFeedFullPoolCache.has(queryKey)) {
+    return runtime.selectedFeedFullPoolCache.get(queryKey);
+  }
+  if (runtime.selectedFeedFullPoolLoadingKeys.has(queryKey)) {
+    return null;
+  }
+
+  const requestId = ++runtime.selectedFeedFullPoolRequestId;
+  runtime.selectedFeedFullPoolActiveRequestId = requestId;
+  runtime.selectedFeedFullPoolLoadingKeys.add(queryKey);
+  renderSkeletons();
+  if (elements.resultsCount) {
+    elements.resultsCount.textContent = "Loading articles...";
+  }
+
+  try {
+    const params = getSelectedFeedFullPoolQueryParams(feedIdentity);
+    const response = await apiRequest(`/api/articles?${params.toString()}`);
+    if (requestId !== runtime.selectedFeedFullPoolActiveRequestId) {
+      return null;
+    }
+
+    const totalCount = Number(response?.pagination?.total || response?.totalCount || 0);
+    const items = Array.isArray(response?.items) ? response.items : Array.isArray(response?.articles) ? response.articles : [];
+    const payload = {
+      queryKey,
+      feedIdentity,
+      backendRequests: [Object.fromEntries(params.entries())],
+      totalCount,
+      articles: totalCount <= MAX_ARTICLES_IN_MEMORY
+        ? items.map(normalizeLoadedArticle)
+        : [],
+      complete: totalCount <= MAX_ARTICLES_IN_MEMORY,
+      fallbackReason: totalCount > MAX_ARTICLES_IN_MEMORY
+        ? `feed too large (${totalCount} articles), fallback to legacy`
+        : "",
+    };
+    runtime.selectedFeedFullPoolCache.set(queryKey, payload);
+    return payload;
+  } finally {
+    runtime.selectedFeedFullPoolLoadingKeys.delete(queryKey);
+  }
+}
+
 function buildPersonalDashboardBackendQueryParamsList() {
   const plan = getPersonalDashboardBackendDomainPlan();
   if (!plan) {
@@ -20520,11 +20659,86 @@ function getGlobalArticleCandidateSource() {
 
 function resolveArticleCandidatePool(candidateContext, options = {}) {
   const diagnostics = options.diagnostics || null;
+  const normalizedFilterState = options.normalizedFilterState || diagnostics?.normalizedFilterState || null;
   const useBackendQuery = Boolean(options.useBackendQuery);
   const activeFeedId = options.activeFeedId || "";
   const shouldIgnoreFeedIdForGrouping = Boolean(options.shouldIgnoreFeedIdForGrouping);
 
   return buildArticleCandidatePool(candidateContext, () => {
+    if (activeFeedId && shouldAttemptSelectedFeedFullPool(normalizedFilterState)) {
+      const fullPoolKey = getSelectedFeedFullPoolKey(activeFeedId);
+      const cachedFullPool = runtime.selectedFeedFullPoolCache.get(fullPoolKey);
+      const plannedRequest = Object.fromEntries(getSelectedFeedFullPoolQueryParams(activeFeedId).entries());
+
+      if (diagnostics?.enabled) {
+        setFilterPipelineBranch(diagnostics, cachedFullPool?.complete ? "selected-feed-full-pool" : "selected-feed-full-pool-loading");
+        updateCandidatePoolContext(diagnostics, {
+          branch: diagnostics.branch,
+          cacheKey: fullPoolKey,
+          backendRequests: [plannedRequest],
+        });
+        updateCandidateStrategyExecution(diagnostics, {
+          actualExecution: cachedFullPool?.complete ? "selected_feed_full_pool" : "selected_feed_full_pool_pending",
+          expectedCompleteness: cachedFullPool?.complete ? "complete" : "unknown",
+          expectedCandidateSource: "feature-flagged selected feed full pool",
+        });
+      }
+
+      if (!cachedFullPool) {
+        addFilterPipelineNote(diagnostics, "selected_feed_full_pool pending behind feature flag");
+        return {
+          articles: [],
+          candidatePool: [],
+          filteredRawArticles: [],
+          groupedArticlesCount: 0,
+          branch: "selected-feed-full-pool-loading",
+          cacheKey: fullPoolKey,
+          cacheHit: false,
+          backendRequests: [plannedRequest],
+          pending: true,
+        };
+      }
+
+      if (cachedFullPool.complete) {
+        addFilterPipelineNote(diagnostics, "selected_feed_full_pool executed behind feature flag");
+        const candidatePool = cachedFullPool.articles;
+        const filteredRawArticles = sortArticlesForCurrentDashboardMode(
+          candidatePool.filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
+        );
+        const groupedArticles = prepareDateFirstGroupedArticles(filteredRawArticles);
+        updateCandidateStrategyExecution(diagnostics, {
+          actualExecution: "selected_feed_full_pool",
+          expectedCompleteness: "complete",
+          expectedCandidateSource: "feature-flagged selected feed full pool",
+        });
+        return {
+          articles: groupedArticles,
+          candidatePool,
+          filteredRawArticles,
+          groupedArticlesCount: groupedArticles.length,
+          feedDebugRawMatches: sortArticlesByPublicationDate(candidatePool),
+          feedDebugAfterRelevanceMatches: filteredRawArticles,
+          feedRenderFilteredCount: filteredRawArticles.length,
+          feedRenderGroupedCount: groupedArticles.length,
+          branch: "selected-feed-full-pool",
+          cacheKey: fullPoolKey,
+          cacheHit: true,
+          backendRequests: cachedFullPool.backendRequests || [plannedRequest],
+        };
+      }
+
+      const fallbackWarning = cachedFullPool.fallbackReason || "selected feed full pool unavailable, fallback to legacy";
+      addFilterPipelineNote(diagnostics, fallbackWarning);
+      updateCandidateStrategyExecution(diagnostics, {
+        actualExecution: "legacy_fallback",
+        expectedCompleteness: "partial",
+        warnings: [
+          ...(diagnostics?.candidateStrategy?.warnings || []),
+          fallbackWarning,
+        ],
+      });
+    }
+
     if (useBackendQuery) {
       const queryKey = getBackendArticleQueryKey();
       const cachedQuery = runtime.backendArticleQueryCache.get(queryKey);
@@ -20780,13 +20994,25 @@ function renderArticles() {
     const candidateBuilderResult = resolveArticleCandidatePool(pipelineDiagnostics.candidatePoolContext, {
       activeFeedId,
       diagnostics: pipelineDiagnostics,
+      normalizedFilterState,
       shouldIgnoreFeedIdForGrouping,
       useBackendQuery,
     });
     recordCandidateBuilderResult(pipelineDiagnostics, candidateBuilderResult);
 
     if (candidateBuilderResult.pending) {
-      if (!runtime.backendArticleQueryLoading) {
+      if (candidateBuilderResult.branch === "selected-feed-full-pool-loading") {
+        void ensureSelectedFeedFullPoolData(activeFeedId)
+          .then((result) => {
+            if (result) {
+              scheduleRenderArticles("selected-feed-full-pool-ready", { mode: "frame" });
+            }
+          })
+          .catch((error) => {
+            runtime.selectedFeedFullPoolLoadingKeys.delete(getSelectedFeedFullPoolKey(activeFeedId));
+            elements.resultsCount.textContent = error?.message || "Failed to load selected feed articles.";
+          });
+      } else if (!runtime.backendArticleQueryLoading) {
         void ensureBackendArticleQueryData()
           .then((result) => {
             if (result) {
