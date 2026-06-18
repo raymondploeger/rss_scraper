@@ -3756,6 +3756,7 @@ function buildArticleCandidatePool(candidateContext, resolver) {
   const resolved = typeof resolver === "function" ? resolver() : {};
   const articles = Array.isArray(resolved.articles) ? resolved.articles : [];
   const candidatePool = Array.isArray(resolved.candidatePool) ? resolved.candidatePool : articles;
+  const candidateSource = Array.isArray(resolved.candidateSource) ? resolved.candidateSource : candidatePool;
   const filteredRawArticles = Array.isArray(resolved.filteredRawArticles) ? resolved.filteredRawArticles : articles;
   const groupedArticles = Array.isArray(resolved.groupedArticles) ? resolved.groupedArticles : articles;
   const branch = resolved.branch || candidateContext?.branch || "unknown";
@@ -3765,6 +3766,7 @@ function buildArticleCandidatePool(candidateContext, resolver) {
   return {
     articles,
     groupedArticles,
+    candidateSource,
     candidatePool,
     filteredRawArticles,
     groupedArticlesCount: groupedCount,
@@ -3783,6 +3785,7 @@ function buildArticleCandidatePool(candidateContext, resolver) {
     candidateLimit: candidateContext?.candidateLimit || MAX_ARTICLES_IN_MEMORY,
     warnings: Array.isArray(candidateContext?.warnings) ? candidateContext.warnings.slice() : [],
     diagnostics: resolved.diagnostics || {},
+    candidateSourceCount: candidateSource.length,
     candidateCount: candidatePool.length,
     filteredCount: filteredRawArticles.length,
     groupedCount,
@@ -3799,6 +3802,7 @@ function summarizeCandidateBuilderResult(candidateBuilderResult) {
     branch: candidateBuilderResult.branch,
     retrievalMode: candidateBuilderResult.retrievalMode,
     sourceScope: candidateBuilderResult.sourceScope,
+    candidateSourceCount: candidateBuilderResult.candidateSourceCount,
     candidateCount: candidateBuilderResult.candidateCount,
     filteredCount: candidateBuilderResult.filteredCount,
     groupedCount: candidateBuilderResult.groupedCount,
@@ -4127,6 +4131,7 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push(`branch: ${builderResult.branch}`);
     lines.push(`retrievalMode: ${builderResult.retrievalMode}`);
     lines.push(`sourceScope: ${builderResult.sourceScope}`);
+    lines.push(`candidateSourceCount: ${builderResult.candidateSourceCount}`);
     lines.push(`candidateCount: ${builderResult.candidateCount}`);
     lines.push(`filteredCount: ${builderResult.filteredCount}`);
     lines.push(`groupedCount: ${builderResult.groupedCount}`);
@@ -20393,6 +20398,10 @@ function groupedArticleMatchesFeedFilter(article, feedId) {
   return articleMatchesSelectedFeed(article, feedId);
 }
 
+function getGlobalArticleCandidateSource() {
+  return Array.isArray(state.articles) ? state.articles : [];
+}
+
 function resolveArticleCandidatePool(candidateContext, options = {}) {
   const diagnostics = options.diagnostics || null;
   const useBackendQuery = Boolean(options.useBackendQuery);
@@ -20503,7 +20512,9 @@ function resolveArticleCandidatePool(candidateContext, options = {}) {
     }
 
     setFilterPipelineBranch(diagnostics, "global-visible-articles");
-    const candidatePool = state.articles;
+    addFilterPipelineNote(diagnostics, "global candidate source split; filtering still handled by getVisibleArticles compatibility wrapper");
+    const candidateSource = getGlobalArticleCandidateSource();
+    const candidatePool = candidateSource;
     const visibleArticles = getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping });
     const groupedArticles = prepareDateFirstGroupedArticles(visibleArticles);
     const feedScopedArticles = shouldIgnoreFeedIdForGrouping
@@ -20511,6 +20522,7 @@ function resolveArticleCandidatePool(candidateContext, options = {}) {
       : groupedArticles;
     return {
       articles: sortArticlesByPublicationDate(feedScopedArticles),
+      candidateSource,
       candidatePool,
       filteredRawArticles: visibleArticles,
       groupedArticlesCount: groupedArticles.length,
