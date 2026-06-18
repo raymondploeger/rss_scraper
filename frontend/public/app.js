@@ -3562,6 +3562,53 @@ function createNormalizedFilterState() {
   });
 }
 
+function serializeNormalizedFilterState(normalizedFilterState) {
+  if (!normalizedFilterState) {
+    return "";
+  }
+
+  return JSON.stringify({
+    feed: {
+      id: normalizedFilterState.feed?.id || "",
+      sourceGroup: normalizedFilterState.feed?.sourceGroup || "all",
+      dmvFeedId: normalizedFilterState.feed?.dmvFeedId || "",
+      canadaDmvFeedPath: normalizedFilterState.feed?.canadaDmvFeedPath || "",
+      canadaDmvAll: Boolean(normalizedFilterState.feed?.canadaDmvAll),
+    },
+    dashboard: {
+      mode: normalizedFilterState.dashboard?.mode || "balanced",
+      selectedInterests: normalizedFilterState.dashboard?.selectedInterests || [],
+      mainDomains: normalizedFilterState.dashboard?.mainDomains || [],
+    },
+    filters: {
+      search: normalizedFilterState.filters?.search || "",
+      topic: normalizedFilterState.filters?.topic || "",
+      tag: normalizedFilterState.filters?.tag || "",
+      signal: normalizedFilterState.filters?.signal || "",
+      date: normalizedFilterState.filters?.date || "",
+      articleIds: normalizedFilterState.filters?.articleIds || [],
+      alertLabel: normalizedFilterState.filters?.alertLabel || "",
+    },
+    keywords: {
+      include: normalizedFilterState.keywords?.include || [],
+      exclude: normalizedFilterState.keywords?.exclude || [],
+    },
+    sorting: {
+      mode: normalizedFilterState.sorting?.mode || "",
+    },
+    pagination: {
+      page: normalizedFilterState.pagination?.page || 1,
+      pageSize: normalizedFilterState.pagination?.pageSize || ARTICLE_RENDER_PAGE_SIZE,
+    },
+    dashboardMode: normalizedFilterState.dashboardMode || "normal",
+  });
+}
+
+function getNormalizedFilterStateCacheKey(normalizedFilterState) {
+  const serializedState = serializeNormalizedFilterState(normalizedFilterState);
+  return serializedState ? `normalized:${serializedState}` : "";
+}
+
 function getActiveFilterPipelineSnapshot(normalizedFilterState = createNormalizedFilterState()) {
   return {
     feedId: normalizedFilterState.feed.id,
@@ -3573,6 +3620,75 @@ function getActiveFilterPipelineSnapshot(normalizedFilterState = createNormalize
     date: normalizedFilterState.filters.date,
     sourceGroup: normalizedFilterState.feed.sourceGroup,
     selectedPersonalInterests: normalizedFilterState.dashboard.selectedInterests,
+    sortingMode: normalizedFilterState.sorting.mode,
+    page: normalizedFilterState.pagination.page,
+    pageSize: normalizedFilterState.pagination.pageSize,
+  };
+}
+
+function getLegacyFilterPipelineSnapshot() {
+  return {
+    feedId: state.filters.feedId || "",
+    feedName: getSelectedFeedLabel(),
+    search: state.filters.search || "",
+    topic: state.filters.topic || "",
+    tag: state.filters.tag || "",
+    signal: state.filters.signalCategory || "",
+    date: state.filters.date || "",
+    sourceGroup: state.filters.sourceGroup || "all",
+    selectedPersonalInterests: normalizePersonalDashboardInterests(state.personalDashboard.interests),
+    sortingMode: normalizePersonalDashboardInterests(state.personalDashboard.interests).length
+      ? "date_desc_personal_dashboard"
+      : "date_desc",
+    page: Number(state.pagination?.page) || 1,
+    pageSize: Number(state.pagination?.pageSize) || ARTICLE_RENDER_PAGE_SIZE,
+  };
+}
+
+function validateNormalizedFilterStateParity(normalizedFilterState) {
+  const normalizedSnapshot = getActiveFilterPipelineSnapshot(normalizedFilterState);
+  const legacySnapshot = getLegacyFilterPipelineSnapshot();
+  const mismatches = [];
+
+  [
+    "feedId",
+    "sourceGroup",
+    "search",
+    "topic",
+    "tag",
+    "signal",
+    "date",
+    "sortingMode",
+    "page",
+    "pageSize",
+  ].forEach((fieldName) => {
+    if (normalizedSnapshot[fieldName] !== legacySnapshot[fieldName]) {
+      mismatches.push({
+        field: fieldName,
+        normalized: normalizedSnapshot[fieldName],
+        legacy: legacySnapshot[fieldName],
+      });
+    }
+  });
+
+  const normalizedInterests = normalizedSnapshot.selectedPersonalInterests || [];
+  const legacyInterests = legacySnapshot.selectedPersonalInterests || [];
+  if (
+    normalizedInterests.length !== legacyInterests.length ||
+    normalizedInterests.some((interestId, index) => interestId !== legacyInterests[index])
+  ) {
+    mismatches.push({
+      field: "selectedPersonalInterests",
+      normalized: normalizedInterests,
+      legacy: legacyInterests,
+    });
+  }
+
+  return {
+    ok: mismatches.length === 0,
+    normalized: normalizedSnapshot,
+    legacy: legacySnapshot,
+    mismatches,
   };
 }
 
@@ -3590,8 +3706,11 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
       backendCacheHit: false,
       groupedFeedCacheKey: "",
       groupedFeedCacheHit: false,
+      normalizedFilterStateKey: enabled ? getNormalizedFilterStateCacheKey(normalizedFilterState) : "",
     },
     normalizedFilterState,
+    normalizedFilterStateKey: enabled ? getNormalizedFilterStateCacheKey(normalizedFilterState) : "",
+    normalizedFilterStateParity: enabled ? validateNormalizedFilterStateParity(normalizedFilterState) : null,
     filters: getActiveFilterPipelineSnapshot(normalizedFilterState),
     counts: {
       candidatePool: 0,
@@ -3759,6 +3878,10 @@ function logCompactFilterPipelineSummary(diagnostics) {
   getCompactNormalizedFilterStateLines(diagnostics.normalizedFilterState).forEach((line) => {
     lines.push(line);
   });
+
+  lines.push("");
+  lines.push("Normalized Filter State Key");
+  lines.push(diagnostics.normalizedFilterStateKey || "none");
 
   lines.push("");
   lines.push("Counts");
@@ -4009,6 +4132,10 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   }
   logCompactFilterPipelineSummary(diagnostics);
   console.log("normalizedFilterState", diagnostics.normalizedFilterState);
+  console.log("normalizedFilterStateKey", diagnostics.normalizedFilterStateKey);
+  if (diagnostics.normalizedFilterStateParity && !diagnostics.normalizedFilterStateParity.ok) {
+    console.warn("[FilterPipeline] normalized filter state parity mismatch", diagnostics.normalizedFilterStateParity);
+  }
   console.table(diagnostics.counts);
   console.log("rejections", diagnostics.rejections);
   console.log("rejectionExamples", diagnostics.rejectionExamples);
