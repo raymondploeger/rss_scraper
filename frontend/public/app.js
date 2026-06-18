@@ -3631,6 +3631,73 @@ function getLargestPipelineRejection(diagnostics) {
   return largest && largest.count > 0 ? largest : null;
 }
 
+function formatPipelineSummaryLine(label, value, width = 30) {
+  const normalizedLabel = String(label || "");
+  const normalizedValue = String(value ?? 0);
+  const dotCount = Math.max(2, width - normalizedLabel.length - normalizedValue.length);
+  return `${normalizedLabel}${".".repeat(dotCount)}${normalizedValue}`;
+}
+
+function getNonZeroPipelineRejections(diagnostics) {
+  const rows = [];
+  Object.entries(diagnostics?.rejections || {}).forEach(([stage, categories]) => {
+    Object.entries(categories || {}).forEach(([category, count]) => {
+      if (Number(count) > 0) {
+        rows.push({ stage, category, count: Number(count) });
+      }
+    });
+  });
+  return rows.sort((left, right) => right.count - left.count || `${left.stage}.${left.category}`.localeCompare(`${right.stage}.${right.category}`));
+}
+
+function getPipelineRejectionExamples(diagnostics, rejection) {
+  if (!rejection) {
+    return [];
+  }
+  return diagnostics?.rejectionExamples?.[rejection.stage]?.[rejection.category] || [];
+}
+
+function logCompactFilterPipelineSummary(diagnostics) {
+  const lines = ["Counts"];
+  Object.entries(diagnostics.counts || {}).forEach(([stage, count]) => {
+    lines.push(formatPipelineSummaryLine(stage, count));
+  });
+
+  lines.push("");
+  lines.push("Largest rejection");
+  if (diagnostics.largestRejection) {
+    lines.push(formatPipelineSummaryLine(
+      `${diagnostics.largestRejection.stage}.${diagnostics.largestRejection.category}`,
+      diagnostics.largestRejection.count,
+      42
+    ));
+  } else {
+    lines.push("none");
+  }
+
+  lines.push("");
+  lines.push("Rejections");
+  const nonZeroRejections = getNonZeroPipelineRejections(diagnostics);
+  if (nonZeroRejections.length) {
+    nonZeroRejections.forEach((rejection) => {
+      lines.push(formatPipelineSummaryLine(`${rejection.stage}.${rejection.category}`, rejection.count, 42));
+    });
+  } else {
+    lines.push("none");
+  }
+
+  const largestExamples = getPipelineRejectionExamples(diagnostics, diagnostics.largestRejection);
+  if (diagnostics.largestRejection && largestExamples.length) {
+    lines.push("");
+    lines.push(`Examples for ${diagnostics.largestRejection.stage}.${diagnostics.largestRejection.category}:`);
+    largestExamples.forEach((example) => {
+      lines.push(`- ${example.title}${example.reason ? ` (${example.reason})` : ""}`);
+    });
+  }
+
+  console.log(lines.join("\n"));
+}
+
 function classifyFeedScopeRejection(article, activeFeedId) {
   if (activeFeedId && !articleMatchesSelectedFeed(article, activeFeedId)) {
     return {
@@ -3837,6 +3904,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   } else {
     console.log(groupLabel);
   }
+  logCompactFilterPipelineSummary(diagnostics);
   console.table(diagnostics.counts);
   console.log("rejections", diagnostics.rejections);
   console.log("rejectionExamples", diagnostics.rejectionExamples);
