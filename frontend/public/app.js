@@ -3928,8 +3928,7 @@ function updateCandidatePoolContext(diagnostics, updates = {}) {
   diagnostics.candidatePoolContext.warnings = getCandidatePoolContextWarnings(diagnostics.candidatePoolContext);
 }
 
-function buildArticleCandidatePool(candidateContext, resolver) {
-  const resolved = typeof resolver === "function" ? resolver() : {};
+function normalizeCandidateProviderResult(candidateContext, resolved = {}) {
   const articles = Array.isArray(resolved.articles) ? resolved.articles : [];
   const candidatePool = Array.isArray(resolved.candidatePool) ? resolved.candidatePool : articles;
   const candidateSource = Array.isArray(resolved.candidateSource) ? resolved.candidateSource : candidatePool;
@@ -3968,6 +3967,10 @@ function buildArticleCandidatePool(candidateContext, resolver) {
     filteredCount: filteredRawArticles.length,
     groupedCount,
     pending: Boolean(resolved.pending),
+    notes: [
+      "candidate builder normalized provider result",
+      ...(Array.isArray(resolved.notes) ? resolved.notes : []),
+    ],
   };
 }
 
@@ -4016,6 +4019,7 @@ function resolveCandidateProvider(candidateStrategy, candidateSource, normalized
     pending: false,
     notes: Object.freeze([
       "candidate provider metadata only",
+      "candidate provider owns legacy retrieval execution",
       "legacy retrieval implementation remains unchanged",
     ]),
   });
@@ -4061,6 +4065,7 @@ function summarizeCandidateBuilderResult(candidateBuilderResult) {
       : 0,
     warnings: candidateBuilderResult.warnings,
     pending: Boolean(candidateBuilderResult.pending),
+    notes: Array.isArray(candidateBuilderResult.notes) ? candidateBuilderResult.notes.slice() : [],
   };
 }
 
@@ -4670,6 +4675,14 @@ function logCompactFilterPipelineSummary(diagnostics) {
       });
     } else {
       lines.push("warnings: none");
+    }
+    if (builderResult.notes?.length) {
+      lines.push("notes:");
+      builderResult.notes.forEach((note) => {
+        lines.push(`- ${note}`);
+      });
+    } else {
+      lines.push("notes: none");
     }
   } else {
     lines.push("none");
@@ -21722,24 +21735,20 @@ function resolveArticleCandidatePool(candidateContext, options = {}) {
   const diagnostics = options.diagnostics || null;
   const normalizedFilterState = options.normalizedFilterState || diagnostics?.normalizedFilterState || null;
   const candidateSourceRoute = options.candidateSource || diagnostics?.candidateSource || null;
-  const candidateProvider = options.candidateProvider || diagnostics?.candidateProvider || resolveCandidateProvider(
-    diagnostics?.candidateStrategy,
-    candidateSourceRoute,
-    normalizedFilterState,
-    candidateContext
-  );
+  const candidateProvider = options.candidateProvider || diagnostics?.candidateProvider || null;
   const useBackendQuery = Boolean(options.useBackendQuery);
   const activeFeedId = options.activeFeedId || "";
   const shouldIgnoreFeedIdForGrouping = Boolean(options.shouldIgnoreFeedIdForGrouping);
 
-  return buildArticleCandidatePool(candidateContext, () => executeCandidateProvider(candidateProvider, candidateContext, {
+  const providerResult = executeCandidateProvider(candidateProvider, candidateContext, {
     activeFeedId,
     candidateSourceRoute,
     diagnostics,
     normalizedFilterState,
     shouldIgnoreFeedIdForGrouping,
     useBackendQuery,
-  }));
+  });
+  return normalizeCandidateProviderResult(candidateContext, providerResult);
 }
 
 function executeCandidateProvider(candidateProvider, candidateContext, options = {}) {
@@ -21754,7 +21763,7 @@ function executeCandidateProvider(candidateProvider, candidateContext, options =
     recordCandidateProvider(diagnostics, candidateProvider);
   }
 
-    if (activeFeedId && shouldAttemptSelectedFeedFullPool(normalizedFilterState)) {
+  if (activeFeedId && shouldAttemptSelectedFeedFullPool(normalizedFilterState)) {
       const fullPoolKey = getSelectedFeedFullPoolKey(activeFeedId);
       const cachedFullPool = runtime.selectedFeedFullPoolCache.get(fullPoolKey);
       const plannedRequest = Object.fromEntries(getSelectedFeedFullPoolQueryParams(activeFeedId).entries());
