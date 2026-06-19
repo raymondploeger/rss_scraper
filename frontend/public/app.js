@@ -3968,7 +3968,7 @@ function normalizeCandidateProviderResult(candidateContext, resolved = {}) {
     groupedCount,
     pending: Boolean(resolved.pending),
     notes: [
-      "candidate builder normalized provider result",
+      "provider result normalized by candidate builder",
       ...(Array.isArray(resolved.notes) ? resolved.notes : []),
     ],
   };
@@ -4020,6 +4020,7 @@ function resolveCandidateProvider(candidateStrategy, candidateSource, normalized
     notes: Object.freeze([
       "candidate provider metadata only",
       "candidate provider owns legacy retrieval execution",
+      ...(providerId === "global_memory_provider" ? ["global memory provider extracted"] : []),
       "legacy retrieval implementation remains unchanged",
     ]),
   });
@@ -21958,25 +21959,38 @@ function executeCandidateProvider(candidateProvider, candidateContext, options =
       };
     }
 
-    setFilterPipelineBranch(diagnostics, "global-visible-articles");
-    addFilterPipelineNote(diagnostics, "global candidate source split; filtering still handled by getVisibleArticles compatibility wrapper");
-    const candidateSource = getGlobalArticleCandidateSource();
-    const candidatePool = candidateSource;
-    const visibleArticles = getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping });
-    const groupedArticles = prepareDateFirstGroupedArticles(visibleArticles);
-    const feedScopedArticles = shouldIgnoreFeedIdForGrouping
-      ? groupedArticles.filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
-      : groupedArticles;
-    return {
-      articles: sortArticlesByPublicationDate(feedScopedArticles),
-      candidateSource,
-      candidatePool,
-      filteredRawArticles: visibleArticles,
-      groupedArticlesCount: groupedArticles.length,
-      feedRenderFilteredCount: visibleArticles.length,
-      feedRenderGroupedCount: groupedArticles.length,
-      branch: "global-visible-articles",
-    };
+  return executeGlobalMemoryProvider(candidateProvider, normalizedFilterState, candidateContext, {
+    diagnostics,
+    shouldIgnoreFeedIdForGrouping,
+  });
+}
+
+function executeGlobalMemoryProvider(candidateProvider, normalizedFilterState, candidatePoolContext, options = {}) {
+  const diagnostics = options.diagnostics || null;
+  const shouldIgnoreFeedIdForGrouping = Boolean(options.shouldIgnoreFeedIdForGrouping);
+
+  setFilterPipelineBranch(diagnostics, "global-visible-articles");
+  addFilterPipelineNote(diagnostics, "global candidate source split; filtering still handled by getVisibleArticles compatibility wrapper");
+  const candidateSource = getGlobalArticleCandidateSource();
+  const candidatePool = candidateSource;
+  const visibleArticles = getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping });
+  const groupedArticles = prepareDateFirstGroupedArticles(visibleArticles);
+  const feedScopedArticles = shouldIgnoreFeedIdForGrouping
+    ? groupedArticles.filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
+    : groupedArticles;
+  return {
+    articles: sortArticlesByPublicationDate(feedScopedArticles),
+    candidateSource,
+    candidatePool,
+    filteredRawArticles: visibleArticles,
+    groupedArticlesCount: groupedArticles.length,
+    feedRenderFilteredCount: visibleArticles.length,
+    feedRenderGroupedCount: groupedArticles.length,
+    branch: "global-visible-articles",
+    notes: [
+      "global memory provider extracted",
+    ],
+  };
 }
 
 function renderArticlesFallback(error) {
