@@ -4065,6 +4065,23 @@ function summarizeRenderModel(renderModel) {
   };
 }
 
+function summarizeRenderDispatch(renderDispatch) {
+  if (!renderDispatch) {
+    return null;
+  }
+
+  return {
+    renderer: renderDispatch.renderer || "",
+    renderMode: renderDispatch.renderMode || "",
+    grouped: Boolean(renderDispatch.grouped),
+    pending: Boolean(renderDispatch.pending),
+    emptyState: renderDispatch.emptyState || "",
+    renderTarget: renderDispatch.renderTarget || "",
+    warnings: Array.isArray(renderDispatch.warnings) ? renderDispatch.warnings.slice() : [],
+    notes: Array.isArray(renderDispatch.notes) ? renderDispatch.notes.slice() : [],
+  };
+}
+
 function recordFilterPipelineResult(diagnostics, filterPipelineResult) {
   if (!diagnostics?.enabled) {
     return;
@@ -4087,6 +4104,14 @@ function recordRenderModel(diagnostics, renderModel) {
   }
 
   diagnostics.renderModel = summarizeRenderModel(renderModel);
+}
+
+function recordRenderDispatch(diagnostics, renderDispatch) {
+  if (!diagnostics?.enabled) {
+    return;
+  }
+
+  diagnostics.renderDispatch = summarizeRenderDispatch(renderDispatch);
 }
 
 function recordPipelineExecutorResult(diagnostics, pipelineResult) {
@@ -4219,6 +4244,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     filterPipeline: null,
     paginationPipeline: null,
     renderModel: null,
+    renderDispatch: null,
     selectedFeedFullPool: {
       enabled: enabled ? isSelectedFeedFullPoolEnabled() : false,
       attempted: false,
@@ -4620,6 +4646,36 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push("none");
   }
 
+  const renderDispatch = diagnostics.renderDispatch;
+  lines.push("");
+  lines.push("Render Dispatch");
+  if (renderDispatch) {
+    lines.push(`renderer: ${renderDispatch.renderer}`);
+    lines.push(`renderMode: ${renderDispatch.renderMode}`);
+    lines.push(`pending: ${renderDispatch.pending}`);
+    lines.push(`grouped: ${renderDispatch.grouped}`);
+    lines.push(`emptyState: ${renderDispatch.emptyState || "none"}`);
+    lines.push(`renderTarget: ${renderDispatch.renderTarget}`);
+    if (renderDispatch.warnings?.length) {
+      lines.push("warnings:");
+      renderDispatch.warnings.forEach((warning) => {
+        lines.push(`- ${warning}`);
+      });
+    } else {
+      lines.push("warnings: none");
+    }
+    if (renderDispatch.notes?.length) {
+      lines.push("notes:");
+      renderDispatch.notes.forEach((note) => {
+        lines.push(`- ${note}`);
+      });
+    } else {
+      lines.push("notes: none");
+    }
+  } else {
+    lines.push("none");
+  }
+
   const selectedFeedFullPool = diagnostics.selectedFeedFullPool;
   lines.push("");
   lines.push("Selected Feed Full Pool");
@@ -4890,6 +4946,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     filterPipeline: diagnostics.filterPipeline || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
     renderModel: diagnostics.renderModel || null,
+    renderDispatch: diagnostics.renderDispatch || null,
     selectedFeedFullPool: diagnostics.selectedFeedFullPool || null,
     counts: diagnostics.counts || {},
     rejections: diagnostics.rejections || {},
@@ -5009,6 +5066,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("filterPipeline", diagnostics.filterPipeline);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
   console.log("renderModel", diagnostics.renderModel);
+  console.log("renderDispatch", diagnostics.renderDispatch);
   console.log("selectedFeedFullPool", diagnostics.selectedFeedFullPool);
   if (diagnostics.normalizedFilterStateParity && !diagnostics.normalizedFilterStateParity.ok) {
     console.warn("[FilterPipeline] normalized filter state parity mismatch", diagnostics.normalizedFilterStateParity);
@@ -21279,6 +21337,62 @@ function preparePipelineRenderModel({
   };
 }
 
+function prepareRenderDispatch({
+  renderModel,
+  paginationResult,
+} = {}) {
+  const selectedUsDmvEntry = getSelectedUsDmvCatalogEntry();
+  const selectedCanadaEntry = getSelectedCanadaCatalogEntry();
+  const emptyState = paginationResult && !paginationResult.totalCount ? "empty" : "";
+  let renderMode = "default";
+  let renderer = emptyState ? "empty" : "simple-grid";
+  let grouped = false;
+
+  if (renderModel?.pending) {
+    return {
+      renderer: "loading",
+      renderMode: renderModel?.renderMode || "loading",
+      grouped: false,
+      pending: true,
+      emptyState: "",
+      renderTarget: "articlesGrid",
+      warnings: [],
+      notes: [
+        "pipeline executor prepares render dispatch",
+        "loading DOM handling remains in renderArticles",
+      ],
+    };
+  }
+
+  if (state.filters.feedId) {
+    renderMode = "selected_feed";
+  } else if (selectedUsDmvEntry || selectedCanadaEntry) {
+    renderMode = "selected_dmv";
+  } else if (state.dashboardMode === "usa" && !getActiveArticleFeedId()) {
+    renderMode = "usa_grouped";
+    grouped = true;
+    renderer = emptyState ? "empty" : "feed-group";
+  } else if (state.dashboardMode === "canada" && !state.filters.canadaDmvFeedPath) {
+    renderMode = "canada_grouped";
+    grouped = true;
+    renderer = emptyState ? "empty" : "feed-group";
+  }
+
+  return {
+    renderer,
+    renderMode,
+    grouped,
+    pending: false,
+    emptyState,
+    renderTarget: "articlesGrid",
+    warnings: [],
+    notes: [
+      "pipeline executor prepares render dispatch",
+      "DOM rendering still handled by renderArticles",
+    ],
+  };
+}
+
 function executeArticlePipeline({
   normalizedFilterState,
   candidateStrategy,
@@ -21294,6 +21408,7 @@ function executeArticlePipeline({
     "pipeline executor owns filter pipeline invocation",
     "pipeline executor owns pagination preparation",
     "pipeline executor prepares render model",
+    "pipeline executor prepares render dispatch",
     "pipeline executor wraps legacy candidate builder",
     "rendering still handled by renderArticles",
     "filtering/grouping still branch-local",
@@ -21329,6 +21444,11 @@ function executeArticlePipeline({
     pending: filterPipelineResult.pending,
   });
   recordRenderModel(diagnostics, renderModel);
+  const renderDispatch = prepareRenderDispatch({
+    renderModel,
+    paginationResult,
+  });
+  recordRenderDispatch(diagnostics, renderDispatch);
 
   const pipelineResult = {
     normalizedFilterState,
@@ -21339,6 +21459,7 @@ function executeArticlePipeline({
     filterPipelineResult,
     paginationResult,
     renderModel,
+    renderDispatch,
     articles: filterPipelineResult.articles,
     groupedArticles: filterPipelineResult.groupedArticles,
     paginatedItems: paginationResult?.items || null,
@@ -21770,6 +21891,7 @@ function renderArticles() {
     updateArticleFilterContext(articles);
     const articlePagination = pipelineResult.paginationResult;
     const renderModel = pipelineResult.renderModel;
+    const renderDispatch = pipelineResult.renderDispatch;
     const articlesToRender = Array.isArray(renderModel?.items) ? renderModel.items : [];
     recordPipelineCount(pipelineDiagnostics, "afterPagination", Number(renderModel?.paginatedCount) || 0);
     recordPipelineCount(pipelineDiagnostics, "rendered", articlesToRender.length);
@@ -21830,7 +21952,7 @@ function renderArticles() {
       totalPages: articlePagination.totalPages,
     };
 
-    if (state.filters.feedId) {
+    if (renderDispatch?.renderMode === "selected_feed") {
       intelligenceTime("renderArticles:dom-update");
       elements.articlesGrid.classList.remove("is-grouped-feed-view");
       elements.articlesGrid.classList.remove("has-personal-lanes");
@@ -21854,7 +21976,7 @@ function renderArticles() {
       return;
     }
 
-    if ((selectedUsDmvEntry || selectedCanadaEntry) && !state.filters.feedId) {
+    if (renderDispatch?.renderMode === "selected_dmv") {
       intelligenceTime("renderArticles:dom-update");
       elements.articlesGrid.classList.remove("is-grouped-feed-view");
       elements.articlesGrid.classList.remove("has-personal-lanes");
@@ -21884,7 +22006,7 @@ function renderArticles() {
       return;
     }
 
-    if (state.dashboardMode === "usa" && !getActiveArticleFeedId()) {
+    if (renderDispatch?.renderMode === "usa_grouped") {
       intelligenceTime("renderArticles:dom-update");
       elements.articlesGrid.classList.add("is-grouped-feed-view");
       elements.articlesGrid.classList.remove("has-personal-lanes");
@@ -21930,7 +22052,7 @@ function renderArticles() {
       return;
     }
 
-    if (state.dashboardMode === "canada" && !state.filters.canadaDmvFeedPath) {
+    if (renderDispatch?.renderMode === "canada_grouped") {
       intelligenceTime("renderArticles:dom-update");
       elements.articlesGrid.classList.add("is-grouped-feed-view");
       elements.articlesGrid.classList.remove("has-personal-lanes");
