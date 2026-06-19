@@ -4015,6 +4015,30 @@ function summarizePipelineExecutorResult(pipelineResult) {
   };
 }
 
+function summarizeFilterPipelineResult(filterPipelineResult) {
+  if (!filterPipelineResult) {
+    return null;
+  }
+
+  return {
+    stage: filterPipelineResult.stage || "legacy_filter_pipeline",
+    executionMode: filterPipelineResult.executionMode || "legacy",
+    filteredCount: Number(filterPipelineResult.filteredCount) || 0,
+    groupedCount: Number(filterPipelineResult.groupedCount) || 0,
+    pending: Boolean(filterPipelineResult.pending),
+    warnings: Array.isArray(filterPipelineResult.warnings) ? filterPipelineResult.warnings.slice() : [],
+    notes: Array.isArray(filterPipelineResult.notes) ? filterPipelineResult.notes.slice() : [],
+  };
+}
+
+function recordFilterPipelineResult(diagnostics, filterPipelineResult) {
+  if (!diagnostics?.enabled) {
+    return;
+  }
+
+  diagnostics.filterPipeline = summarizeFilterPipelineResult(filterPipelineResult);
+}
+
 function recordPipelineExecutorResult(diagnostics, pipelineResult) {
   if (!diagnostics?.enabled) {
     return;
@@ -4153,6 +4177,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     candidatePoolContext,
     candidateBuilderResult: null,
     pipelineExecutor: null,
+    filterPipeline: null,
     selectedFeedFullPool: {
       enabled: enabled ? isSelectedFeedFullPoolEnabled() : false,
       attempted: false,
@@ -4465,6 +4490,35 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push("none");
   }
 
+  const filterPipeline = diagnostics.filterPipeline;
+  lines.push("");
+  lines.push("Filter Pipeline");
+  if (filterPipeline) {
+    lines.push(`stage: ${filterPipeline.stage}`);
+    lines.push(`executionMode: ${filterPipeline.executionMode}`);
+    lines.push(`filteredCount: ${filterPipeline.filteredCount}`);
+    lines.push(`groupedCount: ${filterPipeline.groupedCount}`);
+    lines.push(`pending: ${filterPipeline.pending}`);
+    if (filterPipeline.warnings?.length) {
+      lines.push("warnings:");
+      filterPipeline.warnings.forEach((warning) => {
+        lines.push(`- ${warning}`);
+      });
+    } else {
+      lines.push("warnings: none");
+    }
+    if (filterPipeline.notes?.length) {
+      lines.push("notes:");
+      filterPipeline.notes.forEach((note) => {
+        lines.push(`- ${note}`);
+      });
+    } else {
+      lines.push("notes: none");
+    }
+  } else {
+    lines.push("none");
+  }
+
   const selectedFeedFullPool = diagnostics.selectedFeedFullPool;
   lines.push("");
   lines.push("Selected Feed Full Pool");
@@ -4732,6 +4786,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     candidatePoolContext: diagnostics.candidatePoolContext || null,
     candidateBuilderResult: diagnostics.candidateBuilderResult || null,
     pipelineExecutor: diagnostics.pipelineExecutor || null,
+    filterPipeline: diagnostics.filterPipeline || null,
     selectedFeedFullPool: diagnostics.selectedFeedFullPool || null,
     counts: diagnostics.counts || {},
     rejections: diagnostics.rejections || {},
@@ -4848,6 +4903,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("candidatePoolContext", diagnostics.candidatePoolContext);
   console.log("candidateBuilderResult", diagnostics.candidateBuilderResult);
   console.log("pipelineExecutor", diagnostics.pipelineExecutor);
+  console.log("filterPipeline", diagnostics.filterPipeline);
   console.log("selectedFeedFullPool", diagnostics.selectedFeedFullPool);
   if (diagnostics.normalizedFilterStateParity && !diagnostics.normalizedFilterStateParity.ok) {
     console.warn("[FilterPipeline] normalized filter state parity mismatch", diagnostics.normalizedFilterStateParity);
@@ -20975,6 +21031,85 @@ function getGlobalArticleCandidateSource() {
   return Array.isArray(state.articles) ? state.articles : [];
 }
 
+function applyLegacyFilterPipeline({
+  candidateBuilderResult,
+  diagnostics,
+  activeFeedId,
+  useBackendQuery,
+} = {}) {
+  const result = {
+    stage: "legacy_filter_pipeline",
+    executionMode: "legacy",
+    articles: Array.isArray(candidateBuilderResult?.articles) ? candidateBuilderResult.articles : [],
+    groupedArticles: Array.isArray(candidateBuilderResult?.groupedArticles) ? candidateBuilderResult.groupedArticles : [],
+    candidatePool: Array.isArray(candidateBuilderResult?.candidatePool) ? candidateBuilderResult.candidatePool : [],
+    filteredRawArticles: Array.isArray(candidateBuilderResult?.filteredRawArticles) ? candidateBuilderResult.filteredRawArticles : [],
+    groupedArticlesCount: Number(candidateBuilderResult?.groupedArticlesCount) || 0,
+    feedDebugRawMatches: Array.isArray(candidateBuilderResult?.feedDebugRawMatches) ? candidateBuilderResult.feedDebugRawMatches : [],
+    feedDebugAfterRelevanceMatches: Array.isArray(candidateBuilderResult?.feedDebugAfterRelevanceMatches)
+      ? candidateBuilderResult.feedDebugAfterRelevanceMatches
+      : [],
+    feedRenderFilteredCount: Number(candidateBuilderResult?.feedRenderFilteredCount) || 0,
+    feedRenderGroupedCount: Number(candidateBuilderResult?.feedRenderGroupedCount) || 0,
+    filteredCount: Array.isArray(candidateBuilderResult?.filteredRawArticles) ? candidateBuilderResult.filteredRawArticles.length : 0,
+    groupedCount: Number(candidateBuilderResult?.groupedArticlesCount) || 0,
+    pending: Boolean(candidateBuilderResult?.pending),
+    warnings: Array.isArray(candidateBuilderResult?.warnings) ? candidateBuilderResult.warnings.slice() : [],
+    notes: [
+      "legacy filter pipeline invoked by pipeline executor",
+      "filtering rules remain unchanged",
+      "branch-local grouping remains unchanged",
+    ],
+  };
+
+  recordFilterPipelineResult(diagnostics, result);
+
+  if (diagnostics?.enabled && !result.pending) {
+    const advancedFilterOptions =
+      useBackendQuery || (activeFeedId && !state.filters.date)
+        ? { ignoreFeedId: true, ignorePersonalDashboard: true }
+        : { ignorePersonalDashboard: true };
+    const afterFeedScope = [];
+    result.candidatePool.forEach((article) => {
+      if (!activeFeedId || articleMatchesSelectedFeed(article, activeFeedId)) {
+        afterFeedScope.push(article);
+        return;
+      }
+      const rejection = classifyFeedScopeRejection(article, activeFeedId);
+      recordPipelineRejection(diagnostics, "feedScope", rejection.category, article, rejection.reason);
+    });
+
+    const afterPersonalDashboard = [];
+    afterFeedScope.forEach((article) => {
+      if (articleMatchesPersonalDashboardSelection(article)) {
+        afterPersonalDashboard.push(article);
+        return;
+      }
+      const rejection = classifyPersonalDashboardRejection(article);
+      recordPipelineRejection(diagnostics, "personalDashboard", rejection.category, article, rejection.reason);
+    });
+
+    const afterAdvancedFilters = [];
+    afterPersonalDashboard.forEach((article) => {
+      if (articleMatchesFilters(article, advancedFilterOptions)) {
+        afterAdvancedFilters.push(article);
+        return;
+      }
+      const rejection = classifyAdvancedFilterRejection(article, advancedFilterOptions);
+      recordPipelineRejection(diagnostics, "advancedFilters", rejection.category, article, rejection.reason);
+    });
+
+    recordPipelineCount(diagnostics, "candidatePool", result.candidatePool.length);
+    recordPipelineCount(diagnostics, "afterFeedScope", afterFeedScope.length);
+    recordPipelineCount(diagnostics, "afterPersonalDashboard", afterPersonalDashboard.length);
+    recordPipelineCount(diagnostics, "afterAdvancedFilters", afterAdvancedFilters.length);
+    recordPipelineCount(diagnostics, "afterSorting", result.filteredRawArticles.length);
+    recordPipelineCount(diagnostics, "afterGrouping", result.groupedArticlesCount);
+  }
+
+  return result;
+}
+
 function executeArticlePipeline({
   normalizedFilterState,
   candidateStrategy,
@@ -20987,6 +21122,7 @@ function executeArticlePipeline({
 } = {}) {
   const notes = [
     "pipeline executor owns candidate builder invocation",
+    "pipeline executor owns filter pipeline invocation",
     "pipeline executor wraps legacy candidate builder",
     "rendering still handled by renderArticles",
     "filtering/grouping still branch-local",
@@ -20999,6 +21135,12 @@ function executeArticlePipeline({
     shouldIgnoreFeedIdForGrouping,
     useBackendQuery,
   });
+  const filterPipelineResult = applyLegacyFilterPipeline({
+    candidateBuilderResult,
+    diagnostics,
+    activeFeedId,
+    useBackendQuery,
+  });
 
   const pipelineResult = {
     normalizedFilterState,
@@ -21006,12 +21148,13 @@ function executeArticlePipeline({
     candidateSource,
     candidatePoolContext,
     candidateBuilderResult,
-    articles: Array.isArray(candidateBuilderResult?.articles) ? candidateBuilderResult.articles : [],
-    groupedArticles: Array.isArray(candidateBuilderResult?.groupedArticles) ? candidateBuilderResult.groupedArticles : [],
+    filterPipelineResult,
+    articles: filterPipelineResult.articles,
+    groupedArticles: filterPipelineResult.groupedArticles,
     paginatedItems: null,
     branch: candidateBuilderResult?.branch || "",
-    pending: Boolean(candidateBuilderResult?.pending),
-    warnings: Array.isArray(candidateBuilderResult?.warnings) ? candidateBuilderResult.warnings.slice() : [],
+    pending: Boolean(filterPipelineResult.pending),
+    warnings: Array.isArray(filterPipelineResult.warnings) ? filterPipelineResult.warnings.slice() : [],
     notes,
   };
   recordPipelineExecutorResult(diagnostics, pipelineResult);
@@ -21384,9 +21527,10 @@ function renderArticles() {
       useBackendQuery,
     });
     const candidateBuilderResult = pipelineResult.candidateBuilderResult;
+    const filterPipelineResult = pipelineResult.filterPipelineResult;
 
-    if (candidateBuilderResult.pending) {
-      if (candidateBuilderResult.branch === "selected-feed-full-pool-loading") {
+    if (pipelineResult.pending) {
+      if (pipelineResult.branch === "selected-feed-full-pool-loading") {
         void ensureSelectedFeedFullPoolData(activeFeedId)
           .then((result) => {
             if (result) {
@@ -21413,57 +21557,14 @@ function renderArticles() {
       return;
     }
 
-    articles = candidateBuilderResult.articles;
-    personalDashboardBasePool = candidateBuilderResult.candidatePool;
-    filteredRawArticles = candidateBuilderResult.filteredRawArticles;
-    groupedArticlesCount = candidateBuilderResult.groupedArticlesCount;
-    feedDebugRawMatches = candidateBuilderResult.feedDebugRawMatches;
-    feedDebugAfterRelevanceMatches = candidateBuilderResult.feedDebugAfterRelevanceMatches;
-    feedRenderFilteredCount = candidateBuilderResult.feedRenderFilteredCount;
-    feedRenderGroupedCount = candidateBuilderResult.feedRenderGroupedCount;
-
-    if (pipelineDiagnostics.enabled) {
-      const advancedFilterOptions =
-        useBackendQuery || (activeFeedId && !state.filters.date)
-          ? { ignoreFeedId: true, ignorePersonalDashboard: true }
-          : { ignorePersonalDashboard: true };
-      const afterFeedScope = [];
-      personalDashboardBasePool.forEach((article) => {
-        if (!activeFeedId || articleMatchesSelectedFeed(article, activeFeedId)) {
-          afterFeedScope.push(article);
-          return;
-        }
-        const rejection = classifyFeedScopeRejection(article, activeFeedId);
-        recordPipelineRejection(pipelineDiagnostics, "feedScope", rejection.category, article, rejection.reason);
-      });
-
-      const afterPersonalDashboard = [];
-      afterFeedScope.forEach((article) => {
-        if (articleMatchesPersonalDashboardSelection(article)) {
-          afterPersonalDashboard.push(article);
-          return;
-        }
-        const rejection = classifyPersonalDashboardRejection(article);
-        recordPipelineRejection(pipelineDiagnostics, "personalDashboard", rejection.category, article, rejection.reason);
-      });
-
-      const afterAdvancedFilters = [];
-      afterPersonalDashboard.forEach((article) => {
-        if (articleMatchesFilters(article, advancedFilterOptions)) {
-          afterAdvancedFilters.push(article);
-          return;
-        }
-        const rejection = classifyAdvancedFilterRejection(article, advancedFilterOptions);
-        recordPipelineRejection(pipelineDiagnostics, "advancedFilters", rejection.category, article, rejection.reason);
-      });
-
-      recordPipelineCount(pipelineDiagnostics, "candidatePool", personalDashboardBasePool.length);
-      recordPipelineCount(pipelineDiagnostics, "afterFeedScope", afterFeedScope.length);
-      recordPipelineCount(pipelineDiagnostics, "afterPersonalDashboard", afterPersonalDashboard.length);
-      recordPipelineCount(pipelineDiagnostics, "afterAdvancedFilters", afterAdvancedFilters.length);
-      recordPipelineCount(pipelineDiagnostics, "afterSorting", filteredRawArticles.length);
-      recordPipelineCount(pipelineDiagnostics, "afterGrouping", groupedArticlesCount);
-    }
+    articles = filterPipelineResult.articles;
+    personalDashboardBasePool = filterPipelineResult.candidatePool;
+    filteredRawArticles = filterPipelineResult.filteredRawArticles;
+    groupedArticlesCount = filterPipelineResult.groupedArticlesCount;
+    feedDebugRawMatches = filterPipelineResult.feedDebugRawMatches;
+    feedDebugAfterRelevanceMatches = filterPipelineResult.feedDebugAfterRelevanceMatches;
+    feedRenderFilteredCount = filterPipelineResult.feedRenderFilteredCount;
+    feedRenderGroupedCount = filterPipelineResult.feedRenderGroupedCount;
 
     const selectedUsDmvEntry = getSelectedUsDmvCatalogEntry();
     const selectedUsDmvFeed = getSelectedDmvFeed();
