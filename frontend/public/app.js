@@ -20986,6 +20986,7 @@ function executeArticlePipeline({
   useBackendQuery,
 } = {}) {
   const notes = [
+    "pipeline executor owns candidate builder invocation",
     "pipeline executor wraps legacy candidate builder",
     "rendering still handled by renderArticles",
     "filtering/grouping still branch-local",
@@ -20999,7 +21000,7 @@ function executeArticlePipeline({
     useBackendQuery,
   });
 
-  return {
+  const pipelineResult = {
     normalizedFilterState,
     candidateStrategy,
     candidateSource,
@@ -21013,6 +21014,9 @@ function executeArticlePipeline({
     warnings: Array.isArray(candidateBuilderResult?.warnings) ? candidateBuilderResult.warnings.slice() : [],
     notes,
   };
+  recordPipelineExecutorResult(diagnostics, pipelineResult);
+  recordCandidateBuilderResult(diagnostics, candidateBuilderResult);
+  return pipelineResult;
 }
 
 function resolveArticleCandidatePool(candidateContext, options = {}) {
@@ -21380,8 +21384,6 @@ function renderArticles() {
       useBackendQuery,
     });
     const candidateBuilderResult = pipelineResult.candidateBuilderResult;
-    recordPipelineExecutorResult(pipelineDiagnostics, pipelineResult);
-    recordCandidateBuilderResult(pipelineDiagnostics, candidateBuilderResult);
 
     if (candidateBuilderResult.pending) {
       if (candidateBuilderResult.branch === "selected-feed-full-pool-loading") {
