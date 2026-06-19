@@ -3731,6 +3731,69 @@ function resolveCandidateStrategy(normalizedFilterState, candidatePoolContext = 
   return freezeNormalizedFilterState(resolvedStrategy);
 }
 
+function resolveCandidateSource(candidateStrategy, normalizedFilterState, candidatePoolContext = null) {
+  const strategy = candidateStrategy?.strategy || "global_newest_pool";
+  const featureFlag = candidateStrategy?.featureFlag || (isSelectedFeedFullPoolEnabled() ? "enabled" : "disabled");
+  const hasFeedScope = Boolean(normalizedFilterState?.feed?.id);
+  const notes = [
+    "candidate source router diagnostics only",
+    "current execution still uses legacy candidate builder branches",
+  ];
+  let sourceType = "global_memory";
+  let sourceName = "Global in-memory article snapshot";
+  let sourceScope = candidateStrategy?.sourceScope || candidatePoolContext?.sourceScope || "all_feeds";
+  let provider = "state.articles";
+  let legacyBranch = "global-visible-articles";
+  let supported = true;
+
+  if (
+    strategy === "dashboard_targeted_pool" ||
+    strategy === "backend_query_pool" ||
+    strategy === "search_scoped_pool" ||
+    strategy === "date_scoped_pool"
+  ) {
+    sourceType = "backend_query";
+    sourceName = "Backend article query";
+    provider = "/api/articles";
+    legacyBranch = "backend-query";
+  } else if (strategy === "selected_feed_full_pool" || strategy === "selected_feed_dashboard_full_pool") {
+    sourceType = "selected_feed_backend";
+    sourceName = "Selected feed article pool";
+    sourceScope = "selected_feed";
+    provider = "/api/articles";
+    legacyBranch = featureFlag === "enabled" ? "selected-feed-full-pool" : "backend-query";
+    if (featureFlag !== "enabled") {
+      notes.push("selected feed full pool feature flag is disabled; legacy backend query branch remains active");
+    }
+  } else if (strategy === "selected_feed_paged_pool") {
+    sourceType = "selected_feed_backend";
+    sourceName = "Paged selected feed article pool";
+    sourceScope = "selected_feed";
+    provider = "/api/articles";
+    legacyBranch = "backend-query";
+    supported = false;
+    notes.push("paged selected feed source is planned but not executed in this phase");
+  } else if (hasFeedScope) {
+    sourceType = "backend_query";
+    sourceName = "Feed-scoped backend article query";
+    sourceScope = "selected_feed";
+    provider = "/api/articles";
+    legacyBranch = "backend-query";
+  }
+
+  return freezeNormalizedFilterState({
+    sourceType,
+    sourceName,
+    sourceScope,
+    executionMode: "legacy",
+    provider,
+    legacyBranch,
+    featureFlag,
+    supported,
+    notes,
+  });
+}
+
 function getExpectedCandidateStrategy(normalizedFilterState) {
   const hasFeedScope = Boolean(normalizedFilterState?.feed?.id);
   const hasPersonalDashboard = Boolean(normalizedFilterState?.dashboard?.enabled);
@@ -4029,8 +4092,9 @@ function validateNormalizedFilterStateParity(normalizedFilterState) {
 function createFilterPipelineDiagnostics(normalizedFilterState = createNormalizedFilterState()) {
   const enabled = isFilterPipelineDiagnosticsEnabled();
   const renderId = `render-${runtime.filterPipelineRenderId += 1}`;
-  const candidatePoolContext = enabled ? createCandidatePoolContext(normalizedFilterState) : null;
-  const candidateStrategy = enabled ? resolveCandidateStrategy(normalizedFilterState, candidatePoolContext) : null;
+  const candidatePoolContext = createCandidatePoolContext(normalizedFilterState);
+  const candidateStrategy = resolveCandidateStrategy(normalizedFilterState, candidatePoolContext);
+  const candidateSource = resolveCandidateSource(candidateStrategy, normalizedFilterState, candidatePoolContext);
   return {
     enabled,
     timestamp: new Date().toISOString(),
@@ -4049,6 +4113,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     normalizedFilterStateParity: enabled ? validateNormalizedFilterStateParity(normalizedFilterState) : null,
     candidateStrategy,
     candidateStrategyKey: candidateStrategy?.strategyKey || "",
+    candidateSource,
     candidatePoolContext,
     candidateBuilderResult: null,
     selectedFeedFullPool: {
@@ -4255,6 +4320,30 @@ function logCompactFilterPipelineSummary(diagnostics) {
       });
     } else {
       lines.push("warnings: none");
+    }
+  } else {
+    lines.push("none");
+  }
+
+  const candidateSource = diagnostics.candidateSource;
+  lines.push("");
+  lines.push("Candidate Source");
+  if (candidateSource) {
+    lines.push(`type: ${candidateSource.sourceType}`);
+    lines.push(`name: ${candidateSource.sourceName}`);
+    lines.push(`provider: ${candidateSource.provider}`);
+    lines.push(`scope: ${candidateSource.sourceScope}`);
+    lines.push(`execution: ${candidateSource.executionMode}`);
+    lines.push(`supported: ${candidateSource.supported}`);
+    lines.push(`featureFlag: ${candidateSource.featureFlag}`);
+    lines.push(`legacyBranch: ${candidateSource.legacyBranch}`);
+    if (candidateSource.notes?.length) {
+      lines.push("notes:");
+      candidateSource.notes.forEach((note) => {
+        lines.push(`- ${note}`);
+      });
+    } else {
+      lines.push("notes: none");
     }
   } else {
     lines.push("none");
@@ -4572,6 +4661,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     normalizedFilterStateKey: diagnostics.normalizedFilterStateKey || "",
     candidateStrategy: diagnostics.candidateStrategy || null,
     candidateStrategyKey: diagnostics.candidateStrategyKey || "",
+    candidateSource: diagnostics.candidateSource || null,
     candidatePoolContext: diagnostics.candidatePoolContext || null,
     candidateBuilderResult: diagnostics.candidateBuilderResult || null,
     selectedFeedFullPool: diagnostics.selectedFeedFullPool || null,
@@ -4686,6 +4776,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("normalizedFilterStateKey", diagnostics.normalizedFilterStateKey);
   console.log("candidateStrategy", diagnostics.candidateStrategy);
   console.log("candidateStrategyKey", diagnostics.candidateStrategyKey);
+  console.log("candidateSource", diagnostics.candidateSource);
   console.log("candidatePoolContext", diagnostics.candidatePoolContext);
   console.log("candidateBuilderResult", diagnostics.candidateBuilderResult);
   console.log("selectedFeedFullPool", diagnostics.selectedFeedFullPool);
@@ -20818,6 +20909,7 @@ function getGlobalArticleCandidateSource() {
 function resolveArticleCandidatePool(candidateContext, options = {}) {
   const diagnostics = options.diagnostics || null;
   const normalizedFilterState = options.normalizedFilterState || diagnostics?.normalizedFilterState || null;
+  const candidateSourceRoute = options.candidateSource || diagnostics?.candidateSource || null;
   const useBackendQuery = Boolean(options.useBackendQuery);
   const activeFeedId = options.activeFeedId || "";
   const shouldIgnoreFeedIdForGrouping = Boolean(options.shouldIgnoreFeedIdForGrouping);
@@ -20859,6 +20951,9 @@ function resolveArticleCandidatePool(candidateContext, options = {}) {
           filteredRawArticles: [],
           groupedArticlesCount: 0,
           branch: "selected-feed-full-pool-loading",
+          diagnostics: {
+            candidateSource: candidateSourceRoute,
+          },
           cacheKey: fullPoolKey,
           cacheHit: false,
           backendRequests: [plannedRequest],
@@ -20890,6 +20985,9 @@ function resolveArticleCandidatePool(candidateContext, options = {}) {
           feedRenderFilteredCount: filteredRawArticles.length,
           feedRenderGroupedCount: groupedArticles.length,
           branch: "selected-feed-full-pool",
+          diagnostics: {
+            candidateSource: candidateSourceRoute,
+          },
           cacheKey: fullPoolKey,
           cacheHit: true,
           backendRequests: cachedFullPool.backendRequests || [plannedRequest],
@@ -21164,6 +21262,7 @@ function renderArticles() {
 
     const candidateBuilderResult = resolveArticleCandidatePool(pipelineDiagnostics.candidatePoolContext, {
       activeFeedId,
+      candidateSource: pipelineDiagnostics.candidateSource,
       diagnostics: pipelineDiagnostics,
       normalizedFilterState,
       shouldIgnoreFeedIdForGrouping,
