@@ -4082,6 +4082,20 @@ function summarizeRenderDispatch(renderDispatch) {
   };
 }
 
+function summarizePipelineOrchestrator(orchestratorResult) {
+  if (!orchestratorResult) {
+    return null;
+  }
+
+  return {
+    executionOrder: Array.isArray(orchestratorResult.executionOrder) ? orchestratorResult.executionOrder.slice() : [],
+    completedStages: Array.isArray(orchestratorResult.completedStages) ? orchestratorResult.completedStages.slice() : [],
+    pending: Boolean(orchestratorResult.pending),
+    warnings: Array.isArray(orchestratorResult.warnings) ? orchestratorResult.warnings.slice() : [],
+    notes: Array.isArray(orchestratorResult.notes) ? orchestratorResult.notes.slice() : [],
+  };
+}
+
 function recordFilterPipelineResult(diagnostics, filterPipelineResult) {
   if (!diagnostics?.enabled) {
     return;
@@ -4112,6 +4126,14 @@ function recordRenderDispatch(diagnostics, renderDispatch) {
   }
 
   diagnostics.renderDispatch = summarizeRenderDispatch(renderDispatch);
+}
+
+function recordPipelineOrchestrator(diagnostics, orchestratorResult) {
+  if (!diagnostics?.enabled) {
+    return;
+  }
+
+  diagnostics.pipelineOrchestrator = summarizePipelineOrchestrator(orchestratorResult);
 }
 
 function recordPipelineExecutorResult(diagnostics, pipelineResult) {
@@ -4239,6 +4261,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     candidateStrategyKey: candidateStrategy?.strategyKey || "",
     candidateSource,
     candidatePoolContext,
+    pipelineOrchestrator: null,
     candidateBuilderResult: null,
     pipelineExecutor: null,
     filterPipeline: null,
@@ -4494,6 +4517,33 @@ function logCompactFilterPipelineSummary(diagnostics) {
       });
     } else {
       lines.push("warnings: none");
+    }
+  } else {
+    lines.push("none");
+  }
+
+  const pipelineOrchestrator = diagnostics.pipelineOrchestrator;
+  lines.push("");
+  lines.push("Pipeline Orchestrator");
+  if (pipelineOrchestrator) {
+    lines.push(`pending: ${pipelineOrchestrator.pending}`);
+    lines.push(`executionOrder: ${pipelineOrchestrator.executionOrder?.length ? pipelineOrchestrator.executionOrder.join(" -> ") : "none"}`);
+    lines.push(`completedStages: ${pipelineOrchestrator.completedStages?.length ? pipelineOrchestrator.completedStages.join(", ") : "none"}`);
+    if (pipelineOrchestrator.warnings?.length) {
+      lines.push("warnings:");
+      pipelineOrchestrator.warnings.forEach((warning) => {
+        lines.push(`- ${warning}`);
+      });
+    } else {
+      lines.push("warnings: none");
+    }
+    if (pipelineOrchestrator.notes?.length) {
+      lines.push("notes:");
+      pipelineOrchestrator.notes.forEach((note) => {
+        lines.push(`- ${note}`);
+      });
+    } else {
+      lines.push("notes: none");
     }
   } else {
     lines.push("none");
@@ -4941,6 +4991,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     candidateStrategyKey: diagnostics.candidateStrategyKey || "",
     candidateSource: diagnostics.candidateSource || null,
     candidatePoolContext: diagnostics.candidatePoolContext || null,
+    pipelineOrchestrator: diagnostics.pipelineOrchestrator || null,
     candidateBuilderResult: diagnostics.candidateBuilderResult || null,
     pipelineExecutor: diagnostics.pipelineExecutor || null,
     filterPipeline: diagnostics.filterPipeline || null,
@@ -5061,6 +5112,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("candidateStrategyKey", diagnostics.candidateStrategyKey);
   console.log("candidateSource", diagnostics.candidateSource);
   console.log("candidatePoolContext", diagnostics.candidatePoolContext);
+  console.log("pipelineOrchestrator", diagnostics.pipelineOrchestrator);
   console.log("candidateBuilderResult", diagnostics.candidateBuilderResult);
   console.log("pipelineExecutor", diagnostics.pipelineExecutor);
   console.log("filterPipeline", diagnostics.filterPipeline);
@@ -21332,6 +21384,7 @@ function preparePipelineRenderModel({
     warnings: [],
     notes: [
       "pipeline executor prepares render model",
+      "renderArticles delegates orchestration",
       "DOM rendering still handled by renderArticles",
     ],
   };
@@ -21359,6 +21412,7 @@ function prepareRenderDispatch({
       warnings: [],
       notes: [
         "pipeline executor prepares render dispatch",
+        "renderArticles delegates orchestration",
         "loading DOM handling remains in renderArticles",
       ],
     };
@@ -21388,6 +21442,7 @@ function prepareRenderDispatch({
     warnings: [],
     notes: [
       "pipeline executor prepares render dispatch",
+      "renderArticles delegates orchestration",
       "DOM rendering still handled by renderArticles",
     ],
   };
@@ -21404,12 +21459,14 @@ function executeArticlePipeline({
   useBackendQuery,
 } = {}) {
   const notes = [
+    "single orchestration entry point",
     "pipeline executor owns candidate builder invocation",
     "pipeline executor owns filter pipeline invocation",
     "pipeline executor owns pagination preparation",
     "pipeline executor prepares render model",
     "pipeline executor prepares render dispatch",
     "pipeline executor wraps legacy candidate builder",
+    "renderArticles delegates orchestration",
     "rendering still handled by renderArticles",
     "filtering/grouping still branch-local",
   ];
@@ -21471,6 +21528,81 @@ function executeArticlePipeline({
   recordPipelineExecutorResult(diagnostics, pipelineResult);
   recordCandidateBuilderResult(diagnostics, candidateBuilderResult);
   return pipelineResult;
+}
+
+function executePipelineOrchestrator(options = {}) {
+  const executionOrder = [
+    "normalized_filter_state",
+    "candidate_strategy",
+    "candidate_source",
+    "candidate_pool_context",
+    "candidate_builder",
+    "legacy_filter_pipeline",
+    "pagination_pipeline",
+    "render_model",
+    "render_dispatch",
+  ];
+  const completedStages = [];
+  const normalizedFilterState = createNormalizedFilterState();
+  completedStages.push("normalized_filter_state");
+  const diagnostics = createFilterPipelineDiagnostics(normalizedFilterState);
+  if (typeof options.onDiagnostics === "function") {
+    options.onDiagnostics(diagnostics);
+  }
+  completedStages.push("candidate_strategy", "candidate_source", "candidate_pool_context");
+
+  syncPaginationContext();
+  const useBackendQuery = shouldUseBackendArticleQuery();
+  const activeFeedId = state.filters.feedId || "";
+  const activeFeedLabel = getSelectedFeedLabel();
+  const shouldIgnoreFeedIdForGrouping = Boolean(activeFeedId) && !state.filters.date;
+  const pipelineResult = executeArticlePipeline({
+    normalizedFilterState,
+    candidateStrategy: diagnostics.candidateStrategy,
+    candidateSource: diagnostics.candidateSource,
+    candidatePoolContext: diagnostics.candidatePoolContext,
+    diagnostics,
+    activeFeedId,
+    shouldIgnoreFeedIdForGrouping,
+    useBackendQuery,
+  });
+
+  completedStages.push("candidate_builder", "legacy_filter_pipeline");
+  if (pipelineResult.paginationResult) {
+    completedStages.push("pagination_pipeline");
+  }
+  completedStages.push("render_model", "render_dispatch");
+
+  const notes = [
+    "single orchestration entry point",
+    "renderArticles delegates orchestration",
+    "pipeline executor remains DOM-free",
+  ];
+  const warnings = Array.isArray(pipelineResult.warnings) ? pipelineResult.warnings.slice() : [];
+  const orchestratorResult = {
+    ...pipelineResult,
+    normalizedFilterState,
+    candidateStrategy: diagnostics.candidateStrategy,
+    candidateSource: diagnostics.candidateSource,
+    candidatePoolContext: diagnostics.candidatePoolContext,
+    candidateBuilderResult: pipelineResult.candidateBuilderResult,
+    filterPipeline: pipelineResult.filterPipelineResult,
+    paginationPipeline: pipelineResult.paginationResult,
+    renderModel: pipelineResult.renderModel,
+    renderDispatch: pipelineResult.renderDispatch,
+    diagnostics,
+    useBackendQuery,
+    activeFeedId,
+    activeFeedLabel,
+    shouldIgnoreFeedIdForGrouping,
+    executionOrder,
+    completedStages,
+    pending: Boolean(pipelineResult.pending),
+    warnings,
+    notes,
+  };
+  recordPipelineOrchestrator(diagnostics, orchestratorResult);
+  return Object.freeze(orchestratorResult);
 }
 
 function resolveArticleCandidatePool(candidateContext, options = {}) {
@@ -21793,11 +21925,10 @@ function renderArticles() {
   let feedRenderGroupedCount = 0;
   let feedRenderFilteredCount = 0;
   const renderReason = runtime.lastRenderedReason || "render";
-  const normalizedFilterState = createNormalizedFilterState();
-  const pipelineDiagnostics = createFilterPipelineDiagnostics(normalizedFilterState);
+  let pipelineDiagnostics = null;
   let pipelineDiagnosticsFlushed = false;
   const flushPipelineDiagnosticsOnce = () => {
-    if (pipelineDiagnosticsFlushed) {
+    if (pipelineDiagnosticsFlushed || !pipelineDiagnostics) {
       return;
     }
     pipelineDiagnosticsFlushed = true;
@@ -21813,31 +21944,21 @@ function renderArticles() {
   intelligenceTime("renderArticles");
   try {
     intelligenceTime("renderArticles:filter-group");
-    syncPaginationContext();
-    const useBackendQuery = shouldUseBackendArticleQuery();
+    const pipelineResult = executePipelineOrchestrator({
+      onDiagnostics: (diagnostics) => {
+        pipelineDiagnostics = diagnostics;
+      },
+    });
+    const useBackendQuery = pipelineResult.useBackendQuery;
     let articles;
-    const shouldIgnoreFeedIdForGrouping = Boolean(state.filters.feedId) && !state.filters.date;
-    const totalRawArticles = Array.isArray(state.articles) ? state.articles.length : 0;
     let filteredRawArticles = [];
     let groupedArticlesCount = 0;
-    const activeFeedId = state.filters.feedId || "";
-    const activeFeedResolution = activeFeedId ? getSelectedFeedResolution(activeFeedId) : null;
-    const activeFeedLabel = getSelectedFeedLabel();
+    const activeFeedId = pipelineResult.activeFeedId || "";
+    const activeFeedLabel = pipelineResult.activeFeedLabel || getSelectedFeedLabel();
     let personalDashboardBasePool = Array.isArray(state.articles) ? state.articles : [];
     let feedDebugRawMatches = [];
     let feedDebugAfterRelevanceMatches = [];
 
-    const pipelineResult = executeArticlePipeline({
-      normalizedFilterState,
-      candidateStrategy: pipelineDiagnostics.candidateStrategy,
-      candidateSource: pipelineDiagnostics.candidateSource,
-      candidatePoolContext: pipelineDiagnostics.candidatePoolContext,
-      diagnostics: pipelineDiagnostics,
-      activeFeedId,
-      shouldIgnoreFeedIdForGrouping,
-      useBackendQuery,
-    });
-    const candidateBuilderResult = pipelineResult.candidateBuilderResult;
     const filterPipelineResult = pipelineResult.filterPipelineResult;
 
     if (pipelineResult.pending) {
