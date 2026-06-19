@@ -4031,6 +4031,22 @@ function summarizeFilterPipelineResult(filterPipelineResult) {
   };
 }
 
+function summarizePaginationPipelineResult(paginationResult) {
+  if (!paginationResult) {
+    return null;
+  }
+
+  return {
+    executionMode: paginationResult.executionMode || "legacy",
+    page: Number(paginationResult.page || paginationResult.currentPage || 1),
+    pageSize: Number(paginationResult.pageSize) || ARTICLE_RENDER_PAGE_SIZE,
+    sourceCount: Number(paginationResult.sourceCount) || 0,
+    paginatedCount: Number(paginationResult.count) || 0,
+    warnings: Array.isArray(paginationResult.warnings) ? paginationResult.warnings.slice() : [],
+    notes: Array.isArray(paginationResult.notes) ? paginationResult.notes.slice() : [],
+  };
+}
+
 function recordFilterPipelineResult(diagnostics, filterPipelineResult) {
   if (!diagnostics?.enabled) {
     return;
@@ -4039,23 +4055,20 @@ function recordFilterPipelineResult(diagnostics, filterPipelineResult) {
   diagnostics.filterPipeline = summarizeFilterPipelineResult(filterPipelineResult);
 }
 
+function recordPaginationPipelineResult(diagnostics, paginationResult) {
+  if (!diagnostics?.enabled) {
+    return;
+  }
+
+  diagnostics.paginationPipeline = summarizePaginationPipelineResult(paginationResult);
+}
+
 function recordPipelineExecutorResult(diagnostics, pipelineResult) {
   if (!diagnostics?.enabled) {
     return;
   }
 
   diagnostics.pipelineExecutor = summarizePipelineExecutorResult(pipelineResult);
-}
-
-function updatePipelineExecutorPagination(diagnostics, pagination) {
-  if (!diagnostics?.enabled || !diagnostics.pipelineExecutor) {
-    return;
-  }
-
-  diagnostics.pipelineExecutor = {
-    ...diagnostics.pipelineExecutor,
-    paginatedCount: Array.isArray(pagination?.items) ? pagination.items.length : 0,
-  };
 }
 
 function recordCandidateBuilderResult(diagnostics, candidateBuilderResult) {
@@ -4178,6 +4191,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     candidateBuilderResult: null,
     pipelineExecutor: null,
     filterPipeline: null,
+    paginationPipeline: null,
     selectedFeedFullPool: {
       enabled: enabled ? isSelectedFeedFullPoolEnabled() : false,
       attempted: false,
@@ -4519,6 +4533,35 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push("none");
   }
 
+  const paginationPipeline = diagnostics.paginationPipeline;
+  lines.push("");
+  lines.push("Pagination Pipeline");
+  if (paginationPipeline) {
+    lines.push(`executionMode: ${paginationPipeline.executionMode}`);
+    lines.push(`page: ${paginationPipeline.page}`);
+    lines.push(`pageSize: ${paginationPipeline.pageSize}`);
+    lines.push(`sourceCount: ${paginationPipeline.sourceCount}`);
+    lines.push(`paginatedCount: ${paginationPipeline.paginatedCount}`);
+    if (paginationPipeline.warnings?.length) {
+      lines.push("warnings:");
+      paginationPipeline.warnings.forEach((warning) => {
+        lines.push(`- ${warning}`);
+      });
+    } else {
+      lines.push("warnings: none");
+    }
+    if (paginationPipeline.notes?.length) {
+      lines.push("notes:");
+      paginationPipeline.notes.forEach((note) => {
+        lines.push(`- ${note}`);
+      });
+    } else {
+      lines.push("notes: none");
+    }
+  } else {
+    lines.push("none");
+  }
+
   const selectedFeedFullPool = diagnostics.selectedFeedFullPool;
   lines.push("");
   lines.push("Selected Feed Full Pool");
@@ -4787,6 +4830,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     candidateBuilderResult: diagnostics.candidateBuilderResult || null,
     pipelineExecutor: diagnostics.pipelineExecutor || null,
     filterPipeline: diagnostics.filterPipeline || null,
+    paginationPipeline: diagnostics.paginationPipeline || null,
     selectedFeedFullPool: diagnostics.selectedFeedFullPool || null,
     counts: diagnostics.counts || {},
     rejections: diagnostics.rejections || {},
@@ -4904,6 +4948,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("candidateBuilderResult", diagnostics.candidateBuilderResult);
   console.log("pipelineExecutor", diagnostics.pipelineExecutor);
   console.log("filterPipeline", diagnostics.filterPipeline);
+  console.log("paginationPipeline", diagnostics.paginationPipeline);
   console.log("selectedFeedFullPool", diagnostics.selectedFeedFullPool);
   if (diagnostics.normalizedFilterStateParity && !diagnostics.normalizedFilterStateParity.ok) {
     console.warn("[FilterPipeline] normalized filter state parity mismatch", diagnostics.normalizedFilterStateParity);
@@ -21110,6 +21155,29 @@ function applyLegacyFilterPipeline({
   return result;
 }
 
+function preparePipelinePagination({
+  articles,
+  useBackendQuery,
+} = {}) {
+  const pagination = getPaginatedItems(articles);
+  if (useBackendQuery && !hasPersonalDashboardSelections() && Number(state.remoteQuery.totalCount) > pagination.totalCount) {
+    pagination.totalCount = Number(state.remoteQuery.totalCount);
+    pagination.totalPages = Math.max(1, Math.ceil(pagination.totalCount / pagination.pageSize));
+  }
+
+  return {
+    ...pagination,
+    count: Array.isArray(pagination.items) ? pagination.items.length : 0,
+    sourceCount: Array.isArray(articles) ? articles.length : 0,
+    executionMode: "legacy",
+    warnings: [],
+    notes: [
+      "legacy pagination prepared by pipeline executor",
+      "renderPaginationControls remains in renderArticles",
+    ],
+  };
+}
+
 function executeArticlePipeline({
   normalizedFilterState,
   candidateStrategy,
@@ -21123,6 +21191,7 @@ function executeArticlePipeline({
   const notes = [
     "pipeline executor owns candidate builder invocation",
     "pipeline executor owns filter pipeline invocation",
+    "pipeline executor owns pagination preparation",
     "pipeline executor wraps legacy candidate builder",
     "rendering still handled by renderArticles",
     "filtering/grouping still branch-local",
@@ -21141,6 +21210,15 @@ function executeArticlePipeline({
     activeFeedId,
     useBackendQuery,
   });
+  const paginationResult = filterPipelineResult.pending
+    ? null
+    : preparePipelinePagination({
+        articles: filterPipelineResult.articles,
+        useBackendQuery,
+      });
+  if (paginationResult) {
+    recordPaginationPipelineResult(diagnostics, paginationResult);
+  }
 
   const pipelineResult = {
     normalizedFilterState,
@@ -21149,9 +21227,10 @@ function executeArticlePipeline({
     candidatePoolContext,
     candidateBuilderResult,
     filterPipelineResult,
+    paginationResult,
     articles: filterPipelineResult.articles,
     groupedArticles: filterPipelineResult.groupedArticles,
-    paginatedItems: null,
+    paginatedItems: paginationResult?.items || null,
     branch: candidateBuilderResult?.branch || "",
     pending: Boolean(filterPipelineResult.pending),
     warnings: Array.isArray(filterPipelineResult.warnings) ? filterPipelineResult.warnings.slice() : [],
@@ -21578,12 +21657,7 @@ function renderArticles() {
 
     syncFilterUx();
     updateArticleFilterContext(articles);
-    const articlePagination = getPaginatedItems(articles);
-    updatePipelineExecutorPagination(pipelineDiagnostics, articlePagination);
-    if (useBackendQuery && !hasPersonalDashboardSelections() && Number(state.remoteQuery.totalCount) > articlePagination.totalCount) {
-      articlePagination.totalCount = Number(state.remoteQuery.totalCount);
-      articlePagination.totalPages = Math.max(1, Math.ceil(articlePagination.totalCount / articlePagination.pageSize));
-    }
+    const articlePagination = pipelineResult.paginationResult;
     const pageArticles = Array.isArray(articlePagination.items)
       ? articlePagination.items.slice(0, ARTICLE_RENDER_PAGE_SIZE)
       : [];
