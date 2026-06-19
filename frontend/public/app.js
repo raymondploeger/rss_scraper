@@ -3971,6 +3971,72 @@ function buildArticleCandidatePool(candidateContext, resolver) {
   };
 }
 
+function resolveCandidateProvider(candidateStrategy, candidateSource, normalizedFilterState, candidatePoolContext) {
+  const strategy = String(candidateStrategy?.strategy || "");
+  const sourceType = String(candidateSource?.sourceType || "");
+  const legacyBranch = String(candidateSource?.legacyBranch || candidatePoolContext?.branch || "");
+  let providerId = "global_memory_provider";
+  let providerType = "memory";
+
+  if (
+    sourceType === "selected_feed_backend" ||
+    strategy === "selected_feed_full_pool" ||
+    strategy === "selected_feed_dashboard_full_pool" ||
+    strategy === "selected_feed_paged_pool" ||
+    legacyBranch === "selected-feed-fallback" ||
+    normalizedFilterState?.feed?.id
+  ) {
+    providerId = "selected_feed_provider";
+    providerType = "backend_or_cache";
+  } else if (
+    sourceType === "backend_query" ||
+    legacyBranch === "backend-query" ||
+    strategy === "backend_query_pool" ||
+    strategy === "dashboard_targeted_pool" ||
+    strategy === "search_scoped_pool"
+  ) {
+    providerId = "backend_query_provider";
+    providerType = "backend";
+  } else if (
+    strategy === "date_scoped_pool" ||
+    sourceType === "date_memory" ||
+    legacyBranch === "date-filter" ||
+    normalizedFilterState?.filters?.date
+  ) {
+    providerId = "date_filter_provider";
+    providerType = "memory";
+  }
+
+  return Object.freeze({
+    providerId,
+    providerType,
+    executionMode: "legacy",
+    legacyImplementation: legacyBranch || strategy || "global-visible-articles",
+    supported: true,
+    pending: false,
+    notes: Object.freeze([
+      "candidate provider metadata only",
+      "legacy retrieval implementation remains unchanged",
+    ]),
+  });
+}
+
+function summarizeCandidateProvider(candidateProvider) {
+  if (!candidateProvider) {
+    return null;
+  }
+
+  return {
+    providerId: candidateProvider.providerId || "",
+    providerType: candidateProvider.providerType || "",
+    executionMode: candidateProvider.executionMode || "legacy",
+    legacyImplementation: candidateProvider.legacyImplementation || "",
+    supported: candidateProvider.supported !== false,
+    pending: Boolean(candidateProvider.pending),
+    notes: Array.isArray(candidateProvider.notes) ? candidateProvider.notes.slice() : [],
+  };
+}
+
 function summarizeCandidateBuilderResult(candidateBuilderResult) {
   if (!candidateBuilderResult) {
     return null;
@@ -4136,6 +4202,14 @@ function recordPipelineOrchestrator(diagnostics, orchestratorResult) {
   diagnostics.pipelineOrchestrator = summarizePipelineOrchestrator(orchestratorResult);
 }
 
+function recordCandidateProvider(diagnostics, candidateProvider) {
+  if (!diagnostics?.enabled) {
+    return;
+  }
+
+  diagnostics.candidateProvider = summarizeCandidateProvider(candidateProvider);
+}
+
 function recordPipelineExecutorResult(diagnostics, pipelineResult) {
   if (!diagnostics?.enabled) {
     return;
@@ -4241,6 +4315,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
   const candidatePoolContext = createCandidatePoolContext(normalizedFilterState);
   const candidateStrategy = resolveCandidateStrategy(normalizedFilterState, candidatePoolContext);
   const candidateSource = resolveCandidateSource(candidateStrategy, normalizedFilterState, candidatePoolContext);
+  const candidateProvider = resolveCandidateProvider(candidateStrategy, candidateSource, normalizedFilterState, candidatePoolContext);
   return {
     enabled,
     timestamp: new Date().toISOString(),
@@ -4260,6 +4335,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     candidateStrategy,
     candidateStrategyKey: candidateStrategy?.strategyKey || "",
     candidateSource,
+    candidateProvider,
     candidatePoolContext,
     pipelineOrchestrator: null,
     candidateBuilderResult: null,
@@ -4492,6 +4568,28 @@ function logCompactFilterPipelineSummary(diagnostics) {
     if (candidateSource.notes?.length) {
       lines.push("notes:");
       candidateSource.notes.forEach((note) => {
+        lines.push(`- ${note}`);
+      });
+    } else {
+      lines.push("notes: none");
+    }
+  } else {
+    lines.push("none");
+  }
+
+  const candidateProvider = diagnostics.candidateProvider;
+  lines.push("");
+  lines.push("Candidate Provider");
+  if (candidateProvider) {
+    lines.push(`providerId: ${candidateProvider.providerId}`);
+    lines.push(`providerType: ${candidateProvider.providerType}`);
+    lines.push(`executionMode: ${candidateProvider.executionMode}`);
+    lines.push(`legacyImplementation: ${candidateProvider.legacyImplementation}`);
+    lines.push(`supported: ${candidateProvider.supported}`);
+    lines.push(`pending: ${candidateProvider.pending}`);
+    if (candidateProvider.notes?.length) {
+      lines.push("notes:");
+      candidateProvider.notes.forEach((note) => {
         lines.push(`- ${note}`);
       });
     } else {
@@ -4990,6 +5088,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     candidateStrategy: diagnostics.candidateStrategy || null,
     candidateStrategyKey: diagnostics.candidateStrategyKey || "",
     candidateSource: diagnostics.candidateSource || null,
+    candidateProvider: diagnostics.candidateProvider || null,
     candidatePoolContext: diagnostics.candidatePoolContext || null,
     pipelineOrchestrator: diagnostics.pipelineOrchestrator || null,
     candidateBuilderResult: diagnostics.candidateBuilderResult || null,
@@ -5111,6 +5210,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("candidateStrategy", diagnostics.candidateStrategy);
   console.log("candidateStrategyKey", diagnostics.candidateStrategyKey);
   console.log("candidateSource", diagnostics.candidateSource);
+  console.log("candidateProvider", diagnostics.candidateProvider);
   console.log("candidatePoolContext", diagnostics.candidatePoolContext);
   console.log("pipelineOrchestrator", diagnostics.pipelineOrchestrator);
   console.log("candidateBuilderResult", diagnostics.candidateBuilderResult);
@@ -21452,6 +21552,7 @@ function executeArticlePipeline({
   normalizedFilterState,
   candidateStrategy,
   candidateSource,
+  candidateProvider,
   candidatePoolContext,
   diagnostics,
   activeFeedId,
@@ -21473,11 +21574,18 @@ function executeArticlePipeline({
   const candidateBuilderResult = resolveArticleCandidatePool(candidatePoolContext, {
     activeFeedId,
     candidateSource,
+    candidateProvider,
     diagnostics,
     normalizedFilterState,
     shouldIgnoreFeedIdForGrouping,
     useBackendQuery,
   });
+  const executedCandidateProvider = candidateProvider
+    ? {
+        ...candidateProvider,
+        pending: Boolean(candidateBuilderResult?.pending),
+      }
+    : null;
   const filterPipelineResult = applyLegacyFilterPipeline({
     candidateBuilderResult,
     diagnostics,
@@ -21511,6 +21619,7 @@ function executeArticlePipeline({
     normalizedFilterState,
     candidateStrategy,
     candidateSource,
+    candidateProvider: executedCandidateProvider,
     candidatePoolContext,
     candidateBuilderResult,
     filterPipelineResult,
@@ -21526,6 +21635,7 @@ function executeArticlePipeline({
     notes,
   };
   recordPipelineExecutorResult(diagnostics, pipelineResult);
+  recordCandidateProvider(diagnostics, executedCandidateProvider);
   recordCandidateBuilderResult(diagnostics, candidateBuilderResult);
   return pipelineResult;
 }
@@ -21535,6 +21645,7 @@ function executePipelineOrchestrator(options = {}) {
     "normalized_filter_state",
     "candidate_strategy",
     "candidate_source",
+    "candidate_provider",
     "candidate_pool_context",
     "candidate_builder",
     "legacy_filter_pipeline",
@@ -21549,7 +21660,7 @@ function executePipelineOrchestrator(options = {}) {
   if (typeof options.onDiagnostics === "function") {
     options.onDiagnostics(diagnostics);
   }
-  completedStages.push("candidate_strategy", "candidate_source", "candidate_pool_context");
+  completedStages.push("candidate_strategy", "candidate_source", "candidate_provider", "candidate_pool_context");
 
   syncPaginationContext();
   const useBackendQuery = shouldUseBackendArticleQuery();
@@ -21560,6 +21671,7 @@ function executePipelineOrchestrator(options = {}) {
     normalizedFilterState,
     candidateStrategy: diagnostics.candidateStrategy,
     candidateSource: diagnostics.candidateSource,
+    candidateProvider: diagnostics.candidateProvider,
     candidatePoolContext: diagnostics.candidatePoolContext,
     diagnostics,
     activeFeedId,
@@ -21584,6 +21696,7 @@ function executePipelineOrchestrator(options = {}) {
     normalizedFilterState,
     candidateStrategy: diagnostics.candidateStrategy,
     candidateSource: diagnostics.candidateSource,
+    candidateProvider: pipelineResult.candidateProvider || diagnostics.candidateProvider,
     candidatePoolContext: diagnostics.candidatePoolContext,
     candidateBuilderResult: pipelineResult.candidateBuilderResult,
     filterPipeline: pipelineResult.filterPipelineResult,
@@ -21609,11 +21722,38 @@ function resolveArticleCandidatePool(candidateContext, options = {}) {
   const diagnostics = options.diagnostics || null;
   const normalizedFilterState = options.normalizedFilterState || diagnostics?.normalizedFilterState || null;
   const candidateSourceRoute = options.candidateSource || diagnostics?.candidateSource || null;
+  const candidateProvider = options.candidateProvider || diagnostics?.candidateProvider || resolveCandidateProvider(
+    diagnostics?.candidateStrategy,
+    candidateSourceRoute,
+    normalizedFilterState,
+    candidateContext
+  );
   const useBackendQuery = Boolean(options.useBackendQuery);
   const activeFeedId = options.activeFeedId || "";
   const shouldIgnoreFeedIdForGrouping = Boolean(options.shouldIgnoreFeedIdForGrouping);
 
-  return buildArticleCandidatePool(candidateContext, () => {
+  return buildArticleCandidatePool(candidateContext, () => executeCandidateProvider(candidateProvider, candidateContext, {
+    activeFeedId,
+    candidateSourceRoute,
+    diagnostics,
+    normalizedFilterState,
+    shouldIgnoreFeedIdForGrouping,
+    useBackendQuery,
+  }));
+}
+
+function executeCandidateProvider(candidateProvider, candidateContext, options = {}) {
+  const diagnostics = options.diagnostics || null;
+  const normalizedFilterState = options.normalizedFilterState || diagnostics?.normalizedFilterState || null;
+  const candidateSourceRoute = options.candidateSourceRoute || diagnostics?.candidateSource || null;
+  const useBackendQuery = Boolean(options.useBackendQuery);
+  const activeFeedId = options.activeFeedId || "";
+  const shouldIgnoreFeedIdForGrouping = Boolean(options.shouldIgnoreFeedIdForGrouping);
+
+  if (diagnostics?.enabled && candidateProvider) {
+    recordCandidateProvider(diagnostics, candidateProvider);
+  }
+
     if (activeFeedId && shouldAttemptSelectedFeedFullPool(normalizedFilterState)) {
       const fullPoolKey = getSelectedFeedFullPoolKey(activeFeedId);
       const cachedFullPool = runtime.selectedFeedFullPoolCache.get(fullPoolKey);
@@ -21828,7 +21968,6 @@ function resolveArticleCandidatePool(candidateContext, options = {}) {
       feedRenderGroupedCount: groupedArticles.length,
       branch: "global-visible-articles",
     };
-  });
 }
 
 function renderArticlesFallback(error) {
