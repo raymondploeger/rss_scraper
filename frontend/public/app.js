@@ -3105,6 +3105,7 @@ const runtime = {
   backendArticleQueryActiveRequestId: 0,
   backendArticleQueryLoading: false,
   filterPipelineRenderId: 0,
+  filterDecisionTraceMap: new Map(),
   paginationContextKey: "",
   scheduledRenderFrame: 0,
   scheduledRenderTimeout: 0,
@@ -4569,6 +4570,8 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     pipelineExecutor: null,
     filterPipeline: null,
     filterPipelineStages: [],
+    filterDecisionTraceMap: enabled ? new Map() : null,
+    filterDecisionTraceSummary: null,
     paginationPipeline: null,
     renderModel: null,
     renderDispatch: null,
@@ -4628,7 +4631,16 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
       advancedFilters: {},
     },
     largestRejection: null,
-    notes: candidateStrategy?.warnings?.length ? candidateStrategy.warnings.slice() : [],
+    notes: [
+      ...(candidateStrategy?.warnings?.length ? candidateStrategy.warnings.slice() : []),
+      ...(enabled
+        ? [
+            "Filtering Engine v2 active",
+            "Decision tracing enabled",
+            "Filtering behavior unchanged",
+          ]
+        : []),
+    ],
   };
 }
 
@@ -4672,6 +4684,154 @@ function recordPipelineRejection(diagnostics, stage, category, article, reason =
       reason: reason || normalizedCategory,
     });
   }
+}
+
+function getFilterDecisionTraceArticleId(article) {
+  const rawId =
+    article?.id ||
+    article?._id ||
+    article?.articleId ||
+    article?.canonicalLink ||
+    article?.link ||
+    article?.url ||
+    article?.title ||
+    "";
+  return String(rawId || "");
+}
+
+function getFilterDecisionTrace(diagnostics, article) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap || !article) {
+    return null;
+  }
+
+  const articleId = getFilterDecisionTraceArticleId(article);
+  if (!articleId) {
+    return null;
+  }
+
+  if (!diagnostics.filterDecisionTraceMap.has(articleId)) {
+    diagnostics.filterDecisionTraceMap.set(articleId, {
+      articleId,
+      title: article?.title || "Untitled article",
+      enteredPipeline: {
+        renderId: diagnostics.renderId,
+        timestamp: diagnostics.timestamp,
+        branch: diagnostics.branch || "unknown",
+      },
+      stages: [],
+      finalResult: "",
+      finalReason: "",
+    });
+  }
+
+  return diagnostics.filterDecisionTraceMap.get(articleId);
+}
+
+function recordFilterDecisionStage(diagnostics, article, stageEntry = {}) {
+  const trace = getFilterDecisionTrace(diagnostics, article);
+  if (!trace || Object.isFrozen(trace)) {
+    return;
+  }
+
+  trace.stages.push({
+    stage: stageEntry.stage || "unknown",
+    result: stageEntry.result || "unknown",
+    reason: stageEntry.reason || "",
+    score: Number.isFinite(stageEntry.score) ? stageEntry.score : null,
+    notes: Array.isArray(stageEntry.notes) ? stageEntry.notes.filter(Boolean) : [],
+    metadata: stageEntry.metadata && typeof stageEntry.metadata === "object" ? { ...stageEntry.metadata } : {},
+  });
+}
+
+function finalizeFilterDecisionTrace(diagnostics, article, finalResult, finalReason) {
+  const trace = getFilterDecisionTrace(diagnostics, article);
+  if (!trace || Object.isFrozen(trace)) {
+    return;
+  }
+
+  trace.finalResult = finalResult || trace.finalResult || "survived";
+  trace.finalReason = finalReason || trace.finalReason || "article survived traced filter pipeline";
+}
+
+function freezeFilterDecisionTrace(trace) {
+  if (!trace || Object.isFrozen(trace)) {
+    return trace;
+  }
+
+  const frozenStages = (Array.isArray(trace.stages) ? trace.stages : []).map((stage) =>
+    Object.freeze({
+      ...stage,
+      notes: Object.freeze(Array.isArray(stage.notes) ? stage.notes.slice() : []),
+      metadata: Object.freeze(stage.metadata && typeof stage.metadata === "object" ? { ...stage.metadata } : {}),
+    })
+  );
+
+  return Object.freeze({
+    articleId: trace.articleId,
+    title: trace.title,
+    enteredPipeline: Object.freeze({
+      ...(trace.enteredPipeline || {}),
+    }),
+    stages: Object.freeze(frozenStages),
+    finalResult: trace.finalResult || "survived",
+    finalReason: trace.finalReason || "article survived traced filter pipeline",
+  });
+}
+
+function finalizeFilterDecisionTraces(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return;
+  }
+
+  diagnostics.filterDecisionTraceMap.forEach((trace, articleId) => {
+    if (trace.enteredPipeline && !Object.isFrozen(trace.enteredPipeline)) {
+      trace.enteredPipeline.branch = diagnostics.branch || trace.enteredPipeline.branch || "unknown";
+    }
+    if (!trace.finalResult) {
+      trace.finalResult = "survived";
+      trace.finalReason = "article survived traced filter pipeline";
+    }
+    diagnostics.filterDecisionTraceMap.set(articleId, freezeFilterDecisionTrace(trace));
+  });
+}
+
+function getFilterDecisionTraceSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+
+  const traces = Array.from(diagnostics.filterDecisionTraceMap.values());
+  const tracedArticles = traces.length;
+  const rejectedArticles = traces.filter((trace) => trace.finalResult === "rejected").length;
+  const survivingArticles = tracedArticles - rejectedArticles;
+  const totalStagesVisited = traces.reduce((sum, trace) => sum + (Array.isArray(trace.stages) ? trace.stages.length : 0), 0);
+
+  return {
+    tracedArticles,
+    rejectedArticles,
+    survivingArticles,
+    averageStagesVisited: tracedArticles ? Number((totalStagesVisited / tracedArticles).toFixed(2)) : 0,
+  };
+}
+
+function publishFilterDecisionTraceDiagnostics(diagnostics) {
+  if (!diagnostics?.enabled || typeof window === "undefined") {
+    return;
+  }
+
+  runtime.filterDecisionTraceMap = diagnostics.filterDecisionTraceMap || new Map();
+  window.__FILTER_DECISION_TRACES__ = runtime.filterDecisionTraceMap;
+}
+
+function explainArticleDecision(articleId) {
+  const normalizedArticleId = String(articleId || "");
+  const traceMap = runtime.filterDecisionTraceMap instanceof Map
+    ? runtime.filterDecisionTraceMap
+    : null;
+  if (!normalizedArticleId || !traceMap?.has(normalizedArticleId)) {
+    return null;
+  }
+  return traceMap.get(normalizedArticleId);
 }
 
 function getLargestPipelineRejection(diagnostics) {
@@ -5052,6 +5212,18 @@ function logCompactFilterPipelineSummary(diagnostics) {
         });
       }
     });
+  } else {
+    lines.push("none");
+  }
+
+  const filterDecisionTraceSummary = diagnostics.filterDecisionTraceSummary;
+  lines.push("");
+  lines.push("Filter Decision Trace Summary");
+  if (filterDecisionTraceSummary) {
+    lines.push(formatPipelineSummaryLine("tracedArticles", filterDecisionTraceSummary.tracedArticles));
+    lines.push(formatPipelineSummaryLine("rejectedArticles", filterDecisionTraceSummary.rejectedArticles));
+    lines.push(formatPipelineSummaryLine("survivingArticles", filterDecisionTraceSummary.survivingArticles));
+    lines.push(formatPipelineSummaryLine("averageStagesVisited", filterDecisionTraceSummary.averageStagesVisited));
   } else {
     lines.push("none");
   }
@@ -5453,6 +5625,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     pipelineExecutor: diagnostics.pipelineExecutor || null,
     filterPipeline: diagnostics.filterPipeline || null,
     filterPipelineStages: diagnostics.filterPipelineStages || [],
+    filterDecisionTraceSummary: diagnostics.filterDecisionTraceSummary || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
     renderModel: diagnostics.renderModel || null,
     renderDispatch: diagnostics.renderDispatch || null,
@@ -5526,10 +5699,14 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     };
   }
 
+  if (typeof window.explainArticleDecision !== "function") {
+    window.explainArticleDecision = (articleId) => explainArticleDecision(articleId);
+  }
+
   if (!window.__FILTER_PIPELINE_EXPORT_HINT_SHOWN__) {
     window.__FILTER_PIPELINE_EXPORT_HINT_SHOWN__ = true;
     console.info(
-      "FilterPipeline diagnostics export available:\nwindow.exportFilterPipelineDiagnostics()\nwindow.copyFilterPipelineDiagnostics()"
+      "FilterPipeline diagnostics export available:\nwindow.exportFilterPipelineDiagnostics()\nwindow.copyFilterPipelineDiagnostics()\nwindow.explainArticleDecision(articleId)"
     );
   }
 }
@@ -5557,6 +5734,9 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   }
 
   diagnostics.largestRejection = getLargestPipelineRejection(diagnostics);
+  finalizeFilterDecisionTraces(diagnostics);
+  diagnostics.filterDecisionTraceSummary = getFilterDecisionTraceSummary(diagnostics);
+  publishFilterDecisionTraceDiagnostics(diagnostics);
   storeFilterPipelineDiagnostics(diagnostics);
   const groupLabel = `[FilterPipeline] ${diagnostics.renderId} ${diagnostics.branch}`;
   if (typeof console.groupCollapsed === "function") {
@@ -5579,6 +5759,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("pipelineExecutor", diagnostics.pipelineExecutor);
   console.log("filterPipeline", diagnostics.filterPipeline);
   console.log("filterPipelineStages", diagnostics.filterPipelineStages);
+  console.log("filterDecisionTraceSummary", diagnostics.filterDecisionTraceSummary);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
   console.log("renderModel", diagnostics.renderModel);
   console.log("renderDispatch", diagnostics.renderDispatch);
@@ -21726,10 +21907,30 @@ function applyFeedScopeStage({ articles, activeFeedId, diagnostics } = {}) {
   const outputArticles = [];
   inputArticles.forEach((article) => {
     if (!activeFeedId || articleMatchesSelectedFeed(article, activeFeedId)) {
+      recordFilterDecisionStage(diagnostics, article, {
+        stage: "feed_scope",
+        result: "passed",
+        reason: activeFeedId ? "article belongs to selected feed" : "no selected feed scope",
+        notes: ["feed scope stage wraps existing selected-feed checks"],
+        metadata: {
+          activeFeedId: activeFeedId || "",
+        },
+      });
       outputArticles.push(article);
       return;
     }
     const rejection = classifyFeedScopeRejection(article, activeFeedId);
+    recordFilterDecisionStage(diagnostics, article, {
+      stage: "feed_scope",
+      result: "rejected",
+      reason: rejection.reason,
+      notes: ["feed scope stage wraps existing selected-feed checks"],
+      metadata: {
+        activeFeedId: activeFeedId || "",
+        category: rejection.category,
+      },
+    });
+    finalizeFilterDecisionTrace(diagnostics, article, "rejected", rejection.reason);
     recordPipelineRejection(diagnostics, "feedScope", rejection.category, article, rejection.reason);
   });
 
@@ -21749,10 +21950,32 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
   const outputArticles = [];
   inputArticles.forEach((article) => {
     if (articleMatchesPersonalDashboardSelection(article)) {
+      recordFilterDecisionStage(diagnostics, article, {
+        stage: "personal_dashboard",
+        result: "passed",
+        reason: "article matched current Personal Dashboard selection",
+        notes: ["personal dashboard stage wraps existing interest matching"],
+        metadata: {
+          selectedPersonalInterests: normalizePersonalDashboardInterests(state.personalDashboard.interests),
+          primaryDomain: getArticleDominantDomain(article),
+        },
+      });
       outputArticles.push(article);
       return;
     }
     const rejection = classifyPersonalDashboardRejection(article);
+    recordFilterDecisionStage(diagnostics, article, {
+      stage: "personal_dashboard",
+      result: "rejected",
+      reason: rejection.reason,
+      notes: ["personal dashboard stage wraps existing interest matching"],
+      metadata: {
+        category: rejection.category,
+        selectedPersonalInterests: normalizePersonalDashboardInterests(state.personalDashboard.interests),
+        primaryDomain: getArticleDominantDomain(article),
+      },
+    });
+    finalizeFilterDecisionTrace(diagnostics, article, "rejected", rejection.reason);
     recordPipelineRejection(diagnostics, "personalDashboard", rejection.category, article, rejection.reason);
   });
 
@@ -21772,10 +21995,32 @@ function applyAdvancedFiltersStage({ articles, advancedFilterOptions, diagnostic
   const outputArticles = [];
   inputArticles.forEach((article) => {
     if (articleMatchesFilters(article, advancedFilterOptions)) {
+      recordFilterDecisionStage(diagnostics, article, {
+        stage: "advanced_filters",
+        result: "passed",
+        reason: "article matched current advanced filters",
+        notes: ["advanced filters stage wraps existing articleMatchesFilters behavior"],
+        metadata: {
+          ignoreFeedId: Boolean(advancedFilterOptions?.ignoreFeedId),
+          ignorePersonalDashboard: Boolean(advancedFilterOptions?.ignorePersonalDashboard),
+        },
+      });
       outputArticles.push(article);
       return;
     }
     const rejection = classifyAdvancedFilterRejection(article, advancedFilterOptions);
+    recordFilterDecisionStage(diagnostics, article, {
+      stage: "advanced_filters",
+      result: "rejected",
+      reason: rejection.reason,
+      notes: ["advanced filters stage wraps existing articleMatchesFilters behavior"],
+      metadata: {
+        category: rejection.category,
+        ignoreFeedId: Boolean(advancedFilterOptions?.ignoreFeedId),
+        ignorePersonalDashboard: Boolean(advancedFilterOptions?.ignorePersonalDashboard),
+      },
+    });
+    finalizeFilterDecisionTrace(diagnostics, article, "rejected", rejection.reason);
     recordPipelineRejection(diagnostics, "advancedFilters", rejection.category, article, rejection.reason);
   });
 
@@ -21790,11 +22035,23 @@ function applyAdvancedFiltersStage({ articles, advancedFilterOptions, diagnostic
   };
 }
 
-function applySortingStage({ inputArticles, sortedArticles } = {}) {
+function applySortingStage({ inputArticles, sortedArticles, diagnostics } = {}) {
   const inputCount = Array.isArray(inputArticles) ? inputArticles.length : 0;
-  const outputCount = Array.isArray(sortedArticles) ? sortedArticles.length : 0;
+  const outputArticles = Array.isArray(sortedArticles) ? sortedArticles : [];
+  const outputCount = outputArticles.length;
+  outputArticles.forEach((article, index) => {
+    recordFilterDecisionStage(diagnostics, article, {
+      stage: "sorting",
+      result: "passed",
+      reason: "article retained in existing branch-local sorted output",
+      notes: ["sorting stage reports existing branch-local sorted output"],
+      metadata: {
+        position: index + 1,
+      },
+    });
+  });
   return {
-    articles: Array.isArray(sortedArticles) ? sortedArticles : [],
+    articles: outputArticles,
     stage: createFilterPipelineStageResult(
       "sorting",
       inputCount,
@@ -21804,9 +22061,21 @@ function applySortingStage({ inputArticles, sortedArticles } = {}) {
   };
 }
 
-function applyGroupingStage({ inputArticles, groupedCount } = {}) {
+function applyGroupingStage({ inputArticles, groupedCount, diagnostics } = {}) {
   const inputCount = Array.isArray(inputArticles) ? inputArticles.length : 0;
   const outputCount = Number(groupedCount) || 0;
+  const articles = Array.isArray(inputArticles) ? inputArticles : [];
+  articles.forEach((article) => {
+    recordFilterDecisionStage(diagnostics, article, {
+      stage: "grouping",
+      result: "passed",
+      reason: "article retained in existing branch-local grouped output",
+      notes: ["grouping stage reports existing branch-local grouping output"],
+      metadata: {
+        groupedCount: outputCount,
+      },
+    });
+  });
   return {
     groupedCount: outputCount,
     stage: createFilterPipelineStageResult(
@@ -21852,12 +22121,14 @@ function replayFilterDiagnosticsStage({ result, diagnostics, activeFeedId, useBa
   const sortingStage = applySortingStage({
     inputArticles: advancedFiltersStage.articles,
     sortedArticles: result.filteredRawArticles,
+    diagnostics,
   });
   stageResults.push(sortingStage.stage);
 
   const groupingStage = applyGroupingStage({
     inputArticles: sortingStage.articles,
     groupedCount: result.groupedArticlesCount,
+    diagnostics,
   });
   stageResults.push(groupingStage.stage);
 
@@ -21936,6 +22207,41 @@ function preparePipelinePagination({
       "renderPaginationControls remains in renderArticles",
     ],
   };
+}
+
+function recordPaginationDecisionTraces(diagnostics, sourceArticles, paginationResult) {
+  if (!diagnostics?.enabled || !paginationResult) {
+    return;
+  }
+
+  const pageItems = Array.isArray(paginationResult.items) ? paginationResult.items : [];
+  const pageItemIds = new Set(pageItems.map((article) => getFilterDecisionTraceArticleId(article)).filter(Boolean));
+  const source = Array.isArray(sourceArticles) ? sourceArticles : [];
+  source.forEach((article, index) => {
+    const articleId = getFilterDecisionTraceArticleId(article);
+    const isOnPage = articleId && pageItemIds.has(articleId);
+    recordFilterDecisionStage(diagnostics, article, {
+      stage: "pagination",
+      result: isOnPage ? "passed" : "survived_off_page",
+      reason: isOnPage
+        ? "article is included on the current pagination page"
+        : "article survived filters but is outside the current pagination page",
+      notes: ["pagination stage reports existing getPaginatedItems output"],
+      metadata: {
+        page: paginationResult.currentPage,
+        pageSize: paginationResult.pageSize,
+        sourcePosition: index + 1,
+      },
+    });
+    finalizeFilterDecisionTrace(
+      diagnostics,
+      article,
+      "survived",
+      isOnPage
+        ? "article reached the current render page"
+        : "article survived filters but is outside the current page"
+    );
+  });
 }
 
 function preparePipelineRenderModel({
@@ -22120,6 +22426,7 @@ function executePaginationPipeline({
     articles: filterPipelineResult.articles,
     useBackendQuery,
   });
+  recordPaginationDecisionTraces(diagnostics, filterPipelineResult.articles, paginationResult);
   recordPaginationPipelineResult(diagnostics, paginationResult);
   return paginationResult;
 }
