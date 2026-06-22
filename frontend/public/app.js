@@ -4021,6 +4021,10 @@ function resolveCandidateProvider(candidateStrategy, candidateSource, normalized
       "candidate provider metadata only",
       "candidate provider owns legacy retrieval execution",
       ...(providerId === "selected_feed_provider" ? ["selected feed provider extracted"] : []),
+      ...(providerId === "backend_query_provider" ? [
+        "backend query provider decomposed into named stages",
+        "backend query behavior unchanged",
+      ] : []),
       ...(providerId === "global_memory_provider" ? ["global memory provider extracted"] : []),
       ...(providerId === "date_filter_provider" ? ["date provider extracted"] : []),
       "legacy retrieval implementation remains unchanged",
@@ -4195,6 +4199,24 @@ function recordFilterPipelineStages(diagnostics, filterPipelineStages) {
     : [];
 }
 
+function recordBackendProviderStages(diagnostics, backendProviderStages) {
+  if (!diagnostics?.enabled) {
+    return;
+  }
+
+  diagnostics.backendProviderStages = Array.isArray(backendProviderStages)
+    ? backendProviderStages.map((stage) => ({
+        stage: stage.stage || "",
+        status: stage.status || "",
+        inputSummary: stage.inputSummary || "",
+        outputSummary: stage.outputSummary || "",
+        executionMode: stage.executionMode || "legacy",
+        notes: Array.isArray(stage.notes) ? stage.notes.slice() : [],
+        warnings: Array.isArray(stage.warnings) ? stage.warnings.slice() : [],
+      }))
+    : [];
+}
+
 function recordPaginationPipelineResult(diagnostics, paginationResult) {
   if (!diagnostics?.enabled) {
     return;
@@ -4361,6 +4383,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     candidateStrategyKey: candidateStrategy?.strategyKey || "",
     candidateSource,
     candidateProvider,
+    backendProviderStages: [],
     candidatePoolContext,
     pipelineOrchestrator: null,
     candidateBuilderResult: null,
@@ -4621,6 +4644,29 @@ function logCompactFilterPipelineSummary(diagnostics) {
     } else {
       lines.push("notes: none");
     }
+  } else {
+    lines.push("none");
+  }
+
+  const backendProviderStages = diagnostics.backendProviderStages;
+  lines.push("");
+  lines.push("Backend Provider Stages");
+  if (backendProviderStages?.length) {
+    backendProviderStages.forEach((stage) => {
+      lines.push(`${stage.stage}: ${stage.status} (${stage.executionMode})`);
+      lines.push(`input: ${stage.inputSummary || "none"}`);
+      lines.push(`output: ${stage.outputSummary || "none"}`);
+      if (stage.notes?.length) {
+        stage.notes.forEach((note) => {
+          lines.push(`- ${note}`);
+        });
+      }
+      if (stage.warnings?.length) {
+        stage.warnings.forEach((warning) => {
+          lines.push(`- warning: ${warning}`);
+        });
+      }
+    });
   } else {
     lines.push("none");
   }
@@ -5144,6 +5190,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     candidateStrategyKey: diagnostics.candidateStrategyKey || "",
     candidateSource: diagnostics.candidateSource || null,
     candidateProvider: diagnostics.candidateProvider || null,
+    backendProviderStages: diagnostics.backendProviderStages || [],
     candidatePoolContext: diagnostics.candidatePoolContext || null,
     pipelineOrchestrator: diagnostics.pipelineOrchestrator || null,
     candidateBuilderResult: diagnostics.candidateBuilderResult || null,
@@ -5267,6 +5314,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("candidateStrategyKey", diagnostics.candidateStrategyKey);
   console.log("candidateSource", diagnostics.candidateSource);
   console.log("candidateProvider", diagnostics.candidateProvider);
+  console.log("backendProviderStages", diagnostics.backendProviderStages);
   console.log("candidatePoolContext", diagnostics.candidatePoolContext);
   console.log("pipelineOrchestrator", diagnostics.pipelineOrchestrator);
   console.log("candidateBuilderResult", diagnostics.candidateBuilderResult);
@@ -21945,63 +21993,11 @@ function executeCandidateProvider(candidateProvider, candidateContext, options =
     }
   }
 
-    if (useBackendQuery) {
-      const queryKey = getBackendArticleQueryKey();
-      const cachedQuery = runtime.backendArticleQueryCache.get(queryKey);
-      if (diagnostics?.enabled) {
-        diagnostics.cache.backendQueryKey = queryKey;
-        diagnostics.cache.backendCacheHit = Boolean(cachedQuery);
-        setFilterPipelineBranch(diagnostics, cachedQuery ? "backend-query" : "backend-query-loading");
-        updateCandidatePoolContext(diagnostics, { cacheKey: queryKey });
-        addFilterPipelineNote(diagnostics, "backend-query branch selected because shouldUseBackendArticleQuery() returned true");
-        if (state.filters.feedId) {
-          addFilterPipelineNote(diagnostics, "selected feed used as backend retrieval param");
-        }
-        if (hasPersonalDashboardSelections()) {
-          addFilterPipelineNote(diagnostics, "personal dashboard targeted retrieval active");
-        }
-        if (state.filters.feedId && hasPersonalDashboardSelections()) {
-          addFilterPipelineNote(diagnostics, "feed + dashboard uses feed-scoped backend retrieval");
-        }
-        const plannedRequests = getPersonalDashboardBackendDomainPlan() && hasPersonalDashboardSelections()
-          ? buildPersonalDashboardBackendQueryParamsList()
-          : [getBackendArticleQueryParams()];
-        diagnostics.backendRequests = cachedQuery?.backendRequests || plannedRequests.map((params) => Object.fromEntries(params.entries()));
-        updateCandidatePoolContext(diagnostics, {
-          backendRequests: diagnostics.backendRequests,
-        });
-      }
-      if (!cachedQuery) {
-        return {
-          articles: [],
-          candidatePool: [],
-          filteredRawArticles: [],
-          groupedArticlesCount: 0,
-          branch: "backend-query-loading",
-          cacheKey: queryKey,
-          cacheHit: false,
-          backendRequests: diagnostics?.backendRequests || [],
-          pending: true,
-        };
-      }
-
-      setFilterPipelineBranch(diagnostics, "backend-query");
-      const candidatePool = cachedQuery.articles;
-      const filteredRawArticles = sortArticlesForCurrentDashboardMode(
-        cachedQuery.articles.filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
-      );
-      const groupedArticles = prepareDateFirstGroupedArticles(filteredRawArticles);
-      return {
-        articles: groupedArticles,
-        candidatePool,
-        filteredRawArticles,
-        groupedArticlesCount: groupedArticles.length,
-        branch: "backend-query",
-        cacheKey: queryKey,
-        cacheHit: true,
-        backendRequests: diagnostics?.backendRequests || [],
-      };
-    }
+  if (useBackendQuery) {
+    return executeBackendQueryProvider(candidateProvider, normalizedFilterState, candidateContext, {
+      diagnostics,
+    });
+  }
 
     if (activeFeedId && !state.filters.date) {
       return executeSelectedFeedProvider(candidateProvider, normalizedFilterState, candidateContext, {
@@ -22157,6 +22153,194 @@ function executeSelectedFeedProvider(candidateProvider, normalizedFilterState, c
       "selected feed provider extracted",
     ],
   };
+}
+
+function createBackendProviderStage(stage, status, inputSummary, outputSummary, notes = [], warnings = []) {
+  return {
+    stage,
+    status,
+    inputSummary,
+    outputSummary,
+    executionMode: "legacy",
+    notes,
+    warnings,
+  };
+}
+
+function planBackendQueryStage() {
+  return createBackendProviderStage(
+    "query_planning",
+    "planned",
+    "shouldUseBackendArticleQuery=true",
+    "backend query provider selected",
+    ["query planning wraps existing shouldUseBackendArticleQuery branch"]
+  );
+}
+
+function resolveBackendCacheKeyStage() {
+  const queryKey = getBackendArticleQueryKey();
+  return {
+    queryKey,
+    stage: createBackendProviderStage(
+      "cache_key",
+      "resolved",
+      "getBackendArticleQueryKey()",
+      queryKey,
+      ["cache key shape unchanged"]
+    ),
+  };
+}
+
+function readBackendCacheStage(queryKey) {
+  const cachedQuery = runtime.backendArticleQueryCache.get(queryKey);
+  return {
+    cachedQuery,
+    stage: createBackendProviderStage(
+      "cache_lookup",
+      cachedQuery ? "hit" : "miss",
+      queryKey,
+      cachedQuery ? "cached backend article query found" : "no cached backend article query",
+      ["backendArticleQueryCache behavior unchanged"]
+    ),
+  };
+}
+
+function planBackendRequestsStage(cachedQuery) {
+  const plannedRequests = getPersonalDashboardBackendDomainPlan() && hasPersonalDashboardSelections()
+    ? buildPersonalDashboardBackendQueryParamsList()
+    : [getBackendArticleQueryParams()];
+  const backendRequests = cachedQuery?.backendRequests || plannedRequests.map((params) => Object.fromEntries(params.entries()));
+  return {
+    backendRequests,
+    plannedRequests,
+    stage: createBackendProviderStage(
+      "backend_request_planning",
+      "planned",
+      `${plannedRequests.length} request plan(s)`,
+      `${backendRequests.length} backend request diagnostic entr${backendRequests.length === 1 ? "y" : "ies"}`,
+      ["backend request params unchanged"]
+    ),
+  };
+}
+
+function resolveBackendPendingStage({ cachedQuery, queryKey, backendRequests } = {}) {
+  const stage = createBackendProviderStage(
+    "pending_loading",
+    cachedQuery ? "ready" : "pending",
+    queryKey,
+    cachedQuery ? "continue to cached result normalization" : "backend-query-loading result returned",
+    ["loading behavior unchanged"]
+  );
+  if (cachedQuery) {
+    return { stage, result: null };
+  }
+
+  return {
+    stage,
+    result: {
+      articles: [],
+      candidatePool: [],
+      filteredRawArticles: [],
+      groupedArticlesCount: 0,
+      branch: "backend-query-loading",
+      cacheKey: queryKey,
+      cacheHit: false,
+      backendRequests,
+      pending: true,
+    },
+  };
+}
+
+function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendRequests } = {}) {
+  const candidatePool = cachedQuery.articles;
+  const filteredRawArticles = sortArticlesForCurrentDashboardMode(
+    cachedQuery.articles.filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
+  );
+  const groupedArticles = prepareDateFirstGroupedArticles(filteredRawArticles);
+  return {
+    stage: createBackendProviderStage(
+      "backend_result_normalization",
+      "normalized",
+      `${candidatePool.length} cached article(s)`,
+      `${groupedArticles.length} grouped article(s)`,
+      ["backend provider result shape unchanged"]
+    ),
+    result: {
+      articles: groupedArticles,
+      candidatePool,
+      filteredRawArticles,
+      groupedArticlesCount: groupedArticles.length,
+      branch: "backend-query",
+      cacheKey: queryKey,
+      cacheHit: true,
+      backendRequests,
+    },
+  };
+}
+
+function executeBackendQueryProvider(candidateProvider, normalizedFilterState, candidatePoolContext, options = {}) {
+  const diagnostics = options.diagnostics || null;
+  const backendProviderStages = [];
+  backendProviderStages.push(planBackendQueryStage());
+
+  const cacheKeyStage = resolveBackendCacheKeyStage();
+  const queryKey = cacheKeyStage.queryKey;
+  backendProviderStages.push(cacheKeyStage.stage);
+
+  const cacheLookupStage = readBackendCacheStage(queryKey);
+  const cachedQuery = cacheLookupStage.cachedQuery;
+  backendProviderStages.push(cacheLookupStage.stage);
+
+  if (diagnostics?.enabled) {
+    diagnostics.cache.backendQueryKey = queryKey;
+    diagnostics.cache.backendCacheHit = Boolean(cachedQuery);
+    setFilterPipelineBranch(diagnostics, cachedQuery ? "backend-query" : "backend-query-loading");
+    updateCandidatePoolContext(diagnostics, { cacheKey: queryKey });
+    addFilterPipelineNote(diagnostics, "backend-query branch selected because shouldUseBackendArticleQuery() returned true");
+    if (state.filters.feedId) {
+      addFilterPipelineNote(diagnostics, "selected feed used as backend retrieval param");
+    }
+    if (hasPersonalDashboardSelections()) {
+      addFilterPipelineNote(diagnostics, "personal dashboard targeted retrieval active");
+    }
+    if (state.filters.feedId && hasPersonalDashboardSelections()) {
+      addFilterPipelineNote(diagnostics, "feed + dashboard uses feed-scoped backend retrieval");
+    }
+  }
+
+  let backendRequests = diagnostics?.backendRequests || [];
+  if (diagnostics?.enabled) {
+    const requestPlanningStage = planBackendRequestsStage(cachedQuery);
+    backendRequests = requestPlanningStage.backendRequests;
+    backendProviderStages.push(requestPlanningStage.stage);
+  }
+  if (diagnostics?.enabled) {
+    diagnostics.backendRequests = backendRequests;
+    updateCandidatePoolContext(diagnostics, {
+      backendRequests: diagnostics.backendRequests,
+    });
+  }
+
+  const pendingStage = resolveBackendPendingStage({
+    cachedQuery,
+    queryKey,
+    backendRequests,
+  });
+  backendProviderStages.push(pendingStage.stage);
+  if (pendingStage.result) {
+    recordBackendProviderStages(diagnostics, backendProviderStages);
+    return pendingStage.result;
+  }
+
+  setFilterPipelineBranch(diagnostics, "backend-query");
+  const normalizationStage = normalizeBackendProviderResultStage({
+    cachedQuery,
+    queryKey,
+    backendRequests,
+  });
+  backendProviderStages.push(normalizationStage.stage);
+  recordBackendProviderStages(diagnostics, backendProviderStages);
+  return normalizationStage.result;
 }
 
 function executeDateFilterProvider(candidateProvider, normalizedFilterState, candidatePoolContext, options = {}) {
