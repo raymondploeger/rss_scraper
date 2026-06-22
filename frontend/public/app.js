@@ -3931,14 +3931,14 @@ function updateCandidatePoolContext(diagnostics, updates = {}) {
   diagnostics.candidatePoolContext.warnings = getCandidatePoolContextWarnings(diagnostics.candidatePoolContext);
 }
 
-function normalizeCandidateProviderResult(candidateContext, resolved = {}) {
+function normalizeCandidateProviderResult(resolved = {}) {
   const articles = Array.isArray(resolved.articles) ? resolved.articles : [];
   const candidatePool = Array.isArray(resolved.candidatePool) ? resolved.candidatePool : articles;
   const candidateSource = Array.isArray(resolved.candidateSource) ? resolved.candidateSource : candidatePool;
   const filteredRawArticles = Array.isArray(resolved.filteredRawArticles) ? resolved.filteredRawArticles : articles;
   const groupedArticles = Array.isArray(resolved.groupedArticles) ? resolved.groupedArticles : articles;
-  const branch = resolved.branch || candidateContext?.branch || "unknown";
-  const backendRequests = resolved.backendRequests || candidateContext?.backendRequests || [];
+  const branch = resolved.branch || "unknown";
+  const backendRequests = resolved.backendRequests || [];
   const groupedCount = Number(resolved.groupedArticlesCount) || groupedArticles.length;
 
   return {
@@ -3955,13 +3955,13 @@ function normalizeCandidateProviderResult(candidateContext, resolved = {}) {
     feedRenderFilteredCount: Number(resolved.feedRenderFilteredCount) || 0,
     feedRenderGroupedCount: Number(resolved.feedRenderGroupedCount) || 0,
     branch,
-    retrievalMode: candidateContext?.retrievalMode || "",
-    sourceScope: candidateContext?.sourceScope || "",
+    retrievalMode: resolved.retrievalMode || "",
+    sourceScope: resolved.sourceScope || "",
     backendRequests,
-    cacheKey: resolved.cacheKey || candidateContext?.cacheKey || "",
+    cacheKey: resolved.cacheKey || "",
     cacheHit: Boolean(resolved.cacheHit),
-    candidateLimit: candidateContext?.candidateLimit || MAX_ARTICLES_IN_MEMORY,
-    warnings: Array.isArray(candidateContext?.warnings) ? candidateContext.warnings.slice() : [],
+    candidateLimit: resolved.candidateLimit || MAX_ARTICLES_IN_MEMORY,
+    warnings: Array.isArray(resolved.warnings) ? resolved.warnings.slice() : [],
     diagnostics: resolved.diagnostics || {},
     expectedTotal: Number.isFinite(Number(resolved.expectedTotal)) ? Number(resolved.expectedTotal) : null,
     partial: Boolean(resolved.partial),
@@ -3971,6 +3971,7 @@ function normalizeCandidateProviderResult(candidateContext, resolved = {}) {
     groupedCount,
     pending: Boolean(resolved.pending),
     notes: [
+      "candidate builder is provider-result normalizer only",
       "provider result normalized by candidate builder",
       ...(Array.isArray(resolved.notes) ? resolved.notes : []),
     ],
@@ -4024,6 +4025,7 @@ function resolveCandidateProvider(candidateStrategy, candidateSource, normalized
       "candidate provider metadata only",
       "candidate provider owns legacy retrieval execution",
       "provider executes supplied strategy plan",
+      "provider dispatcher owns retrieval branch execution",
       ...(providerId === "selected_feed_provider" ? ["selected feed provider extracted"] : []),
       ...(providerId === "backend_query_provider" ? [
         "backend query provider decomposed into named stages",
@@ -4097,6 +4099,7 @@ function buildStrategyExecutionPlan(candidateStrategy, candidateProvider, normal
     dispatchMode,
     notes: Object.freeze([
       "strategy now owns provider selection",
+      "strategy execution plan owns provider selection",
     ]),
     warnings: Object.freeze([]),
   });
@@ -4122,6 +4125,21 @@ function summarizeStrategyExecutionPlan(strategyExecutionPlan) {
     pendingAllowed: Boolean(strategyExecutionPlan.pendingAllowed),
     notes: Array.isArray(strategyExecutionPlan.notes) ? strategyExecutionPlan.notes.slice() : [],
     warnings: Array.isArray(strategyExecutionPlan.warnings) ? strategyExecutionPlan.warnings.slice() : [],
+  };
+}
+
+function finalizeCandidateProviderResult(providerResult, candidateContext, strategyExecutionPlan) {
+  const resolved = providerResult && typeof providerResult === "object" ? providerResult : {};
+  return {
+    ...resolved,
+    retrievalMode: resolved.retrievalMode || strategyExecutionPlan?.retrievalMode || candidateContext?.retrievalMode || "",
+    sourceScope: resolved.sourceScope || strategyExecutionPlan?.sourceScope || candidateContext?.sourceScope || "",
+    backendRequests: resolved.backendRequests || candidateContext?.backendRequests || [],
+    cacheKey: resolved.cacheKey || candidateContext?.cacheKey || "",
+    candidateLimit: resolved.candidateLimit || candidateContext?.candidateLimit || MAX_ARTICLES_IN_MEMORY,
+    warnings: Array.isArray(resolved.warnings)
+      ? resolved.warnings.slice()
+      : (Array.isArray(candidateContext?.warnings) ? candidateContext.warnings.slice() : []),
   };
 }
 
@@ -22323,7 +22341,7 @@ function resolveArticleCandidatePool(candidateContext, options = {}) {
     shouldIgnoreFeedIdForGrouping,
     useBackendQuery,
   });
-  return normalizeCandidateProviderResult(candidateContext, providerResult);
+  return normalizeCandidateProviderResult(providerResult);
 }
 
 function executeCandidateProvider(candidateProvider, candidateContext, options = {}) {
@@ -22348,40 +22366,40 @@ function executeCandidateProvider(candidateProvider, candidateContext, options =
       mode: "full_pool",
     });
     if (selectedFeedResult) {
-      return selectedFeedResult;
+      return finalizeCandidateProviderResult(selectedFeedResult, candidateContext, strategyExecutionPlan);
     }
     if (useBackendQuery) {
-      return executeBackendQueryProvider(candidateProvider, normalizedFilterState, candidateContext, {
+      return finalizeCandidateProviderResult(executeBackendQueryProvider(candidateProvider, normalizedFilterState, candidateContext, {
         diagnostics,
-      });
+      }), candidateContext, strategyExecutionPlan);
     }
   }
 
   if (dispatchMode === "backend_query") {
-    return executeBackendQueryProvider(candidateProvider, normalizedFilterState, candidateContext, {
+    return finalizeCandidateProviderResult(executeBackendQueryProvider(candidateProvider, normalizedFilterState, candidateContext, {
       diagnostics,
-    });
+    }), candidateContext, strategyExecutionPlan);
   }
 
   if (dispatchMode === "selected_feed" || (dispatchMode === "selected_feed_full_pool_then_legacy" && activeFeedId && !state.filters.date)) {
-    return executeSelectedFeedProvider(candidateProvider, normalizedFilterState, candidateContext, {
+    return finalizeCandidateProviderResult(executeSelectedFeedProvider(candidateProvider, normalizedFilterState, candidateContext, {
       activeFeedId,
       candidateSourceRoute,
       diagnostics,
       mode: "fallback",
-    });
+    }), candidateContext, strategyExecutionPlan);
   }
 
   if (dispatchMode === "date_filter") {
-    return executeDateFilterProvider(candidateProvider, normalizedFilterState, candidateContext, {
+    return finalizeCandidateProviderResult(executeDateFilterProvider(candidateProvider, normalizedFilterState, candidateContext, {
       diagnostics,
-    });
+    }), candidateContext, strategyExecutionPlan);
   }
 
-  return executeGlobalMemoryProvider(candidateProvider, normalizedFilterState, candidateContext, {
+  return finalizeCandidateProviderResult(executeGlobalMemoryProvider(candidateProvider, normalizedFilterState, candidateContext, {
     diagnostics,
     shouldIgnoreFeedIdForGrouping,
-  });
+  }), candidateContext, strategyExecutionPlan);
 }
 
 function executeSelectedFeedProvider(candidateProvider, normalizedFilterState, candidatePoolContext, options = {}) {
