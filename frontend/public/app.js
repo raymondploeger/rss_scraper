@@ -3725,6 +3725,9 @@ function resolveCandidateStrategy(normalizedFilterState, candidatePoolContext = 
     candidateLimit,
     featureFlag: selectedFeedFullPoolEnabled ? "enabled" : "disabled",
     actualExecution: "legacy",
+    notes: [
+      "strategy now owns provider selection",
+    ],
     warnings,
   };
 
@@ -4020,6 +4023,7 @@ function resolveCandidateProvider(candidateStrategy, candidateSource, normalized
     notes: Object.freeze([
       "candidate provider metadata only",
       "candidate provider owns legacy retrieval execution",
+      "provider executes supplied strategy plan",
       ...(providerId === "selected_feed_provider" ? ["selected feed provider extracted"] : []),
       ...(providerId === "backend_query_provider" ? [
         "backend query provider decomposed into named stages",
@@ -4045,6 +4049,79 @@ function summarizeCandidateProvider(candidateProvider) {
     supported: candidateProvider.supported !== false,
     pending: Boolean(candidateProvider.pending),
     notes: Array.isArray(candidateProvider.notes) ? candidateProvider.notes.slice() : [],
+  };
+}
+
+function buildStrategyExecutionPlan(candidateStrategy, candidateProvider, normalizedFilterState, candidatePoolContext, options = {}) {
+  const activeFeedId = options.activeFeedId || normalizedFilterState?.feed?.id || "";
+  const useBackendQuery = Boolean(options.useBackendQuery);
+  const hasSelectedFeedFullPoolAttempt = Boolean(
+    activeFeedId &&
+      isSelectedFeedFullPoolEnabled() &&
+      !normalizedFilterState?.filters?.date
+  );
+  let dispatchMode = "global_memory";
+  let executionReason = "global memory candidate source";
+  let selectedProvider = "global_memory_provider";
+
+  if (hasSelectedFeedFullPoolAttempt) {
+    dispatchMode = "selected_feed_full_pool_then_legacy";
+    selectedProvider = "selected_feed_provider";
+    executionReason = "selected feed full pool feature flag can attempt before legacy provider dispatch";
+  } else if (useBackendQuery) {
+    dispatchMode = "backend_query";
+    selectedProvider = "backend_query_provider";
+    executionReason = "strategy selected backend query provider";
+  } else if (activeFeedId && !normalizedFilterState?.filters?.date) {
+    dispatchMode = "selected_feed";
+    selectedProvider = "selected_feed_provider";
+    executionReason = "strategy selected selected-feed provider";
+  } else if (normalizedFilterState?.filters?.date) {
+    dispatchMode = "date_filter";
+    selectedProvider = "date_filter_provider";
+    executionReason = "strategy selected date filter provider";
+  }
+
+  return Object.freeze({
+    strategy: candidateStrategy?.strategy || "",
+    provider: selectedProvider,
+    retrievalMode: candidateStrategy?.retrievalMode || candidatePoolContext?.retrievalMode || "",
+    sourceScope: candidateStrategy?.sourceScope || candidatePoolContext?.sourceScope || "",
+    executionPlan: dispatchMode,
+    expectedLimit: Number(candidateStrategy?.expectedLimit || candidateStrategy?.candidateLimit || candidatePoolContext?.candidateLimit || 0),
+    pendingAllowed: dispatchMode === "backend_query" || dispatchMode === "selected_feed_full_pool_then_legacy",
+    selectedStrategy: candidateStrategy?.strategy || "",
+    selectedProvider,
+    executionAuthority: "candidate_strategy",
+    executionReason,
+    dispatchMode,
+    notes: Object.freeze([
+      "strategy now owns provider selection",
+    ]),
+    warnings: Object.freeze([]),
+  });
+}
+
+function summarizeStrategyExecutionPlan(strategyExecutionPlan) {
+  if (!strategyExecutionPlan) {
+    return null;
+  }
+
+  return {
+    selectedStrategy: strategyExecutionPlan.selectedStrategy || strategyExecutionPlan.strategy || "",
+    selectedProvider: strategyExecutionPlan.selectedProvider || strategyExecutionPlan.provider || "",
+    executionAuthority: strategyExecutionPlan.executionAuthority || "",
+    executionReason: strategyExecutionPlan.executionReason || "",
+    dispatchMode: strategyExecutionPlan.dispatchMode || strategyExecutionPlan.executionPlan || "",
+    strategy: strategyExecutionPlan.strategy || "",
+    provider: strategyExecutionPlan.provider || "",
+    retrievalMode: strategyExecutionPlan.retrievalMode || "",
+    sourceScope: strategyExecutionPlan.sourceScope || "",
+    executionPlan: strategyExecutionPlan.executionPlan || "",
+    expectedLimit: Number(strategyExecutionPlan.expectedLimit) || 0,
+    pendingAllowed: Boolean(strategyExecutionPlan.pendingAllowed),
+    notes: Array.isArray(strategyExecutionPlan.notes) ? strategyExecutionPlan.notes.slice() : [],
+    warnings: Array.isArray(strategyExecutionPlan.warnings) ? strategyExecutionPlan.warnings.slice() : [],
   };
 }
 
@@ -4331,6 +4408,14 @@ function recordCandidateProvider(diagnostics, candidateProvider) {
   diagnostics.candidateProvider = summarizeCandidateProvider(candidateProvider);
 }
 
+function recordStrategyExecutionPlan(diagnostics, strategyExecutionPlan) {
+  if (!diagnostics?.enabled) {
+    return;
+  }
+
+  diagnostics.strategyExecutionPlan = summarizeStrategyExecutionPlan(strategyExecutionPlan);
+}
+
 function recordPipelineExecutorResult(diagnostics, pipelineResult) {
   if (!diagnostics?.enabled) {
     return;
@@ -4437,6 +4522,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
   const candidateStrategy = resolveCandidateStrategy(normalizedFilterState, candidatePoolContext);
   const candidateSource = resolveCandidateSource(candidateStrategy, normalizedFilterState, candidatePoolContext);
   const candidateProvider = resolveCandidateProvider(candidateStrategy, candidateSource, normalizedFilterState, candidatePoolContext);
+  const strategyExecutionPlan = buildStrategyExecutionPlan(candidateStrategy, candidateProvider, normalizedFilterState, candidatePoolContext);
   return {
     enabled,
     timestamp: new Date().toISOString(),
@@ -4455,6 +4541,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     normalizedFilterStateParity: enabled ? validateNormalizedFilterStateParity(normalizedFilterState) : null,
     candidateStrategy,
     candidateStrategyKey: candidateStrategy?.strategyKey || "",
+    strategyExecutionPlan,
     candidateSource,
     candidateProvider,
     backendProviderStages: [],
@@ -4665,9 +4752,50 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push(`actualExecution: ${candidateStrategy.actualExecution}`);
     lines.push(`candidateLimit: ${candidateStrategy.candidateLimit}`);
     lines.push(`featureFlag: ${candidateStrategy.featureFlag}`);
+    if (candidateStrategy.notes?.length) {
+      lines.push("notes:");
+      candidateStrategy.notes.forEach((note) => {
+        lines.push(`- ${note}`);
+      });
+    } else {
+      lines.push("notes: none");
+    }
     if (candidateStrategy.warnings?.length) {
       lines.push("warnings:");
       candidateStrategy.warnings.forEach((warning) => {
+        lines.push(`- ${warning}`);
+      });
+    } else {
+      lines.push("warnings: none");
+    }
+  } else {
+    lines.push("none");
+  }
+
+  const strategyExecutionPlan = diagnostics.strategyExecutionPlan;
+  lines.push("");
+  lines.push("Strategy Execution Plan");
+  if (strategyExecutionPlan) {
+    lines.push(`selectedStrategy: ${strategyExecutionPlan.selectedStrategy}`);
+    lines.push(`selectedProvider: ${strategyExecutionPlan.selectedProvider}`);
+    lines.push(`executionAuthority: ${strategyExecutionPlan.executionAuthority}`);
+    lines.push(`executionReason: ${strategyExecutionPlan.executionReason}`);
+    lines.push(`dispatchMode: ${strategyExecutionPlan.dispatchMode}`);
+    lines.push(`retrievalMode: ${strategyExecutionPlan.retrievalMode}`);
+    lines.push(`sourceScope: ${strategyExecutionPlan.sourceScope}`);
+    lines.push(`expectedLimit: ${strategyExecutionPlan.expectedLimit}`);
+    lines.push(`pendingAllowed: ${strategyExecutionPlan.pendingAllowed}`);
+    if (strategyExecutionPlan.notes?.length) {
+      lines.push("notes:");
+      strategyExecutionPlan.notes.forEach((note) => {
+        lines.push(`- ${note}`);
+      });
+    } else {
+      lines.push("notes: none");
+    }
+    if (strategyExecutionPlan.warnings?.length) {
+      lines.push("warnings:");
+      strategyExecutionPlan.warnings.forEach((warning) => {
         lines.push(`- ${warning}`);
       });
     } else {
@@ -5297,6 +5425,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     normalizedFilterStateKey: diagnostics.normalizedFilterStateKey || "",
     candidateStrategy: diagnostics.candidateStrategy || null,
     candidateStrategyKey: diagnostics.candidateStrategyKey || "",
+    strategyExecutionPlan: diagnostics.strategyExecutionPlan || null,
     candidateSource: diagnostics.candidateSource || null,
     candidateProvider: diagnostics.candidateProvider || null,
     backendProviderStages: diagnostics.backendProviderStages || [],
@@ -5422,6 +5551,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("normalizedFilterStateKey", diagnostics.normalizedFilterStateKey);
   console.log("candidateStrategy", diagnostics.candidateStrategy);
   console.log("candidateStrategyKey", diagnostics.candidateStrategyKey);
+  console.log("strategyExecutionPlan", diagnostics.strategyExecutionPlan);
   console.log("candidateSource", diagnostics.candidateSource);
   console.log("candidateProvider", diagnostics.candidateProvider);
   console.log("backendProviderStages", diagnostics.backendProviderStages);
@@ -21901,6 +22031,7 @@ function buildPipelineExecutorDiagnostics() {
       "pipeline executor prepares render model",
       "pipeline executor prepares render dispatch",
       "legacy branch decisions routed through compatibility layer",
+      "provider selection delegated to strategy",
       "pipeline executor wraps legacy candidate builder",
       "renderArticles delegates orchestration",
       "pipeline executor remains DOM-free",
@@ -21916,6 +22047,7 @@ function executeCandidateRetrievalPipeline({
   candidatePoolContext,
   diagnostics,
   normalizedFilterState,
+  strategyExecutionPlan,
   activeFeedId,
   shouldIgnoreFeedIdForGrouping,
   useBackendQuery,
@@ -21926,6 +22058,7 @@ function executeCandidateRetrievalPipeline({
     candidateProvider,
     diagnostics,
     normalizedFilterState,
+    strategyExecutionPlan,
     shouldIgnoreFeedIdForGrouping,
     useBackendQuery,
   });
@@ -22002,6 +22135,7 @@ function executeRenderPreparationPipeline({
 function executeArticlePipeline({
   normalizedFilterState,
   candidateStrategy,
+  strategyExecutionPlan,
   candidateSource,
   candidateProvider,
   candidatePoolContext,
@@ -22017,6 +22151,7 @@ function executeArticlePipeline({
     candidatePoolContext,
     diagnostics,
     normalizedFilterState,
+    strategyExecutionPlan: strategyExecutionPlan || diagnostics?.strategyExecutionPlan,
     activeFeedId,
     shouldIgnoreFeedIdForGrouping,
     useBackendQuery,
@@ -22053,6 +22188,7 @@ function executeArticlePipeline({
   const pipelineResult = {
     normalizedFilterState,
     candidateStrategy,
+    strategyExecutionPlan: strategyExecutionPlan || diagnostics?.strategyExecutionPlan || null,
     candidateSource,
     candidateProvider: executedCandidateProvider,
     candidatePoolContext,
@@ -22103,9 +22239,21 @@ function executePipelineOrchestrator(options = {}) {
   const activeFeedId = state.filters.feedId || "";
   const activeFeedLabel = getSelectedFeedLabel();
   const shouldIgnoreFeedIdForGrouping = Boolean(activeFeedId) && !state.filters.date;
+  diagnostics.strategyExecutionPlan = buildStrategyExecutionPlan(
+    diagnostics.candidateStrategy,
+    diagnostics.candidateProvider,
+    normalizedFilterState,
+    diagnostics.candidatePoolContext,
+    {
+      activeFeedId,
+      useBackendQuery,
+    }
+  );
+  recordStrategyExecutionPlan(diagnostics, diagnostics.strategyExecutionPlan);
   const pipelineResult = executeArticlePipeline({
     normalizedFilterState,
     candidateStrategy: diagnostics.candidateStrategy,
+    strategyExecutionPlan: diagnostics.strategyExecutionPlan,
     candidateSource: diagnostics.candidateSource,
     candidateProvider: diagnostics.candidateProvider,
     candidatePoolContext: diagnostics.candidatePoolContext,
@@ -22131,6 +22279,7 @@ function executePipelineOrchestrator(options = {}) {
     ...pipelineResult,
     normalizedFilterState,
     candidateStrategy: diagnostics.candidateStrategy,
+    strategyExecutionPlan: diagnostics.strategyExecutionPlan,
     candidateSource: diagnostics.candidateSource,
     candidateProvider: pipelineResult.candidateProvider || diagnostics.candidateProvider,
     candidatePoolContext: diagnostics.candidatePoolContext,
@@ -22163,12 +22312,14 @@ function resolveArticleCandidatePool(candidateContext, options = {}) {
   const useBackendQuery = Boolean(options.useBackendQuery);
   const activeFeedId = options.activeFeedId || "";
   const shouldIgnoreFeedIdForGrouping = Boolean(options.shouldIgnoreFeedIdForGrouping);
+  const strategyExecutionPlan = options.strategyExecutionPlan || diagnostics?.strategyExecutionPlan || null;
 
   const providerResult = executeCandidateProvider(candidateProvider, candidateContext, {
     activeFeedId,
     candidateSourceRoute,
     diagnostics,
     normalizedFilterState,
+    strategyExecutionPlan,
     shouldIgnoreFeedIdForGrouping,
     useBackendQuery,
   });
@@ -22182,12 +22333,14 @@ function executeCandidateProvider(candidateProvider, candidateContext, options =
   const useBackendQuery = Boolean(options.useBackendQuery);
   const activeFeedId = options.activeFeedId || "";
   const shouldIgnoreFeedIdForGrouping = Boolean(options.shouldIgnoreFeedIdForGrouping);
+  const strategyExecutionPlan = options.strategyExecutionPlan || diagnostics?.strategyExecutionPlan || null;
+  const dispatchMode = strategyExecutionPlan?.dispatchMode || "global_memory";
 
   if (diagnostics?.enabled && candidateProvider) {
     recordCandidateProvider(diagnostics, candidateProvider);
   }
 
-  if (activeFeedId && shouldAttemptSelectedFeedFullPool(normalizedFilterState)) {
+  if (dispatchMode === "selected_feed_full_pool_then_legacy") {
     const selectedFeedResult = executeSelectedFeedProvider(candidateProvider, normalizedFilterState, candidateContext, {
       activeFeedId,
       candidateSourceRoute,
@@ -22197,28 +22350,33 @@ function executeCandidateProvider(candidateProvider, candidateContext, options =
     if (selectedFeedResult) {
       return selectedFeedResult;
     }
+    if (useBackendQuery) {
+      return executeBackendQueryProvider(candidateProvider, normalizedFilterState, candidateContext, {
+        diagnostics,
+      });
+    }
   }
 
-  if (useBackendQuery) {
+  if (dispatchMode === "backend_query") {
     return executeBackendQueryProvider(candidateProvider, normalizedFilterState, candidateContext, {
       diagnostics,
     });
   }
 
-    if (activeFeedId && !state.filters.date) {
-      return executeSelectedFeedProvider(candidateProvider, normalizedFilterState, candidateContext, {
-        activeFeedId,
-        candidateSourceRoute,
-        diagnostics,
-        mode: "fallback",
-      });
-    }
+  if (dispatchMode === "selected_feed" || (dispatchMode === "selected_feed_full_pool_then_legacy" && activeFeedId && !state.filters.date)) {
+    return executeSelectedFeedProvider(candidateProvider, normalizedFilterState, candidateContext, {
+      activeFeedId,
+      candidateSourceRoute,
+      diagnostics,
+      mode: "fallback",
+    });
+  }
 
-    if (state.filters.date) {
-      return executeDateFilterProvider(candidateProvider, normalizedFilterState, candidateContext, {
-        diagnostics,
-      });
-    }
+  if (dispatchMode === "date_filter") {
+    return executeDateFilterProvider(candidateProvider, normalizedFilterState, candidateContext, {
+      diagnostics,
+    });
+  }
 
   return executeGlobalMemoryProvider(candidateProvider, normalizedFilterState, candidateContext, {
     diagnostics,
