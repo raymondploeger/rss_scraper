@@ -4573,6 +4573,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     filterDecisionTraceMap: enabled ? new Map() : null,
     filterDecisionTraceSummary: null,
     filterDecisionDebugTools: null,
+    filterDecisionRichTrace: null,
     paginationPipeline: null,
     renderModel: null,
     renderDispatch: null,
@@ -4640,6 +4641,8 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Decision tracing enabled",
             "Filtering debug tools active",
             "Trace lookup helpers enabled",
+            "Rich decision trace metadata enabled",
+            "Trace metadata records existing decisions only",
             "Filtering behavior unchanged",
           ]
         : []),
@@ -4831,8 +4834,23 @@ function getFilterDecisionDebugToolsSummary(diagnostics) {
       "window.explainArticleDecision(articleId)",
       "window.explainArticleDecisionByTitle(titlePart)",
       "window.findTracedArticlesByKeyword(keyword)",
+      "window.explainRejectedArticle(titlePart)",
+      "window.listRejectionReasons()",
     ],
     traceStoreSize,
+  };
+}
+
+function getFilterDecisionRichTraceSummary(diagnostics) {
+  return {
+    enabled: Boolean(diagnostics?.enabled),
+    metadataStages: [
+      "personal_dashboard",
+      "advanced_filters",
+      "sorting",
+      "grouping",
+    ],
+    helperCount: 7,
   };
 }
 
@@ -4949,6 +4967,214 @@ function findTracedArticlesByKeyword(keyword) {
         grouped: isTraceGrouped(trace),
       };
     });
+}
+
+function explainRejectedArticle(titlePart) {
+  const needle = String(titlePart || "").trim().toLowerCase();
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!needle || !traceMap) {
+    return null;
+  }
+
+  const match = Array.from(traceMap.values()).find((trace) =>
+    trace.finalResult === "rejected" &&
+    String(trace?.title || "").toLowerCase().includes(needle)
+  );
+  return match ? explainArticleDecision(match.articleId) : null;
+}
+
+function listRejectionReasons() {
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!traceMap) {
+    return [];
+  }
+
+  const groupedReasons = new Map();
+  Array.from(traceMap.values()).forEach((trace) => {
+    if (trace.finalResult !== "rejected") {
+      return;
+    }
+    const rejectedStage = getTraceRejectedStage(trace);
+    const stage = rejectedStage?.stage || "unknown";
+    const category = rejectedStage?.metadata?.category || rejectedStage?.metadata?.rejectedCategory || "unknown";
+    const reason = rejectedStage?.reason || trace.finalReason || "";
+    const key = `${stage}::${category}::${reason}`;
+    if (!groupedReasons.has(key)) {
+      groupedReasons.set(key, {
+        stage,
+        category,
+        reason,
+        count: 0,
+        examples: [],
+      });
+    }
+    const bucket = groupedReasons.get(key);
+    bucket.count += 1;
+    if (bucket.examples.length < 10) {
+      bucket.examples.push({
+        articleId: trace.articleId,
+        title: trace.title,
+      });
+    }
+  });
+
+  return Array.from(groupedReasons.values())
+    .sort((left, right) => right.count - left.count || `${left.stage}.${left.category}`.localeCompare(`${right.stage}.${right.category}`));
+}
+
+function getPersonalDashboardTraceMetadata(article, rejection = null) {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const selectedMainDomains = getSelectedMainDomains(selectedInterests);
+  const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
+  const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
+  const selectedBanknoteInterests = selectedInterests.filter(
+    (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "banknote_intelligence"
+  );
+  const detectedPrimaryDomain = getArticleDominantDomain(article);
+  const interestScores = selectedInterests.map((interestId) => {
+    const boost = computePersonalInterestBoost(article, interestId);
+    return {
+      interestId,
+      score: Number(boost?.score) || 0,
+      matched: Boolean(boost?.matched),
+    };
+  });
+  const matchedInterests = interestScores
+    .filter((entry) => entry.score >= 18 || entry.matched)
+    .map((entry) => entry.interestId);
+  const sharedAssessments = selectedSharedInterests.map((interestId) => {
+    const assessment = getSharedSecurityStandaloneAssessment(article, interestId);
+    return {
+      interestId,
+      included: Boolean(assessment?.included),
+      interestScore: Number(assessment?.interestScore) || 0,
+      directMatch: Boolean(assessment?.directMatch),
+      hybridMatch: Boolean(assessment?.hybridMatch),
+      bodyContextBridgeMatch: Boolean(assessment?.bodyContextBridgeMatch),
+      supportHits: Number(assessment?.supportHits) || 0,
+      negativeHits: Number(assessment?.negativeHits) || 0,
+    };
+  });
+  const selectedScores = interestScores.map((entry) => entry.score);
+  const topScore = selectedScores.length ? Math.max(...selectedScores) : null;
+  const identityTechniqueBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, selectedInterests);
+  const banknoteTechniqueBridgeMatched = articleMatchesSelectedBanknoteTechniqueBridge(article, selectedInterests);
+  const techniqueMatched = selectedSharedInterests.length
+    ? sharedAssessments.some((assessment) => assessment.included)
+    : null;
+  const banknoteMatched = selectedBanknoteInterests.length
+    ? selectedBanknoteInterests.some((interestId) => matchesBanknoteInterest(article, interestId))
+    : null;
+  const identityMatched = selectedIdentityInterests.length
+    ? selectedIdentityInterests.some((interestId) => (computePersonalInterestBoost(article, interestId).score || 0) >= 18)
+    : null;
+  const sharedSecurityMatched = selectedSharedInterests.length
+    ? matchesSelectedSharedSecurityTechnique(article, selectedInterests)
+    : null;
+
+  return {
+    selectedMainDomains,
+    selectedInterests,
+    detectedPrimaryDomain,
+    detectedSubInterests: matchedInterests,
+    matchedInterests,
+    rejectedCategory: rejection?.category || "",
+    rejectionReason: rejection?.reason || "",
+    threshold: selectedInterests.length ? 18 : null,
+    bridgeMatched: identityTechniqueBridgeMatched || banknoteTechniqueBridgeMatched,
+    bridgeReason: identityTechniqueBridgeMatched
+      ? "identity shared-security bridge matched"
+      : banknoteTechniqueBridgeMatched
+        ? "banknote shared-security bridge matched"
+        : "",
+    techniqueMatched,
+    banknoteMatched,
+    identityMatched,
+    sharedSecurityMatched,
+    interestScores,
+    sharedSecurityAssessments: sharedAssessments,
+    selectedIdentityInterests,
+    selectedBanknoteInterests,
+    selectedSharedSecurityInterests: selectedSharedInterests,
+    score: topScore,
+  };
+}
+
+function getAdvancedFiltersTraceMetadata(article, options = {}, rejection = null) {
+  const activeKeywordRule = getActiveTopicKeywordRule();
+  const hasSearch = Boolean(state.filters.search);
+  const searchText = hasSearch ? getArticleSearchText(article) : "";
+  const searchMatched = hasSearch ? searchText.includes(state.filters.search.toLowerCase()) : null;
+  const hasDate = Boolean(state.filters.date);
+  const dateMatched = hasDate ? toDateInputValue(article.pubDate) === state.filters.date : null;
+  const hasTopic = Boolean(state.filters.topic);
+  const topicMatched = hasTopic ? article.topic === state.filters.topic : null;
+  const hasTag = Boolean(state.filters.tag);
+  const tagMatched = hasTag ? getArticleFilterTags(article).includes(normalizeFilterTag(state.filters.tag)) : null;
+  const hasSignal = Boolean(state.filters.signalCategory);
+  const signalMatched = hasSignal ? getArticleSignalCategories(article).includes(state.filters.signalCategory) : null;
+  const keywordExcludeMatched = activeKeywordRule ? isKeywordRuleFalsePositive(article, activeKeywordRule) : false;
+  const officialFallbackMatched = isOfficialFallbackArticle(article);
+  const hardNoiseMatched =
+    !activeKeywordRule &&
+    (isPassportFalsePositive(article) || isDriverLicenseMusicFalsePositive(article) || isCoinGamingFalsePositive(article));
+  const noiseGuardMatched = officialFallbackMatched || hardNoiseMatched;
+
+  return {
+    searchMatched,
+    dateMatched,
+    topicMatched,
+    tagMatched,
+    signalMatched,
+    keywordIncludeMatched: activeKeywordRule ? !keywordExcludeMatched : null,
+    keywordExcludeMatched,
+    noiseGuardMatched,
+    noiseGuardReason: officialFallbackMatched
+      ? "official fallback article"
+      : hardNoiseMatched
+        ? "hard false-positive guard matched"
+        : "",
+    rejectedCategory: rejection?.category || "",
+    rejectionReason: rejection?.reason || "",
+    ignoreFeedId: Boolean(options?.ignoreFeedId),
+    ignorePersonalDashboard: Boolean(options?.ignorePersonalDashboard),
+  };
+}
+
+function getSortingTraceMetadata(article, index, diagnostics) {
+  return {
+    sortingMode: diagnostics?.normalizedFilterState?.sorting?.mode || "",
+    sortKey: {
+      pubDate: article?.pubDate || "",
+      createdAt: article?.createdAt || "",
+    },
+    sortRank: index + 1,
+  };
+}
+
+function createGroupingTraceMetadataByArticle(groupedArticles = []) {
+  const metadataById = new Map();
+  (Array.isArray(groupedArticles) ? groupedArticles : []).forEach((groupedArticle) => {
+    const sources = Array.isArray(groupedArticle?.sources) && groupedArticle.sources.length
+      ? groupedArticle.sources
+      : [groupedArticle];
+    const groupSize = Number(groupedArticle?.sourceCount) || sources.length;
+    const groupKey = getIdentityEventKey(groupedArticle) || getFilterDecisionTraceArticleId(groupedArticle);
+    sources.forEach((sourceArticle, index) => {
+      const articleId = getFilterDecisionTraceArticleId(sourceArticle);
+      if (!articleId) {
+        return;
+      }
+      metadataById.set(articleId, {
+        grouped: groupSize > 1,
+        groupKey,
+        duplicateOf: index > 0 ? getFilterDecisionTraceArticleId(groupedArticle) : "",
+        duplicateReason: groupSize > 1 ? "existing event grouping matched article sources" : "",
+        groupSize,
+      });
+    });
+  });
+  return metadataById;
 }
 
 function getLargestPipelineRejection(diagnostics) {
@@ -5358,6 +5584,16 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push("disabled");
   }
 
+  const filterDecisionRichTrace = diagnostics.filterDecisionRichTrace;
+  lines.push("");
+  lines.push("Filter Decision Rich Trace");
+  if (filterDecisionRichTrace?.enabled) {
+    lines.push(`metadataStages: ${filterDecisionRichTrace.metadataStages.join(", ")}`);
+    lines.push(`helperCount: ${filterDecisionRichTrace.helperCount}`);
+  } else {
+    lines.push("disabled");
+  }
+
   const paginationPipeline = diagnostics.paginationPipeline;
   lines.push("");
   lines.push("Pagination Pipeline");
@@ -5757,6 +5993,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     filterPipelineStages: diagnostics.filterPipelineStages || [],
     filterDecisionTraceSummary: diagnostics.filterDecisionTraceSummary || null,
     filterDecisionDebugTools: diagnostics.filterDecisionDebugTools || null,
+    filterDecisionRichTrace: diagnostics.filterDecisionRichTrace || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
     renderModel: diagnostics.renderModel || null,
     renderDispatch: diagnostics.renderDispatch || null,
@@ -5850,6 +6087,14 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.findTracedArticlesByKeyword = (keyword) => findTracedArticlesByKeyword(keyword);
   }
 
+  if (typeof window.explainRejectedArticle !== "function") {
+    window.explainRejectedArticle = (titlePart) => explainRejectedArticle(titlePart);
+  }
+
+  if (typeof window.listRejectionReasons !== "function") {
+    window.listRejectionReasons = () => listRejectionReasons();
+  }
+
   if (!window.__FILTER_PIPELINE_EXPORT_HINT_SHOWN__) {
     window.__FILTER_PIPELINE_EXPORT_HINT_SHOWN__ = true;
     console.info(
@@ -5862,6 +6107,8 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.explainArticleDecision(articleId)",
         "window.explainArticleDecisionByTitle(titlePart)",
         "window.findTracedArticlesByKeyword(keyword)",
+        "window.explainRejectedArticle(titlePart)",
+        "window.listRejectionReasons()",
       ].join("\n")
     );
   }
@@ -5893,6 +6140,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   finalizeFilterDecisionTraces(diagnostics);
   diagnostics.filterDecisionTraceSummary = getFilterDecisionTraceSummary(diagnostics);
   diagnostics.filterDecisionDebugTools = getFilterDecisionDebugToolsSummary(diagnostics);
+  diagnostics.filterDecisionRichTrace = getFilterDecisionRichTraceSummary(diagnostics);
   publishFilterDecisionTraceDiagnostics(diagnostics);
   storeFilterPipelineDiagnostics(diagnostics);
   const groupLabel = `[FilterPipeline] ${diagnostics.renderId} ${diagnostics.branch}`;
@@ -5918,6 +6166,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("filterPipelineStages", diagnostics.filterPipelineStages);
   console.log("filterDecisionTraceSummary", diagnostics.filterDecisionTraceSummary);
   console.log("filterDecisionDebugTools", diagnostics.filterDecisionDebugTools);
+  console.log("filterDecisionRichTrace", diagnostics.filterDecisionRichTrace);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
   console.log("renderModel", diagnostics.renderModel);
   console.log("renderDispatch", diagnostics.renderDispatch);
@@ -22107,16 +22356,14 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
   const inputArticles = Array.isArray(articles) ? articles : [];
   const outputArticles = [];
   inputArticles.forEach((article) => {
+    const dashboardMetadata = getPersonalDashboardTraceMetadata(article);
     if (articleMatchesPersonalDashboardSelection(article)) {
       recordFilterDecisionStage(diagnostics, article, {
         stage: "personal_dashboard",
         result: "passed",
         reason: "article matched current Personal Dashboard selection",
         notes: ["personal dashboard stage wraps existing interest matching"],
-        metadata: {
-          selectedPersonalInterests: normalizePersonalDashboardInterests(state.personalDashboard.interests),
-          primaryDomain: getArticleDominantDomain(article),
-        },
+        metadata: dashboardMetadata,
       });
       outputArticles.push(article);
       return;
@@ -22128,9 +22375,8 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
       reason: rejection.reason,
       notes: ["personal dashboard stage wraps existing interest matching"],
       metadata: {
+        ...getPersonalDashboardTraceMetadata(article, rejection),
         category: rejection.category,
-        selectedPersonalInterests: normalizePersonalDashboardInterests(state.personalDashboard.interests),
-        primaryDomain: getArticleDominantDomain(article),
       },
     });
     finalizeFilterDecisionTrace(diagnostics, article, "rejected", rejection.reason);
@@ -22152,16 +22398,14 @@ function applyAdvancedFiltersStage({ articles, advancedFilterOptions, diagnostic
   const inputArticles = Array.isArray(articles) ? articles : [];
   const outputArticles = [];
   inputArticles.forEach((article) => {
+    const advancedMetadata = getAdvancedFiltersTraceMetadata(article, advancedFilterOptions);
     if (articleMatchesFilters(article, advancedFilterOptions)) {
       recordFilterDecisionStage(diagnostics, article, {
         stage: "advanced_filters",
         result: "passed",
         reason: "article matched current advanced filters",
         notes: ["advanced filters stage wraps existing articleMatchesFilters behavior"],
-        metadata: {
-          ignoreFeedId: Boolean(advancedFilterOptions?.ignoreFeedId),
-          ignorePersonalDashboard: Boolean(advancedFilterOptions?.ignorePersonalDashboard),
-        },
+        metadata: advancedMetadata,
       });
       outputArticles.push(article);
       return;
@@ -22173,9 +22417,8 @@ function applyAdvancedFiltersStage({ articles, advancedFilterOptions, diagnostic
       reason: rejection.reason,
       notes: ["advanced filters stage wraps existing articleMatchesFilters behavior"],
       metadata: {
+        ...getAdvancedFiltersTraceMetadata(article, advancedFilterOptions, rejection),
         category: rejection.category,
-        ignoreFeedId: Boolean(advancedFilterOptions?.ignoreFeedId),
-        ignorePersonalDashboard: Boolean(advancedFilterOptions?.ignorePersonalDashboard),
       },
     });
     finalizeFilterDecisionTrace(diagnostics, article, "rejected", rejection.reason);
@@ -22203,9 +22446,7 @@ function applySortingStage({ inputArticles, sortedArticles, diagnostics } = {}) 
       result: "passed",
       reason: "article retained in existing branch-local sorted output",
       notes: ["sorting stage reports existing branch-local sorted output"],
-      metadata: {
-        position: index + 1,
-      },
+      metadata: getSortingTraceMetadata(article, index, diagnostics),
     });
   });
   return {
@@ -22219,10 +22460,11 @@ function applySortingStage({ inputArticles, sortedArticles, diagnostics } = {}) 
   };
 }
 
-function applyGroupingStage({ inputArticles, groupedCount, diagnostics } = {}) {
+function applyGroupingStage({ inputArticles, groupedArticles, groupedCount, diagnostics } = {}) {
   const inputCount = Array.isArray(inputArticles) ? inputArticles.length : 0;
   const outputCount = Number(groupedCount) || 0;
   const articles = Array.isArray(inputArticles) ? inputArticles : [];
+  const groupingMetadataById = createGroupingTraceMetadataByArticle(groupedArticles);
   articles.forEach((article) => {
     recordFilterDecisionStage(diagnostics, article, {
       stage: "grouping",
@@ -22230,6 +22472,13 @@ function applyGroupingStage({ inputArticles, groupedCount, diagnostics } = {}) {
       reason: "article retained in existing branch-local grouped output",
       notes: ["grouping stage reports existing branch-local grouping output"],
       metadata: {
+        ...(groupingMetadataById.get(getFilterDecisionTraceArticleId(article)) || {
+          grouped: false,
+          groupKey: getIdentityEventKey(article) || getFilterDecisionTraceArticleId(article),
+          duplicateOf: "",
+          duplicateReason: "",
+          groupSize: 1,
+        }),
         groupedCount: outputCount,
       },
     });
@@ -22285,6 +22534,7 @@ function replayFilterDiagnosticsStage({ result, diagnostics, activeFeedId, useBa
 
   const groupingStage = applyGroupingStage({
     inputArticles: sortingStage.articles,
+    groupedArticles: result.groupedArticles,
     groupedCount: result.groupedArticlesCount,
     diagnostics,
   });
