@@ -21779,29 +21779,35 @@ function prepareRenderDispatch({
   };
 }
 
-function executeArticlePipeline({
-  normalizedFilterState,
-  candidateStrategy,
-  candidateSource,
+function buildPipelineExecutorDiagnostics() {
+  return {
+    notes: [
+      "single orchestration entry point",
+      "pipeline executor reduced to orchestration coordinator",
+      "pipeline executor owns candidate builder invocation",
+      "pipeline executor owns filter pipeline invocation",
+      "pipeline executor owns pagination preparation",
+      "pipeline executor prepares render model",
+      "pipeline executor prepares render dispatch",
+      "pipeline executor wraps legacy candidate builder",
+      "renderArticles delegates orchestration",
+      "pipeline executor remains DOM-free",
+      "rendering still handled by renderArticles",
+      "filtering/grouping still branch-local",
+    ],
+  };
+}
+
+function executeCandidateRetrievalPipeline({
   candidateProvider,
+  candidateSource,
   candidatePoolContext,
   diagnostics,
+  normalizedFilterState,
   activeFeedId,
   shouldIgnoreFeedIdForGrouping,
   useBackendQuery,
 } = {}) {
-  const notes = [
-    "single orchestration entry point",
-    "pipeline executor owns candidate builder invocation",
-    "pipeline executor owns filter pipeline invocation",
-    "pipeline executor owns pagination preparation",
-    "pipeline executor prepares render model",
-    "pipeline executor prepares render dispatch",
-    "pipeline executor wraps legacy candidate builder",
-    "renderArticles delegates orchestration",
-    "rendering still handled by renderArticles",
-    "filtering/grouping still branch-local",
-  ];
   const candidateBuilderResult = resolveArticleCandidatePool(candidatePoolContext, {
     activeFeedId,
     candidateSource,
@@ -21817,21 +21823,50 @@ function executeArticlePipeline({
         pending: Boolean(candidateBuilderResult?.pending),
       }
     : null;
-  const filterPipelineResult = applyLegacyFilterPipeline({
+
+  return {
+    candidateBuilderResult,
+    candidateProvider: executedCandidateProvider,
+  };
+}
+
+function executeFilteringPipeline({
+  candidateBuilderResult,
+  diagnostics,
+  activeFeedId,
+  useBackendQuery,
+} = {}) {
+  return applyLegacyFilterPipeline({
     candidateBuilderResult,
     diagnostics,
     activeFeedId,
     useBackendQuery,
   });
-  const paginationResult = filterPipelineResult.pending
-    ? null
-    : preparePipelinePagination({
-        articles: filterPipelineResult.articles,
-        useBackendQuery,
-      });
-  if (paginationResult) {
-    recordPaginationPipelineResult(diagnostics, paginationResult);
+}
+
+function executePaginationPipeline({
+  filterPipelineResult,
+  diagnostics,
+  useBackendQuery,
+} = {}) {
+  if (filterPipelineResult?.pending) {
+    return null;
   }
+
+  const paginationResult = preparePipelinePagination({
+    articles: filterPipelineResult.articles,
+    useBackendQuery,
+  });
+  recordPaginationPipelineResult(diagnostics, paginationResult);
+  return paginationResult;
+}
+
+function executeRenderPreparationPipeline({
+  candidateBuilderResult,
+  filterPipelineResult,
+  paginationResult,
+  diagnostics,
+} = {}) {
   const renderModel = preparePipelineRenderModel({
     articles: filterPipelineResult.articles,
     filterPipelineResult,
@@ -21845,6 +21880,56 @@ function executeArticlePipeline({
     paginationResult,
   });
   recordRenderDispatch(diagnostics, renderDispatch);
+
+  return {
+    renderModel,
+    renderDispatch,
+  };
+}
+
+function executeArticlePipeline({
+  normalizedFilterState,
+  candidateStrategy,
+  candidateSource,
+  candidateProvider,
+  candidatePoolContext,
+  diagnostics,
+  activeFeedId,
+  shouldIgnoreFeedIdForGrouping,
+  useBackendQuery,
+} = {}) {
+  const executorDiagnostics = buildPipelineExecutorDiagnostics();
+  const candidateRetrievalResult = executeCandidateRetrievalPipeline({
+    candidateProvider,
+    candidateSource,
+    candidatePoolContext,
+    diagnostics,
+    normalizedFilterState,
+    activeFeedId,
+    shouldIgnoreFeedIdForGrouping,
+    useBackendQuery,
+  });
+  const candidateBuilderResult = candidateRetrievalResult.candidateBuilderResult;
+  const executedCandidateProvider = candidateRetrievalResult.candidateProvider;
+  const filterPipelineResult = executeFilteringPipeline({
+    candidateBuilderResult,
+    diagnostics,
+    activeFeedId,
+    useBackendQuery,
+  });
+  const paginationResult = executePaginationPipeline({
+    filterPipelineResult,
+    diagnostics,
+    useBackendQuery,
+  });
+  const renderPreparationResult = executeRenderPreparationPipeline({
+    candidateBuilderResult,
+    filterPipelineResult,
+    paginationResult,
+    diagnostics,
+  });
+  const renderModel = renderPreparationResult.renderModel;
+  const renderDispatch = renderPreparationResult.renderDispatch;
 
   const pipelineResult = {
     normalizedFilterState,
@@ -21863,7 +21948,7 @@ function executeArticlePipeline({
     branch: candidateBuilderResult?.branch || "",
     pending: Boolean(filterPipelineResult.pending),
     warnings: Array.isArray(filterPipelineResult.warnings) ? filterPipelineResult.warnings.slice() : [],
-    notes,
+    notes: executorDiagnostics.notes,
   };
   recordPipelineExecutorResult(diagnostics, pipelineResult);
   recordCandidateProvider(diagnostics, executedCandidateProvider);
