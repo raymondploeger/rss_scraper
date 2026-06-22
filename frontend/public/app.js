@@ -4021,6 +4021,7 @@ function resolveCandidateProvider(candidateStrategy, candidateSource, normalized
       "candidate provider metadata only",
       "candidate provider owns legacy retrieval execution",
       ...(providerId === "global_memory_provider" ? ["global memory provider extracted"] : []),
+      ...(providerId === "date_filter_provider" ? ["date provider extracted"] : []),
       "legacy retrieval implementation remains unchanged",
     ]),
   });
@@ -21943,26 +21944,37 @@ function executeCandidateProvider(candidateProvider, candidateContext, options =
     }
 
     if (state.filters.date) {
-      setFilterPipelineBranch(diagnostics, "date-filter");
-      const candidatePool = state.articles;
-      const filteredRawArticles = sortArticlesForCurrentDashboardMode(
-        state.articles.filter(articleMatchesFilters)
-      );
-      return {
-        articles: filteredRawArticles,
-        candidatePool,
-        filteredRawArticles,
-        groupedArticlesCount: filteredRawArticles.length,
-        feedRenderFilteredCount: filteredRawArticles.length,
-        feedRenderGroupedCount: filteredRawArticles.length,
-        branch: "date-filter",
-      };
+      return executeDateFilterProvider(candidateProvider, normalizedFilterState, candidateContext, {
+        diagnostics,
+      });
     }
 
   return executeGlobalMemoryProvider(candidateProvider, normalizedFilterState, candidateContext, {
     diagnostics,
     shouldIgnoreFeedIdForGrouping,
   });
+}
+
+function executeDateFilterProvider(candidateProvider, normalizedFilterState, candidatePoolContext, options = {}) {
+  const diagnostics = options.diagnostics || null;
+
+  setFilterPipelineBranch(diagnostics, "date-filter");
+  const candidatePool = state.articles;
+  const filteredRawArticles = sortArticlesForCurrentDashboardMode(
+    state.articles.filter(articleMatchesFilters)
+  );
+  return {
+    articles: filteredRawArticles,
+    candidatePool,
+    filteredRawArticles,
+    groupedArticlesCount: filteredRawArticles.length,
+    feedRenderFilteredCount: filteredRawArticles.length,
+    feedRenderGroupedCount: filteredRawArticles.length,
+    branch: "date-filter",
+    notes: [
+      "date provider extracted",
+    ],
+  };
 }
 
 function executeGlobalMemoryProvider(candidateProvider, normalizedFilterState, candidatePoolContext, options = {}) {
