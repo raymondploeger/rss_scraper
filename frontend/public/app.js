@@ -4572,6 +4572,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     filterPipelineStages: [],
     filterDecisionTraceMap: enabled ? new Map() : null,
     filterDecisionTraceSummary: null,
+    filterDecisionDebugTools: null,
     paginationPipeline: null,
     renderModel: null,
     renderDispatch: null,
@@ -4637,6 +4638,8 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
         ? [
             "Filtering Engine v2 active",
             "Decision tracing enabled",
+            "Filtering debug tools active",
+            "Trace lookup helpers enabled",
             "Filtering behavior unchanged",
           ]
         : []),
@@ -4814,6 +4817,25 @@ function getFilterDecisionTraceSummary(diagnostics) {
   };
 }
 
+function getFilterDecisionDebugToolsSummary(diagnostics) {
+  const traceStoreSize = diagnostics?.filterDecisionTraceMap instanceof Map
+    ? diagnostics.filterDecisionTraceMap.size
+    : runtime.filterDecisionTraceMap instanceof Map
+      ? runtime.filterDecisionTraceMap.size
+      : 0;
+  return {
+    enabled: Boolean(diagnostics?.enabled),
+    availableHelpers: [
+      "window.listRejectedArticles()",
+      "window.listSurvivingArticles()",
+      "window.explainArticleDecision(articleId)",
+      "window.explainArticleDecisionByTitle(titlePart)",
+      "window.findTracedArticlesByKeyword(keyword)",
+    ],
+    traceStoreSize,
+  };
+}
+
 function publishFilterDecisionTraceDiagnostics(diagnostics) {
   if (!diagnostics?.enabled || typeof window === "undefined") {
     return;
@@ -4823,15 +4845,110 @@ function publishFilterDecisionTraceDiagnostics(diagnostics) {
   window.__FILTER_DECISION_TRACES__ = runtime.filterDecisionTraceMap;
 }
 
+function getActiveFilterDecisionTraceMap() {
+  if (!isFilterPipelineDiagnosticsEnabled()) {
+    return null;
+  }
+  return runtime.filterDecisionTraceMap instanceof Map ? runtime.filterDecisionTraceMap : null;
+}
+
 function explainArticleDecision(articleId) {
   const normalizedArticleId = String(articleId || "");
-  const traceMap = runtime.filterDecisionTraceMap instanceof Map
-    ? runtime.filterDecisionTraceMap
-    : null;
+  const traceMap = getActiveFilterDecisionTraceMap();
   if (!normalizedArticleId || !traceMap?.has(normalizedArticleId)) {
     return null;
   }
   return traceMap.get(normalizedArticleId);
+}
+
+function getTraceRejectedStage(trace) {
+  return (Array.isArray(trace?.stages) ? trace.stages : []).find((stage) => stage.result === "rejected") || null;
+}
+
+function isTraceVisible(trace) {
+  return (Array.isArray(trace?.stages) ? trace.stages : []).some(
+    (stage) => stage.stage === "pagination" && stage.result === "passed"
+  );
+}
+
+function isTraceGrouped(trace) {
+  return (Array.isArray(trace?.stages) ? trace.stages : []).some(
+    (stage) => stage.stage === "grouping" && stage.result === "passed"
+  );
+}
+
+function listRejectedArticles() {
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!traceMap) {
+    return [];
+  }
+
+  return Array.from(traceMap.values())
+    .filter((trace) => trace.finalResult === "rejected")
+    .map((trace) => {
+      const rejectedStage = getTraceRejectedStage(trace);
+      return {
+        articleId: trace.articleId,
+        title: trace.title,
+        finalReason: trace.finalReason,
+        rejectedStage: rejectedStage?.stage || "",
+        rejectedCategory: rejectedStage?.metadata?.category || "",
+      };
+    });
+}
+
+function listSurvivingArticles() {
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!traceMap) {
+    return [];
+  }
+
+  return Array.from(traceMap.values())
+    .filter((trace) => trace.finalResult !== "rejected")
+    .map((trace) => ({
+      articleId: trace.articleId,
+      title: trace.title,
+      finalResult: trace.finalResult,
+      visible: isTraceVisible(trace),
+      grouped: isTraceGrouped(trace),
+    }));
+}
+
+function explainArticleDecisionByTitle(titlePart) {
+  const needle = String(titlePart || "").trim().toLowerCase();
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!needle || !traceMap) {
+    return null;
+  }
+
+  const match = Array.from(traceMap.values()).find((trace) =>
+    String(trace?.title || "").toLowerCase().includes(needle)
+  );
+  return match ? explainArticleDecision(match.articleId) : null;
+}
+
+function findTracedArticlesByKeyword(keyword) {
+  const needle = String(keyword || "").trim().toLowerCase();
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!needle || !traceMap) {
+    return [];
+  }
+
+  return Array.from(traceMap.values())
+    .filter((trace) => String(trace?.title || "").toLowerCase().includes(needle))
+    .map((trace) => {
+      const rejectedStage = getTraceRejectedStage(trace);
+      return {
+        articleId: trace.articleId,
+        title: trace.title,
+        finalResult: trace.finalResult,
+        finalReason: trace.finalReason,
+        rejectedStage: rejectedStage?.stage || "",
+        rejectedCategory: rejectedStage?.metadata?.category || "",
+        visible: isTraceVisible(trace),
+        grouped: isTraceGrouped(trace),
+      };
+    });
 }
 
 function getLargestPipelineRejection(diagnostics) {
@@ -5226,6 +5343,19 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push(formatPipelineSummaryLine("averageStagesVisited", filterDecisionTraceSummary.averageStagesVisited));
   } else {
     lines.push("none");
+  }
+
+  const filterDecisionDebugTools = diagnostics.filterDecisionDebugTools;
+  lines.push("");
+  lines.push("Filter Decision Debug Tools");
+  if (filterDecisionDebugTools?.enabled) {
+    lines.push(`traceStoreSize: ${filterDecisionDebugTools.traceStoreSize}`);
+    lines.push("helpers:");
+    filterDecisionDebugTools.availableHelpers.forEach((helperName) => {
+      lines.push(`- ${helperName}`);
+    });
+  } else {
+    lines.push("disabled");
   }
 
   const paginationPipeline = diagnostics.paginationPipeline;
@@ -5626,6 +5756,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     filterPipeline: diagnostics.filterPipeline || null,
     filterPipelineStages: diagnostics.filterPipelineStages || [],
     filterDecisionTraceSummary: diagnostics.filterDecisionTraceSummary || null,
+    filterDecisionDebugTools: diagnostics.filterDecisionDebugTools || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
     renderModel: diagnostics.renderModel || null,
     renderDispatch: diagnostics.renderDispatch || null,
@@ -5703,10 +5834,35 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.explainArticleDecision = (articleId) => explainArticleDecision(articleId);
   }
 
+  if (typeof window.listRejectedArticles !== "function") {
+    window.listRejectedArticles = () => listRejectedArticles();
+  }
+
+  if (typeof window.listSurvivingArticles !== "function") {
+    window.listSurvivingArticles = () => listSurvivingArticles();
+  }
+
+  if (typeof window.explainArticleDecisionByTitle !== "function") {
+    window.explainArticleDecisionByTitle = (titlePart) => explainArticleDecisionByTitle(titlePart);
+  }
+
+  if (typeof window.findTracedArticlesByKeyword !== "function") {
+    window.findTracedArticlesByKeyword = (keyword) => findTracedArticlesByKeyword(keyword);
+  }
+
   if (!window.__FILTER_PIPELINE_EXPORT_HINT_SHOWN__) {
     window.__FILTER_PIPELINE_EXPORT_HINT_SHOWN__ = true;
     console.info(
-      "FilterPipeline diagnostics export available:\nwindow.exportFilterPipelineDiagnostics()\nwindow.copyFilterPipelineDiagnostics()\nwindow.explainArticleDecision(articleId)"
+      [
+        "FilterPipeline diagnostics export available:",
+        "window.exportFilterPipelineDiagnostics()",
+        "window.copyFilterPipelineDiagnostics()",
+        "window.listRejectedArticles()",
+        "window.listSurvivingArticles()",
+        "window.explainArticleDecision(articleId)",
+        "window.explainArticleDecisionByTitle(titlePart)",
+        "window.findTracedArticlesByKeyword(keyword)",
+      ].join("\n")
     );
   }
 }
@@ -5736,6 +5892,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.largestRejection = getLargestPipelineRejection(diagnostics);
   finalizeFilterDecisionTraces(diagnostics);
   diagnostics.filterDecisionTraceSummary = getFilterDecisionTraceSummary(diagnostics);
+  diagnostics.filterDecisionDebugTools = getFilterDecisionDebugToolsSummary(diagnostics);
   publishFilterDecisionTraceDiagnostics(diagnostics);
   storeFilterPipelineDiagnostics(diagnostics);
   const groupLabel = `[FilterPipeline] ${diagnostics.renderId} ${diagnostics.branch}`;
@@ -5760,6 +5917,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("filterPipeline", diagnostics.filterPipeline);
   console.log("filterPipelineStages", diagnostics.filterPipelineStages);
   console.log("filterDecisionTraceSummary", diagnostics.filterDecisionTraceSummary);
+  console.log("filterDecisionDebugTools", diagnostics.filterDecisionDebugTools);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
   console.log("renderModel", diagnostics.renderModel);
   console.log("renderDispatch", diagnostics.renderDispatch);
