@@ -4178,6 +4178,23 @@ function recordFilterPipelineResult(diagnostics, filterPipelineResult) {
   diagnostics.filterPipeline = summarizeFilterPipelineResult(filterPipelineResult);
 }
 
+function recordFilterPipelineStages(diagnostics, filterPipelineStages) {
+  if (!diagnostics?.enabled) {
+    return;
+  }
+
+  diagnostics.filterPipelineStages = Array.isArray(filterPipelineStages)
+    ? filterPipelineStages.map((stage) => ({
+        stage: stage.stage || "",
+        inputCount: Number(stage.inputCount) || 0,
+        outputCount: Number(stage.outputCount) || 0,
+        executionMode: stage.executionMode || "legacy",
+        notes: Array.isArray(stage.notes) ? stage.notes.slice() : [],
+        warnings: Array.isArray(stage.warnings) ? stage.warnings.slice() : [],
+      }))
+    : [];
+}
+
 function recordPaginationPipelineResult(diagnostics, paginationResult) {
   if (!diagnostics?.enabled) {
     return;
@@ -4349,6 +4366,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     candidateBuilderResult: null,
     pipelineExecutor: null,
     filterPipeline: null,
+    filterPipelineStages: [],
     paginationPipeline: null,
     renderModel: null,
     renderDispatch: null,
@@ -4750,6 +4768,27 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push("none");
   }
 
+  const filterPipelineStages = diagnostics.filterPipelineStages;
+  lines.push("");
+  lines.push("Filter Pipeline Stages");
+  if (filterPipelineStages?.length) {
+    filterPipelineStages.forEach((stage) => {
+      lines.push(`${stage.stage}: ${stage.inputCount} -> ${stage.outputCount} (${stage.executionMode})`);
+      if (stage.notes?.length) {
+        stage.notes.forEach((note) => {
+          lines.push(`- ${note}`);
+        });
+      }
+      if (stage.warnings?.length) {
+        stage.warnings.forEach((warning) => {
+          lines.push(`- warning: ${warning}`);
+        });
+      }
+    });
+  } else {
+    lines.push("none");
+  }
+
   const paginationPipeline = diagnostics.paginationPipeline;
   lines.push("");
   lines.push("Pagination Pipeline");
@@ -5110,6 +5149,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     candidateBuilderResult: diagnostics.candidateBuilderResult || null,
     pipelineExecutor: diagnostics.pipelineExecutor || null,
     filterPipeline: diagnostics.filterPipeline || null,
+    filterPipelineStages: diagnostics.filterPipelineStages || [],
     paginationPipeline: diagnostics.paginationPipeline || null,
     renderModel: diagnostics.renderModel || null,
     renderDispatch: diagnostics.renderDispatch || null,
@@ -5232,6 +5272,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("candidateBuilderResult", diagnostics.candidateBuilderResult);
   console.log("pipelineExecutor", diagnostics.pipelineExecutor);
   console.log("filterPipeline", diagnostics.filterPipeline);
+  console.log("filterPipelineStages", diagnostics.filterPipelineStages);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
   console.log("renderModel", diagnostics.renderModel);
   console.log("renderDispatch", diagnostics.renderDispatch);
@@ -21362,6 +21403,166 @@ function getGlobalArticleCandidateSource() {
   return Array.isArray(state.articles) ? state.articles : [];
 }
 
+function createFilterPipelineStageResult(stage, inputCount, outputCount, notes = [], warnings = []) {
+  return {
+    stage,
+    inputCount: Number(inputCount) || 0,
+    outputCount: Number(outputCount) || 0,
+    executionMode: "legacy",
+    notes,
+    warnings,
+  };
+}
+
+function applyFeedScopeStage({ articles, activeFeedId, diagnostics } = {}) {
+  const inputArticles = Array.isArray(articles) ? articles : [];
+  const outputArticles = [];
+  inputArticles.forEach((article) => {
+    if (!activeFeedId || articleMatchesSelectedFeed(article, activeFeedId)) {
+      outputArticles.push(article);
+      return;
+    }
+    const rejection = classifyFeedScopeRejection(article, activeFeedId);
+    recordPipelineRejection(diagnostics, "feedScope", rejection.category, article, rejection.reason);
+  });
+
+  return {
+    articles: outputArticles,
+    stage: createFilterPipelineStageResult(
+      "feed_scope",
+      inputArticles.length,
+      outputArticles.length,
+      ["feed scope stage wraps existing selected-feed checks"]
+    ),
+  };
+}
+
+function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
+  const inputArticles = Array.isArray(articles) ? articles : [];
+  const outputArticles = [];
+  inputArticles.forEach((article) => {
+    if (articleMatchesPersonalDashboardSelection(article)) {
+      outputArticles.push(article);
+      return;
+    }
+    const rejection = classifyPersonalDashboardRejection(article);
+    recordPipelineRejection(diagnostics, "personalDashboard", rejection.category, article, rejection.reason);
+  });
+
+  return {
+    articles: outputArticles,
+    stage: createFilterPipelineStageResult(
+      "personal_dashboard",
+      inputArticles.length,
+      outputArticles.length,
+      ["personal dashboard stage wraps existing interest matching"]
+    ),
+  };
+}
+
+function applyAdvancedFiltersStage({ articles, advancedFilterOptions, diagnostics } = {}) {
+  const inputArticles = Array.isArray(articles) ? articles : [];
+  const outputArticles = [];
+  inputArticles.forEach((article) => {
+    if (articleMatchesFilters(article, advancedFilterOptions)) {
+      outputArticles.push(article);
+      return;
+    }
+    const rejection = classifyAdvancedFilterRejection(article, advancedFilterOptions);
+    recordPipelineRejection(diagnostics, "advancedFilters", rejection.category, article, rejection.reason);
+  });
+
+  return {
+    articles: outputArticles,
+    stage: createFilterPipelineStageResult(
+      "advanced_filters",
+      inputArticles.length,
+      outputArticles.length,
+      ["advanced filters stage wraps existing articleMatchesFilters behavior"]
+    ),
+  };
+}
+
+function applySortingStage({ inputArticles, sortedArticles } = {}) {
+  const inputCount = Array.isArray(inputArticles) ? inputArticles.length : 0;
+  const outputCount = Array.isArray(sortedArticles) ? sortedArticles.length : 0;
+  return {
+    articles: Array.isArray(sortedArticles) ? sortedArticles : [],
+    stage: createFilterPipelineStageResult(
+      "sorting",
+      inputCount,
+      outputCount,
+      ["sorting stage reports existing branch-local sorted output"]
+    ),
+  };
+}
+
+function applyGroupingStage({ inputArticles, groupedCount } = {}) {
+  const inputCount = Array.isArray(inputArticles) ? inputArticles.length : 0;
+  const outputCount = Number(groupedCount) || 0;
+  return {
+    groupedCount: outputCount,
+    stage: createFilterPipelineStageResult(
+      "grouping",
+      inputCount,
+      outputCount,
+      ["grouping stage reports existing branch-local grouping output"]
+    ),
+  };
+}
+
+function replayFilterDiagnosticsStage({ result, diagnostics, activeFeedId, useBackendQuery } = {}) {
+  if (!diagnostics?.enabled || result?.pending) {
+    recordFilterPipelineStages(diagnostics, []);
+    return;
+  }
+
+  const advancedFilterOptions =
+    useBackendQuery || (activeFeedId && !state.filters.date)
+      ? { ignoreFeedId: true, ignorePersonalDashboard: true }
+      : { ignorePersonalDashboard: true };
+  const stageResults = [];
+  const feedScopeStage = applyFeedScopeStage({
+    articles: result.candidatePool,
+    activeFeedId,
+    diagnostics,
+  });
+  stageResults.push(feedScopeStage.stage);
+
+  const personalDashboardStage = applyPersonalDashboardStage({
+    articles: feedScopeStage.articles,
+    diagnostics,
+  });
+  stageResults.push(personalDashboardStage.stage);
+
+  const advancedFiltersStage = applyAdvancedFiltersStage({
+    articles: personalDashboardStage.articles,
+    advancedFilterOptions,
+    diagnostics,
+  });
+  stageResults.push(advancedFiltersStage.stage);
+
+  const sortingStage = applySortingStage({
+    inputArticles: advancedFiltersStage.articles,
+    sortedArticles: result.filteredRawArticles,
+  });
+  stageResults.push(sortingStage.stage);
+
+  const groupingStage = applyGroupingStage({
+    inputArticles: sortingStage.articles,
+    groupedCount: result.groupedArticlesCount,
+  });
+  stageResults.push(groupingStage.stage);
+
+  recordPipelineCount(diagnostics, "candidatePool", result.candidatePool.length);
+  recordPipelineCount(diagnostics, "afterFeedScope", feedScopeStage.articles.length);
+  recordPipelineCount(diagnostics, "afterPersonalDashboard", personalDashboardStage.articles.length);
+  recordPipelineCount(diagnostics, "afterAdvancedFilters", advancedFiltersStage.articles.length);
+  recordPipelineCount(diagnostics, "afterSorting", result.filteredRawArticles.length);
+  recordPipelineCount(diagnostics, "afterGrouping", result.groupedArticlesCount);
+  recordFilterPipelineStages(diagnostics, stageResults);
+}
+
 function applyLegacyFilterPipeline({
   candidateBuilderResult,
   diagnostics,
@@ -21388,55 +21589,21 @@ function applyLegacyFilterPipeline({
     warnings: Array.isArray(candidateBuilderResult?.warnings) ? candidateBuilderResult.warnings.slice() : [],
     notes: [
       "legacy filter pipeline invoked by pipeline executor",
+      "legacy filter pipeline decomposed into named stages",
+      "filter stages wrap existing legacy behavior",
+      "filter rules unchanged",
       "filtering rules remain unchanged",
       "branch-local grouping remains unchanged",
     ],
   };
 
   recordFilterPipelineResult(diagnostics, result);
-
-  if (diagnostics?.enabled && !result.pending) {
-    const advancedFilterOptions =
-      useBackendQuery || (activeFeedId && !state.filters.date)
-        ? { ignoreFeedId: true, ignorePersonalDashboard: true }
-        : { ignorePersonalDashboard: true };
-    const afterFeedScope = [];
-    result.candidatePool.forEach((article) => {
-      if (!activeFeedId || articleMatchesSelectedFeed(article, activeFeedId)) {
-        afterFeedScope.push(article);
-        return;
-      }
-      const rejection = classifyFeedScopeRejection(article, activeFeedId);
-      recordPipelineRejection(diagnostics, "feedScope", rejection.category, article, rejection.reason);
-    });
-
-    const afterPersonalDashboard = [];
-    afterFeedScope.forEach((article) => {
-      if (articleMatchesPersonalDashboardSelection(article)) {
-        afterPersonalDashboard.push(article);
-        return;
-      }
-      const rejection = classifyPersonalDashboardRejection(article);
-      recordPipelineRejection(diagnostics, "personalDashboard", rejection.category, article, rejection.reason);
-    });
-
-    const afterAdvancedFilters = [];
-    afterPersonalDashboard.forEach((article) => {
-      if (articleMatchesFilters(article, advancedFilterOptions)) {
-        afterAdvancedFilters.push(article);
-        return;
-      }
-      const rejection = classifyAdvancedFilterRejection(article, advancedFilterOptions);
-      recordPipelineRejection(diagnostics, "advancedFilters", rejection.category, article, rejection.reason);
-    });
-
-    recordPipelineCount(diagnostics, "candidatePool", result.candidatePool.length);
-    recordPipelineCount(diagnostics, "afterFeedScope", afterFeedScope.length);
-    recordPipelineCount(diagnostics, "afterPersonalDashboard", afterPersonalDashboard.length);
-    recordPipelineCount(diagnostics, "afterAdvancedFilters", afterAdvancedFilters.length);
-    recordPipelineCount(diagnostics, "afterSorting", result.filteredRawArticles.length);
-    recordPipelineCount(diagnostics, "afterGrouping", result.groupedArticlesCount);
-  }
+  replayFilterDiagnosticsStage({
+    result,
+    diagnostics,
+    activeFeedId,
+    useBackendQuery,
+  });
 
   return result;
 }
