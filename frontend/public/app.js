@@ -4160,6 +4160,72 @@ function summarizeRenderDispatch(renderDispatch) {
   };
 }
 
+function resolvePipelineCompatibilityMode(pipelineResult) {
+  const legacyBranch = String(pipelineResult?.branch || "");
+  const renderDispatch = pipelineResult?.renderDispatch || {};
+  const renderMode = renderDispatch.renderMode || pipelineResult?.renderModel?.renderMode || "";
+  const renderer = renderDispatch.renderer || "";
+  const usesBackend = legacyBranch === "backend-query" || legacyBranch === "backend-query-loading";
+  const usesSelectedFeed =
+    legacyBranch === "selected-feed-full-pool" ||
+    legacyBranch === "selected-feed-full-pool-loading" ||
+    legacyBranch === "selected-feed-fallback" ||
+    renderMode === "selected_feed";
+  const usesDateScope = legacyBranch === "date-filter";
+  const usesGlobalMemory = legacyBranch === "global-visible-articles";
+  let retrievalMode = "unknown";
+
+  if (usesBackend) {
+    retrievalMode = "backend_query";
+  } else if (usesSelectedFeed) {
+    retrievalMode = "selected_feed";
+  } else if (usesDateScope) {
+    retrievalMode = "date_scope";
+  } else if (usesGlobalMemory) {
+    retrievalMode = "global_memory";
+  }
+
+  return Object.freeze({
+    legacyBranch,
+    retrievalMode,
+    renderMode,
+    renderer,
+    pending: Boolean(pipelineResult?.pending),
+    grouped: Boolean(renderDispatch.grouped),
+    usesBackend,
+    usesSelectedFeed,
+    usesGlobalMemory,
+    usesDateScope,
+    notes: Object.freeze([
+      "legacy branch compatibility layer active",
+      "branch names preserved for diagnostics",
+      "rendering still behavior-compatible",
+    ]),
+    warnings: Object.freeze([]),
+  });
+}
+
+function summarizePipelineCompatibility(pipelineCompatibility) {
+  if (!pipelineCompatibility) {
+    return null;
+  }
+
+  return {
+    legacyBranch: pipelineCompatibility.legacyBranch || "",
+    retrievalMode: pipelineCompatibility.retrievalMode || "",
+    renderMode: pipelineCompatibility.renderMode || "",
+    renderer: pipelineCompatibility.renderer || "",
+    pending: Boolean(pipelineCompatibility.pending),
+    grouped: Boolean(pipelineCompatibility.grouped),
+    usesBackend: Boolean(pipelineCompatibility.usesBackend),
+    usesSelectedFeed: Boolean(pipelineCompatibility.usesSelectedFeed),
+    usesGlobalMemory: Boolean(pipelineCompatibility.usesGlobalMemory),
+    usesDateScope: Boolean(pipelineCompatibility.usesDateScope),
+    notes: Array.isArray(pipelineCompatibility.notes) ? pipelineCompatibility.notes.slice() : [],
+    warnings: Array.isArray(pipelineCompatibility.warnings) ? pipelineCompatibility.warnings.slice() : [],
+  };
+}
+
 function summarizePipelineOrchestrator(orchestratorResult) {
   if (!orchestratorResult) {
     return null;
@@ -4239,6 +4305,14 @@ function recordRenderDispatch(diagnostics, renderDispatch) {
   }
 
   diagnostics.renderDispatch = summarizeRenderDispatch(renderDispatch);
+}
+
+function recordPipelineCompatibility(diagnostics, pipelineCompatibility) {
+  if (!diagnostics?.enabled) {
+    return;
+  }
+
+  diagnostics.pipelineCompatibility = summarizePipelineCompatibility(pipelineCompatibility);
 }
 
 function recordPipelineOrchestrator(diagnostics, orchestratorResult) {
@@ -4393,6 +4467,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     paginationPipeline: null,
     renderModel: null,
     renderDispatch: null,
+    pipelineCompatibility: null,
     selectedFeedFullPool: {
       enabled: enabled ? isSelectedFeedFullPoolEnabled() : false,
       attempted: false,
@@ -4925,6 +5000,40 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push("none");
   }
 
+  const pipelineCompatibility = diagnostics.pipelineCompatibility;
+  lines.push("");
+  lines.push("Pipeline Compatibility");
+  if (pipelineCompatibility) {
+    lines.push(`legacyBranch: ${pipelineCompatibility.legacyBranch}`);
+    lines.push(`retrievalMode: ${pipelineCompatibility.retrievalMode}`);
+    lines.push(`renderMode: ${pipelineCompatibility.renderMode}`);
+    lines.push(`renderer: ${pipelineCompatibility.renderer}`);
+    lines.push(`pending: ${pipelineCompatibility.pending}`);
+    lines.push(`grouped: ${pipelineCompatibility.grouped}`);
+    lines.push(`usesBackend: ${pipelineCompatibility.usesBackend}`);
+    lines.push(`usesSelectedFeed: ${pipelineCompatibility.usesSelectedFeed}`);
+    lines.push(`usesGlobalMemory: ${pipelineCompatibility.usesGlobalMemory}`);
+    lines.push(`usesDateScope: ${pipelineCompatibility.usesDateScope}`);
+    if (pipelineCompatibility.notes?.length) {
+      lines.push("notes:");
+      pipelineCompatibility.notes.forEach((note) => {
+        lines.push(`- ${note}`);
+      });
+    } else {
+      lines.push("notes: none");
+    }
+    if (pipelineCompatibility.warnings?.length) {
+      lines.push("warnings:");
+      pipelineCompatibility.warnings.forEach((warning) => {
+        lines.push(`- ${warning}`);
+      });
+    } else {
+      lines.push("warnings: none");
+    }
+  } else {
+    lines.push("none");
+  }
+
   const selectedFeedFullPool = diagnostics.selectedFeedFullPool;
   lines.push("");
   lines.push("Selected Feed Full Pool");
@@ -5200,6 +5309,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     paginationPipeline: diagnostics.paginationPipeline || null,
     renderModel: diagnostics.renderModel || null,
     renderDispatch: diagnostics.renderDispatch || null,
+    pipelineCompatibility: diagnostics.pipelineCompatibility || null,
     selectedFeedFullPool: diagnostics.selectedFeedFullPool || null,
     counts: diagnostics.counts || {},
     rejections: diagnostics.rejections || {},
@@ -5324,6 +5434,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("paginationPipeline", diagnostics.paginationPipeline);
   console.log("renderModel", diagnostics.renderModel);
   console.log("renderDispatch", diagnostics.renderDispatch);
+  console.log("pipelineCompatibility", diagnostics.pipelineCompatibility);
   console.log("selectedFeedFullPool", diagnostics.selectedFeedFullPool);
   if (diagnostics.normalizedFilterStateParity && !diagnostics.normalizedFilterStateParity.ok) {
     console.warn("[FilterPipeline] normalized filter state parity mismatch", diagnostics.normalizedFilterStateParity);
@@ -21789,6 +21900,7 @@ function buildPipelineExecutorDiagnostics() {
       "pipeline executor owns pagination preparation",
       "pipeline executor prepares render model",
       "pipeline executor prepares render dispatch",
+      "legacy branch decisions routed through compatibility layer",
       "pipeline executor wraps legacy candidate builder",
       "renderArticles delegates orchestration",
       "pipeline executor remains DOM-free",
@@ -21930,6 +22042,13 @@ function executeArticlePipeline({
   });
   const renderModel = renderPreparationResult.renderModel;
   const renderDispatch = renderPreparationResult.renderDispatch;
+  const pipelineCompatibility = resolvePipelineCompatibilityMode({
+    branch: candidateBuilderResult?.branch || "",
+    pending: Boolean(filterPipelineResult.pending),
+    renderDispatch,
+    renderModel,
+  });
+  recordPipelineCompatibility(diagnostics, pipelineCompatibility);
 
   const pipelineResult = {
     normalizedFilterState,
@@ -21942,6 +22061,7 @@ function executeArticlePipeline({
     paginationResult,
     renderModel,
     renderDispatch,
+    pipelineCompatibility,
     articles: filterPipelineResult.articles,
     groupedArticles: filterPipelineResult.groupedArticles,
     paginatedItems: paginationResult?.items || null,
@@ -22019,6 +22139,7 @@ function executePipelineOrchestrator(options = {}) {
     paginationPipeline: pipelineResult.paginationResult,
     renderModel: pipelineResult.renderModel,
     renderDispatch: pipelineResult.renderDispatch,
+    pipelineCompatibility: pipelineResult.pipelineCompatibility,
     diagnostics,
     useBackendQuery,
     activeFeedId,
@@ -22609,7 +22730,11 @@ function renderArticles() {
     const filterPipelineResult = pipelineResult.filterPipelineResult;
 
     if (pipelineResult.pending) {
-      if (pipelineResult.branch === "selected-feed-full-pool-loading") {
+      const pipelineCompatibility = pipelineResult.pipelineCompatibility || null;
+      if (
+        pipelineCompatibility?.legacyBranch === "selected-feed-full-pool-loading" ||
+        pipelineResult.branch === "selected-feed-full-pool-loading"
+      ) {
         void ensureSelectedFeedFullPoolData(activeFeedId)
           .then((result) => {
             if (result) {
