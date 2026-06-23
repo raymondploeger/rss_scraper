@@ -4579,6 +4579,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     personalDashboardScoring: null,
     personalDashboardScoreDistribution: null,
     polymerChildMatchDiagnosticsSummary: null,
+    polymerFalseNegativeDiagnostics: null,
     paginationPipeline: null,
     renderModel: null,
     renderDispatch: null,
@@ -4658,6 +4659,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Polymer child-match diagnostics active",
             "Polymer thresholds unchanged",
             "Polymer matching behavior unchanged",
+            "Polymer false-negative diagnostics active",
             "Pass/fail still controlled by legacy matching",
             "Legacy pass/fail remains authoritative",
             "Filtering behavior unchanged",
@@ -4856,6 +4858,9 @@ function getFilterDecisionDebugToolsSummary(diagnostics) {
       "window.explainPersonalDashboardScore(articleId)",
       "window.explainPersonalDashboardScoreByTitle(titlePart)",
       "window.listHighestPersonalDashboardScores(limit)",
+      "window.explainPolymerMatchByTitle(titlePart)",
+      "window.listPolymerChildMismatches(limit)",
+      "window.listLikelyPolymerFalseNegatives(limit)",
     ],
     traceStoreSize,
   };
@@ -4870,7 +4875,7 @@ function getFilterDecisionRichTraceSummary(diagnostics) {
       "sorting",
       "grouping",
     ],
-    helperCount: 9,
+    helperCount: 10,
   };
 }
 
@@ -5330,6 +5335,36 @@ function getPolymerChildMatchDiagnosticsSummary(diagnostics) {
   };
 }
 
+function getPolymerFalseNegativeDiagnosticsSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+
+  const rejectedParentChildTraces = Array.from(diagnostics.filterDecisionTraceMap.values())
+    .filter((trace) => {
+      const personalDashboardStage = getTracePersonalDashboardStage(trace);
+      const rejectedCategory = personalDashboardStage?.metadata?.category || personalDashboardStage?.metadata?.rejectedCategory || "";
+      return trace?.finalResult === "rejected" && rejectedCategory === "parentChildMismatch";
+    });
+  const likelyFalseNegativeTraces = rejectedParentChildTraces.filter(isLikelyPolymerFalseNegativeTrace);
+  const clueCounts = new Map();
+  likelyFalseNegativeTraces.forEach((trace) => {
+    getPolymerFalseNegativeMatchedClues(trace).forEach((clue) => {
+      clueCounts.set(clue, (clueCounts.get(clue) || 0) + 1);
+    });
+  });
+
+  return {
+    enabled: true,
+    evaluatedRejectedArticles: rejectedParentChildTraces.length,
+    likelyFalseNegativeCount: likelyFalseNegativeTraces.length,
+    topMatchedClues: Array.from(clueCounts.entries())
+      .map(([clue, count]) => ({ clue, count }))
+      .sort((left, right) => right.count - left.count || left.clue.localeCompare(right.clue))
+      .slice(0, 10),
+  };
+}
+
 function getPersonalDashboardScoringSummary(diagnostics) {
   if (!diagnostics?.enabled || !diagnostics.personalDashboardScoreMap) {
     return null;
@@ -5451,6 +5486,86 @@ function listPolymerChildMismatches(limit = 25) {
         : null;
     })
     .filter(Boolean)
+    .slice(0, normalizedLimit);
+}
+
+const POLYMER_FALSE_NEGATIVE_CLUES = Object.freeze([
+  "polymer transition",
+  "transition to polymer",
+  "polymer migration",
+  "guardian",
+  "guardian polymer",
+  "guardian substrate",
+  "ccl secure",
+  "safenote",
+  "synthetic substrate",
+  "composite substrate",
+  "durable substrate",
+  "plastic banknote",
+  "polymer banknote",
+  "polymer note",
+  "polymer substrate",
+]);
+
+function getTracePersonalDashboardStage(trace) {
+  return (Array.isArray(trace?.stages) ? trace.stages : []).find(
+    (stage) => stage.stage === "personal_dashboard"
+  ) || null;
+}
+
+function getPolymerFalseNegativeMatchedClues(trace) {
+  const personalDashboardStage = getTracePersonalDashboardStage(trace);
+  const polymerDiagnostics = personalDashboardStage?.metadata?.polymerChildMatchDiagnostics || null;
+  const titleText = String(trace?.title || "");
+  const diagnosticTermText = [
+    ...(polymerDiagnostics?.matchedPolymerTerms || []).map((entry) => entry.term),
+    ...(polymerDiagnostics?.matchedSubstrateTerms || []).map((entry) => entry.term),
+  ].join(" ");
+  const haystack = `${titleText} ${diagnosticTermText}`;
+
+  return normalizeKeywordList(POLYMER_FALSE_NEGATIVE_CLUES)
+    .filter((clue) => textMatchesKeyword(haystack, clue));
+}
+
+function isLikelyPolymerFalseNegativeTrace(trace) {
+  const personalDashboardStage = getTracePersonalDashboardStage(trace);
+  const rejectedCategory = personalDashboardStage?.metadata?.category || personalDashboardStage?.metadata?.rejectedCategory || "";
+  if (trace?.finalResult !== "rejected" || rejectedCategory !== "parentChildMismatch") {
+    return false;
+  }
+
+  return getPolymerFalseNegativeMatchedClues(trace).length > 0;
+}
+
+function formatLikelyPolymerFalseNegativeTrace(trace) {
+  const personalDashboardStage = getTracePersonalDashboardStage(trace);
+  const polymerDiagnostics = personalDashboardStage?.metadata?.polymerChildMatchDiagnostics || null;
+  const matchedClues = getPolymerFalseNegativeMatchedClues(trace);
+  const likelyFalseNegativeReason = polymerDiagnostics?.likelyReason === "below_polymer_and_substrate_thresholds"
+    ? "high-precision Polymer/substrate clue exists, but current Polymer/substrate hit thresholds did not pass"
+    : polymerDiagnostics?.likelyReason || "high-precision Polymer/substrate clue exists in rejected parent/child mismatch";
+
+  return {
+    articleId: trace.articleId,
+    title: trace.title,
+    finalReason: trace.finalReason || personalDashboardStage?.reason || "",
+    polymerHits: polymerDiagnostics?.polymerHits ?? null,
+    substrateHits: polymerDiagnostics?.substrateHits ?? null,
+    matchedClues,
+    likelyFalseNegativeReason,
+  };
+}
+
+function listLikelyPolymerFalseNegatives(limit = 25) {
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!traceMap) {
+    return [];
+  }
+
+  const normalizedLimit = Math.max(1, Number(limit) || 25);
+  return Array.from(traceMap.values())
+    .filter(isLikelyPolymerFalseNegativeTrace)
+    .map(formatLikelyPolymerFalseNegativeTrace)
     .slice(0, normalizedLimit);
 }
 
@@ -6304,6 +6419,24 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push("disabled");
   }
 
+  const polymerFalseNegativeDiagnostics = diagnostics.polymerFalseNegativeDiagnostics;
+  lines.push("");
+  lines.push("Polymer False Negative Diagnostics");
+  if (polymerFalseNegativeDiagnostics?.enabled) {
+    lines.push(formatPipelineSummaryLine("evaluatedRejectedArticles", polymerFalseNegativeDiagnostics.evaluatedRejectedArticles));
+    lines.push(formatPipelineSummaryLine("likelyFalseNegativeCount", polymerFalseNegativeDiagnostics.likelyFalseNegativeCount));
+    if (polymerFalseNegativeDiagnostics.topMatchedClues?.length) {
+      lines.push("topMatchedClues:");
+      polymerFalseNegativeDiagnostics.topMatchedClues.forEach((entry) => {
+        lines.push(`- ${entry.clue}: ${entry.count}`);
+      });
+    } else {
+      lines.push("topMatchedClues: none");
+    }
+  } else {
+    lines.push("disabled");
+  }
+
   const paginationPipeline = diagnostics.paginationPipeline;
   lines.push("");
   lines.push("Pagination Pipeline");
@@ -6707,6 +6840,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     personalDashboardScoring: diagnostics.personalDashboardScoring || null,
     personalDashboardScoreDistribution: diagnostics.personalDashboardScoreDistribution || null,
     polymerChildMatchDiagnosticsSummary: diagnostics.polymerChildMatchDiagnosticsSummary || null,
+    polymerFalseNegativeDiagnostics: diagnostics.polymerFalseNegativeDiagnostics || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
     renderModel: diagnostics.renderModel || null,
     renderDispatch: diagnostics.renderDispatch || null,
@@ -6828,6 +6962,10 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.listPolymerChildMismatches = (limit) => listPolymerChildMismatches(limit);
   }
 
+  if (typeof window.listLikelyPolymerFalseNegatives !== "function") {
+    window.listLikelyPolymerFalseNegatives = (limit) => listLikelyPolymerFalseNegatives(limit);
+  }
+
   if (!window.__FILTER_PIPELINE_EXPORT_HINT_SHOWN__) {
     window.__FILTER_PIPELINE_EXPORT_HINT_SHOWN__ = true;
     console.info(
@@ -6847,6 +6985,7 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.listHighestPersonalDashboardScores(limit)",
         "window.explainPolymerMatchByTitle(titlePart)",
         "window.listPolymerChildMismatches(limit)",
+        "window.listLikelyPolymerFalseNegatives(limit)",
       ].join("\n")
     );
   }
@@ -6882,6 +7021,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.personalDashboardScoring = getPersonalDashboardScoringSummary(diagnostics);
   diagnostics.personalDashboardScoreDistribution = getPersonalDashboardScoreDistribution(diagnostics);
   diagnostics.polymerChildMatchDiagnosticsSummary = getPolymerChildMatchDiagnosticsSummary(diagnostics);
+  diagnostics.polymerFalseNegativeDiagnostics = getPolymerFalseNegativeDiagnosticsSummary(diagnostics);
   publishFilterDecisionTraceDiagnostics(diagnostics);
   publishPersonalDashboardScores(diagnostics);
   storeFilterPipelineDiagnostics(diagnostics);
@@ -6912,6 +7052,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("personalDashboardScoring", diagnostics.personalDashboardScoring);
   console.log("personalDashboardScoreDistribution", diagnostics.personalDashboardScoreDistribution);
   console.log("polymerChildMatchDiagnosticsSummary", diagnostics.polymerChildMatchDiagnosticsSummary);
+  console.log("polymerFalseNegativeDiagnostics", diagnostics.polymerFalseNegativeDiagnostics);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
   console.log("renderModel", diagnostics.renderModel);
   console.log("renderDispatch", diagnostics.renderDispatch);
