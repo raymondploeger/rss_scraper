@@ -3106,6 +3106,7 @@ const runtime = {
   backendArticleQueryLoading: false,
   filterPipelineRenderId: 0,
   filterDecisionTraceMap: new Map(),
+  personalDashboardScoreMap: new Map(),
   paginationContextKey: "",
   scheduledRenderFrame: 0,
   scheduledRenderTimeout: 0,
@@ -4574,6 +4575,8 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     filterDecisionTraceSummary: null,
     filterDecisionDebugTools: null,
     filterDecisionRichTrace: null,
+    personalDashboardScoreMap: enabled ? new Map() : null,
+    personalDashboardScoring: null,
     paginationPipeline: null,
     renderModel: null,
     renderDispatch: null,
@@ -4643,6 +4646,8 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Trace lookup helpers enabled",
             "Rich decision trace metadata enabled",
             "Trace metadata records existing decisions only",
+            "Personal Dashboard Scoring Engine active",
+            "Scoring architecture separated from matching",
             "Filtering behavior unchanged",
           ]
         : []),
@@ -4836,6 +4841,8 @@ function getFilterDecisionDebugToolsSummary(diagnostics) {
       "window.findTracedArticlesByKeyword(keyword)",
       "window.explainRejectedArticle(titlePart)",
       "window.listRejectionReasons()",
+      "window.explainPersonalDashboardScore(articleId)",
+      "window.explainPersonalDashboardScoreByTitle(titlePart)",
     ],
     traceStoreSize,
   };
@@ -4852,6 +4859,190 @@ function getFilterDecisionRichTraceSummary(diagnostics) {
     ],
     helperCount: 7,
   };
+}
+
+function freezePersonalDashboardScore(scoreObject) {
+  if (!scoreObject || Object.isFrozen(scoreObject)) {
+    return scoreObject;
+  }
+
+  const contributions = (Array.isArray(scoreObject.contributions) ? scoreObject.contributions : []).map((contribution) =>
+    Object.freeze({
+      ...contribution,
+      metadata: Object.freeze(contribution.metadata && typeof contribution.metadata === "object" ? { ...contribution.metadata } : {}),
+    })
+  );
+
+  return Object.freeze({
+    articleId: scoreObject.articleId,
+    totalScore: scoreObject.totalScore,
+    threshold: scoreObject.threshold,
+    passed: scoreObject.passed,
+    primaryDomain: scoreObject.primaryDomain,
+    contributions: Object.freeze(contributions),
+  });
+}
+
+function buildPersonalDashboardScore(article, options = {}) {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
+  const selectedMainDomains = getSelectedMainDomains(selectedInterests);
+  const primaryDomain = getArticleDominantDomain(article);
+  const threshold = selectedInterests.length ? 18 : 0;
+  const overallBoost = computePersonalBoost(article);
+  const interestContributions = selectedInterests.map((interestId) => {
+    const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
+    const boost = computePersonalInterestBoost(article, interestId);
+    return {
+      category: `interest:${interestId}`,
+      score: Number(boost?.score) || 0,
+      matched: Boolean(boost?.matched),
+      reason: interest?.label ? `existing boost for ${interest.label}` : "existing Personal Dashboard interest boost",
+      metadata: {
+        interestId,
+        groupId: interest?.groupId || "",
+        threshold,
+      },
+    };
+  });
+  const sharedSecurityContributions = selectedSharedInterests.map((interestId) => {
+    const assessment = getSharedSecurityStandaloneAssessment(article, interestId);
+    return {
+      category: `shared_security:${interestId}`,
+      score: Number(assessment?.interestScore) || 0,
+      matched: Boolean(assessment?.included),
+      reason: "existing shared security technique assessment",
+      metadata: {
+        interestId,
+        directMatch: Boolean(assessment?.directMatch),
+        hybridMatch: Boolean(assessment?.hybridMatch),
+        bodyContextBridgeMatch: Boolean(assessment?.bodyContextBridgeMatch),
+        supportHits: Number(assessment?.supportHits) || 0,
+        negativeHits: Number(assessment?.negativeHits) || 0,
+      },
+    };
+  });
+  const identityBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, selectedInterests);
+  const banknoteBridgeMatched = articleMatchesSelectedBanknoteTechniqueBridge(article, selectedInterests);
+  const domainMatched = !selectedMainDomains.length || selectedMainDomains.includes(primaryDomain);
+  const totalScore = Number(overallBoost?.score) || 0;
+  const passed = Object.prototype.hasOwnProperty.call(options, "passed")
+    ? Boolean(options.passed)
+    : articleMatchesPersonalDashboardSelection(article);
+  const contributions = [
+    {
+      category: "overall_personal_dashboard",
+      score: totalScore,
+      matched: Boolean(overallBoost?.level),
+      reason: "existing aggregate Personal Dashboard boost",
+      metadata: {
+        level: overallBoost?.level || "",
+      },
+    },
+    {
+      category: "primary_domain",
+      score: domainMatched ? threshold : 0,
+      matched: domainMatched,
+      reason: domainMatched
+        ? "primary domain is allowed by current selection"
+        : "primary domain is outside current selection",
+      metadata: {
+        selectedMainDomains,
+        primaryDomain,
+      },
+    },
+    ...interestContributions,
+    ...sharedSecurityContributions,
+    {
+      category: "bridge",
+      score: identityBridgeMatched || banknoteBridgeMatched ? threshold : 0,
+      matched: identityBridgeMatched || banknoteBridgeMatched,
+      reason: identityBridgeMatched
+        ? "existing identity shared-security bridge matched"
+        : banknoteBridgeMatched
+          ? "existing banknote shared-security bridge matched"
+          : "no existing bridge matched",
+      metadata: {
+        identityBridgeMatched,
+        banknoteBridgeMatched,
+      },
+    },
+  ];
+
+  return freezePersonalDashboardScore({
+    articleId: getFilterDecisionTraceArticleId(article),
+    totalScore,
+    threshold,
+    passed,
+    primaryDomain,
+    contributions,
+  });
+}
+
+function recordPersonalDashboardScore(diagnostics, article, scoreObject) {
+  if (!diagnostics?.enabled || !diagnostics.personalDashboardScoreMap || !scoreObject?.articleId) {
+    return;
+  }
+  diagnostics.personalDashboardScoreMap.set(scoreObject.articleId, scoreObject);
+}
+
+function publishPersonalDashboardScores(diagnostics) {
+  if (!diagnostics?.enabled || typeof window === "undefined") {
+    return;
+  }
+  runtime.personalDashboardScoreMap = diagnostics.personalDashboardScoreMap || new Map();
+  window.__PERSONAL_DASHBOARD_SCORES__ = runtime.personalDashboardScoreMap;
+}
+
+function getPersonalDashboardScoringSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.personalDashboardScoreMap) {
+    return null;
+  }
+
+  const scores = Array.from(diagnostics.personalDashboardScoreMap.values());
+  const scoreObjects = scores.length;
+  const passedCount = scores.filter((scoreObject) => scoreObject.passed).length;
+  const rejectedCount = scoreObjects - passedCount;
+  const totalThreshold = scores.reduce((sum, scoreObject) => sum + (Number(scoreObject.threshold) || 0), 0);
+  const totalScore = scores.reduce((sum, scoreObject) => sum + (Number(scoreObject.totalScore) || 0), 0);
+
+  return {
+    enabled: true,
+    scoreObjects,
+    averageThreshold: scoreObjects ? Number((totalThreshold / scoreObjects).toFixed(2)) : 0,
+    averageScore: scoreObjects ? Number((totalScore / scoreObjects).toFixed(2)) : 0,
+    passedCount,
+    rejectedCount,
+  };
+}
+
+function getActivePersonalDashboardScoreMap() {
+  if (!isFilterPipelineDiagnosticsEnabled()) {
+    return null;
+  }
+  return runtime.personalDashboardScoreMap instanceof Map ? runtime.personalDashboardScoreMap : null;
+}
+
+function explainPersonalDashboardScore(articleId) {
+  const normalizedArticleId = String(articleId || "");
+  const scoreMap = getActivePersonalDashboardScoreMap();
+  if (!normalizedArticleId || !scoreMap?.has(normalizedArticleId)) {
+    return null;
+  }
+  return scoreMap.get(normalizedArticleId);
+}
+
+function explainPersonalDashboardScoreByTitle(titlePart) {
+  const needle = String(titlePart || "").trim().toLowerCase();
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!needle || !traceMap) {
+    return null;
+  }
+
+  const match = Array.from(traceMap.values()).find((trace) =>
+    String(trace?.title || "").toLowerCase().includes(needle)
+  );
+  return match ? explainPersonalDashboardScore(match.articleId) : null;
 }
 
 function publishFilterDecisionTraceDiagnostics(diagnostics) {
@@ -5022,7 +5213,7 @@ function listRejectionReasons() {
     .sort((left, right) => right.count - left.count || `${left.stage}.${left.category}`.localeCompare(`${right.stage}.${right.category}`));
 }
 
-function getPersonalDashboardTraceMetadata(article, rejection = null) {
+function getPersonalDashboardTraceMetadata(article, rejection = null, personalDashboardScore = null) {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const selectedMainDomains = getSelectedMainDomains(selectedInterests);
   const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
@@ -5097,6 +5288,7 @@ function getPersonalDashboardTraceMetadata(article, rejection = null) {
     selectedBanknoteInterests,
     selectedSharedSecurityInterests: selectedSharedInterests,
     score: topScore,
+    personalDashboardScore,
   };
 }
 
@@ -5594,6 +5786,19 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push("disabled");
   }
 
+  const personalDashboardScoring = diagnostics.personalDashboardScoring;
+  lines.push("");
+  lines.push("Personal Dashboard Scoring");
+  if (personalDashboardScoring?.enabled) {
+    lines.push(formatPipelineSummaryLine("scoreObjects", personalDashboardScoring.scoreObjects));
+    lines.push(formatPipelineSummaryLine("averageThreshold", personalDashboardScoring.averageThreshold));
+    lines.push(formatPipelineSummaryLine("averageScore", personalDashboardScoring.averageScore));
+    lines.push(formatPipelineSummaryLine("passedCount", personalDashboardScoring.passedCount));
+    lines.push(formatPipelineSummaryLine("rejectedCount", personalDashboardScoring.rejectedCount));
+  } else {
+    lines.push("disabled");
+  }
+
   const paginationPipeline = diagnostics.paginationPipeline;
   lines.push("");
   lines.push("Pagination Pipeline");
@@ -5994,6 +6199,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     filterDecisionTraceSummary: diagnostics.filterDecisionTraceSummary || null,
     filterDecisionDebugTools: diagnostics.filterDecisionDebugTools || null,
     filterDecisionRichTrace: diagnostics.filterDecisionRichTrace || null,
+    personalDashboardScoring: diagnostics.personalDashboardScoring || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
     renderModel: diagnostics.renderModel || null,
     renderDispatch: diagnostics.renderDispatch || null,
@@ -6095,6 +6301,14 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.listRejectionReasons = () => listRejectionReasons();
   }
 
+  if (typeof window.explainPersonalDashboardScore !== "function") {
+    window.explainPersonalDashboardScore = (articleId) => explainPersonalDashboardScore(articleId);
+  }
+
+  if (typeof window.explainPersonalDashboardScoreByTitle !== "function") {
+    window.explainPersonalDashboardScoreByTitle = (titlePart) => explainPersonalDashboardScoreByTitle(titlePart);
+  }
+
   if (!window.__FILTER_PIPELINE_EXPORT_HINT_SHOWN__) {
     window.__FILTER_PIPELINE_EXPORT_HINT_SHOWN__ = true;
     console.info(
@@ -6109,6 +6323,8 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.findTracedArticlesByKeyword(keyword)",
         "window.explainRejectedArticle(titlePart)",
         "window.listRejectionReasons()",
+        "window.explainPersonalDashboardScore(articleId)",
+        "window.explainPersonalDashboardScoreByTitle(titlePart)",
       ].join("\n")
     );
   }
@@ -6141,7 +6357,9 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.filterDecisionTraceSummary = getFilterDecisionTraceSummary(diagnostics);
   diagnostics.filterDecisionDebugTools = getFilterDecisionDebugToolsSummary(diagnostics);
   diagnostics.filterDecisionRichTrace = getFilterDecisionRichTraceSummary(diagnostics);
+  diagnostics.personalDashboardScoring = getPersonalDashboardScoringSummary(diagnostics);
   publishFilterDecisionTraceDiagnostics(diagnostics);
+  publishPersonalDashboardScores(diagnostics);
   storeFilterPipelineDiagnostics(diagnostics);
   const groupLabel = `[FilterPipeline] ${diagnostics.renderId} ${diagnostics.branch}`;
   if (typeof console.groupCollapsed === "function") {
@@ -6167,6 +6385,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("filterDecisionTraceSummary", diagnostics.filterDecisionTraceSummary);
   console.log("filterDecisionDebugTools", diagnostics.filterDecisionDebugTools);
   console.log("filterDecisionRichTrace", diagnostics.filterDecisionRichTrace);
+  console.log("personalDashboardScoring", diagnostics.personalDashboardScoring);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
   console.log("renderModel", diagnostics.renderModel);
   console.log("renderDispatch", diagnostics.renderDispatch);
@@ -22356,14 +22575,16 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
   const inputArticles = Array.isArray(articles) ? articles : [];
   const outputArticles = [];
   inputArticles.forEach((article) => {
-    const dashboardMetadata = getPersonalDashboardTraceMetadata(article);
-    if (articleMatchesPersonalDashboardSelection(article)) {
+    const dashboardPassed = articleMatchesPersonalDashboardSelection(article);
+    const personalDashboardScore = buildPersonalDashboardScore(article, { passed: dashboardPassed });
+    recordPersonalDashboardScore(diagnostics, article, personalDashboardScore);
+    if (dashboardPassed) {
       recordFilterDecisionStage(diagnostics, article, {
         stage: "personal_dashboard",
         result: "passed",
         reason: "article matched current Personal Dashboard selection",
         notes: ["personal dashboard stage wraps existing interest matching"],
-        metadata: dashboardMetadata,
+        metadata: getPersonalDashboardTraceMetadata(article, null, personalDashboardScore),
       });
       outputArticles.push(article);
       return;
@@ -22375,7 +22596,7 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
       reason: rejection.reason,
       notes: ["personal dashboard stage wraps existing interest matching"],
       metadata: {
-        ...getPersonalDashboardTraceMetadata(article, rejection),
+        ...getPersonalDashboardTraceMetadata(article, rejection, personalDashboardScore),
         category: rejection.category,
       },
     });
