@@ -4577,6 +4577,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     filterDecisionRichTrace: null,
     personalDashboardScoreMap: enabled ? new Map() : null,
     personalDashboardScoring: null,
+    personalDashboardScoreDistribution: null,
     paginationPipeline: null,
     renderModel: null,
     renderDispatch: null,
@@ -4649,8 +4650,11 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Personal Dashboard Scoring Engine active",
             "Scoring architecture separated from matching",
             "Personal Dashboard score contributions populated",
+            "Legacy matching connected to score engine",
+            "Scoring now explains legacy matches",
             "Scores are diagnostic only",
             "Pass/fail still controlled by legacy matching",
+            "Legacy pass/fail remains authoritative",
             "Filtering behavior unchanged",
           ]
         : []),
@@ -4846,6 +4850,7 @@ function getFilterDecisionDebugToolsSummary(diagnostics) {
       "window.listRejectionReasons()",
       "window.explainPersonalDashboardScore(articleId)",
       "window.explainPersonalDashboardScoreByTitle(titlePart)",
+      "window.listHighestPersonalDashboardScores(limit)",
     ],
     traceStoreSize,
   };
@@ -4891,6 +4896,8 @@ function buildPersonalDashboardScore(article, options = {}) {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
   const selectedMainDomains = getSelectedMainDomains(selectedInterests);
+  const domainMatch = getPersonalDashboardDomainMatch(article);
+  const domainScore = calculatePersonalDomainScore(article, selectedInterests);
   const primaryDomain = getArticleDominantDomain(article);
   const threshold = selectedInterests.length ? 18 : 0;
   const overallBoost = computePersonalBoost(article);
@@ -4898,17 +4905,21 @@ function buildPersonalDashboardScore(article, options = {}) {
     const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
     const boost = computePersonalInterestBoost(article, interestId);
     const rawScore = Number(boost?.score) || 0;
-    const matched = rawScore >= 18 || Boolean(boost?.matched);
     const groupId = interest?.groupId || "";
+    let matched = rawScore >= 18 || Boolean(boost?.matched);
     let category = "selected_interest";
     if (groupId === "banknote_intelligence") {
       category = "banknote_interest";
+      matched = matchesBanknoteInterest(article, interestId);
     } else if (groupId === "identity_documents") {
       category = "identity_document_interest";
+      matched = rawScore >= 18;
     } else if (groupId === PERSONAL_DASHBOARD_SHARED_GROUP_ID) {
       category = "shared_security_interest";
+      matched = Boolean(getSharedSecurityStandaloneAssessment(article, interestId).included);
     } else if (groupId === "digital_identity_biometrics") {
       category = "digital_identity_interest";
+      matched = Boolean(getDigitalSubgroupHybridAssessment(article, interestId).included);
     }
     return {
       category,
@@ -4962,7 +4973,6 @@ function buildPersonalDashboardScore(article, options = {}) {
   });
   const identityBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, selectedInterests);
   const banknoteBridgeMatched = articleMatchesSelectedBanknoteTechniqueBridge(article, selectedInterests);
-  const domainMatched = !selectedMainDomains.length || selectedMainDomains.includes(primaryDomain);
   const passed = Object.prototype.hasOwnProperty.call(options, "passed")
     ? Boolean(options.passed)
     : articleMatchesPersonalDashboardSelection(article);
@@ -4984,17 +4994,23 @@ function buildPersonalDashboardScore(article, options = {}) {
       reason: "detected primary domain from existing classifier",
       metadata: {
         primaryDomain,
+        domainScore: domainScore.domainScore,
+        domainScoreDomain: domainScore.domain,
+        relevanceBand: domainScore.relevanceBand,
       },
     },
     {
       category: "selected_main_domain",
-      score: selectedMainDomains.length && domainMatched ? 40 : 0,
-      matched: domainMatched,
-      reason: domainMatched
-        ? "primary domain is allowed by current selection"
-        : "primary domain is outside current selection",
+      score: selectedMainDomains.length && domainMatch.matched ? 40 : 0,
+      matched: Boolean(domainMatch.matched),
+      reason: domainMatch.matched
+        ? "existing domain match accepted selected domain"
+        : "existing domain match did not accept selected domain",
       metadata: {
         selectedMainDomains,
+        selectedDomains: domainMatch.selectedDomains,
+        matchedDomains: domainMatch.matchedDomains,
+        domainScores: domainMatch.domainScores,
         primaryDomain,
       },
     },
@@ -5056,6 +5072,28 @@ function publishPersonalDashboardScores(diagnostics) {
   window.__PERSONAL_DASHBOARD_SCORES__ = runtime.personalDashboardScoreMap;
 }
 
+function getPersonalDashboardScoreDistribution(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.personalDashboardScoreMap) {
+    return null;
+  }
+
+  const scores = Array.from(diagnostics.personalDashboardScoreMap.values());
+  const numericScores = scores.map((scoreObject) => Number(scoreObject.totalScore) || 0);
+  const positive = numericScores.filter((score) => score > 0).length;
+  const zero = numericScores.filter((score) => score === 0).length;
+  const negative = numericScores.filter((score) => score < 0).length;
+  const sum = numericScores.reduce((total, score) => total + score, 0);
+
+  return {
+    positive,
+    zero,
+    negative,
+    average: numericScores.length ? Number((sum / numericScores.length).toFixed(2)) : 0,
+    highest: numericScores.length ? Math.max(...numericScores) : 0,
+    lowest: numericScores.length ? Math.min(...numericScores) : 0,
+  };
+}
+
 function getPersonalDashboardScoringSummary(diagnostics) {
   if (!diagnostics?.enabled || !diagnostics.personalDashboardScoreMap) {
     return null;
@@ -5098,7 +5136,7 @@ function explainPersonalDashboardScore(articleId) {
   if (!normalizedArticleId || !scoreMap?.has(normalizedArticleId)) {
     return null;
   }
-  return scoreMap.get(normalizedArticleId);
+  return formatPersonalDashboardScoreExplanation(scoreMap.get(normalizedArticleId));
 }
 
 function explainPersonalDashboardScoreByTitle(titlePart) {
@@ -5112,6 +5150,57 @@ function explainPersonalDashboardScoreByTitle(titlePart) {
     String(trace?.title || "").toLowerCase().includes(needle)
   );
   return match ? explainPersonalDashboardScore(match.articleId) : null;
+}
+
+function getTraceTitleByArticleId(articleId) {
+  const traceMap = getActiveFilterDecisionTraceMap();
+  const trace = traceMap?.get(String(articleId || ""));
+  return trace?.title || "";
+}
+
+function formatPersonalDashboardScoreExplanation(scoreObject) {
+  if (!scoreObject) {
+    return null;
+  }
+
+  const contributions = Array.isArray(scoreObject.contributions) ? scoreObject.contributions : [];
+  const matchedContributions = contributions.filter((contribution) => contribution.matched);
+  const contributionSubtotal = contributions.reduce((sum, contribution) => sum + (Number(contribution.score) || 0), 0);
+
+  return {
+    ...scoreObject,
+    title: getTraceTitleByArticleId(scoreObject.articleId),
+    legacyMatchesDetected: matchedContributions.map((contribution) => ({
+      category: contribution.category,
+      score: contribution.score,
+      reason: contribution.reason,
+      metadata: contribution.metadata,
+    })),
+    contributionSubtotal,
+    legacyDecision: scoreObject.passed ? "passed" : "rejected",
+    decisionSource: scoreObject.decisionSource || "legacy-pass-fail",
+  };
+}
+
+function listHighestPersonalDashboardScores(limit = 20) {
+  const scoreMap = getActivePersonalDashboardScoreMap();
+  if (!scoreMap) {
+    return [];
+  }
+
+  const normalizedLimit = Math.max(1, Number(limit) || 20);
+  return Array.from(scoreMap.values())
+    .slice()
+    .sort((left, right) => Number(right.totalScore || 0) - Number(left.totalScore || 0))
+    .slice(0, normalizedLimit)
+    .map((scoreObject) => ({
+      title: getTraceTitleByArticleId(scoreObject.articleId),
+      articleId: scoreObject.articleId,
+      totalScore: scoreObject.totalScore,
+      contributions: scoreObject.contributions,
+      passed: scoreObject.passed,
+      primaryDomain: scoreObject.primaryDomain,
+    }));
 }
 
 function publishFilterDecisionTraceDiagnostics(diagnostics) {
@@ -5872,6 +5961,20 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push("disabled");
   }
 
+  const personalDashboardScoreDistribution = diagnostics.personalDashboardScoreDistribution;
+  lines.push("");
+  lines.push("Personal Dashboard Score Distribution");
+  if (personalDashboardScoreDistribution) {
+    lines.push(formatPipelineSummaryLine("positive", personalDashboardScoreDistribution.positive));
+    lines.push(formatPipelineSummaryLine("zero", personalDashboardScoreDistribution.zero));
+    lines.push(formatPipelineSummaryLine("negative", personalDashboardScoreDistribution.negative));
+    lines.push(formatPipelineSummaryLine("average", personalDashboardScoreDistribution.average));
+    lines.push(formatPipelineSummaryLine("highest", personalDashboardScoreDistribution.highest));
+    lines.push(formatPipelineSummaryLine("lowest", personalDashboardScoreDistribution.lowest));
+  } else {
+    lines.push("disabled");
+  }
+
   const paginationPipeline = diagnostics.paginationPipeline;
   lines.push("");
   lines.push("Pagination Pipeline");
@@ -6273,6 +6376,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     filterDecisionDebugTools: diagnostics.filterDecisionDebugTools || null,
     filterDecisionRichTrace: diagnostics.filterDecisionRichTrace || null,
     personalDashboardScoring: diagnostics.personalDashboardScoring || null,
+    personalDashboardScoreDistribution: diagnostics.personalDashboardScoreDistribution || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
     renderModel: diagnostics.renderModel || null,
     renderDispatch: diagnostics.renderDispatch || null,
@@ -6382,6 +6486,10 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.explainPersonalDashboardScoreByTitle = (titlePart) => explainPersonalDashboardScoreByTitle(titlePart);
   }
 
+  if (typeof window.listHighestPersonalDashboardScores !== "function") {
+    window.listHighestPersonalDashboardScores = (limit) => listHighestPersonalDashboardScores(limit);
+  }
+
   if (!window.__FILTER_PIPELINE_EXPORT_HINT_SHOWN__) {
     window.__FILTER_PIPELINE_EXPORT_HINT_SHOWN__ = true;
     console.info(
@@ -6398,6 +6506,7 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.listRejectionReasons()",
         "window.explainPersonalDashboardScore(articleId)",
         "window.explainPersonalDashboardScoreByTitle(titlePart)",
+        "window.listHighestPersonalDashboardScores(limit)",
       ].join("\n")
     );
   }
@@ -6431,6 +6540,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.filterDecisionDebugTools = getFilterDecisionDebugToolsSummary(diagnostics);
   diagnostics.filterDecisionRichTrace = getFilterDecisionRichTraceSummary(diagnostics);
   diagnostics.personalDashboardScoring = getPersonalDashboardScoringSummary(diagnostics);
+  diagnostics.personalDashboardScoreDistribution = getPersonalDashboardScoreDistribution(diagnostics);
   publishFilterDecisionTraceDiagnostics(diagnostics);
   publishPersonalDashboardScores(diagnostics);
   storeFilterPipelineDiagnostics(diagnostics);
@@ -6459,6 +6569,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("filterDecisionDebugTools", diagnostics.filterDecisionDebugTools);
   console.log("filterDecisionRichTrace", diagnostics.filterDecisionRichTrace);
   console.log("personalDashboardScoring", diagnostics.personalDashboardScoring);
+  console.log("personalDashboardScoreDistribution", diagnostics.personalDashboardScoreDistribution);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
   console.log("renderModel", diagnostics.renderModel);
   console.log("renderDispatch", diagnostics.renderDispatch);
