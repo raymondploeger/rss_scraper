@@ -4578,6 +4578,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     personalDashboardScoreMap: enabled ? new Map() : null,
     personalDashboardScoring: null,
     personalDashboardScoreDistribution: null,
+    polymerChildMatchDiagnosticsSummary: null,
     paginationPipeline: null,
     renderModel: null,
     renderDispatch: null,
@@ -4654,6 +4655,9 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Legacy matching connected to score engine",
             "Scoring now explains legacy matches",
             "Scores are diagnostic only",
+            "Polymer child-match diagnostics active",
+            "Polymer thresholds unchanged",
+            "Polymer matching behavior unchanged",
             "Pass/fail still controlled by legacy matching",
             "Legacy pass/fail remains authoritative",
             "Filtering behavior unchanged",
@@ -4866,7 +4870,7 @@ function getFilterDecisionRichTraceSummary(diagnostics) {
       "sorting",
       "grouping",
     ],
-    helperCount: 7,
+    helperCount: 9,
   };
 }
 
@@ -4889,8 +4893,111 @@ function freezePersonalDashboardScore(scoreObject) {
     passed: scoreObject.passed,
     primaryDomain: scoreObject.primaryDomain,
     decisionSource: scoreObject.decisionSource || "legacy-pass-fail",
+    polymerChildMatchDiagnostics: scoreObject.polymerChildMatchDiagnostics
+      ? Object.freeze({
+          ...scoreObject.polymerChildMatchDiagnostics,
+          matchedPolymerTerms: Object.freeze((scoreObject.polymerChildMatchDiagnostics.matchedPolymerTerms || []).map((entry) =>
+            Object.freeze({
+              ...entry,
+              fields: Object.freeze(Array.isArray(entry.fields) ? entry.fields.slice() : []),
+            })
+          )),
+          matchedSubstrateTerms: Object.freeze((scoreObject.polymerChildMatchDiagnostics.matchedSubstrateTerms || []).map((entry) =>
+            Object.freeze({
+              ...entry,
+              fields: Object.freeze(Array.isArray(entry.fields) ? entry.fields.slice() : []),
+            })
+          )),
+        })
+      : null,
     contributions: Object.freeze(contributions),
   });
+}
+
+const BANKNOTE_POLYMER_CHILD_MATCH_POLYMER_TERMS = Object.freeze([
+  "polymer note",
+  "polymer banknote",
+  "polymer banknotes",
+  "polymer substrate",
+  "polymer currency",
+  "guardian substrate",
+  "ccl substrate",
+  "hybrid substrate",
+  "plastic banknote",
+]);
+
+const BANKNOTE_POLYMER_CHILD_MATCH_SUBSTRATE_TERMS = Object.freeze([
+  "substrate",
+  "polymer substrate",
+  "paper substrate",
+  "guardian substrate",
+  "ccl substrate",
+  "hybrid substrate",
+  "substrate migration",
+]);
+
+function getMatchedBanknoteDiagnosticTerms(article, terms = []) {
+  const context = getPersonalBoostContext(article);
+  const fields = [
+    ["title", context.titleText],
+    ["tags", context.tagText],
+    ["metadata", context.metadataText],
+    ["body", context.bodyText],
+  ];
+
+  return normalizeKeywordList(terms)
+    .map((term) => {
+      const matchedFields = fields
+        .filter(([, text]) => textMatchesKeyword(text, term))
+        .map(([field]) => field);
+      return matchedFields.length
+        ? {
+            term,
+            fields: matchedFields,
+          }
+        : null;
+    })
+    .filter(Boolean);
+}
+
+function getPolymerChildMatchDiagnostics(article) {
+  const dominantDomain = getArticleDominantDomain(article);
+  const isBanknoteDomain = dominantDomain === "banknotes";
+  const signals = getBanknoteInterestSignals(article);
+  const polymerThreshold = 3;
+  const substrateThreshold = 4;
+  const polymerHits = Number(signals?.polymerHits) || 0;
+  const substrateHits = Number(signals?.substrateHits) || 0;
+  const polymerThresholdPassed = polymerHits >= polymerThreshold;
+  const substrateThresholdPassed = substrateHits >= substrateThreshold;
+  const childMatched = isBanknoteDomain && (polymerThresholdPassed || substrateThresholdPassed);
+  let likelyReason = "below_polymer_and_substrate_thresholds";
+  if (!isBanknoteDomain) {
+    likelyReason = "dominant_domain_not_banknotes";
+  } else if (polymerThresholdPassed) {
+    likelyReason = "polymer_threshold_passed";
+  } else if (substrateThresholdPassed) {
+    likelyReason = "substrate_threshold_passed";
+  }
+
+  return Object.freeze({
+    dominantDomain,
+    isBanknoteDomain,
+    polymerHits,
+    substrateHits,
+    polymerThreshold,
+    substrateThreshold,
+    polymerThresholdPassed,
+    substrateThresholdPassed,
+    childMatched,
+    likelyReason,
+    matchedPolymerTerms: Object.freeze(getMatchedBanknoteDiagnosticTerms(article, BANKNOTE_POLYMER_CHILD_MATCH_POLYMER_TERMS)),
+    matchedSubstrateTerms: Object.freeze(getMatchedBanknoteDiagnosticTerms(article, BANKNOTE_POLYMER_CHILD_MATCH_SUBSTRATE_TERMS)),
+  });
+}
+
+function isPolymerPersonalDashboardSelected(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  return normalizePersonalDashboardInterests(selectedInterests).includes("polymer");
 }
 
 function getLegacyPersonalDashboardDecisionSignals(article, options = {}) {
@@ -4952,6 +5059,9 @@ function getLegacyPersonalDashboardDecisionSignals(article, options = {}) {
     ? matchesSelectedSharedSecurityTechnique(article, selectedInterests)
     : true;
   const aggregateBoost = computePersonalBoost(article);
+  const polymerChildMatchDiagnostics = isFilterPipelineDiagnosticsEnabled() && isPolymerPersonalDashboardSelected(selectedInterests)
+    ? getPolymerChildMatchDiagnostics(article)
+    : null;
 
   return Object.freeze({
     selectedInterests: Object.freeze(selectedInterests.slice()),
@@ -4977,6 +5087,7 @@ function getLegacyPersonalDashboardDecisionSignals(article, options = {}) {
     digitalIdentityAssessments: Object.freeze(digitalIdentityAssessments.map((entry) => Object.freeze({ ...entry }))),
     bridgeMatches: Object.freeze(bridgeMatches),
     sharedSecurityMatched,
+    polymerChildMatchDiagnostics,
     rejectionCategory: options.rejection?.category || "",
     rejectionReason: options.rejection?.reason || "",
     passed: Object.prototype.hasOwnProperty.call(options, "passed") ? Boolean(options.passed) : articleMatchesPersonalDashboardSelection(article),
@@ -5019,6 +5130,9 @@ function buildPersonalDashboardScore(article, options = {}) {
         groupId,
         rawScore,
         threshold,
+        ...(boost?.interestId === "polymer" && signals.polymerChildMatchDiagnostics
+          ? { polymerChildMatchDiagnostics: signals.polymerChildMatchDiagnostics }
+          : {}),
       },
     };
   });
@@ -5141,6 +5255,7 @@ function buildPersonalDashboardScore(article, options = {}) {
     passed,
     primaryDomain,
     decisionSource: signals.decisionSource || "legacy-pass-fail",
+    polymerChildMatchDiagnostics: signals.polymerChildMatchDiagnostics || null,
     contributions,
   });
 }
@@ -5179,6 +5294,39 @@ function getPersonalDashboardScoreDistribution(diagnostics) {
     average: numericScores.length ? Number((sum / numericScores.length).toFixed(2)) : 0,
     highest: numericScores.length ? Math.max(...numericScores) : 0,
     lowest: numericScores.length ? Math.min(...numericScores) : 0,
+  };
+}
+
+function getPolymerChildMatchDiagnosticsSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.personalDashboardScoreMap) {
+    return null;
+  }
+
+  const polymerDiagnostics = Array.from(diagnostics.personalDashboardScoreMap.values())
+    .map((scoreObject) => scoreObject?.polymerChildMatchDiagnostics)
+    .filter(Boolean);
+  const failureReasons = new Map();
+  polymerDiagnostics.forEach((entry) => {
+    if (entry.childMatched) {
+      return;
+    }
+    const reason = entry.likelyReason || "unknown";
+    failureReasons.set(reason, (failureReasons.get(reason) || 0) + 1);
+  });
+
+  return {
+    enabled: true,
+    evaluatedArticles: polymerDiagnostics.length,
+    matchedArticles: polymerDiagnostics.filter((entry) => entry.childMatched).length,
+    rejectedArticles: polymerDiagnostics.filter((entry) => !entry.childMatched).length,
+    polymerThresholdPasses: polymerDiagnostics.filter((entry) => entry.polymerThresholdPassed).length,
+    substrateThresholdPasses: polymerDiagnostics.filter((entry) => entry.substrateThresholdPassed).length,
+    dominantBanknoteCount: polymerDiagnostics.filter((entry) => entry.isBanknoteDomain).length,
+    dominantNonBanknoteCount: polymerDiagnostics.filter((entry) => !entry.isBanknoteDomain).length,
+    topFailureReasons: Array.from(failureReasons.entries())
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((left, right) => right.count - left.count || left.reason.localeCompare(right.reason))
+      .slice(0, 10),
   };
 }
 
@@ -5238,6 +5386,72 @@ function explainPersonalDashboardScoreByTitle(titlePart) {
     String(trace?.title || "").toLowerCase().includes(needle)
   );
   return match ? explainPersonalDashboardScore(match.articleId) : null;
+}
+
+function explainPolymerMatchByTitle(titlePart) {
+  const needle = String(titlePart || "").trim().toLowerCase();
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!needle || !traceMap) {
+    return null;
+  }
+
+  const match = Array.from(traceMap.values()).find((trace) =>
+    String(trace?.title || "").toLowerCase().includes(needle)
+  );
+  if (!match) {
+    return null;
+  }
+
+  const personalDashboardScore = explainPersonalDashboardScore(match.articleId);
+  const personalDashboardStage = (Array.isArray(match.stages) ? match.stages : []).find(
+    (stage) => stage.stage === "personal_dashboard"
+  );
+
+  return {
+    articleId: match.articleId,
+    title: match.title,
+    personalDashboardScore,
+    polymerChildMatchDiagnostics:
+      personalDashboardScore?.polymerChildMatchDiagnostics ||
+      personalDashboardStage?.metadata?.polymerChildMatchDiagnostics ||
+      null,
+    finalPersonalDashboardResult: personalDashboardStage
+      ? {
+          result: personalDashboardStage.result,
+          reason: personalDashboardStage.reason,
+          rejectedCategory: personalDashboardStage.metadata?.category || personalDashboardStage.metadata?.rejectedCategory || "",
+        }
+      : null,
+  };
+}
+
+function listPolymerChildMismatches(limit = 25) {
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!traceMap) {
+    return [];
+  }
+
+  const normalizedLimit = Math.max(1, Number(limit) || 25);
+  return Array.from(traceMap.values())
+    .map((trace) => {
+      const personalDashboardStage = (Array.isArray(trace.stages) ? trace.stages : []).find(
+        (stage) => stage.stage === "personal_dashboard"
+      );
+      const polymerDiagnostics = personalDashboardStage?.metadata?.polymerChildMatchDiagnostics || null;
+      return polymerDiagnostics && !polymerDiagnostics.childMatched
+        ? {
+            articleId: trace.articleId,
+            title: trace.title,
+            polymerHits: polymerDiagnostics.polymerHits,
+            substrateHits: polymerDiagnostics.substrateHits,
+            dominantDomain: polymerDiagnostics.dominantDomain,
+            likelyReason: polymerDiagnostics.likelyReason,
+            finalReason: trace.finalReason || personalDashboardStage?.reason || "",
+          }
+        : null;
+    })
+    .filter(Boolean)
+    .slice(0, normalizedLimit);
 }
 
 function getTraceTitleByArticleId(articleId) {
@@ -5508,6 +5722,9 @@ function getPersonalDashboardTraceMetadata(article, rejection = null, personalDa
   const sharedSecurityMatched = selectedSharedInterests.length
     ? matchesSelectedSharedSecurityTechnique(article, selectedInterests)
     : null;
+  const polymerChildMatchDiagnostics = isFilterPipelineDiagnosticsEnabled() && isPolymerPersonalDashboardSelected(selectedInterests)
+    ? getPolymerChildMatchDiagnostics(article)
+    : null;
 
   return {
     selectedMainDomains,
@@ -5533,6 +5750,7 @@ function getPersonalDashboardTraceMetadata(article, rejection = null, personalDa
     selectedIdentityInterests,
     selectedBanknoteInterests,
     selectedSharedSecurityInterests: selectedSharedInterests,
+    polymerChildMatchDiagnostics,
     score: topScore,
     personalDashboardScore,
   };
@@ -6063,6 +6281,29 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push("disabled");
   }
 
+  const polymerChildMatchDiagnosticsSummary = diagnostics.polymerChildMatchDiagnosticsSummary;
+  lines.push("");
+  lines.push("Polymer Child Match Diagnostics");
+  if (polymerChildMatchDiagnosticsSummary?.enabled) {
+    lines.push(formatPipelineSummaryLine("evaluatedArticles", polymerChildMatchDiagnosticsSummary.evaluatedArticles));
+    lines.push(formatPipelineSummaryLine("matchedArticles", polymerChildMatchDiagnosticsSummary.matchedArticles));
+    lines.push(formatPipelineSummaryLine("rejectedArticles", polymerChildMatchDiagnosticsSummary.rejectedArticles));
+    lines.push(formatPipelineSummaryLine("polymerThresholdPasses", polymerChildMatchDiagnosticsSummary.polymerThresholdPasses));
+    lines.push(formatPipelineSummaryLine("substrateThresholdPasses", polymerChildMatchDiagnosticsSummary.substrateThresholdPasses));
+    lines.push(formatPipelineSummaryLine("dominantBanknoteCount", polymerChildMatchDiagnosticsSummary.dominantBanknoteCount));
+    lines.push(formatPipelineSummaryLine("dominantNonBanknoteCount", polymerChildMatchDiagnosticsSummary.dominantNonBanknoteCount));
+    if (polymerChildMatchDiagnosticsSummary.topFailureReasons?.length) {
+      lines.push("topFailureReasons:");
+      polymerChildMatchDiagnosticsSummary.topFailureReasons.forEach((entry) => {
+        lines.push(`- ${entry.reason}: ${entry.count}`);
+      });
+    } else {
+      lines.push("topFailureReasons: none");
+    }
+  } else {
+    lines.push("disabled");
+  }
+
   const paginationPipeline = diagnostics.paginationPipeline;
   lines.push("");
   lines.push("Pagination Pipeline");
@@ -6465,6 +6706,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     filterDecisionRichTrace: diagnostics.filterDecisionRichTrace || null,
     personalDashboardScoring: diagnostics.personalDashboardScoring || null,
     personalDashboardScoreDistribution: diagnostics.personalDashboardScoreDistribution || null,
+    polymerChildMatchDiagnosticsSummary: diagnostics.polymerChildMatchDiagnosticsSummary || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
     renderModel: diagnostics.renderModel || null,
     renderDispatch: diagnostics.renderDispatch || null,
@@ -6578,6 +6820,14 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.listHighestPersonalDashboardScores = (limit) => listHighestPersonalDashboardScores(limit);
   }
 
+  if (typeof window.explainPolymerMatchByTitle !== "function") {
+    window.explainPolymerMatchByTitle = (titlePart) => explainPolymerMatchByTitle(titlePart);
+  }
+
+  if (typeof window.listPolymerChildMismatches !== "function") {
+    window.listPolymerChildMismatches = (limit) => listPolymerChildMismatches(limit);
+  }
+
   if (!window.__FILTER_PIPELINE_EXPORT_HINT_SHOWN__) {
     window.__FILTER_PIPELINE_EXPORT_HINT_SHOWN__ = true;
     console.info(
@@ -6595,6 +6845,8 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.explainPersonalDashboardScore(articleId)",
         "window.explainPersonalDashboardScoreByTitle(titlePart)",
         "window.listHighestPersonalDashboardScores(limit)",
+        "window.explainPolymerMatchByTitle(titlePart)",
+        "window.listPolymerChildMismatches(limit)",
       ].join("\n")
     );
   }
@@ -6629,6 +6881,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.filterDecisionRichTrace = getFilterDecisionRichTraceSummary(diagnostics);
   diagnostics.personalDashboardScoring = getPersonalDashboardScoringSummary(diagnostics);
   diagnostics.personalDashboardScoreDistribution = getPersonalDashboardScoreDistribution(diagnostics);
+  diagnostics.polymerChildMatchDiagnosticsSummary = getPolymerChildMatchDiagnosticsSummary(diagnostics);
   publishFilterDecisionTraceDiagnostics(diagnostics);
   publishPersonalDashboardScores(diagnostics);
   storeFilterPipelineDiagnostics(diagnostics);
@@ -6658,6 +6911,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("filterDecisionRichTrace", diagnostics.filterDecisionRichTrace);
   console.log("personalDashboardScoring", diagnostics.personalDashboardScoring);
   console.log("personalDashboardScoreDistribution", diagnostics.personalDashboardScoreDistribution);
+  console.log("polymerChildMatchDiagnosticsSummary", diagnostics.polymerChildMatchDiagnosticsSummary);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
   console.log("renderModel", diagnostics.renderModel);
   console.log("renderDispatch", diagnostics.renderDispatch);
@@ -11128,26 +11382,8 @@ function getBanknoteInterestSignals(article) {
       "micro optics",
       "micro-optics",
     ];
-    const polymerTerms = [
-      "polymer note",
-      "polymer banknote",
-      "polymer banknotes",
-      "polymer substrate",
-      "polymer currency",
-      "guardian substrate",
-      "ccl substrate",
-      "hybrid substrate",
-      "plastic banknote",
-    ];
-    const substrateTerms = [
-      "substrate",
-      "polymer substrate",
-      "paper substrate",
-      "guardian substrate",
-      "ccl substrate",
-      "hybrid substrate",
-      "substrate migration",
-    ];
+    const polymerTerms = BANKNOTE_POLYMER_CHILD_MATCH_POLYMER_TERMS;
+    const substrateTerms = BANKNOTE_POLYMER_CHILD_MATCH_SUBSTRATE_TERMS;
     const releaseTerms = [
       "issued",
       "issue",
