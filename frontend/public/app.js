@@ -4648,6 +4648,9 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Trace metadata records existing decisions only",
             "Personal Dashboard Scoring Engine active",
             "Scoring architecture separated from matching",
+            "Personal Dashboard score contributions populated",
+            "Scores are diagnostic only",
+            "Pass/fail still controlled by legacy matching",
             "Filtering behavior unchanged",
           ]
         : []),
@@ -4879,6 +4882,7 @@ function freezePersonalDashboardScore(scoreObject) {
     threshold: scoreObject.threshold,
     passed: scoreObject.passed,
     primaryDomain: scoreObject.primaryDomain,
+    decisionSource: scoreObject.decisionSource || "legacy-pass-fail",
     contributions: Object.freeze(contributions),
   });
 }
@@ -4893,27 +4897,61 @@ function buildPersonalDashboardScore(article, options = {}) {
   const interestContributions = selectedInterests.map((interestId) => {
     const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
     const boost = computePersonalInterestBoost(article, interestId);
+    const rawScore = Number(boost?.score) || 0;
+    const matched = rawScore >= 18 || Boolean(boost?.matched);
+    const groupId = interest?.groupId || "";
+    let category = "selected_interest";
+    if (groupId === "banknote_intelligence") {
+      category = "banknote_interest";
+    } else if (groupId === "identity_documents") {
+      category = "identity_document_interest";
+    } else if (groupId === PERSONAL_DASHBOARD_SHARED_GROUP_ID) {
+      category = "shared_security_interest";
+    } else if (groupId === "digital_identity_biometrics") {
+      category = "digital_identity_interest";
+    }
     return {
-      category: `interest:${interestId}`,
-      score: Number(boost?.score) || 0,
-      matched: Boolean(boost?.matched),
+      category,
+      score: matched ? 25 : 0,
+      matched,
       reason: interest?.label ? `existing boost for ${interest.label}` : "existing Personal Dashboard interest boost",
       metadata: {
         interestId,
-        groupId: interest?.groupId || "",
+        groupId,
+        rawScore,
         threshold,
       },
     };
   });
+  const keywordSupportContributions = selectedInterests
+    .map((interestId) => {
+      const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
+      const boost = computePersonalInterestBoost(article, interestId);
+      const rawScore = Number(boost?.score) || 0;
+      return {
+        category: "keyword_signal",
+        score: rawScore > 0 && rawScore < 18 ? 5 : 0,
+        matched: rawScore > 0 && rawScore < 18,
+        reason: "existing weak Personal Dashboard keyword support",
+        metadata: {
+          interestId,
+          groupId: interest?.groupId || "",
+          rawScore,
+        },
+      };
+    })
+    .filter((contribution) => contribution.matched);
   const sharedSecurityContributions = selectedSharedInterests.map((interestId) => {
     const assessment = getSharedSecurityStandaloneAssessment(article, interestId);
+    const matched = Boolean(assessment?.included);
     return {
-      category: `shared_security:${interestId}`,
-      score: Number(assessment?.interestScore) || 0,
-      matched: Boolean(assessment?.included),
+      category: "technique_match",
+      score: matched ? 20 : 0,
+      matched,
       reason: "existing shared security technique assessment",
       metadata: {
         interestId,
+        rawScore: Number(assessment?.interestScore) || 0,
         directMatch: Boolean(assessment?.directMatch),
         hybridMatch: Boolean(assessment?.hybridMatch),
         bodyContextBridgeMatch: Boolean(assessment?.bodyContextBridgeMatch),
@@ -4925,23 +4963,32 @@ function buildPersonalDashboardScore(article, options = {}) {
   const identityBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, selectedInterests);
   const banknoteBridgeMatched = articleMatchesSelectedBanknoteTechniqueBridge(article, selectedInterests);
   const domainMatched = !selectedMainDomains.length || selectedMainDomains.includes(primaryDomain);
-  const totalScore = Number(overallBoost?.score) || 0;
   const passed = Object.prototype.hasOwnProperty.call(options, "passed")
     ? Boolean(options.passed)
     : articleMatchesPersonalDashboardSelection(article);
   const contributions = [
     {
       category: "overall_personal_dashboard",
-      score: totalScore,
+      score: 0,
       matched: Boolean(overallBoost?.level),
       reason: "existing aggregate Personal Dashboard boost",
       metadata: {
+        rawScore: Number(overallBoost?.score) || 0,
         level: overallBoost?.level || "",
       },
     },
     {
       category: "primary_domain",
-      score: domainMatched ? threshold : 0,
+      score: 0,
+      matched: Boolean(primaryDomain),
+      reason: "detected primary domain from existing classifier",
+      metadata: {
+        primaryDomain,
+      },
+    },
+    {
+      category: "selected_main_domain",
+      score: selectedMainDomains.length && domainMatched ? 40 : 0,
       matched: domainMatched,
       reason: domainMatched
         ? "primary domain is allowed by current selection"
@@ -4952,10 +4999,11 @@ function buildPersonalDashboardScore(article, options = {}) {
       },
     },
     ...interestContributions,
+    ...keywordSupportContributions,
     ...sharedSecurityContributions,
     {
-      category: "bridge",
-      score: identityBridgeMatched || banknoteBridgeMatched ? threshold : 0,
+      category: "bridge_match",
+      score: identityBridgeMatched || banknoteBridgeMatched ? 20 : 0,
       matched: identityBridgeMatched || banknoteBridgeMatched,
       reason: identityBridgeMatched
         ? "existing identity shared-security bridge matched"
@@ -4968,6 +5016,19 @@ function buildPersonalDashboardScore(article, options = {}) {
       },
     },
   ];
+  if (!passed) {
+    contributions.push({
+      category: "rejection_signal",
+      score: -50,
+      matched: true,
+      reason: options.rejection?.reason || "legacy Personal Dashboard matcher rejected article",
+      metadata: {
+        rejectedCategory: options.rejection?.category || "",
+        rejectionReason: options.rejection?.reason || "",
+      },
+    });
+  }
+  const totalScore = contributions.reduce((sum, contribution) => sum + (Number(contribution.score) || 0), 0);
 
   return freezePersonalDashboardScore({
     articleId: getFilterDecisionTraceArticleId(article),
@@ -4975,6 +5036,7 @@ function buildPersonalDashboardScore(article, options = {}) {
     threshold,
     passed,
     primaryDomain,
+    decisionSource: "legacy-pass-fail",
     contributions,
   });
 }
@@ -5003,6 +5065,9 @@ function getPersonalDashboardScoringSummary(diagnostics) {
   const scoreObjects = scores.length;
   const passedCount = scores.filter((scoreObject) => scoreObject.passed).length;
   const rejectedCount = scoreObjects - passedCount;
+  const positiveScoreCount = scores.filter((scoreObject) => Number(scoreObject.totalScore) > 0).length;
+  const zeroScoreCount = scores.filter((scoreObject) => Number(scoreObject.totalScore) === 0).length;
+  const negativeScoreCount = scores.filter((scoreObject) => Number(scoreObject.totalScore) < 0).length;
   const totalThreshold = scores.reduce((sum, scoreObject) => sum + (Number(scoreObject.threshold) || 0), 0);
   const totalScore = scores.reduce((sum, scoreObject) => sum + (Number(scoreObject.totalScore) || 0), 0);
 
@@ -5011,8 +5076,12 @@ function getPersonalDashboardScoringSummary(diagnostics) {
     scoreObjects,
     averageThreshold: scoreObjects ? Number((totalThreshold / scoreObjects).toFixed(2)) : 0,
     averageScore: scoreObjects ? Number((totalScore / scoreObjects).toFixed(2)) : 0,
+    positiveScoreCount,
+    zeroScoreCount,
+    negativeScoreCount,
     passedCount,
     rejectedCount,
+    decisionSource: "legacy-pass-fail",
   };
 }
 
@@ -5793,8 +5862,12 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push(formatPipelineSummaryLine("scoreObjects", personalDashboardScoring.scoreObjects));
     lines.push(formatPipelineSummaryLine("averageThreshold", personalDashboardScoring.averageThreshold));
     lines.push(formatPipelineSummaryLine("averageScore", personalDashboardScoring.averageScore));
+    lines.push(formatPipelineSummaryLine("positiveScoreCount", personalDashboardScoring.positiveScoreCount));
+    lines.push(formatPipelineSummaryLine("zeroScoreCount", personalDashboardScoring.zeroScoreCount));
+    lines.push(formatPipelineSummaryLine("negativeScoreCount", personalDashboardScoring.negativeScoreCount));
     lines.push(formatPipelineSummaryLine("passedCount", personalDashboardScoring.passedCount));
     lines.push(formatPipelineSummaryLine("rejectedCount", personalDashboardScoring.rejectedCount));
+    lines.push(`decisionSource: ${personalDashboardScoring.decisionSource || "legacy-pass-fail"}`);
   } else {
     lines.push("disabled");
   }
@@ -22576,9 +22649,9 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
   const outputArticles = [];
   inputArticles.forEach((article) => {
     const dashboardPassed = articleMatchesPersonalDashboardSelection(article);
-    const personalDashboardScore = buildPersonalDashboardScore(article, { passed: dashboardPassed });
-    recordPersonalDashboardScore(diagnostics, article, personalDashboardScore);
     if (dashboardPassed) {
+      const personalDashboardScore = buildPersonalDashboardScore(article, { passed: true });
+      recordPersonalDashboardScore(diagnostics, article, personalDashboardScore);
       recordFilterDecisionStage(diagnostics, article, {
         stage: "personal_dashboard",
         result: "passed",
@@ -22590,6 +22663,11 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
       return;
     }
     const rejection = classifyPersonalDashboardRejection(article);
+    const personalDashboardScore = buildPersonalDashboardScore(article, {
+      passed: false,
+      rejection,
+    });
+    recordPersonalDashboardScore(diagnostics, article, personalDashboardScore);
     recordFilterDecisionStage(diagnostics, article, {
       stage: "personal_dashboard",
       result: "rejected",
