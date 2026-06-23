@@ -4661,6 +4661,8 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Identity matching unchanged",
             "Thresholds unchanged",
             "Bridge logic unchanged",
+            "Diagnostics export state sync active",
+            "Latest completed diagnostic export available",
             "Polymer child-match diagnostics active",
             "Polymer thresholds unchanged",
             "Polymer matching behavior unchanged",
@@ -7176,14 +7178,122 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
   };
 }
 
+function isLoadingFilterPipelineDiagnostic(diagnostic) {
+  if (!diagnostic) {
+    return false;
+  }
+
+  const branch = String(diagnostic.branch || "");
+  return (
+    branch.endsWith("-loading") ||
+    Boolean(diagnostic.candidateBuilderResult?.pending) ||
+    Boolean(diagnostic.pipelineExecutor?.pending) ||
+    Boolean(diagnostic.filterPipeline?.pending) ||
+    Boolean(diagnostic.paginationPipeline?.pending) ||
+    Boolean(diagnostic.renderModel?.pending) ||
+    Boolean(diagnostic.renderDispatch?.pending) ||
+    Boolean(diagnostic.pipelineCompatibility?.pending) ||
+    Boolean(diagnostic.pipelineOrchestrator?.pending)
+  );
+}
+
+function getStoredFilterPipelineDiagnostics() {
+  if (typeof window === "undefined" || !Array.isArray(window.__FILTER_PIPELINE_DIAGNOSTICS__)) {
+    return [];
+  }
+  return window.__FILTER_PIPELINE_DIAGNOSTICS__;
+}
+
+function getLatestFilterPipelineDiagnostic() {
+  const diagnostics = getStoredFilterPipelineDiagnostics();
+  return diagnostics.length ? diagnostics[diagnostics.length - 1] : null;
+}
+
+function getLatestCompletedFilterPipelineDiagnostic() {
+  const diagnostics = getStoredFilterPipelineDiagnostics();
+  for (let index = diagnostics.length - 1; index >= 0; index -= 1) {
+    const diagnostic = diagnostics[index];
+    if (!isLoadingFilterPipelineDiagnostic(diagnostic)) {
+      return diagnostic;
+    }
+  }
+  return null;
+}
+
+function getActiveFilterPipelineDiagnostic() {
+  return getLatestCompletedFilterPipelineDiagnostic() || getLatestFilterPipelineDiagnostic();
+}
+
+function getActiveDashboardSelection() {
+  const activeDiagnostic = getActiveFilterPipelineDiagnostic();
+  return activeDiagnostic?.normalizedFilterState?.dashboard || null;
+}
+
+function markFilterPipelineDiagnosticsForExport(diagnostics, latestDiagnostic, latestCompletedDiagnostic) {
+  const latestRenderId = latestDiagnostic?.renderId || "";
+  const latestCompletedRenderId = latestCompletedDiagnostic?.renderId || "";
+  const activeRenderId = latestCompletedRenderId || latestRenderId;
+
+  return diagnostics.map((diagnostic, index) => ({
+    ...diagnostic,
+    exportIndex: index,
+    exportState: {
+      isLatestDiagnostic: Boolean(latestRenderId && diagnostic.renderId === latestRenderId),
+      isLatestCompletedDiagnostic: Boolean(
+        latestCompletedRenderId && diagnostic.renderId === latestCompletedRenderId
+      ),
+      isActiveDiagnostic: Boolean(activeRenderId && diagnostic.renderId === activeRenderId),
+      isHistorical: Boolean(activeRenderId && diagnostic.renderId !== activeRenderId),
+      isStale: Boolean(activeRenderId && diagnostic.renderId !== activeRenderId),
+      isLoading: isLoadingFilterPipelineDiagnostic(diagnostic),
+    },
+  }));
+}
+
 function getFilterPipelineDiagnosticsExportPayload() {
-  const diagnostics = Array.isArray(window.__FILTER_PIPELINE_DIAGNOSTICS__)
-    ? window.__FILTER_PIPELINE_DIAGNOSTICS__
-    : [];
+  const storedDiagnostics = getStoredFilterPipelineDiagnostics();
+  const latestDiagnostic = getLatestFilterPipelineDiagnostic();
+  const latestCompletedDiagnostic = getLatestCompletedFilterPipelineDiagnostic();
+  const activeDiagnostic = latestCompletedDiagnostic || latestDiagnostic;
+  const diagnostics = markFilterPipelineDiagnosticsForExport(
+    storedDiagnostics,
+    latestDiagnostic,
+    latestCompletedDiagnostic
+  );
   return {
     exportedAt: new Date().toISOString(),
     appBuild: APP_BUILD,
+    exportMode: "history",
     diagnosticsCount: diagnostics.length,
+    latestDiagnostic,
+    latestCompletedDiagnostic,
+    activeNormalizedFilterState: activeDiagnostic?.normalizedFilterState || null,
+    activeDashboardSelection: activeDiagnostic?.normalizedFilterState?.dashboard || null,
+    activeRenderId: activeDiagnostic?.renderId || "",
+    staleDiagnosticCount: diagnostics.filter((diagnostic) => diagnostic.exportState?.isStale).length,
+    diagnostics,
+  };
+}
+
+function getLatestFilterPipelineDiagnosticsExportPayload() {
+  const latestDiagnostic = getLatestFilterPipelineDiagnostic();
+  const latestCompletedDiagnostic = getLatestCompletedFilterPipelineDiagnostic();
+  const activeDiagnostic = latestCompletedDiagnostic || latestDiagnostic;
+  const diagnostics = activeDiagnostic
+    ? markFilterPipelineDiagnosticsForExport([activeDiagnostic], latestDiagnostic, latestCompletedDiagnostic)
+    : [];
+
+  return {
+    exportedAt: new Date().toISOString(),
+    appBuild: APP_BUILD,
+    exportMode: "latest_completed",
+    diagnosticsCount: diagnostics.length,
+    latestDiagnostic,
+    latestCompletedDiagnostic,
+    activeNormalizedFilterState: activeDiagnostic?.normalizedFilterState || null,
+    activeDashboardSelection: activeDiagnostic?.normalizedFilterState?.dashboard || null,
+    activeRenderId: activeDiagnostic?.renderId || "",
+    staleDiagnosticCount: 0,
     diagnostics,
   };
 }
@@ -7217,6 +7327,23 @@ function ensureFilterPipelineDiagnosticsExportTools() {
       downloadJsonFile(`filter-pipeline-diagnostics-${timestamp}.json`, payload);
       return payload;
     };
+  }
+
+  if (typeof window.exportLatestFilterPipelineDiagnostics !== "function") {
+    window.exportLatestFilterPipelineDiagnostics = () => {
+      const payload = getLatestFilterPipelineDiagnosticsExportPayload();
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      downloadJsonFile(`filter-pipeline-diagnostics-latest-${timestamp}.json`, payload);
+      return payload;
+    };
+  }
+
+  if (typeof window.getActiveFilterPipelineDiagnostic !== "function") {
+    window.getActiveFilterPipelineDiagnostic = () => getActiveFilterPipelineDiagnostic();
+  }
+
+  if (typeof window.getActiveDashboardSelection !== "function") {
+    window.getActiveDashboardSelection = () => getActiveDashboardSelection();
   }
 
   if (typeof window.copyFilterPipelineDiagnostics !== "function") {
@@ -7303,6 +7430,9 @@ function ensureFilterPipelineDiagnosticsExportTools() {
       [
         "FilterPipeline diagnostics export available:",
         "window.exportFilterPipelineDiagnostics()",
+        "window.exportLatestFilterPipelineDiagnostics()",
+        "window.getActiveFilterPipelineDiagnostic()",
+        "window.getActiveDashboardSelection()",
         "window.copyFilterPipelineDiagnostics()",
         "window.listRejectedArticles()",
         "window.listSurvivingArticles()",
