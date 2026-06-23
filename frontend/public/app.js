@@ -4650,6 +4650,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Personal Dashboard Scoring Engine active",
             "Scoring architecture separated from matching",
             "Personal Dashboard score contributions populated",
+            "Legacy Personal Dashboard signals packaged",
             "Legacy matching connected to score engine",
             "Scoring now explains legacy matches",
             "Scores are diagnostic only",
@@ -4892,42 +4893,129 @@ function freezePersonalDashboardScore(scoreObject) {
   });
 }
 
-function buildPersonalDashboardScore(article, options = {}) {
+function getLegacyPersonalDashboardDecisionSignals(article, options = {}) {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
-  const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
   const selectedMainDomains = getSelectedMainDomains(selectedInterests);
-  const domainMatch = getPersonalDashboardDomainMatch(article);
-  const domainScore = calculatePersonalDomainScore(article, selectedInterests);
+  const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
+  const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
+  const selectedBanknoteInterests = selectedInterests.filter(
+    (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "banknote_intelligence"
+  );
+  const selectedDigitalIdentityInterests = selectedInterests.filter(
+    (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "digital_identity_biometrics"
+  );
   const primaryDomain = getArticleDominantDomain(article);
-  const threshold = selectedInterests.length ? 18 : 0;
-  const overallBoost = computePersonalBoost(article);
-  const interestContributions = selectedInterests.map((interestId) => {
+  const domainMatchResult = getPersonalDashboardDomainMatch(article);
+  const domainScore = calculatePersonalDomainScore(article, selectedInterests);
+  const perInterestBoosts = selectedInterests.map((interestId) => {
     const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
     const boost = computePersonalInterestBoost(article, interestId);
+    return {
+      interestId,
+      groupId: interest?.groupId || "",
+      label: interest?.label || interestId,
+      score: Number(boost?.score) || 0,
+      matched: Boolean(boost?.matched),
+    };
+  });
+  const banknoteInterestMatches = selectedBanknoteInterests.map((interestId) => ({
+    interestId,
+    matched: matchesBanknoteInterest(article, interestId),
+  }));
+  const identityInterestMatches = selectedIdentityInterests.map((interestId) => {
+    const boost = computePersonalInterestBoost(article, interestId);
+    return {
+      interestId,
+      score: Number(boost?.score) || 0,
+      matched: (Number(boost?.score) || 0) >= 18,
+    };
+  });
+  const sharedSecurityAssessments = selectedSharedInterests.map((interestId) => ({
+    interestId,
+    ...getSharedSecurityStandaloneAssessment(article, interestId),
+  }));
+  const digitalIdentityAssessments = selectedDigitalIdentityInterests.map((interestId) => ({
+    interestId,
+    ...getDigitalSubgroupHybridAssessment(article, interestId),
+  }));
+  const idCardsHolographyOvdBridgeMatched = matchesIdCardsHolographyOvdCombinationBridge(
+    article,
+    selectedIdentityInterests,
+    selectedSharedInterests
+  );
+  const bridgeMatches = {
+    identityTechniqueBridgeMatched: articleMatchesSelectedIdentityTechniqueBridge(article, selectedInterests),
+    banknoteTechniqueBridgeMatched: articleMatchesSelectedBanknoteTechniqueBridge(article, selectedInterests),
+    idCardsHolographyOvdBridgeMatched,
+  };
+  const sharedSecurityMatched = selectedSharedInterests.length
+    ? matchesSelectedSharedSecurityTechnique(article, selectedInterests)
+    : true;
+  const aggregateBoost = computePersonalBoost(article);
+
+  return Object.freeze({
+    selectedInterests: Object.freeze(selectedInterests.slice()),
+    selectedMainDomains: Object.freeze(selectedMainDomains.slice()),
+    primaryDomain,
+    domainMatchResult: Object.freeze({
+      matched: Boolean(domainMatchResult?.matched),
+      matchedDomains: Object.freeze(Array.isArray(domainMatchResult?.matchedDomains) ? domainMatchResult.matchedDomains.slice() : []),
+      selectedDomains: Object.freeze(Array.isArray(domainMatchResult?.selectedDomains) ? domainMatchResult.selectedDomains.slice() : []),
+      domainScores: Object.freeze({ ...(domainMatchResult?.domainScores || {}) }),
+    }),
+    aggregateDomainScore: Number(domainScore?.domainScore) || 0,
+    aggregateDomainRelevanceBand: domainScore?.relevanceBand || "",
+    aggregateDomain: domainScore?.domain || "",
+    aggregateBoost: Object.freeze({
+      score: Number(aggregateBoost?.score) || 0,
+      level: aggregateBoost?.level || "",
+    }),
+    perInterestBoosts: Object.freeze(perInterestBoosts.map((entry) => Object.freeze({ ...entry }))),
+    banknoteInterestMatches: Object.freeze(banknoteInterestMatches.map((entry) => Object.freeze({ ...entry }))),
+    identityInterestMatches: Object.freeze(identityInterestMatches.map((entry) => Object.freeze({ ...entry }))),
+    sharedSecurityAssessments: Object.freeze(sharedSecurityAssessments.map((entry) => Object.freeze({ ...entry }))),
+    digitalIdentityAssessments: Object.freeze(digitalIdentityAssessments.map((entry) => Object.freeze({ ...entry }))),
+    bridgeMatches: Object.freeze(bridgeMatches),
+    sharedSecurityMatched,
+    rejectionCategory: options.rejection?.category || "",
+    rejectionReason: options.rejection?.reason || "",
+    passed: Object.prototype.hasOwnProperty.call(options, "passed") ? Boolean(options.passed) : articleMatchesPersonalDashboardSelection(article),
+    threshold: selectedInterests.length ? 18 : 0,
+    decisionSource: "legacy-pass-fail",
+  });
+}
+
+function buildPersonalDashboardScore(article, options = {}) {
+  const signals = options.signals || getLegacyPersonalDashboardDecisionSignals(article, options);
+  const selectedInterests = Array.isArray(signals.selectedInterests) ? signals.selectedInterests : [];
+  const selectedMainDomains = Array.isArray(signals.selectedMainDomains) ? signals.selectedMainDomains : [];
+  const primaryDomain = signals.primaryDomain || getArticleDominantDomain(article);
+  const threshold = Number(signals.threshold) || 0;
+  const interestContributions = (Array.isArray(signals.perInterestBoosts) ? signals.perInterestBoosts : []).map((boost) => {
     const rawScore = Number(boost?.score) || 0;
-    const groupId = interest?.groupId || "";
+    const groupId = boost?.groupId || "";
     let matched = rawScore >= 18 || Boolean(boost?.matched);
     let category = "selected_interest";
     if (groupId === "banknote_intelligence") {
       category = "banknote_interest";
-      matched = matchesBanknoteInterest(article, interestId);
+      matched = Boolean((signals.banknoteInterestMatches || []).find((entry) => entry.interestId === boost.interestId)?.matched);
     } else if (groupId === "identity_documents") {
       category = "identity_document_interest";
-      matched = rawScore >= 18;
+      matched = Boolean((signals.identityInterestMatches || []).find((entry) => entry.interestId === boost.interestId)?.matched);
     } else if (groupId === PERSONAL_DASHBOARD_SHARED_GROUP_ID) {
       category = "shared_security_interest";
-      matched = Boolean(getSharedSecurityStandaloneAssessment(article, interestId).included);
+      matched = Boolean((signals.sharedSecurityAssessments || []).find((entry) => entry.interestId === boost.interestId)?.included);
     } else if (groupId === "digital_identity_biometrics") {
       category = "digital_identity_interest";
-      matched = Boolean(getDigitalSubgroupHybridAssessment(article, interestId).included);
+      matched = Boolean((signals.digitalIdentityAssessments || []).find((entry) => entry.interestId === boost.interestId)?.included);
     }
     return {
       category,
       score: matched ? 25 : 0,
       matched,
-      reason: interest?.label ? `existing boost for ${interest.label}` : "existing Personal Dashboard interest boost",
+      reason: boost?.label ? `existing boost for ${boost.label}` : "existing Personal Dashboard interest boost",
       metadata: {
-        interestId,
+        interestId: boost?.interestId || "",
         groupId,
         rawScore,
         threshold,
@@ -4936,8 +5024,7 @@ function buildPersonalDashboardScore(article, options = {}) {
   });
   const keywordSupportContributions = selectedInterests
     .map((interestId) => {
-      const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
-      const boost = computePersonalInterestBoost(article, interestId);
+      const boost = (signals.perInterestBoosts || []).find((entry) => entry.interestId === interestId);
       const rawScore = Number(boost?.score) || 0;
       return {
         category: "keyword_signal",
@@ -4946,14 +5033,13 @@ function buildPersonalDashboardScore(article, options = {}) {
         reason: "existing weak Personal Dashboard keyword support",
         metadata: {
           interestId,
-          groupId: interest?.groupId || "",
+          groupId: boost?.groupId || "",
           rawScore,
         },
       };
     })
     .filter((contribution) => contribution.matched);
-  const sharedSecurityContributions = selectedSharedInterests.map((interestId) => {
-    const assessment = getSharedSecurityStandaloneAssessment(article, interestId);
+  const sharedSecurityContributions = (Array.isArray(signals.sharedSecurityAssessments) ? signals.sharedSecurityAssessments : []).map((assessment) => {
     const matched = Boolean(assessment?.included);
     return {
       category: "technique_match",
@@ -4961,7 +5047,7 @@ function buildPersonalDashboardScore(article, options = {}) {
       matched,
       reason: "existing shared security technique assessment",
       metadata: {
-        interestId,
+        interestId: assessment?.interestId || "",
         rawScore: Number(assessment?.interestScore) || 0,
         directMatch: Boolean(assessment?.directMatch),
         hybridMatch: Boolean(assessment?.hybridMatch),
@@ -4971,20 +5057,19 @@ function buildPersonalDashboardScore(article, options = {}) {
       },
     };
   });
-  const identityBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, selectedInterests);
-  const banknoteBridgeMatched = articleMatchesSelectedBanknoteTechniqueBridge(article, selectedInterests);
-  const passed = Object.prototype.hasOwnProperty.call(options, "passed")
-    ? Boolean(options.passed)
-    : articleMatchesPersonalDashboardSelection(article);
+  const identityBridgeMatched = Boolean(signals.bridgeMatches?.identityTechniqueBridgeMatched);
+  const banknoteBridgeMatched = Boolean(signals.bridgeMatches?.banknoteTechniqueBridgeMatched);
+  const idCardsHolographyOvdBridgeMatched = Boolean(signals.bridgeMatches?.idCardsHolographyOvdBridgeMatched);
+  const passed = Boolean(signals.passed);
   const contributions = [
     {
       category: "overall_personal_dashboard",
       score: 0,
-      matched: Boolean(overallBoost?.level),
+      matched: Boolean(signals.aggregateBoost?.level),
       reason: "existing aggregate Personal Dashboard boost",
       metadata: {
-        rawScore: Number(overallBoost?.score) || 0,
-        level: overallBoost?.level || "",
+        rawScore: Number(signals.aggregateBoost?.score) || 0,
+        level: signals.aggregateBoost?.level || "",
       },
     },
     {
@@ -4994,23 +5079,23 @@ function buildPersonalDashboardScore(article, options = {}) {
       reason: "detected primary domain from existing classifier",
       metadata: {
         primaryDomain,
-        domainScore: domainScore.domainScore,
-        domainScoreDomain: domainScore.domain,
-        relevanceBand: domainScore.relevanceBand,
+        domainScore: signals.aggregateDomainScore,
+        domainScoreDomain: signals.aggregateDomain,
+        relevanceBand: signals.aggregateDomainRelevanceBand,
       },
     },
     {
       category: "selected_main_domain",
-      score: selectedMainDomains.length && domainMatch.matched ? 40 : 0,
-      matched: Boolean(domainMatch.matched),
-      reason: domainMatch.matched
+      score: selectedMainDomains.length && signals.domainMatchResult?.matched ? 40 : 0,
+      matched: Boolean(signals.domainMatchResult?.matched),
+      reason: signals.domainMatchResult?.matched
         ? "existing domain match accepted selected domain"
         : "existing domain match did not accept selected domain",
       metadata: {
         selectedMainDomains,
-        selectedDomains: domainMatch.selectedDomains,
-        matchedDomains: domainMatch.matchedDomains,
-        domainScores: domainMatch.domainScores,
+        selectedDomains: signals.domainMatchResult?.selectedDomains || [],
+        matchedDomains: signals.domainMatchResult?.matchedDomains || [],
+        domainScores: signals.domainMatchResult?.domainScores || {},
         primaryDomain,
       },
     },
@@ -5019,16 +5104,19 @@ function buildPersonalDashboardScore(article, options = {}) {
     ...sharedSecurityContributions,
     {
       category: "bridge_match",
-      score: identityBridgeMatched || banknoteBridgeMatched ? 20 : 0,
-      matched: identityBridgeMatched || banknoteBridgeMatched,
+      score: identityBridgeMatched || banknoteBridgeMatched || idCardsHolographyOvdBridgeMatched ? 20 : 0,
+      matched: identityBridgeMatched || banknoteBridgeMatched || idCardsHolographyOvdBridgeMatched,
       reason: identityBridgeMatched
         ? "existing identity shared-security bridge matched"
         : banknoteBridgeMatched
           ? "existing banknote shared-security bridge matched"
-          : "no existing bridge matched",
+          : idCardsHolographyOvdBridgeMatched
+            ? "existing ID Cards Holography/OVD bridge matched"
+            : "no existing bridge matched",
       metadata: {
         identityBridgeMatched,
         banknoteBridgeMatched,
+        idCardsHolographyOvdBridgeMatched,
       },
     },
   ];
@@ -5037,10 +5125,10 @@ function buildPersonalDashboardScore(article, options = {}) {
       category: "rejection_signal",
       score: -50,
       matched: true,
-      reason: options.rejection?.reason || "legacy Personal Dashboard matcher rejected article",
+      reason: signals.rejectionReason || "legacy Personal Dashboard matcher rejected article",
       metadata: {
-        rejectedCategory: options.rejection?.category || "",
-        rejectionReason: options.rejection?.reason || "",
+        rejectedCategory: signals.rejectionCategory || "",
+        rejectionReason: signals.rejectionReason || "",
       },
     });
   }
@@ -5052,7 +5140,7 @@ function buildPersonalDashboardScore(article, options = {}) {
     threshold,
     passed,
     primaryDomain,
-    decisionSource: "legacy-pass-fail",
+    decisionSource: signals.decisionSource || "legacy-pass-fail",
     contributions,
   });
 }
