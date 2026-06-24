@@ -4663,6 +4663,8 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Thresholds unchanged",
             "Bridge logic unchanged",
             "Dominant domain diagnostics active",
+            "Dominant domain diagnostics v2 active",
+            "Dominant domain score breakdown available",
             "Dominant domain behavior unchanged",
             "Diagnostics only",
             "Diagnostics export state sync active",
@@ -4875,6 +4877,7 @@ function getFilterDecisionDebugToolsSummary(diagnostics) {
       "window.explainDominantDomainByTitle(titlePart)",
       "window.listDominantDomainMisses(limit)",
       "window.listLowConfidenceDominantDomains(limit)",
+      "window.listIdentityDominantDomainFalseNegativeCandidates(limit)",
       "window.explainPolymerMatchByTitle(titlePart)",
       "window.listPolymerChildMismatches(limit)",
       "window.listLikelyPolymerFalseNegatives(limit)",
@@ -4892,7 +4895,7 @@ function getFilterDecisionRichTraceSummary(diagnostics) {
       "sorting",
       "grouping",
     ],
-    helperCount: 16,
+    helperCount: 17,
   };
 }
 
@@ -4907,6 +4910,43 @@ function freezePersonalDashboardScore(scoreObject) {
       metadata: Object.freeze(contribution.metadata && typeof contribution.metadata === "object" ? { ...contribution.metadata } : {}),
     })
   );
+  const dominantDomainDiagnostics =
+    scoreObject.metadata?.dominantDomainDiagnostics ||
+    scoreObject.metadata?.dominantDomainDecisionDiagnostics ||
+    null;
+  const freezeDominantDomainDiagnostics = (diagnostics) => diagnostics
+    ? Object.freeze({
+        ...diagnostics,
+        selectedMainDomains: Object.freeze(diagnostics.selectedMainDomains || []),
+        scores: Object.freeze({
+          banknotes: Object.freeze({
+            ...(diagnostics.scores?.banknotes || {}),
+            matchedStrongTerms: Object.freeze(diagnostics.scores?.banknotes?.matchedStrongTerms || []),
+            matchedWeakTerms: Object.freeze(diagnostics.scores?.banknotes?.matchedWeakTerms || []),
+            matchedTopicSignals: Object.freeze(diagnostics.scores?.banknotes?.matchedTopicSignals || []),
+            matchedSourceSignals: Object.freeze(diagnostics.scores?.banknotes?.matchedSourceSignals || []),
+            topMatchedSignals: Object.freeze(diagnostics.scores?.banknotes?.topMatchedSignals || []),
+          }),
+          identity_documents: Object.freeze({
+            ...(diagnostics.scores?.identity_documents || {}),
+            matchedStrongTerms: Object.freeze(diagnostics.scores?.identity_documents?.matchedStrongTerms || []),
+            matchedWeakTerms: Object.freeze(diagnostics.scores?.identity_documents?.matchedWeakTerms || []),
+            matchedTopicSignals: Object.freeze(diagnostics.scores?.identity_documents?.matchedTopicSignals || []),
+            matchedSourceSignals: Object.freeze(diagnostics.scores?.identity_documents?.matchedSourceSignals || []),
+            topMatchedSignals: Object.freeze(diagnostics.scores?.identity_documents?.topMatchedSignals || []),
+          }),
+          digital_identity_biometrics: Object.freeze({
+            ...(diagnostics.scores?.digital_identity_biometrics || {}),
+            matchedStrongTerms: Object.freeze(diagnostics.scores?.digital_identity_biometrics?.matchedStrongTerms || []),
+            matchedWeakTerms: Object.freeze(diagnostics.scores?.digital_identity_biometrics?.matchedWeakTerms || []),
+            matchedTopicSignals: Object.freeze(diagnostics.scores?.digital_identity_biometrics?.matchedTopicSignals || []),
+            matchedSourceSignals: Object.freeze(diagnostics.scores?.digital_identity_biometrics?.matchedSourceSignals || []),
+            topMatchedSignals: Object.freeze(diagnostics.scores?.digital_identity_biometrics?.topMatchedSignals || []),
+          }),
+        }),
+      })
+    : null;
+  const frozenDominantDomainDiagnostics = freezeDominantDomainDiagnostics(dominantDomainDiagnostics);
 
   return Object.freeze({
     articleId: scoreObject.articleId,
@@ -4917,17 +4957,8 @@ function freezePersonalDashboardScore(scoreObject) {
     decisionSource: scoreObject.decisionSource || "legacy-pass-fail",
     metadata: Object.freeze({
       ...(scoreObject.metadata && typeof scoreObject.metadata === "object" ? scoreObject.metadata : {}),
-      dominantDomainDecisionDiagnostics: scoreObject.metadata?.dominantDomainDecisionDiagnostics
-        ? Object.freeze({
-            ...scoreObject.metadata.dominantDomainDecisionDiagnostics,
-            selectedMainDomains: Object.freeze(scoreObject.metadata.dominantDomainDecisionDiagnostics.selectedMainDomains || []),
-            scores: Object.freeze({
-              banknotes: Object.freeze({ ...(scoreObject.metadata.dominantDomainDecisionDiagnostics.scores?.banknotes || {}) }),
-              identity_documents: Object.freeze({ ...(scoreObject.metadata.dominantDomainDecisionDiagnostics.scores?.identity_documents || {}) }),
-              digital_identity_biometrics: Object.freeze({ ...(scoreObject.metadata.dominantDomainDecisionDiagnostics.scores?.digital_identity_biometrics || {}) }),
-            }),
-          })
-        : null,
+      dominantDomainDiagnostics: frozenDominantDomainDiagnostics,
+      dominantDomainDecisionDiagnostics: frozenDominantDomainDiagnostics,
     }),
     polymerChildMatchDiagnostics: scoreObject.polymerChildMatchDiagnostics
       ? Object.freeze({
@@ -5164,6 +5195,38 @@ function getDominantDomainConfidence(winningMargin, winner, fallbackReason) {
   return "very_low";
 }
 
+function getDominantDomainDiagnosticTermMatches(context, groupId, keywordType) {
+  const keywords = PERSONAL_DASHBOARD_DOMAIN_CONTEXTS[groupId]?.[keywordType] || [];
+  const haystack = [
+    context.titleText,
+    context.tagText,
+    context.metadataText,
+    context.bodyText,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return normalizeKeywordList(keywords).filter((keyword) => textMatchesKeyword(haystack, keyword));
+}
+
+function getDominantDomainDiagnosticSourceSignals(context, groupId, extraSignals = []) {
+  const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
+  const specialistSignals = (SPECIALIST_SOURCE_INTERESTS[groupId] || [])
+    .filter((signal) => textMatchesKeyword(sourceFingerprint, signal));
+  return Array.from(new Set([
+    ...specialistSignals,
+    ...extraSignals.filter(Boolean),
+  ]));
+}
+
+function getDominantDomainTopMatchedSignals(scoreBreakdown) {
+  return Array.from(new Set([
+    ...(scoreBreakdown.matchedStrongTerms || []).slice(0, 5),
+    ...(scoreBreakdown.matchedTopicSignals || []).slice(0, 3),
+    ...(scoreBreakdown.matchedSourceSignals || []).slice(0, 3),
+    ...(scoreBreakdown.matchedWeakTerms || []).slice(0, 3),
+  ])).slice(0, 10);
+}
+
 function getDominantDomainDecisionDiagnostics(article) {
   const context = getPersonalBoostContext(article);
   const banknoteSignals = getPersonalDomainContextProfile(context, "banknote_intelligence");
@@ -5176,6 +5239,19 @@ function getDominantDomainDecisionDiagnostics(article) {
   const selectedMainDomains = getSelectedMainDomains(selectedInterests);
   const identityBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, selectedInterests);
   const banknoteBridgeMatched = articleMatchesSelectedBanknoteTechniqueBridge(article, selectedInterests);
+  const banknoteTopicSignals = [
+    ...(banknoteInterestSignals.hasBanknoteTopic ? ["banknote topic/domain"] : []),
+  ];
+  const identityTopicSignals = [
+    ...(["travel_passport", "identity_document", "dmv_driver_license"].includes(context.topicType)
+      ? [context.topicType]
+      : []),
+  ];
+  const digitalTopicSignals = [
+    ...((context.topicType === "digital_identity" || context.domain === "digital_identity")
+      ? ["digital_identity topic/domain"]
+      : []),
+  ];
   const banknoteScore = {
     total:
       banknoteSignals.score
@@ -5190,7 +5266,18 @@ function getDominantDomainDecisionDiagnostics(article) {
     contextBonus: Math.min(18, Math.round(banknoteInterestSignals.contextHits / 2)),
     strongSignalBonus: strongBanknoteSignals.boost,
     penalties: 0,
+    finalScore: 0,
+    matchedStrongTerms: getDominantDomainDiagnosticTermMatches(context, "banknote_intelligence", "strong"),
+    matchedWeakTerms: getDominantDomainDiagnosticTermMatches(context, "banknote_intelligence", "weak"),
+    matchedTopicSignals: banknoteTopicSignals,
+    matchedSourceSignals: getDominantDomainDiagnosticSourceSignals(
+      context,
+      "banknote_intelligence",
+      banknoteInterestSignals.isAuthoritySource ? ["banknote authority source"] : []
+    ),
   };
+  banknoteScore.finalScore = banknoteScore.total;
+  banknoteScore.topMatchedSignals = getDominantDomainTopMatchedSignals(banknoteScore);
   const identityScore = {
     total:
       identitySignals.score
@@ -5203,7 +5290,14 @@ function getDominantDomainDecisionDiagnostics(article) {
     contextBonus: 0,
     banknotePenalty: strongBanknoteSignals.identityPenalty,
     penalties: strongBanknoteSignals.identityPenalty,
+    finalScore: 0,
+    matchedStrongTerms: getDominantDomainDiagnosticTermMatches(context, "identity_documents", "strong"),
+    matchedWeakTerms: getDominantDomainDiagnosticTermMatches(context, "identity_documents", "weak"),
+    matchedTopicSignals: identityTopicSignals,
+    matchedSourceSignals: getDominantDomainDiagnosticSourceSignals(context, "identity_documents"),
   };
+  identityScore.finalScore = identityScore.total;
+  identityScore.topMatchedSignals = getDominantDomainTopMatchedSignals(identityScore);
   const digitalScore = {
     total:
       digitalSignals.score
@@ -5214,7 +5308,14 @@ function getDominantDomainDecisionDiagnostics(article) {
     specialistSourceBonus: contextMatchesSpecialistSource(context, "digital_identity_biometrics") ? 14 : 0,
     contextBonus: 0,
     penalties: 0,
+    finalScore: 0,
+    matchedStrongTerms: getDominantDomainDiagnosticTermMatches(context, "digital_identity_biometrics", "strong"),
+    matchedWeakTerms: getDominantDomainDiagnosticTermMatches(context, "digital_identity_biometrics", "weak"),
+    matchedTopicSignals: digitalTopicSignals,
+    matchedSourceSignals: getDominantDomainDiagnosticSourceSignals(context, "digital_identity_biometrics"),
   };
+  digitalScore.finalScore = digitalScore.total;
+  digitalScore.topMatchedSignals = getDominantDomainTopMatchedSignals(digitalScore);
   const rankedScores = [
     { domain: "banknotes", total: banknoteScore.total },
     { domain: "identity_documents", total: identityScore.total },
@@ -5222,15 +5323,39 @@ function getDominantDomainDecisionDiagnostics(article) {
   ].sort((left, right) => right.total - left.total);
   const winningMargin = Number((rankedScores[0].total - rankedScores[1].total).toFixed(2));
   const confidenceGap = winningMargin;
+  const rawWinner = rankedScores[0].domain;
+  const secondPlaceDomain = rankedScores[1].domain;
+  const secondPlaceScore = rankedScores[1].total;
+  const scoreByDomain = {
+    banknotes: banknoteScore,
+    identity_documents: identityScore,
+    digital_identity_biometrics: digitalScore,
+  };
+  const selectedDomainScores = selectedMainDomains
+    .map((domain) => ({
+      domain,
+      score: Number(scoreByDomain[domain]?.total) || 0,
+    }))
+    .sort((left, right) => right.score - left.score);
+  const selectedDomainScoreEntry = selectedDomainScores[0] || { domain: "", score: null };
+  const selectedDomainScore = selectedDomainScoreEntry.score;
+  const selectedDomainGapToWinner = selectedDomainScore === null
+    ? null
+    : Number((rankedScores[0].total - selectedDomainScore).toFixed(2));
   let fallbackReason = "winner";
-  if (rankedScores[0].total < 8) {
+  if (rankedScores[0].total <= 0) {
+    fallbackReason = "no_domain_signal";
+  } else if (rankedScores[0].total < 8) {
     fallbackReason = "best_score_below_minimum";
   } else if (winningMargin < 2 && rankedScores[0].total < 14) {
     fallbackReason = "low_confidence_tie";
+  } else if (winner === "other") {
+    fallbackReason = "unknown";
   }
 
   return Object.freeze({
     winner,
+    rawWinner,
     fallbackReason,
     confidence: getDominantDomainConfidence(winningMargin, winner, fallbackReason),
     scores: Object.freeze({
@@ -5239,9 +5364,15 @@ function getDominantDomainDecisionDiagnostics(article) {
       digital_identity_biometrics: Object.freeze(digitalScore),
     }),
     winningMargin,
+    secondPlaceDomain,
+    secondPlaceScore,
     confidenceGap,
+    lowConfidence: Boolean(winner && winner !== "other" && confidenceGap < 3),
     selectedMainDomains: Object.freeze(selectedMainDomains.slice()),
     selectedDomainMatched: selectedMainDomains.length ? selectedMainDomains.includes(winner) : true,
+    selectedDomainScore,
+    selectedDomainGapToWinner,
+    selectedDomainScoreDomain: selectedDomainScoreEntry.domain,
     bridgeAvailable: Boolean(selectedMainDomains.length && selectedMainDomains.some((domain) =>
       domain === "identity_documents" || domain === "banknotes"
     )),
@@ -5518,6 +5649,7 @@ function buildPersonalDashboardScore(article, options = {}) {
     primaryDomain,
     decisionSource: signals.decisionSource || "legacy-pass-fail",
     metadata: {
+      dominantDomainDiagnostics: signals.dominantDomainDecisionDiagnostics || null,
       dominantDomainDecisionDiagnostics: signals.dominantDomainDecisionDiagnostics || null,
     },
     polymerChildMatchDiagnostics: signals.polymerChildMatchDiagnostics || null,
@@ -5675,6 +5807,18 @@ function getDominantDomainDiagnosticsSummary(diagnostics) {
     .filter(Boolean);
   const margins = dominantDiagnostics.map((entry) => Number(entry.winningMargin) || 0);
   const marginSum = margins.reduce((sum, margin) => sum + margin, 0);
+  const identityRejectedDiagnostics = dominantDiagnostics.filter((entry) =>
+    (entry.selectedMainDomains || []).includes("identity_documents") && entry.winner !== "identity_documents"
+  );
+  const identityGaps = identityRejectedDiagnostics
+    .map((entry) => Number(entry.selectedDomainGapToWinner))
+    .filter((value) => Number.isFinite(value));
+  const identityGapSum = identityGaps.reduce((sum, gap) => sum + gap, 0);
+  const failureReasonCounts = new Map();
+  dominantDiagnostics.forEach((entry) => {
+    const reason = entry.fallbackReason || "unknown";
+    failureReasonCounts.set(reason, (failureReasonCounts.get(reason) || 0) + 1);
+  });
 
   return {
     enabled: true,
@@ -5689,6 +5833,18 @@ function getDominantDomainDiagnosticsSummary(diagnostics) {
     averageWinningMargin: margins.length ? Number((marginSum / margins.length).toFixed(2)) : 0,
     largestWinningMargin: margins.length ? Math.max(...margins) : 0,
     smallestWinningMargin: margins.length ? Math.min(...margins) : 0,
+    identityNearMisses: identityRejectedDiagnostics.filter((entry) =>
+      Number(entry.selectedDomainGapToWinner) <= 8 ||
+      Number(entry.scores?.identity_documents?.total) >= 12
+    ).length,
+    banknoteOverIdentityWins: identityRejectedDiagnostics.filter((entry) => entry.winner === "banknotes").length,
+    digitalOverIdentityWins: identityRejectedDiagnostics.filter((entry) => entry.winner === "digital_identity_biometrics").length,
+    otherOverIdentityWins: identityRejectedDiagnostics.filter((entry) => entry.winner === "other").length,
+    averageIdentityGapWhenRejected: identityGaps.length ? Number((identityGapSum / identityGaps.length).toFixed(2)) : 0,
+    topDominantDomainFailureReasons: Array.from(failureReasonCounts.entries())
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((left, right) => right.count - left.count || left.reason.localeCompare(right.reason))
+      .slice(0, 10),
   };
 }
 
@@ -6024,7 +6180,9 @@ function listIdentityTechniqueBridgeMisses(limit = 25) {
 function getDominantDomainDiagnosticsForTrace(trace) {
   const scoreMap = getActivePersonalDashboardScoreMap();
   const scoreObject = scoreMap?.get(String(trace?.articleId || ""));
-  return scoreObject?.metadata?.dominantDomainDecisionDiagnostics || null;
+  return scoreObject?.metadata?.dominantDomainDiagnostics ||
+    scoreObject?.metadata?.dominantDomainDecisionDiagnostics ||
+    null;
 }
 
 function getDominantDomainScoreTotals(diagnostics) {
@@ -6033,6 +6191,10 @@ function getDominantDomainScoreTotals(diagnostics) {
     identity_documents: diagnostics?.scores?.identity_documents?.total ?? null,
     digital_identity_biometrics: diagnostics?.scores?.digital_identity_biometrics?.total ?? null,
   };
+}
+
+function getDominantDomainTopMatchedSignalsForDomain(diagnostics, domain) {
+  return diagnostics?.scores?.[domain]?.topMatchedSignals || [];
 }
 
 function explainDominantDomainByTitle(titlePart) {
@@ -6052,6 +6214,7 @@ function explainDominantDomainByTitle(titlePart) {
   const personalDashboardStage = getTracePersonalDashboardStage(match);
   const personalDashboardScore = explainPersonalDashboardScore(match.articleId);
   const dominantDomainDecisionDiagnostics =
+    personalDashboardScore?.metadata?.dominantDomainDiagnostics ||
     personalDashboardScore?.metadata?.dominantDomainDecisionDiagnostics ||
     getDominantDomainDiagnosticsForTrace(match);
 
@@ -6059,6 +6222,7 @@ function explainDominantDomainByTitle(titlePart) {
     articleId: match.articleId,
     title: match.title,
     winner: dominantDomainDecisionDiagnostics?.winner || "",
+    dominantDomainDiagnostics: dominantDomainDecisionDiagnostics,
     dominantDomainDecisionDiagnostics,
     winningMargin: dominantDomainDecisionDiagnostics?.winningMargin ?? null,
     confidenceGap: dominantDomainDecisionDiagnostics?.confidenceGap ?? null,
@@ -6088,11 +6252,17 @@ function listDominantDomainMisses(limit = 25) {
       return {
         articleId: trace.articleId,
         title: trace.title,
+        winner: diagnostics.winner,
         dominantWinner: diagnostics.winner,
         selectedDomain: (diagnostics.selectedMainDomains || []).join("+"),
+        selectedDomainScore: diagnostics.selectedDomainScore,
+        winningScore: diagnostics.scores?.[diagnostics.rawWinner]?.total ?? null,
+        selectedDomainGapToWinner: diagnostics.selectedDomainGapToWinner,
         scoreTotals: getDominantDomainScoreTotals(diagnostics),
         winningMargin: diagnostics.winningMargin,
         confidenceGap: diagnostics.confidenceGap,
+        fallbackReason: diagnostics.fallbackReason,
+        topMatchedSignals: getDominantDomainTopMatchedSignalsForDomain(diagnostics, diagnostics.rawWinner),
         rejectionReason: personalDashboardStage?.reason || trace.finalReason || "",
       };
     })
@@ -6117,8 +6287,11 @@ function listLowConfidenceDominantDomains(limit = 25) {
       return {
         articleId: trace.articleId,
         title: trace.title,
+        winner: diagnostics.winner,
         dominantWinner: diagnostics.winner,
+        secondPlaceDomain: diagnostics.secondPlaceDomain,
         selectedDomain: (diagnostics.selectedMainDomains || []).join("+"),
+        scores: getDominantDomainScoreTotals(diagnostics),
         scoreTotals: getDominantDomainScoreTotals(diagnostics),
         winningMargin: diagnostics.winningMargin,
         confidenceGap: diagnostics.confidenceGap,
@@ -6129,6 +6302,46 @@ function listLowConfidenceDominantDomains(limit = 25) {
     })
     .filter(Boolean)
     .sort((left, right) => Number(left.confidenceGap || 0) - Number(right.confidenceGap || 0))
+    .slice(0, normalizedLimit);
+}
+
+function listIdentityDominantDomainFalseNegativeCandidates(limit = 25) {
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!traceMap) {
+    return [];
+  }
+
+  const normalizedLimit = Math.max(1, Number(limit) || 25);
+  return Array.from(traceMap.values())
+    .map((trace) => {
+      const diagnostics = getDominantDomainDiagnosticsForTrace(trace);
+      if (!diagnostics || !(diagnostics.selectedMainDomains || []).includes("identity_documents")) {
+        return null;
+      }
+      const identityScore = Number(diagnostics.scores?.identity_documents?.total) || 0;
+      const selectedDomainGapToWinner = Number(diagnostics.selectedDomainGapToWinner);
+      if (diagnostics.winner === "identity_documents" || !(selectedDomainGapToWinner <= 8 || identityScore >= 12)) {
+        return null;
+      }
+      const personalDashboardStage = getTracePersonalDashboardStage(trace);
+      return {
+        articleId: trace.articleId,
+        title: trace.title,
+        winner: diagnostics.winner,
+        identityScore,
+        winningScore: diagnostics.scores?.[diagnostics.rawWinner]?.total ?? null,
+        selectedDomainGapToWinner,
+        fallbackReason: diagnostics.fallbackReason,
+        rejectionReason: personalDashboardStage?.reason || trace.finalReason || "",
+        topMatchedIdentitySignals: getDominantDomainTopMatchedSignalsForDomain(diagnostics, "identity_documents"),
+        topMatchedWinningSignals: getDominantDomainTopMatchedSignalsForDomain(diagnostics, diagnostics.rawWinner),
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) =>
+      Number(left.selectedDomainGapToWinner || 0) - Number(right.selectedDomainGapToWinner || 0) ||
+      Number(right.identityScore || 0) - Number(left.identityScore || 0)
+    )
     .slice(0, normalizedLimit);
 }
 
@@ -6406,6 +6619,8 @@ function getPersonalDashboardTraceMetadata(article, rejection = null, personalDa
   const identityDecisionDiagnostics = isFilterPipelineDiagnosticsEnabled() && isIdentityDocumentsPersonalDashboardSelected(selectedInterests)
     ? getIdentityDecisionDiagnostics(article, { rejection })
     : null;
+  const dominantDomainDiagnostics = personalDashboardScore?.metadata?.dominantDomainDiagnostics ||
+    (isFilterPipelineDiagnosticsEnabled() ? getDominantDomainDecisionDiagnostics(article) : null);
 
   return {
     selectedMainDomains,
@@ -6433,6 +6648,8 @@ function getPersonalDashboardTraceMetadata(article, rejection = null, personalDa
     selectedSharedSecurityInterests: selectedSharedInterests,
     polymerChildMatchDiagnostics,
     identityDecisionDiagnostics,
+    dominantDomainDiagnostics,
+    dominantDomainDecisionDiagnostics: dominantDomainDiagnostics,
     score: topScore,
     personalDashboardScore,
   };
@@ -6976,6 +7193,19 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push(formatPipelineSummaryLine("averageWinningMargin", dominantDomainDiagnosticsSummary.averageWinningMargin));
     lines.push(formatPipelineSummaryLine("largestWinningMargin", dominantDomainDiagnosticsSummary.largestWinningMargin));
     lines.push(formatPipelineSummaryLine("smallestWinningMargin", dominantDomainDiagnosticsSummary.smallestWinningMargin));
+    lines.push(formatPipelineSummaryLine("identityNearMisses", dominantDomainDiagnosticsSummary.identityNearMisses));
+    lines.push(formatPipelineSummaryLine("banknoteOverIdentityWins", dominantDomainDiagnosticsSummary.banknoteOverIdentityWins));
+    lines.push(formatPipelineSummaryLine("digitalOverIdentityWins", dominantDomainDiagnosticsSummary.digitalOverIdentityWins));
+    lines.push(formatPipelineSummaryLine("otherOverIdentityWins", dominantDomainDiagnosticsSummary.otherOverIdentityWins));
+    lines.push(formatPipelineSummaryLine("averageIdentityGapWhenRejected", dominantDomainDiagnosticsSummary.averageIdentityGapWhenRejected));
+    if (dominantDomainDiagnosticsSummary.topDominantDomainFailureReasons?.length) {
+      lines.push("topDominantDomainFailureReasons:");
+      dominantDomainDiagnosticsSummary.topDominantDomainFailureReasons.forEach((entry) => {
+        lines.push(`- ${entry.reason}: ${entry.count}`);
+      });
+    } else {
+      lines.push("topDominantDomainFailureReasons: none");
+    }
   } else {
     lines.push("disabled");
   }
@@ -7711,6 +7941,11 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.listLowConfidenceDominantDomains = (limit) => listLowConfidenceDominantDomains(limit);
   }
 
+  if (typeof window.listIdentityDominantDomainFalseNegativeCandidates !== "function") {
+    window.listIdentityDominantDomainFalseNegativeCandidates = (limit) =>
+      listIdentityDominantDomainFalseNegativeCandidates(limit);
+  }
+
   if (typeof window.explainPolymerMatchByTitle !== "function") {
     window.explainPolymerMatchByTitle = (titlePart) => explainPolymerMatchByTitle(titlePart);
   }
@@ -7749,6 +7984,7 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.explainDominantDomainByTitle(titlePart)",
         "window.listDominantDomainMisses(limit)",
         "window.listLowConfidenceDominantDomains(limit)",
+        "window.listIdentityDominantDomainFalseNegativeCandidates(limit)",
         "window.explainPolymerMatchByTitle(titlePart)",
         "window.listPolymerChildMismatches(limit)",
         "window.listLikelyPolymerFalseNegatives(limit)",
