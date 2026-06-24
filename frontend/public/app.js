@@ -4903,7 +4903,7 @@ function getFilterDecisionRichTraceSummary(diagnostics) {
       "sorting",
       "grouping",
     ],
-    helperCount: 20,
+    helperCount: 21,
   };
 }
 
@@ -5315,6 +5315,7 @@ function shouldApplyIdentityProfessionalRelevanceGuard(options = {}) {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const selectedMainDomains = getSelectedMainDomains(selectedInterests);
   const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
+  const selectedSharedSecurityInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
   const branch = options.branch || "";
   const backendBranch = branch === "backend-query" || branch === "backend-query-loading";
 
@@ -5322,13 +5323,72 @@ function shouldApplyIdentityProfessionalRelevanceGuard(options = {}) {
     hasPersonalDashboardSelections() &&
     backendBranch &&
     selectedMainDomains.includes("identity_documents") &&
-    selectedIdentityInterests.includes("id_cards")
+    selectedIdentityInterests.length &&
+    (
+      selectedIdentityInterests.includes("id_cards") ||
+      selectedSharedSecurityInterests.length
+    )
   );
+}
+
+function getIdentitySharedSecurityGuardBridgeAssessment(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
+  const selectedSharedSecurityInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
+  const combinationMode = selectedIdentityInterests.length > 0 && selectedSharedSecurityInterests.length > 0;
+  if (!combinationMode) {
+    return Object.freeze({
+      combinationMode: false,
+      bridgeMatched: false,
+      identityTechniqueBridgeMatched: false,
+      idCardsHolographyOvdBridgeMatched: false,
+      sharedSecurityTechniqueMatched: false,
+      identityScopeMatched: false,
+      selectedIdentityInterests: Object.freeze(selectedIdentityInterests.slice()),
+      selectedSharedSecurityInterests: Object.freeze(selectedSharedSecurityInterests.slice()),
+    });
+  }
+
+  const identityTechniqueBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, selectedInterests);
+  const idCardsHolographyOvdBridgeMatched = matchesIdCardsHolographyOvdCombinationBridge(
+    article,
+    selectedIdentityInterests,
+    selectedSharedSecurityInterests
+  );
+  const sharedSecurityTechniqueMatched = matchesSelectedSharedSecurityTechnique(article, selectedInterests);
+  const dominantDomain = getArticleDominantDomain(article);
+  const identityInterestScores = selectedIdentityInterests.map((interestId) => {
+    const boost = computePersonalInterestBoost(article, interestId);
+    return {
+      interestId,
+      score: Number(boost?.score) || 0,
+      passed: (Number(boost?.score) || 0) >= 18,
+    };
+  });
+  const identityScopeMatched = identityInterestScores.some((entry) => entry.passed);
+  const bridgeMatched = Boolean(
+    identityTechniqueBridgeMatched ||
+    idCardsHolographyOvdBridgeMatched ||
+    (sharedSecurityTechniqueMatched && identityScopeMatched)
+  );
+
+  return Object.freeze({
+    combinationMode,
+    bridgeMatched,
+    identityTechniqueBridgeMatched,
+    idCardsHolographyOvdBridgeMatched,
+    sharedSecurityTechniqueMatched,
+    identityScopeMatched,
+    identityInterestScores: Object.freeze(identityInterestScores.map((entry) => Object.freeze({ ...entry }))),
+    dominantDomain,
+    selectedIdentityInterests: Object.freeze(selectedIdentityInterests.slice()),
+    selectedSharedSecurityInterests: Object.freeze(selectedSharedSecurityInterests.slice()),
+  });
 }
 
 function getIdentityProfessionalRelevanceGuardAssessment(article, options = {}) {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
+  const selectedSharedSecurityInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
   const branch = options.branch || "";
   const enabled = shouldApplyIdentityProfessionalRelevanceGuard({ branch });
   const hardPassportNoise = isHardPassportNoise(article);
@@ -5362,12 +5422,20 @@ function getIdentityProfessionalRelevanceGuardAssessment(article, options = {}) 
     triggeredGuards.push("isUiRelevantIntelligenceArticle");
   }
 
-  const passed = !enabled || (
-    !hardPassportNoise &&
+  const legacyGuardPassed = !hardPassportNoise &&
     !passportRejected &&
     !lowRelevancePassportArticle &&
-    uiRelevantIntelligenceArticle
+    uiRelevantIntelligenceArticle;
+  const bridgeAssessment = getIdentitySharedSecurityGuardBridgeAssessment(article, selectedInterests);
+  const bridgeRescued = Boolean(enabled && !legacyGuardPassed && bridgeAssessment.bridgeMatched);
+  const passed = !enabled || legacyGuardPassed || bridgeRescued;
+  const bridgeRejected = Boolean(
+    enabled &&
+    bridgeAssessment.combinationMode &&
+    !legacyGuardPassed &&
+    !bridgeAssessment.bridgeMatched
   );
+  const finalPassed = passed;
   let rejectionReason = "";
   if (enabled && !passed) {
     if (hardPassportNoise) {
@@ -5388,12 +5456,20 @@ function getIdentityProfessionalRelevanceGuardAssessment(article, options = {}) 
     branch,
     selectedInterests: Object.freeze(selectedInterests.slice()),
     selectedIdentityInterests: Object.freeze(selectedIdentityInterests.slice()),
+    selectedSharedSecurityInterests: Object.freeze(selectedSharedSecurityInterests.slice()),
     title: article?.title || "Untitled article",
     source: getIdentityNoiseGuardSource(article),
     triggeredGuards: Object.freeze(Array.from(new Set(triggeredGuards))),
     passed,
+    finalPassed,
     rejected: enabled && !passed,
     rejectionReason,
+    legacyGuardPassed,
+    combinationMode: bridgeAssessment.combinationMode,
+    bridgeMatched: bridgeAssessment.bridgeMatched,
+    bridgeRescued,
+    bridgeRejected,
+    bridgeAssessment,
     hardPassportNoise,
     shouldRejectPassportArticle: passportRejected,
     lowRelevancePassportArticle,
@@ -5411,10 +5487,7 @@ function articlePassesLegacyIdentityProfessionalRelevance(article, options = {})
     return true;
   }
 
-  return !isHardPassportNoise(article) &&
-    !shouldRejectPassportArticle(article) &&
-    !isLowRelevancePassportArticle(article) &&
-    isUiRelevantIntelligenceArticle(article);
+  return getIdentityProfessionalRelevanceGuardAssessment(article, options).passed;
 }
 
 function getDominantDomainConfidence(winningMargin, winner, fallbackReason) {
@@ -6171,9 +6244,13 @@ function getIdentityProfessionalRelevanceGuardSummary(diagnostics) {
     .map(getTraceIdentityProfessionalRelevanceGuardStage)
     .filter((stage) => stage?.metadata?.enabled);
   const triggeredGuardCounts = new Map();
+  const sharedSecurityInterestSet = new Set();
   guardStages.forEach((stage) => {
     (stage.metadata?.triggeredGuards || []).forEach((guardName) => {
       triggeredGuardCounts.set(guardName, (triggeredGuardCounts.get(guardName) || 0) + 1);
+    });
+    (stage.metadata?.selectedSharedSecurityInterests || []).forEach((interestId) => {
+      sharedSecurityInterestSet.add(interestId);
     });
   });
   const firstMetadata = guardStages[0]?.metadata || {};
@@ -6183,6 +6260,11 @@ function getIdentityProfessionalRelevanceGuardSummary(diagnostics) {
     evaluated: guardStages.length,
     rejected: guardStages.filter((stage) => stage.result === "rejected").length,
     passed: guardStages.filter((stage) => stage.result === "passed").length,
+    combinationMode: guardStages.some((stage) => Boolean(stage.metadata?.combinationMode)),
+    bridgeRescued: guardStages.filter((stage) => Boolean(stage.metadata?.bridgeRescued)).length,
+    bridgeRejected: guardStages.filter((stage) => Boolean(stage.metadata?.bridgeRejected)).length,
+    identityOnlyMode: guardStages.some((stage) => !stage.metadata?.combinationMode),
+    sharedSecurityInterests: Array.from(sharedSecurityInterestSet),
     triggeredGuards: Array.from(triggeredGuardCounts.entries())
       .map(([guard, count]) => ({ guard, count }))
       .sort((left, right) => right.count - left.count || left.guard.localeCompare(right.guard))
@@ -6647,6 +6729,37 @@ function listIdentityProfessionalRelevanceRejects(limit = 50) {
         idCardsScore: metadata.idCardsScore ?? null,
         dominantDomain: metadata.dominantDomain || "",
         rejectionReason: guardStage.reason || metadata.rejectionReason || "",
+      };
+    })
+    .filter(Boolean)
+    .slice(0, normalizedLimit);
+}
+
+function listIdentitySharedSecurityGuardRescues(limit = 50) {
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!traceMap) {
+    return [];
+  }
+
+  const normalizedLimit = Math.max(1, Number(limit) || 50);
+  return Array.from(traceMap.values())
+    .map((trace) => {
+      const guardStage = getTraceIdentityProfessionalRelevanceGuardStage(trace);
+      const metadata = guardStage?.metadata || null;
+      if (!metadata?.bridgeRescued) {
+        return null;
+      }
+      return {
+        articleId: trace.articleId,
+        title: trace.title,
+        source: metadata.source || "",
+        selectedIdentityInterests: metadata.selectedIdentityInterests || [],
+        selectedSharedSecurityInterests: metadata.selectedSharedSecurityInterests || [],
+        legacyGuardPassed: Boolean(metadata.legacyGuardPassed),
+        bridgeMatched: Boolean(metadata.bridgeMatched),
+        bridgeRescued: Boolean(metadata.bridgeRescued),
+        dominantDomain: metadata.dominantDomain || "",
+        personalDashboardScore: explainPersonalDashboardScore(trace.articleId),
       };
     })
     .filter(Boolean)
@@ -7752,8 +7865,13 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push(formatPipelineSummaryLine("evaluated", identityProfessionalRelevanceGuardSummary.evaluated));
     lines.push(formatPipelineSummaryLine("rejected", identityProfessionalRelevanceGuardSummary.rejected));
     lines.push(formatPipelineSummaryLine("passed", identityProfessionalRelevanceGuardSummary.passed));
+    lines.push(formatPipelineSummaryLine("bridgeRescued", identityProfessionalRelevanceGuardSummary.bridgeRescued));
+    lines.push(formatPipelineSummaryLine("bridgeRejected", identityProfessionalRelevanceGuardSummary.bridgeRejected));
+    lines.push(`combinationMode: ${identityProfessionalRelevanceGuardSummary.combinationMode ? "yes" : "no"}`);
+    lines.push(`identityOnlyMode: ${identityProfessionalRelevanceGuardSummary.identityOnlyMode ? "yes" : "no"}`);
     lines.push(`branch: ${identityProfessionalRelevanceGuardSummary.branch || ""}`);
     lines.push(`selectedInterests: ${(identityProfessionalRelevanceGuardSummary.selectedInterests || []).join(", ") || "none"}`);
+    lines.push(`sharedSecurityInterests: ${(identityProfessionalRelevanceGuardSummary.sharedSecurityInterests || []).join(", ") || "none"}`);
     if (identityProfessionalRelevanceGuardSummary.triggeredGuards?.length) {
       lines.push("triggeredGuards:");
       identityProfessionalRelevanceGuardSummary.triggeredGuards.forEach((entry) => {
@@ -8477,6 +8595,10 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.listIdentityProfessionalRelevanceRejects = (limit) => listIdentityProfessionalRelevanceRejects(limit);
   }
 
+  if (typeof window.listIdentitySharedSecurityGuardRescues !== "function") {
+    window.listIdentitySharedSecurityGuardRescues = (limit) => listIdentitySharedSecurityGuardRescues(limit);
+  }
+
   if (typeof window.explainDominantDomainByTitle !== "function") {
     window.explainDominantDomainByTitle = (titlePart) => explainDominantDomainByTitle(titlePart);
   }
@@ -8532,6 +8654,7 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.listNoisyIdentitySurvivors(limit)",
         "window.explainIdentityNoiseByTitle(titlePart)",
         "window.listIdentityProfessionalRelevanceRejects(limit)",
+        "window.listIdentitySharedSecurityGuardRescues(limit)",
         "window.explainDominantDomainByTitle(titlePart)",
         "window.listDominantDomainMisses(limit)",
         "window.listLowConfidenceDominantDomains(limit)",
