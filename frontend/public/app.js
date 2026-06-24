@@ -5450,6 +5450,14 @@ function getIdentityProfessionalRelevanceGuardAssessment(article, options = {}) 
       rejectionReason = "legacy Identity professional relevance guard rejected article";
     }
   }
+  const firstFailingGate = !enabled || passed
+    ? ""
+    : getIdentityProfessionalRelevanceFirstFailingGate({
+        hardPassportNoise,
+        shouldRejectPassportArticle: passportRejected,
+        lowRelevancePassportArticle,
+        uiRelevantIntelligenceArticle,
+      });
 
   return Object.freeze({
     enabled,
@@ -5464,6 +5472,7 @@ function getIdentityProfessionalRelevanceGuardAssessment(article, options = {}) 
     finalPassed,
     rejected: enabled && !passed,
     rejectionReason,
+    firstFailingGate,
     legacyGuardPassed,
     combinationMode: bridgeAssessment.combinationMode,
     bridgeMatched: bridgeAssessment.bridgeMatched,
@@ -6235,23 +6244,96 @@ function getTraceIdentityProfessionalRelevanceGuardStage(trace) {
   ) || null;
 }
 
+function getIdentityProfessionalRelevanceFirstFailingGate(metadata = {}) {
+  if (metadata.hardPassportNoise) {
+    return "hard_passport_noise";
+  }
+  if (metadata.shouldRejectPassportArticle) {
+    return "shouldRejectPassportArticle";
+  }
+  if (metadata.lowRelevancePassportArticle) {
+    return "low_relevance_passport";
+  }
+  if (metadata.uiRelevantIntelligenceArticle === false) {
+    return "ui_relevance";
+  }
+  return "fallback";
+}
+
+function createIdentityProfessionalRelevanceGuardExample(trace, stage) {
+  const metadata = stage?.metadata || {};
+  const highConfidencePassportAssessment = metadata.highConfidencePassportAssessment || {};
+  const keesingIdentityRelevance = metadata.keesingIdentityRelevance || {};
+  return {
+    articleId: trace?.articleId || "",
+    title: trace?.title || metadata.title || "Untitled article",
+    source: metadata.source || "",
+    selectedInterests: Array.isArray(metadata.selectedInterests) ? metadata.selectedInterests.slice() : [],
+    idCardsScore: metadata.idCardsScore ?? null,
+    identityDocumentRelevance: metadata.identityDocumentRelevance ?? null,
+    highConfidencePassportAssessment: {
+      score: highConfidencePassportAssessment.score ?? null,
+      kept: highConfidencePassportAssessment.kept ?? null,
+      rejectedReason: highConfidencePassportAssessment.rejectedReason || "",
+    },
+    keesingIdentityRelevance: {
+      score: keesingIdentityRelevance.score ?? null,
+      hasRequiredComponent: keesingIdentityRelevance.hasRequiredComponent ?? null,
+      primarySubject: keesingIdentityRelevance.primarySubject || "",
+    },
+    uiRelevantIntelligenceArticle: metadata.uiRelevantIntelligenceArticle ?? null,
+    finalRejectionReason: stage?.reason || metadata.rejectionReason || "",
+  };
+}
+
 function getIdentityProfessionalRelevanceGuardSummary(diagnostics) {
   if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
     return null;
   }
 
-  const guardStages = Array.from(diagnostics.filterDecisionTraceMap.values())
-    .map(getTraceIdentityProfessionalRelevanceGuardStage)
-    .filter((stage) => stage?.metadata?.enabled);
+  const guardTraceEntries = Array.from(diagnostics.filterDecisionTraceMap.values())
+    .map((trace) => ({
+      trace,
+      stage: getTraceIdentityProfessionalRelevanceGuardStage(trace),
+    }))
+    .filter((entry) => entry.stage?.metadata?.enabled);
+  const guardStages = guardTraceEntries.map((entry) => entry.stage);
   const triggeredGuardCounts = new Map();
+  const firstFailingGateCounts = {
+    hard_passport_noise: 0,
+    shouldRejectPassportArticle: 0,
+    low_relevance_passport: 0,
+    ui_relevance: 0,
+    fallback: 0,
+  };
+  const rejectionExamplesByGate = {
+    hard_passport_noise: [],
+    shouldRejectPassportArticle: [],
+    low_relevance_passport: [],
+    ui_relevance: [],
+    fallback: [],
+  };
   const sharedSecurityInterestSet = new Set();
-  guardStages.forEach((stage) => {
+  guardTraceEntries.forEach(({ trace, stage }) => {
     (stage.metadata?.triggeredGuards || []).forEach((guardName) => {
       triggeredGuardCounts.set(guardName, (triggeredGuardCounts.get(guardName) || 0) + 1);
     });
     (stage.metadata?.selectedSharedSecurityInterests || []).forEach((interestId) => {
       sharedSecurityInterestSet.add(interestId);
     });
+    if (stage.result === "rejected") {
+      const firstFailingGate = stage.metadata?.firstFailingGate ||
+        getIdentityProfessionalRelevanceFirstFailingGate(stage.metadata || {});
+      if (Object.prototype.hasOwnProperty.call(firstFailingGateCounts, firstFailingGate)) {
+        firstFailingGateCounts[firstFailingGate] += 1;
+      } else {
+        firstFailingGateCounts.fallback += 1;
+      }
+      const exampleBucket = rejectionExamplesByGate[firstFailingGate] || rejectionExamplesByGate.fallback;
+      if (exampleBucket.length < 10) {
+        exampleBucket.push(createIdentityProfessionalRelevanceGuardExample(trace, stage));
+      }
+    }
   });
   const firstMetadata = guardStages[0]?.metadata || {};
 
@@ -6269,6 +6351,8 @@ function getIdentityProfessionalRelevanceGuardSummary(diagnostics) {
       .map(([guard, count]) => ({ guard, count }))
       .sort((left, right) => right.count - left.count || left.guard.localeCompare(right.guard))
       .slice(0, 10),
+    firstFailingGateBreakdown: firstFailingGateCounts,
+    rejectionExamplesByGate,
     branch: firstMetadata.branch || "",
     selectedInterests: firstMetadata.selectedInterests || [],
   };
@@ -6729,6 +6813,49 @@ function listIdentityProfessionalRelevanceRejects(limit = 50) {
         idCardsScore: metadata.idCardsScore ?? null,
         dominantDomain: metadata.dominantDomain || "",
         rejectionReason: guardStage.reason || metadata.rejectionReason || "",
+      };
+    })
+    .filter(Boolean)
+    .slice(0, normalizedLimit);
+}
+
+function listIdentityProfessionalRelevanceRejectsByGuard(guardName, limit = 25) {
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!traceMap) {
+    return [];
+  }
+
+  const validGuardNames = new Set([
+    "hard_passport_noise",
+    "shouldRejectPassportArticle",
+    "low_relevance_passport",
+    "ui_relevance",
+    "fallback",
+  ]);
+  const normalizedGuardName = String(guardName || "").trim();
+  if (!validGuardNames.has(normalizedGuardName)) {
+    return {
+      error: "invalid guardName",
+      validGuardNames: Array.from(validGuardNames),
+    };
+  }
+
+  const normalizedLimit = Math.max(1, Number(limit) || 25);
+  return Array.from(traceMap.values())
+    .map((trace) => {
+      const guardStage = getTraceIdentityProfessionalRelevanceGuardStage(trace);
+      if (guardStage?.result !== "rejected") {
+        return null;
+      }
+      const metadata = guardStage.metadata || {};
+      const firstFailingGate = metadata.firstFailingGate ||
+        getIdentityProfessionalRelevanceFirstFailingGate(metadata);
+      if (firstFailingGate !== normalizedGuardName) {
+        return null;
+      }
+      return {
+        firstFailingGate,
+        ...createIdentityProfessionalRelevanceGuardExample(trace, guardStage),
       };
     })
     .filter(Boolean)
@@ -7880,6 +8007,17 @@ function logCompactFilterPipelineSummary(diagnostics) {
     } else {
       lines.push("triggeredGuards: none");
     }
+    const firstFailingGateBreakdown = identityProfessionalRelevanceGuardSummary.firstFailingGateBreakdown || {};
+    lines.push("firstFailingGateBreakdown:");
+    [
+      "hard_passport_noise",
+      "shouldRejectPassportArticle",
+      "low_relevance_passport",
+      "ui_relevance",
+      "fallback",
+    ].forEach((gate) => {
+      lines.push(`- ${gate}: ${Number(firstFailingGateBreakdown[gate]) || 0}`);
+    });
   } else {
     lines.push("disabled");
   }
@@ -8595,6 +8733,11 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.listIdentityProfessionalRelevanceRejects = (limit) => listIdentityProfessionalRelevanceRejects(limit);
   }
 
+  if (typeof window.listIdentityProfessionalRelevanceRejectsByGuard !== "function") {
+    window.listIdentityProfessionalRelevanceRejectsByGuard = (guardName, limit) =>
+      listIdentityProfessionalRelevanceRejectsByGuard(guardName, limit);
+  }
+
   if (typeof window.listIdentitySharedSecurityGuardRescues !== "function") {
     window.listIdentitySharedSecurityGuardRescues = (limit) => listIdentitySharedSecurityGuardRescues(limit);
   }
@@ -8654,6 +8797,7 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.listNoisyIdentitySurvivors(limit)",
         "window.explainIdentityNoiseByTitle(titlePart)",
         "window.listIdentityProfessionalRelevanceRejects(limit)",
+        "window.listIdentityProfessionalRelevanceRejectsByGuard(\"shouldRejectPassportArticle\")",
         "window.listIdentitySharedSecurityGuardRescues(limit)",
         "window.explainDominantDomainByTitle(titlePart)",
         "window.listDominantDomainMisses(limit)",
@@ -25021,7 +25165,12 @@ function applyIdentityProfessionalRelevanceGuardStage({ articles, branch, diagno
         stage: "identity_professional_relevance_guard",
         result: "passed",
         reason: "article passed legacy Identity professional relevance guard",
-        notes: ["Backend-query Personal Dashboard path now uses legacy Identity relevance guard"],
+        notes: [
+          "Backend-query Personal Dashboard path now uses legacy Identity relevance guard",
+          "Identity professional relevance rejection breakdown active",
+          "Diagnostics only",
+          "Filtering behavior unchanged",
+        ],
         metadata: assessment,
       });
       outputArticles.push(article);
@@ -25035,6 +25184,9 @@ function applyIdentityProfessionalRelevanceGuardStage({ articles, branch, diagno
       notes: [
         "Identity professional relevance guard reapplied",
         "Legacy guard behavior reused",
+        "Identity professional relevance rejection breakdown active",
+        "Diagnostics only",
+        "Filtering behavior unchanged",
       ],
       metadata: assessment,
     });
@@ -25056,6 +25208,9 @@ function applyIdentityProfessionalRelevanceGuardStage({ articles, branch, diagno
         "Identity professional relevance guard reapplied",
         "Backend-query Personal Dashboard path now uses legacy Identity relevance guard",
         "Legacy guard behavior reused",
+        "Identity professional relevance rejection breakdown active",
+        "Diagnostics only",
+        "Filtering behavior unchanged",
       ]
     ),
   };
@@ -25991,6 +26146,9 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
     addFilterPipelineNote(diagnostics, "Identity professional relevance guard reapplied");
     addFilterPipelineNote(diagnostics, "Backend-query Personal Dashboard path now uses legacy Identity relevance guard");
     addFilterPipelineNote(diagnostics, "Legacy guard behavior reused");
+    addFilterPipelineNote(diagnostics, "Identity professional relevance rejection breakdown active");
+    addFilterPipelineNote(diagnostics, "Diagnostics only");
+    addFilterPipelineNote(diagnostics, "Filtering behavior unchanged");
     if (guardRejectedCount > 0) {
       addFilterPipelineNote(diagnostics, `Identity professional relevance guard rejected ${guardRejectedCount} backend-query article(s)`);
     }
