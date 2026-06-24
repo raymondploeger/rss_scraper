@@ -944,3 +944,38 @@ Initial diagnostics should answer:
 - What conflicting noise was present?
 
 This step gives the project the missing foundation without changing behavior. Once evidence is observable and comparable, Event Intelligence and Professional Intelligence can evolve without duplicating text parsing or hiding future decisions inside rescue logic.
+
+## Future Evolution: Knowledge Registry
+
+The Evidence Builder should initially collect evidence from existing text and helper outputs. A future Knowledge Registry could define canonical concepts in one place so the system has a shared understanding of important entities, materials, authorities, techniques, and document types.
+
+Examples:
+
+- Veridos = vendor
+- SURYS = vendor
+- Covestro = material supplier
+- polycarbonate = material
+- holography = shared security technique
+- passport = identity document type
+- polymer = banknote/ID material depending on context
+- central bank = authority
+- Cyprus = country
+
+This should not be built immediately.
+
+Filtering Intelligence v3 should first prove:
+
+- Event Intelligence Lane
+- Professional Intelligence Lane
+- Evidence Builder
+- Unified Intelligence Decision
+
+Building a Knowledge Registry now would make the migration too large. The registry should be future V4 or V3.5 work after evidence diagnostics prove stable and after the lanes have shown that they can use evidence cleanly.
+
+Future benefits:
+
+- fewer duplicate keyword lists
+- easier vendor maintenance
+- consistent concept meaning
+- better diagnostics
+- easier expansion to new domains
