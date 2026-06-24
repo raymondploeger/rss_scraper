@@ -4578,6 +4578,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     personalDashboardScoreMap: enabled ? new Map() : null,
     personalDashboardScoring: null,
     personalDashboardScoreDistribution: null,
+    dominantDomainDiagnosticsSummary: null,
     identityDiagnosticsSummary: null,
     polymerChildMatchDiagnosticsSummary: null,
     polymerFalseNegativeDiagnostics: null,
@@ -4661,6 +4662,9 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Identity matching unchanged",
             "Thresholds unchanged",
             "Bridge logic unchanged",
+            "Dominant domain diagnostics active",
+            "Dominant domain behavior unchanged",
+            "Diagnostics only",
             "Diagnostics export state sync active",
             "Latest completed diagnostic export available",
             "Polymer child-match diagnostics active",
@@ -4868,6 +4872,9 @@ function getFilterDecisionDebugToolsSummary(diagnostics) {
       "window.explainIdentityMatchByTitle(titlePart)",
       "window.listIdentityScoreTooLow(limit)",
       "window.listIdentityTechniqueBridgeMisses(limit)",
+      "window.explainDominantDomainByTitle(titlePart)",
+      "window.listDominantDomainMisses(limit)",
+      "window.listLowConfidenceDominantDomains(limit)",
       "window.explainPolymerMatchByTitle(titlePart)",
       "window.listPolymerChildMismatches(limit)",
       "window.listLikelyPolymerFalseNegatives(limit)",
@@ -4885,7 +4892,7 @@ function getFilterDecisionRichTraceSummary(diagnostics) {
       "sorting",
       "grouping",
     ],
-    helperCount: 13,
+    helperCount: 16,
   };
 }
 
@@ -4908,6 +4915,20 @@ function freezePersonalDashboardScore(scoreObject) {
     passed: scoreObject.passed,
     primaryDomain: scoreObject.primaryDomain,
     decisionSource: scoreObject.decisionSource || "legacy-pass-fail",
+    metadata: Object.freeze({
+      ...(scoreObject.metadata && typeof scoreObject.metadata === "object" ? scoreObject.metadata : {}),
+      dominantDomainDecisionDiagnostics: scoreObject.metadata?.dominantDomainDecisionDiagnostics
+        ? Object.freeze({
+            ...scoreObject.metadata.dominantDomainDecisionDiagnostics,
+            selectedMainDomains: Object.freeze(scoreObject.metadata.dominantDomainDecisionDiagnostics.selectedMainDomains || []),
+            scores: Object.freeze({
+              banknotes: Object.freeze({ ...(scoreObject.metadata.dominantDomainDecisionDiagnostics.scores?.banknotes || {}) }),
+              identity_documents: Object.freeze({ ...(scoreObject.metadata.dominantDomainDecisionDiagnostics.scores?.identity_documents || {}) }),
+              digital_identity_biometrics: Object.freeze({ ...(scoreObject.metadata.dominantDomainDecisionDiagnostics.scores?.digital_identity_biometrics || {}) }),
+            }),
+          })
+        : null,
+    }),
     polymerChildMatchDiagnostics: scoreObject.polymerChildMatchDiagnostics
       ? Object.freeze({
           ...scoreObject.polymerChildMatchDiagnostics,
@@ -5127,6 +5148,109 @@ function getIdentityDecisionDiagnostics(article, options = {}) {
   });
 }
 
+function getDominantDomainConfidence(winningMargin, winner, fallbackReason) {
+  if (winner === "other") {
+    return fallbackReason || "fallback";
+  }
+  if (winningMargin >= 12) {
+    return "high";
+  }
+  if (winningMargin >= 6) {
+    return "medium";
+  }
+  if (winningMargin >= 3) {
+    return "low";
+  }
+  return "very_low";
+}
+
+function getDominantDomainDecisionDiagnostics(article) {
+  const context = getPersonalBoostContext(article);
+  const banknoteSignals = getPersonalDomainContextProfile(context, "banknote_intelligence");
+  const identitySignals = getPersonalDomainContextProfile(context, "identity_documents");
+  const digitalSignals = getPersonalDomainContextProfile(context, "digital_identity_biometrics");
+  const banknoteInterestSignals = getBanknoteInterestSignals(article);
+  const strongBanknoteSignals = getStrongBanknoteDomainSignalAssessment(article);
+  const winner = getArticleDominantDomain(article);
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const selectedMainDomains = getSelectedMainDomains(selectedInterests);
+  const identityBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, selectedInterests);
+  const banknoteBridgeMatched = articleMatchesSelectedBanknoteTechniqueBridge(article, selectedInterests);
+  const banknoteScore = {
+    total:
+      banknoteSignals.score
+      + (banknoteInterestSignals.hasBanknoteTopic ? 18 : 0)
+      + (banknoteInterestSignals.isAuthoritySource ? 28 : 0)
+      + Math.min(18, Math.round(banknoteInterestSignals.contextHits / 2))
+      + strongBanknoteSignals.boost,
+    baseProfile: banknoteSignals.score,
+    topicBonus: banknoteInterestSignals.hasBanknoteTopic ? 18 : 0,
+    specialistSourceBonus: 0,
+    authoritySourceBonus: banknoteInterestSignals.isAuthoritySource ? 28 : 0,
+    contextBonus: Math.min(18, Math.round(banknoteInterestSignals.contextHits / 2)),
+    strongSignalBonus: strongBanknoteSignals.boost,
+    penalties: 0,
+  };
+  const identityScore = {
+    total:
+      identitySignals.score
+      + (["travel_passport", "identity_document", "dmv_driver_license"].includes(context.topicType) ? 18 : 0)
+      + (contextMatchesSpecialistSource(context, "identity_documents") ? 14 : 0)
+      - strongBanknoteSignals.identityPenalty,
+    baseProfile: identitySignals.score,
+    topicBonus: ["travel_passport", "identity_document", "dmv_driver_license"].includes(context.topicType) ? 18 : 0,
+    specialistSourceBonus: contextMatchesSpecialistSource(context, "identity_documents") ? 14 : 0,
+    contextBonus: 0,
+    banknotePenalty: strongBanknoteSignals.identityPenalty,
+    penalties: strongBanknoteSignals.identityPenalty,
+  };
+  const digitalScore = {
+    total:
+      digitalSignals.score
+      + (context.topicType === "digital_identity" || context.domain === "digital_identity" ? 20 : 0)
+      + (contextMatchesSpecialistSource(context, "digital_identity_biometrics") ? 14 : 0),
+    baseProfile: digitalSignals.score,
+    topicBonus: context.topicType === "digital_identity" || context.domain === "digital_identity" ? 20 : 0,
+    specialistSourceBonus: contextMatchesSpecialistSource(context, "digital_identity_biometrics") ? 14 : 0,
+    contextBonus: 0,
+    penalties: 0,
+  };
+  const rankedScores = [
+    { domain: "banknotes", total: banknoteScore.total },
+    { domain: "identity_documents", total: identityScore.total },
+    { domain: "digital_identity_biometrics", total: digitalScore.total },
+  ].sort((left, right) => right.total - left.total);
+  const winningMargin = Number((rankedScores[0].total - rankedScores[1].total).toFixed(2));
+  const confidenceGap = winningMargin;
+  let fallbackReason = "winner";
+  if (rankedScores[0].total < 8) {
+    fallbackReason = "best_score_below_minimum";
+  } else if (winningMargin < 2 && rankedScores[0].total < 14) {
+    fallbackReason = "low_confidence_tie";
+  }
+
+  return Object.freeze({
+    winner,
+    fallbackReason,
+    confidence: getDominantDomainConfidence(winningMargin, winner, fallbackReason),
+    scores: Object.freeze({
+      banknotes: Object.freeze(banknoteScore),
+      identity_documents: Object.freeze(identityScore),
+      digital_identity_biometrics: Object.freeze(digitalScore),
+    }),
+    winningMargin,
+    confidenceGap,
+    selectedMainDomains: Object.freeze(selectedMainDomains.slice()),
+    selectedDomainMatched: selectedMainDomains.length ? selectedMainDomains.includes(winner) : true,
+    bridgeAvailable: Boolean(selectedMainDomains.length && selectedMainDomains.some((domain) =>
+      domain === "identity_documents" || domain === "banknotes"
+    )),
+    bridgeMatched: identityBridgeMatched || banknoteBridgeMatched,
+    identityBridgeMatched,
+    banknoteBridgeMatched,
+  });
+}
+
 function getLegacyPersonalDashboardDecisionSignals(article, options = {}) {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const selectedMainDomains = getSelectedMainDomains(selectedInterests);
@@ -5192,6 +5316,9 @@ function getLegacyPersonalDashboardDecisionSignals(article, options = {}) {
   const identityDecisionDiagnostics = isFilterPipelineDiagnosticsEnabled() && isIdentityDocumentsPersonalDashboardSelected(selectedInterests)
     ? getIdentityDecisionDiagnostics(article, options)
     : null;
+  const dominantDomainDecisionDiagnostics = isFilterPipelineDiagnosticsEnabled()
+    ? getDominantDomainDecisionDiagnostics(article)
+    : null;
 
   return Object.freeze({
     selectedInterests: Object.freeze(selectedInterests.slice()),
@@ -5219,6 +5346,7 @@ function getLegacyPersonalDashboardDecisionSignals(article, options = {}) {
     sharedSecurityMatched,
     polymerChildMatchDiagnostics,
     identityDecisionDiagnostics,
+    dominantDomainDecisionDiagnostics,
     rejectionCategory: options.rejection?.category || "",
     rejectionReason: options.rejection?.reason || "",
     passed: Object.prototype.hasOwnProperty.call(options, "passed") ? Boolean(options.passed) : articleMatchesPersonalDashboardSelection(article),
@@ -5389,6 +5517,9 @@ function buildPersonalDashboardScore(article, options = {}) {
     passed,
     primaryDomain,
     decisionSource: signals.decisionSource || "legacy-pass-fail",
+    metadata: {
+      dominantDomainDecisionDiagnostics: signals.dominantDomainDecisionDiagnostics || null,
+    },
     polymerChildMatchDiagnostics: signals.polymerChildMatchDiagnostics || null,
     identityDecisionDiagnostics: signals.identityDecisionDiagnostics || null,
     contributions,
@@ -5531,6 +5662,33 @@ function getIdentityDiagnosticsSummary(diagnostics) {
       .map(([reason, count]) => ({ reason, count }))
       .sort((left, right) => right.count - left.count || left.reason.localeCompare(right.reason))
       .slice(0, 10),
+  };
+}
+
+function getDominantDomainDiagnosticsSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.personalDashboardScoreMap) {
+    return null;
+  }
+
+  const dominantDiagnostics = Array.from(diagnostics.personalDashboardScoreMap.values())
+    .map((scoreObject) => scoreObject?.metadata?.dominantDomainDecisionDiagnostics)
+    .filter(Boolean);
+  const margins = dominantDiagnostics.map((entry) => Number(entry.winningMargin) || 0);
+  const marginSum = margins.reduce((sum, margin) => sum + margin, 0);
+
+  return {
+    enabled: true,
+    evaluatedArticles: dominantDiagnostics.length,
+    identityWins: dominantDiagnostics.filter((entry) => entry.winner === "identity_documents").length,
+    banknoteWins: dominantDiagnostics.filter((entry) => entry.winner === "banknotes").length,
+    digitalWins: dominantDiagnostics.filter((entry) => entry.winner === "digital_identity_biometrics").length,
+    otherWins: dominantDiagnostics.filter((entry) => entry.winner === "other").length,
+    lowConfidenceWins: dominantDiagnostics.filter((entry) =>
+      entry.winner && entry.winner !== "other" && Number(entry.confidenceGap) < 3
+    ).length,
+    averageWinningMargin: margins.length ? Number((marginSum / margins.length).toFixed(2)) : 0,
+    largestWinningMargin: margins.length ? Math.max(...margins) : 0,
+    smallestWinningMargin: margins.length ? Math.min(...margins) : 0,
   };
 }
 
@@ -5860,6 +6018,117 @@ function listIdentityTechniqueBridgeMisses(limit = 25) {
         })
       );
     })
+    .slice(0, normalizedLimit);
+}
+
+function getDominantDomainDiagnosticsForTrace(trace) {
+  const scoreMap = getActivePersonalDashboardScoreMap();
+  const scoreObject = scoreMap?.get(String(trace?.articleId || ""));
+  return scoreObject?.metadata?.dominantDomainDecisionDiagnostics || null;
+}
+
+function getDominantDomainScoreTotals(diagnostics) {
+  return {
+    banknotes: diagnostics?.scores?.banknotes?.total ?? null,
+    identity_documents: diagnostics?.scores?.identity_documents?.total ?? null,
+    digital_identity_biometrics: diagnostics?.scores?.digital_identity_biometrics?.total ?? null,
+  };
+}
+
+function explainDominantDomainByTitle(titlePart) {
+  const needle = String(titlePart || "").trim().toLowerCase();
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!needle || !traceMap) {
+    return null;
+  }
+
+  const match = Array.from(traceMap.values()).find((trace) =>
+    String(trace?.title || "").toLowerCase().includes(needle)
+  );
+  if (!match) {
+    return null;
+  }
+
+  const personalDashboardStage = getTracePersonalDashboardStage(match);
+  const personalDashboardScore = explainPersonalDashboardScore(match.articleId);
+  const dominantDomainDecisionDiagnostics =
+    personalDashboardScore?.metadata?.dominantDomainDecisionDiagnostics ||
+    getDominantDomainDiagnosticsForTrace(match);
+
+  return {
+    articleId: match.articleId,
+    title: match.title,
+    winner: dominantDomainDecisionDiagnostics?.winner || "",
+    dominantDomainDecisionDiagnostics,
+    winningMargin: dominantDomainDecisionDiagnostics?.winningMargin ?? null,
+    confidenceGap: dominantDomainDecisionDiagnostics?.confidenceGap ?? null,
+    fallbackReason: dominantDomainDecisionDiagnostics?.fallbackReason || "",
+    selectedDashboardDomains: dominantDomainDecisionDiagnostics?.selectedMainDomains || [],
+    rejectionCategory: personalDashboardStage?.metadata?.category || personalDashboardStage?.metadata?.rejectedCategory || "",
+    rejectionReason: personalDashboardStage?.reason || match.finalReason || "",
+    personalDashboardScore,
+  };
+}
+
+function listDominantDomainMisses(limit = 25) {
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!traceMap) {
+    return [];
+  }
+
+  const normalizedLimit = Math.max(1, Number(limit) || 25);
+  return Array.from(traceMap.values())
+    .map((trace) => {
+      const personalDashboardStage = getTracePersonalDashboardStage(trace);
+      const rejectedCategory = personalDashboardStage?.metadata?.category || personalDashboardStage?.metadata?.rejectedCategory || "";
+      const diagnostics = getDominantDomainDiagnosticsForTrace(trace);
+      if (!diagnostics || rejectedCategory !== "primaryDomainMismatch") {
+        return null;
+      }
+      return {
+        articleId: trace.articleId,
+        title: trace.title,
+        dominantWinner: diagnostics.winner,
+        selectedDomain: (diagnostics.selectedMainDomains || []).join("+"),
+        scoreTotals: getDominantDomainScoreTotals(diagnostics),
+        winningMargin: diagnostics.winningMargin,
+        confidenceGap: diagnostics.confidenceGap,
+        rejectionReason: personalDashboardStage?.reason || trace.finalReason || "",
+      };
+    })
+    .filter(Boolean)
+    .slice(0, normalizedLimit);
+}
+
+function listLowConfidenceDominantDomains(limit = 25) {
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!traceMap) {
+    return [];
+  }
+
+  const normalizedLimit = Math.max(1, Number(limit) || 25);
+  return Array.from(traceMap.values())
+    .map((trace) => {
+      const diagnostics = getDominantDomainDiagnosticsForTrace(trace);
+      if (!diagnostics?.winner || diagnostics.winner === "other" || Number(diagnostics.confidenceGap) >= 3) {
+        return null;
+      }
+      const personalDashboardStage = getTracePersonalDashboardStage(trace);
+      return {
+        articleId: trace.articleId,
+        title: trace.title,
+        dominantWinner: diagnostics.winner,
+        selectedDomain: (diagnostics.selectedMainDomains || []).join("+"),
+        scoreTotals: getDominantDomainScoreTotals(diagnostics),
+        winningMargin: diagnostics.winningMargin,
+        confidenceGap: diagnostics.confidenceGap,
+        fallbackReason: diagnostics.fallbackReason,
+        rejectionCategory: personalDashboardStage?.metadata?.category || personalDashboardStage?.metadata?.rejectedCategory || "",
+        rejectionReason: personalDashboardStage?.reason || trace.finalReason || "",
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => Number(left.confidenceGap || 0) - Number(right.confidenceGap || 0))
     .slice(0, normalizedLimit);
 }
 
@@ -6694,6 +6963,23 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push("disabled");
   }
 
+  const dominantDomainDiagnosticsSummary = diagnostics.dominantDomainDiagnosticsSummary;
+  lines.push("");
+  lines.push("Dominant Domain Diagnostics");
+  if (dominantDomainDiagnosticsSummary?.enabled) {
+    lines.push(formatPipelineSummaryLine("evaluatedArticles", dominantDomainDiagnosticsSummary.evaluatedArticles));
+    lines.push(formatPipelineSummaryLine("identityWins", dominantDomainDiagnosticsSummary.identityWins));
+    lines.push(formatPipelineSummaryLine("banknoteWins", dominantDomainDiagnosticsSummary.banknoteWins));
+    lines.push(formatPipelineSummaryLine("digitalWins", dominantDomainDiagnosticsSummary.digitalWins));
+    lines.push(formatPipelineSummaryLine("otherWins", dominantDomainDiagnosticsSummary.otherWins));
+    lines.push(formatPipelineSummaryLine("lowConfidenceWins", dominantDomainDiagnosticsSummary.lowConfidenceWins));
+    lines.push(formatPipelineSummaryLine("averageWinningMargin", dominantDomainDiagnosticsSummary.averageWinningMargin));
+    lines.push(formatPipelineSummaryLine("largestWinningMargin", dominantDomainDiagnosticsSummary.largestWinningMargin));
+    lines.push(formatPipelineSummaryLine("smallestWinningMargin", dominantDomainDiagnosticsSummary.smallestWinningMargin));
+  } else {
+    lines.push("disabled");
+  }
+
   const identityDiagnosticsSummary = diagnostics.identityDiagnosticsSummary;
   lines.push("");
   lines.push("Identity Documents Diagnostics");
@@ -7159,6 +7445,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     filterDecisionRichTrace: diagnostics.filterDecisionRichTrace || null,
     personalDashboardScoring: diagnostics.personalDashboardScoring || null,
     personalDashboardScoreDistribution: diagnostics.personalDashboardScoreDistribution || null,
+    dominantDomainDiagnosticsSummary: diagnostics.dominantDomainDiagnosticsSummary || null,
     identityDiagnosticsSummary: diagnostics.identityDiagnosticsSummary || null,
     polymerChildMatchDiagnosticsSummary: diagnostics.polymerChildMatchDiagnosticsSummary || null,
     polymerFalseNegativeDiagnostics: diagnostics.polymerFalseNegativeDiagnostics || null,
@@ -7412,6 +7699,18 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.listIdentityTechniqueBridgeMisses = (limit) => listIdentityTechniqueBridgeMisses(limit);
   }
 
+  if (typeof window.explainDominantDomainByTitle !== "function") {
+    window.explainDominantDomainByTitle = (titlePart) => explainDominantDomainByTitle(titlePart);
+  }
+
+  if (typeof window.listDominantDomainMisses !== "function") {
+    window.listDominantDomainMisses = (limit) => listDominantDomainMisses(limit);
+  }
+
+  if (typeof window.listLowConfidenceDominantDomains !== "function") {
+    window.listLowConfidenceDominantDomains = (limit) => listLowConfidenceDominantDomains(limit);
+  }
+
   if (typeof window.explainPolymerMatchByTitle !== "function") {
     window.explainPolymerMatchByTitle = (titlePart) => explainPolymerMatchByTitle(titlePart);
   }
@@ -7447,6 +7746,9 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.explainIdentityMatchByTitle(titlePart)",
         "window.listIdentityScoreTooLow(limit)",
         "window.listIdentityTechniqueBridgeMisses(limit)",
+        "window.explainDominantDomainByTitle(titlePart)",
+        "window.listDominantDomainMisses(limit)",
+        "window.listLowConfidenceDominantDomains(limit)",
         "window.explainPolymerMatchByTitle(titlePart)",
         "window.listPolymerChildMismatches(limit)",
         "window.listLikelyPolymerFalseNegatives(limit)",
@@ -7484,6 +7786,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.filterDecisionRichTrace = getFilterDecisionRichTraceSummary(diagnostics);
   diagnostics.personalDashboardScoring = getPersonalDashboardScoringSummary(diagnostics);
   diagnostics.personalDashboardScoreDistribution = getPersonalDashboardScoreDistribution(diagnostics);
+  diagnostics.dominantDomainDiagnosticsSummary = getDominantDomainDiagnosticsSummary(diagnostics);
   diagnostics.identityDiagnosticsSummary = getIdentityDiagnosticsSummary(diagnostics);
   diagnostics.polymerChildMatchDiagnosticsSummary = getPolymerChildMatchDiagnosticsSummary(diagnostics);
   diagnostics.polymerFalseNegativeDiagnostics = getPolymerFalseNegativeDiagnosticsSummary(diagnostics);
@@ -7516,6 +7819,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("filterDecisionRichTrace", diagnostics.filterDecisionRichTrace);
   console.log("personalDashboardScoring", diagnostics.personalDashboardScoring);
   console.log("personalDashboardScoreDistribution", diagnostics.personalDashboardScoreDistribution);
+  console.log("dominantDomainDiagnosticsSummary", diagnostics.dominantDomainDiagnosticsSummary);
   console.log("identityDiagnosticsSummary", diagnostics.identityDiagnosticsSummary);
   console.log("polymerChildMatchDiagnosticsSummary", diagnostics.polymerChildMatchDiagnosticsSummary);
   console.log("polymerFalseNegativeDiagnostics", diagnostics.polymerFalseNegativeDiagnostics);
