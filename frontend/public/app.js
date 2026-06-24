@@ -4581,6 +4581,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     dominantDomainDiagnosticsSummary: null,
     identityDiagnosticsSummary: null,
     identityNoiseGuardDiagnosticsSummary: null,
+    identityProfessionalRelevanceGuardSummary: null,
     polymerChildMatchDiagnosticsSummary: null,
     polymerFalseNegativeDiagnostics: null,
     paginationPipeline: null,
@@ -4662,6 +4663,10 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Identity diagnostics active",
             "Identity noise survivor diagnostics active",
             "Legacy noise guards evaluated diagnostics-only",
+            "Identity professional relevance guard reapplied",
+            "Backend-query Personal Dashboard path now uses legacy Identity relevance guard",
+            "Legacy guard behavior reused",
+            "Filtering behavior intentionally tightened for ID Cards backend-query only",
             "Identity matching unchanged",
             "Thresholds unchanged",
             "Bridge logic unchanged",
@@ -4898,7 +4903,7 @@ function getFilterDecisionRichTraceSummary(diagnostics) {
       "sorting",
       "grouping",
     ],
-    helperCount: 19,
+    helperCount: 20,
   };
 }
 
@@ -5304,6 +5309,112 @@ function getIdentityNoiseGuardDiagnostics(article, options = {}) {
     likelyNoiseCategory,
     likelyRegressionReason,
   });
+}
+
+function shouldApplyIdentityProfessionalRelevanceGuard(options = {}) {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const selectedMainDomains = getSelectedMainDomains(selectedInterests);
+  const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
+  const branch = options.branch || "";
+  const backendBranch = branch === "backend-query" || branch === "backend-query-loading";
+
+  return Boolean(
+    hasPersonalDashboardSelections() &&
+    backendBranch &&
+    selectedMainDomains.includes("identity_documents") &&
+    selectedIdentityInterests.includes("id_cards")
+  );
+}
+
+function getIdentityProfessionalRelevanceGuardAssessment(article, options = {}) {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
+  const branch = options.branch || "";
+  const enabled = shouldApplyIdentityProfessionalRelevanceGuard({ branch });
+  const hardPassportNoise = isHardPassportNoise(article);
+  const passportRejected = shouldRejectPassportArticle(article);
+  const lowRelevancePassportArticle = isLowRelevancePassportArticle(article);
+  const keesingIdentityRelevance = getKeesingIdentityRelevance(article);
+  const highConfidencePassportAssessment = getHighConfidencePassportAssessment(article);
+  const identityDocumentRelevance = getIdentityDocumentRelevance(article);
+  const uiRelevantIntelligenceArticle = isUiRelevantIntelligenceArticle(article);
+  const triggeredGuards = [];
+  if (hardPassportNoise) {
+    triggeredGuards.push("isHardPassportNoise");
+  }
+  if (passportRejected) {
+    triggeredGuards.push("shouldRejectPassportArticle");
+  }
+  if (lowRelevancePassportArticle) {
+    triggeredGuards.push("isLowRelevancePassportArticle");
+  }
+  if (keesingIdentityRelevance?.hasRequiredComponent === false ||
+      keesingIdentityRelevance?.primarySubject === "unrelated" ||
+      Number(keesingIdentityRelevance?.score) < KEESING_RELEVANCE_THRESHOLD) {
+    triggeredGuards.push("getKeesingIdentityRelevance");
+  }
+  if (highConfidencePassportAssessment?.rejectedReason ||
+      highConfidencePassportAssessment?.primarySubject === "unrelated" ||
+      highConfidencePassportAssessment?.kept === false) {
+    triggeredGuards.push("getHighConfidencePassportAssessment");
+  }
+  if (!uiRelevantIntelligenceArticle) {
+    triggeredGuards.push("isUiRelevantIntelligenceArticle");
+  }
+
+  const passed = !enabled || (
+    !hardPassportNoise &&
+    !passportRejected &&
+    !lowRelevancePassportArticle &&
+    uiRelevantIntelligenceArticle
+  );
+  let rejectionReason = "";
+  if (enabled && !passed) {
+    if (hardPassportNoise) {
+      rejectionReason = "legacy hard passport noise guard rejected article";
+    } else if (passportRejected) {
+      rejectionReason = "legacy passport professional relevance guard rejected article";
+    } else if (lowRelevancePassportArticle) {
+      rejectionReason = "legacy low-relevance passport guard rejected article";
+    } else if (!uiRelevantIntelligenceArticle) {
+      rejectionReason = "legacy UI intelligence relevance guard rejected article";
+    } else {
+      rejectionReason = "legacy Identity professional relevance guard rejected article";
+    }
+  }
+
+  return Object.freeze({
+    enabled,
+    branch,
+    selectedInterests: Object.freeze(selectedInterests.slice()),
+    selectedIdentityInterests: Object.freeze(selectedIdentityInterests.slice()),
+    title: article?.title || "Untitled article",
+    source: getIdentityNoiseGuardSource(article),
+    triggeredGuards: Object.freeze(Array.from(new Set(triggeredGuards))),
+    passed,
+    rejected: enabled && !passed,
+    rejectionReason,
+    hardPassportNoise,
+    shouldRejectPassportArticle: passportRejected,
+    lowRelevancePassportArticle,
+    keesingIdentityRelevance,
+    highConfidencePassportAssessment,
+    identityDocumentRelevance,
+    uiRelevantIntelligenceArticle,
+    idCardsScore: Number(computePersonalInterestBoost(article, "id_cards")?.score) || 0,
+    dominantDomain: getArticleDominantDomain(article),
+  });
+}
+
+function articlePassesLegacyIdentityProfessionalRelevance(article, options = {}) {
+  if (!shouldApplyIdentityProfessionalRelevanceGuard(options)) {
+    return true;
+  }
+
+  return !isHardPassportNoise(article) &&
+    !shouldRejectPassportArticle(article) &&
+    !isLowRelevancePassportArticle(article) &&
+    isUiRelevantIntelligenceArticle(article);
 }
 
 function getDominantDomainConfidence(winningMargin, winner, fallbackReason) {
@@ -6045,6 +6156,42 @@ function getIdentityNoiseGuardDiagnosticsSummary(diagnostics) {
   };
 }
 
+function getTraceIdentityProfessionalRelevanceGuardStage(trace) {
+  return (Array.isArray(trace?.stages) ? trace.stages : []).find(
+    (stage) => stage.stage === "identity_professional_relevance_guard"
+  ) || null;
+}
+
+function getIdentityProfessionalRelevanceGuardSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+
+  const guardStages = Array.from(diagnostics.filterDecisionTraceMap.values())
+    .map(getTraceIdentityProfessionalRelevanceGuardStage)
+    .filter((stage) => stage?.metadata?.enabled);
+  const triggeredGuardCounts = new Map();
+  guardStages.forEach((stage) => {
+    (stage.metadata?.triggeredGuards || []).forEach((guardName) => {
+      triggeredGuardCounts.set(guardName, (triggeredGuardCounts.get(guardName) || 0) + 1);
+    });
+  });
+  const firstMetadata = guardStages[0]?.metadata || {};
+
+  return {
+    enabled: guardStages.length > 0,
+    evaluated: guardStages.length,
+    rejected: guardStages.filter((stage) => stage.result === "rejected").length,
+    passed: guardStages.filter((stage) => stage.result === "passed").length,
+    triggeredGuards: Array.from(triggeredGuardCounts.entries())
+      .map(([guard, count]) => ({ guard, count }))
+      .sort((left, right) => right.count - left.count || left.guard.localeCompare(right.guard))
+      .slice(0, 10),
+    branch: firstMetadata.branch || "",
+    selectedInterests: firstMetadata.selectedInterests || [],
+  };
+}
+
 function getDominantDomainDiagnosticsSummary(diagnostics) {
   if (!diagnostics?.enabled || !diagnostics.personalDashboardScoreMap) {
     return null;
@@ -6476,6 +6623,34 @@ function explainIdentityNoiseByTitle(titlePart) {
     personalDashboardScore,
     identityNoiseGuardDiagnostics,
   };
+}
+
+function listIdentityProfessionalRelevanceRejects(limit = 50) {
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!traceMap) {
+    return [];
+  }
+
+  const normalizedLimit = Math.max(1, Number(limit) || 50);
+  return Array.from(traceMap.values())
+    .map((trace) => {
+      const guardStage = getTraceIdentityProfessionalRelevanceGuardStage(trace);
+      if (guardStage?.result !== "rejected") {
+        return null;
+      }
+      const metadata = guardStage.metadata || {};
+      return {
+        articleId: trace.articleId,
+        title: trace.title,
+        source: metadata.source || "",
+        triggeredGuards: metadata.triggeredGuards || [],
+        idCardsScore: metadata.idCardsScore ?? null,
+        dominantDomain: metadata.dominantDomain || "",
+        rejectionReason: guardStage.reason || metadata.rejectionReason || "",
+      };
+    })
+    .filter(Boolean)
+    .slice(0, normalizedLimit);
 }
 
 function getDominantDomainDiagnosticsForTrace(trace) {
@@ -7570,6 +7745,27 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push("disabled");
   }
 
+  const identityProfessionalRelevanceGuardSummary = diagnostics.identityProfessionalRelevanceGuardSummary;
+  lines.push("");
+  lines.push("Identity Professional Relevance Guard");
+  if (identityProfessionalRelevanceGuardSummary?.enabled) {
+    lines.push(formatPipelineSummaryLine("evaluated", identityProfessionalRelevanceGuardSummary.evaluated));
+    lines.push(formatPipelineSummaryLine("rejected", identityProfessionalRelevanceGuardSummary.rejected));
+    lines.push(formatPipelineSummaryLine("passed", identityProfessionalRelevanceGuardSummary.passed));
+    lines.push(`branch: ${identityProfessionalRelevanceGuardSummary.branch || ""}`);
+    lines.push(`selectedInterests: ${(identityProfessionalRelevanceGuardSummary.selectedInterests || []).join(", ") || "none"}`);
+    if (identityProfessionalRelevanceGuardSummary.triggeredGuards?.length) {
+      lines.push("triggeredGuards:");
+      identityProfessionalRelevanceGuardSummary.triggeredGuards.forEach((entry) => {
+        lines.push(`- ${entry.guard}: ${entry.count}`);
+      });
+    } else {
+      lines.push("triggeredGuards: none");
+    }
+  } else {
+    lines.push("disabled");
+  }
+
   const polymerChildMatchDiagnosticsSummary = diagnostics.polymerChildMatchDiagnosticsSummary;
   lines.push("");
   lines.push("Polymer Child Match Diagnostics");
@@ -8016,6 +8212,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     dominantDomainDiagnosticsSummary: diagnostics.dominantDomainDiagnosticsSummary || null,
     identityDiagnosticsSummary: diagnostics.identityDiagnosticsSummary || null,
     identityNoiseGuardDiagnosticsSummary: diagnostics.identityNoiseGuardDiagnosticsSummary || null,
+    identityProfessionalRelevanceGuardSummary: diagnostics.identityProfessionalRelevanceGuardSummary || null,
     polymerChildMatchDiagnosticsSummary: diagnostics.polymerChildMatchDiagnosticsSummary || null,
     polymerFalseNegativeDiagnostics: diagnostics.polymerFalseNegativeDiagnostics || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
@@ -8276,6 +8473,10 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.explainIdentityNoiseByTitle = (titlePart) => explainIdentityNoiseByTitle(titlePart);
   }
 
+  if (typeof window.listIdentityProfessionalRelevanceRejects !== "function") {
+    window.listIdentityProfessionalRelevanceRejects = (limit) => listIdentityProfessionalRelevanceRejects(limit);
+  }
+
   if (typeof window.explainDominantDomainByTitle !== "function") {
     window.explainDominantDomainByTitle = (titlePart) => explainDominantDomainByTitle(titlePart);
   }
@@ -8330,6 +8531,7 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.listIdentityTechniqueBridgeMisses(limit)",
         "window.listNoisyIdentitySurvivors(limit)",
         "window.explainIdentityNoiseByTitle(titlePart)",
+        "window.listIdentityProfessionalRelevanceRejects(limit)",
         "window.explainDominantDomainByTitle(titlePart)",
         "window.listDominantDomainMisses(limit)",
         "window.listLowConfidenceDominantDomains(limit)",
@@ -8374,6 +8576,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.dominantDomainDiagnosticsSummary = getDominantDomainDiagnosticsSummary(diagnostics);
   diagnostics.identityDiagnosticsSummary = getIdentityDiagnosticsSummary(diagnostics);
   diagnostics.identityNoiseGuardDiagnosticsSummary = getIdentityNoiseGuardDiagnosticsSummary(diagnostics);
+  diagnostics.identityProfessionalRelevanceGuardSummary = getIdentityProfessionalRelevanceGuardSummary(diagnostics);
   diagnostics.polymerChildMatchDiagnosticsSummary = getPolymerChildMatchDiagnosticsSummary(diagnostics);
   diagnostics.polymerFalseNegativeDiagnostics = getPolymerFalseNegativeDiagnosticsSummary(diagnostics);
   publishFilterDecisionTraceDiagnostics(diagnostics);
@@ -8408,6 +8611,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("dominantDomainDiagnosticsSummary", diagnostics.dominantDomainDiagnosticsSummary);
   console.log("identityDiagnosticsSummary", diagnostics.identityDiagnosticsSummary);
   console.log("identityNoiseGuardDiagnosticsSummary", diagnostics.identityNoiseGuardDiagnosticsSummary);
+  console.log("identityProfessionalRelevanceGuardSummary", diagnostics.identityProfessionalRelevanceGuardSummary);
   console.log("polymerChildMatchDiagnosticsSummary", diagnostics.polymerChildMatchDiagnosticsSummary);
   console.log("polymerFalseNegativeDiagnostics", diagnostics.polymerFalseNegativeDiagnostics);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
@@ -24672,6 +24876,68 @@ function applyAdvancedFiltersStage({ articles, advancedFilterOptions, diagnostic
   };
 }
 
+function applyIdentityProfessionalRelevanceGuardStage({ articles, branch, diagnostics } = {}) {
+  const inputArticles = Array.isArray(articles) ? articles : [];
+  if (!shouldApplyIdentityProfessionalRelevanceGuard({ branch })) {
+    return {
+      articles: inputArticles,
+      stage: createFilterPipelineStageResult(
+        "identity_professional_relevance_guard",
+        inputArticles.length,
+        inputArticles.length,
+        ["Identity professional relevance guard not active for this branch/selection"]
+      ),
+    };
+  }
+
+  const outputArticles = [];
+  inputArticles.forEach((article) => {
+    const assessment = getIdentityProfessionalRelevanceGuardAssessment(article, { branch });
+    if (assessment.passed) {
+      recordFilterDecisionStage(diagnostics, article, {
+        stage: "identity_professional_relevance_guard",
+        result: "passed",
+        reason: "article passed legacy Identity professional relevance guard",
+        notes: ["Backend-query Personal Dashboard path now uses legacy Identity relevance guard"],
+        metadata: assessment,
+      });
+      outputArticles.push(article);
+      return;
+    }
+
+    recordFilterDecisionStage(diagnostics, article, {
+      stage: "identity_professional_relevance_guard",
+      result: "rejected",
+      reason: assessment.rejectionReason || "legacy Identity professional relevance guard rejected article",
+      notes: [
+        "Identity professional relevance guard reapplied",
+        "Legacy guard behavior reused",
+      ],
+      metadata: assessment,
+    });
+    finalizeFilterDecisionTrace(
+      diagnostics,
+      article,
+      "rejected",
+      assessment.rejectionReason || "legacy Identity professional relevance guard rejected article"
+    );
+  });
+
+  return {
+    articles: outputArticles,
+    stage: createFilterPipelineStageResult(
+      "identity_professional_relevance_guard",
+      inputArticles.length,
+      outputArticles.length,
+      [
+        "Identity professional relevance guard reapplied",
+        "Backend-query Personal Dashboard path now uses legacy Identity relevance guard",
+        "Legacy guard behavior reused",
+      ]
+    ),
+  };
+}
+
 function applySortingStage({ inputArticles, sortedArticles, diagnostics } = {}) {
   const inputCount = Array.isArray(inputArticles) ? inputArticles.length : 0;
   const outputArticles = Array.isArray(sortedArticles) ? sortedArticles : [];
@@ -24761,8 +25027,15 @@ function replayFilterDiagnosticsStage({ result, diagnostics, activeFeedId, useBa
   });
   stageResults.push(advancedFiltersStage.stage);
 
+  const identityProfessionalRelevanceGuardStage = applyIdentityProfessionalRelevanceGuardStage({
+    articles: advancedFiltersStage.articles,
+    branch: result.branch || diagnostics?.branch || "",
+    diagnostics,
+  });
+  stageResults.push(identityProfessionalRelevanceGuardStage.stage);
+
   const sortingStage = applySortingStage({
-    inputArticles: advancedFiltersStage.articles,
+    inputArticles: identityProfessionalRelevanceGuardStage.articles,
     sortedArticles: result.filteredRawArticles,
     diagnostics,
   });
@@ -25584,11 +25857,22 @@ function resolveBackendPendingStage({ cachedQuery, queryKey, backendRequests } =
   };
 }
 
-function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendRequests } = {}) {
+function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendRequests, diagnostics } = {}) {
   const candidatePool = cachedQuery.articles;
-  const filteredRawArticles = sortArticlesForCurrentDashboardMode(
-    cachedQuery.articles.filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
-  );
+  const advancedFilteredBackendArticles = cachedQuery.articles
+    .filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }));
+  const filteredBackendArticles = advancedFilteredBackendArticles
+    .filter((article) => articlePassesLegacyIdentityProfessionalRelevance(article, { branch: "backend-query" }));
+  const guardRejectedCount = advancedFilteredBackendArticles.length - filteredBackendArticles.length;
+  if (diagnostics?.enabled && shouldApplyIdentityProfessionalRelevanceGuard({ branch: "backend-query" })) {
+    addFilterPipelineNote(diagnostics, "Identity professional relevance guard reapplied");
+    addFilterPipelineNote(diagnostics, "Backend-query Personal Dashboard path now uses legacy Identity relevance guard");
+    addFilterPipelineNote(diagnostics, "Legacy guard behavior reused");
+    if (guardRejectedCount > 0) {
+      addFilterPipelineNote(diagnostics, `Identity professional relevance guard rejected ${guardRejectedCount} backend-query article(s)`);
+    }
+  }
+  const filteredRawArticles = sortArticlesForCurrentDashboardMode(filteredBackendArticles);
   const groupedArticles = prepareDateFirstGroupedArticles(filteredRawArticles);
   return {
     stage: createBackendProviderStage(
@@ -25670,6 +25954,7 @@ function executeBackendQueryProvider(candidateProvider, normalizedFilterState, c
     cachedQuery,
     queryKey,
     backendRequests,
+    diagnostics,
   });
   backendProviderStages.push(normalizationStage.stage);
   recordBackendProviderStages(diagnostics, backendProviderStages);
