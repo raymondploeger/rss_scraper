@@ -4580,6 +4580,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     personalDashboardScoreDistribution: null,
     dominantDomainDiagnosticsSummary: null,
     identityDiagnosticsSummary: null,
+    identityNoiseGuardDiagnosticsSummary: null,
     polymerChildMatchDiagnosticsSummary: null,
     polymerFalseNegativeDiagnostics: null,
     paginationPipeline: null,
@@ -4659,6 +4660,8 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Scoring now explains legacy matches",
             "Scores are diagnostic only",
             "Identity diagnostics active",
+            "Identity noise survivor diagnostics active",
+            "Legacy noise guards evaluated diagnostics-only",
             "Identity matching unchanged",
             "Thresholds unchanged",
             "Bridge logic unchanged",
@@ -4895,7 +4898,7 @@ function getFilterDecisionRichTraceSummary(diagnostics) {
       "sorting",
       "grouping",
     ],
-    helperCount: 17,
+    helperCount: 19,
   };
 }
 
@@ -5179,6 +5182,130 @@ function getIdentityDecisionDiagnostics(article, options = {}) {
   });
 }
 
+function getIdentityNoiseGuardSource(article) {
+  return String(
+    article?.source ||
+    article?.sourceName ||
+    article?.feedTitle ||
+    getPersonalDashboardSourceKey(article) ||
+    "Unknown source"
+  ).trim();
+}
+
+function getIdentityNoiseGuardDiagnostics(article, options = {}) {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
+  const dominantDomain = getArticleDominantDomain(article);
+  const personalDashboardPassed = Object.prototype.hasOwnProperty.call(options, "personalDashboardPassed")
+    ? Boolean(options.personalDashboardPassed)
+    : articleMatchesPersonalDashboardSelection(article);
+  const articleMatchesFiltersPassed = articleMatchesFilters(article);
+  const idCardsBoost = computePersonalInterestBoost(article, "id_cards");
+  const identitySubinterestScore = getIdentityDocumentSubinterestScore(article, selectedInterests);
+  const identitySignals = getIdentityDocumentInterestSignals(article);
+  const travelNoise = isIdentityTravelNoiseArticle(article);
+  const hardPassportNoise = isHardPassportNoise(article);
+  const passportRejected = shouldRejectPassportArticle(article);
+  const lowRelevancePassportArticle = isLowRelevancePassportArticle(article);
+  const keesingIdentityRelevance = getKeesingIdentityRelevance(article);
+  const highConfidencePassportAssessment = getHighConfidencePassportAssessment(article);
+  const identityDocumentRelevance = getIdentityDocumentRelevance(article);
+  const keesingWouldReject = Boolean(
+    keesingIdentityRelevance &&
+    (
+      keesingIdentityRelevance.hasRequiredComponent === false ||
+      keesingIdentityRelevance.primarySubject === "unrelated" ||
+      Number(keesingIdentityRelevance.score) < KEESING_RELEVANCE_THRESHOLD
+    )
+  );
+  const highConfidenceWouldReject = Boolean(
+    highConfidencePassportAssessment &&
+    (
+      highConfidencePassportAssessment.rejectedReason ||
+      highConfidencePassportAssessment.primarySubject === "unrelated" ||
+      highConfidencePassportAssessment.kept === false
+    )
+  );
+  const wouldLegacyVisibleArticlesReject = Boolean(
+    hardPassportNoise ||
+    passportRejected ||
+    lowRelevancePassportArticle
+  );
+  const triggeredLegacyGuards = [];
+  if (hardPassportNoise) {
+    triggeredLegacyGuards.push("isHardPassportNoise");
+  }
+  if (passportRejected) {
+    triggeredLegacyGuards.push("shouldRejectPassportArticle");
+  }
+  if (lowRelevancePassportArticle) {
+    triggeredLegacyGuards.push("isLowRelevancePassportArticle");
+  }
+  if (keesingWouldReject) {
+    triggeredLegacyGuards.push("getKeesingIdentityRelevance");
+  }
+  if (highConfidenceWouldReject) {
+    triggeredLegacyGuards.push("getHighConfidencePassportAssessment");
+  }
+  if (travelNoise) {
+    triggeredLegacyGuards.push("isIdentityTravelNoiseArticle");
+  }
+  if ((Number(identitySignals?.noisyHits) || 0) > 0) {
+    triggeredLegacyGuards.push("identity_noisy_terms");
+  }
+
+  let likelyNoiseCategory = "none";
+  if (hardPassportNoise) {
+    likelyNoiseCategory = "hard_passport_noise";
+  } else if (passportRejected || lowRelevancePassportArticle || keesingWouldReject || highConfidenceWouldReject) {
+    likelyNoiseCategory = "professional_relevance_reject";
+  } else if (travelNoise) {
+    likelyNoiseCategory = "consumer_travel_noise";
+  } else if ((Number(identitySignals?.noisyHits) || 0) > 0) {
+    likelyNoiseCategory = "identity_noisy_terms";
+  }
+
+  const branch = options.branch || "";
+  let likelyRegressionReason = "none";
+  if (wouldLegacyVisibleArticlesReject && branch && branch !== "global-visible-articles") {
+    likelyRegressionReason = "legacy_visible_articles_guard_bypassed_by_branch";
+  } else if (wouldLegacyVisibleArticlesReject) {
+    likelyRegressionReason = "legacy_visible_articles_would_reject";
+  } else if (triggeredLegacyGuards.length) {
+    likelyRegressionReason = "legacy_noise_signals_present_but_not_hard_rejected";
+  }
+
+  return Object.freeze({
+    title: article?.title || "Untitled article",
+    source: getIdentityNoiseGuardSource(article),
+    branch,
+    selectedIdentityInterests: Object.freeze(selectedIdentityInterests.slice()),
+    dominantDomain,
+    personalDashboardPassed,
+    articleMatchesFiltersPassed,
+    idCardsScore: Number(idCardsBoost?.score) || 0,
+    identitySubinterestScore: Object.freeze({
+      score: Number(identitySubinterestScore?.score) || 0,
+      bestSelectedScore: Number(identitySubinterestScore?.bestSelectedScore) || 0,
+      mismatchPenalty: Number(identitySubinterestScore?.mismatchPenalty) || 0,
+      selectedSubinterest: identitySubinterestScore?.selectedSubinterest || "",
+      matchedSubinterest: identitySubinterestScore?.matchedSubinterest || "",
+    }),
+    noisyHits: Number(identitySignals?.noisyHits) || 0,
+    travelNoise,
+    hardPassportNoise,
+    shouldRejectPassportArticle: passportRejected,
+    lowRelevancePassportArticle,
+    keesingIdentityRelevance,
+    highConfidencePassportAssessment,
+    identityDocumentRelevance,
+    wouldLegacyVisibleArticlesReject,
+    triggeredLegacyGuards: Object.freeze(Array.from(new Set(triggeredLegacyGuards))),
+    likelyNoiseCategory,
+    likelyRegressionReason,
+  });
+}
+
 function getDominantDomainConfidence(winningMargin, winner, fallbackReason) {
   if (winner === "other") {
     return fallbackReason || "fallback";
@@ -5447,6 +5574,14 @@ function getLegacyPersonalDashboardDecisionSignals(article, options = {}) {
   const identityDecisionDiagnostics = isFilterPipelineDiagnosticsEnabled() && isIdentityDocumentsPersonalDashboardSelected(selectedInterests)
     ? getIdentityDecisionDiagnostics(article, options)
     : null;
+  const identityNoiseGuardDiagnostics = isFilterPipelineDiagnosticsEnabled() && isIdentityDocumentsPersonalDashboardSelected(selectedInterests)
+    ? getIdentityNoiseGuardDiagnostics(article, {
+        branch: options.branch || "",
+        ...(Object.prototype.hasOwnProperty.call(options, "passed")
+          ? { personalDashboardPassed: Boolean(options.passed) }
+          : {}),
+      })
+    : null;
   const dominantDomainDecisionDiagnostics = isFilterPipelineDiagnosticsEnabled()
     ? getDominantDomainDecisionDiagnostics(article)
     : null;
@@ -5477,6 +5612,7 @@ function getLegacyPersonalDashboardDecisionSignals(article, options = {}) {
     sharedSecurityMatched,
     polymerChildMatchDiagnostics,
     identityDecisionDiagnostics,
+    identityNoiseGuardDiagnostics,
     dominantDomainDecisionDiagnostics,
     rejectionCategory: options.rejection?.category || "",
     rejectionReason: options.rejection?.reason || "",
@@ -5525,6 +5661,9 @@ function buildPersonalDashboardScore(article, options = {}) {
           : {}),
         ...(groupId === "identity_documents" && signals.identityDecisionDiagnostics
           ? { identityDecisionDiagnostics: signals.identityDecisionDiagnostics }
+          : {}),
+        ...(groupId === "identity_documents" && signals.identityNoiseGuardDiagnostics
+          ? { identityNoiseGuardDiagnostics: signals.identityNoiseGuardDiagnostics }
           : {}),
       },
     };
@@ -5651,6 +5790,7 @@ function buildPersonalDashboardScore(article, options = {}) {
     metadata: {
       dominantDomainDiagnostics: signals.dominantDomainDecisionDiagnostics || null,
       dominantDomainDecisionDiagnostics: signals.dominantDomainDecisionDiagnostics || null,
+      identityNoiseGuardDiagnostics: signals.identityNoiseGuardDiagnostics || null,
     },
     polymerChildMatchDiagnostics: signals.polymerChildMatchDiagnostics || null,
     identityDecisionDiagnostics: signals.identityDecisionDiagnostics || null,
@@ -5794,6 +5934,114 @@ function getIdentityDiagnosticsSummary(diagnostics) {
       .map(([reason, count]) => ({ reason, count }))
       .sort((left, right) => right.count - left.count || left.reason.localeCompare(right.reason))
       .slice(0, 10),
+  };
+}
+
+function getIdentityNoiseGuardDiagnosticsFromScore(scoreObject) {
+  return scoreObject?.metadata?.identityNoiseGuardDiagnostics || null;
+}
+
+function getIdentityNoiseGuardDiagnosticsForTrace(trace) {
+  const scoreMap = getActivePersonalDashboardScoreMap();
+  const scoreObject = scoreMap?.get(String(trace?.articleId || ""));
+  return getIdentityNoiseGuardDiagnosticsFromScore(scoreObject) ||
+    getTracePersonalDashboardStage(trace)?.metadata?.identityNoiseGuardDiagnostics ||
+    null;
+}
+
+function isTraceIdentityIdCardsSurvivor(trace, diagnostics) {
+  return Boolean(
+    trace &&
+    trace.finalResult !== "rejected" &&
+    diagnostics?.personalDashboardPassed &&
+    diagnostics?.articleMatchesFiltersPassed &&
+    Array.isArray(diagnostics.selectedIdentityInterests) &&
+    diagnostics.selectedIdentityInterests.includes("id_cards")
+  );
+}
+
+function isNoisyIdentitySurvivorTrace(trace, diagnostics) {
+  if (!isTraceIdentityIdCardsSurvivor(trace, diagnostics)) {
+    return false;
+  }
+  return Boolean(
+    diagnostics.wouldLegacyVisibleArticlesReject ||
+    (Array.isArray(diagnostics.triggeredLegacyGuards) && diagnostics.triggeredLegacyGuards.length)
+  );
+}
+
+function formatNoisyIdentitySurvivor(trace, diagnostics) {
+  return {
+    articleId: trace.articleId,
+    title: diagnostics?.title || trace.title,
+    source: diagnostics?.source || "",
+    idCardsScore: diagnostics?.idCardsScore ?? null,
+    dominantDomain: diagnostics?.dominantDomain || "",
+    likelyNoiseCategory: diagnostics?.likelyNoiseCategory || "",
+    wouldLegacyVisibleArticlesReject: Boolean(diagnostics?.wouldLegacyVisibleArticlesReject),
+    triggeredLegacyGuards: diagnostics?.triggeredLegacyGuards || [],
+    likelyRegressionReason: diagnostics?.likelyRegressionReason || "",
+  };
+}
+
+function getIdentityNoiseGuardDiagnosticsSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.personalDashboardScoreMap || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+
+  const traces = Array.from(diagnostics.filterDecisionTraceMap.values());
+  const categoryCounts = new Map();
+  const guardCounts = new Map();
+  let evaluatedSurvivors = 0;
+  let noisySurvivorCandidates = 0;
+  let wouldLegacyVisibleArticlesRejectCount = 0;
+  let likelyPipelineBypassCount = 0;
+
+  traces.forEach((trace) => {
+    const scoreObject = diagnostics.personalDashboardScoreMap.get(String(trace?.articleId || ""));
+    const identityNoiseDiagnostics = getIdentityNoiseGuardDiagnosticsFromScore(scoreObject);
+    if (!isTraceIdentityIdCardsSurvivor(trace, identityNoiseDiagnostics)) {
+      return;
+    }
+
+    evaluatedSurvivors += 1;
+    if (isNoisyIdentitySurvivorTrace(trace, identityNoiseDiagnostics)) {
+      noisySurvivorCandidates += 1;
+    }
+    if (identityNoiseDiagnostics.wouldLegacyVisibleArticlesReject) {
+      wouldLegacyVisibleArticlesRejectCount += 1;
+    }
+    if (identityNoiseDiagnostics.likelyRegressionReason === "legacy_visible_articles_guard_bypassed_by_branch") {
+      likelyPipelineBypassCount += 1;
+    }
+    if (identityNoiseDiagnostics.likelyNoiseCategory && identityNoiseDiagnostics.likelyNoiseCategory !== "none") {
+      categoryCounts.set(
+        identityNoiseDiagnostics.likelyNoiseCategory,
+        (categoryCounts.get(identityNoiseDiagnostics.likelyNoiseCategory) || 0) + 1
+      );
+    }
+    (identityNoiseDiagnostics.triggeredLegacyGuards || []).forEach((guardName) => {
+      guardCounts.set(guardName, (guardCounts.get(guardName) || 0) + 1);
+    });
+  });
+
+  const sortCountEntries = ([leftKey, leftCount], [rightKey, rightCount]) =>
+    rightCount - leftCount || leftKey.localeCompare(rightKey);
+
+  return {
+    enabled: true,
+    evaluatedSurvivors,
+    noisySurvivorCandidates,
+    wouldLegacyVisibleArticlesRejectCount,
+    topNoiseCategories: Array.from(categoryCounts.entries())
+      .sort(sortCountEntries)
+      .map(([category, count]) => ({ category, count }))
+      .slice(0, 10),
+    topTriggeredLegacyGuards: Array.from(guardCounts.entries())
+      .sort(sortCountEntries)
+      .map(([guard, count]) => ({ guard, count }))
+      .slice(0, 10),
+    likelyPipelineBypassCount,
   };
 }
 
@@ -6175,6 +6423,59 @@ function listIdentityTechniqueBridgeMisses(limit = 25) {
       );
     })
     .slice(0, normalizedLimit);
+}
+
+function listNoisyIdentitySurvivors(limit = 50) {
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!traceMap) {
+    return [];
+  }
+
+  const normalizedLimit = Math.max(1, Number(limit) || 50);
+  return Array.from(traceMap.values())
+    .map((trace) => {
+      const diagnostics = getIdentityNoiseGuardDiagnosticsForTrace(trace);
+      return isNoisyIdentitySurvivorTrace(trace, diagnostics)
+        ? formatNoisyIdentitySurvivor(trace, diagnostics)
+        : null;
+    })
+    .filter(Boolean)
+    .slice(0, normalizedLimit);
+}
+
+function explainIdentityNoiseByTitle(titlePart) {
+  const needle = String(titlePart || "").trim().toLowerCase();
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!needle || !traceMap) {
+    return null;
+  }
+
+  const match = Array.from(traceMap.values()).find((trace) =>
+    String(trace?.title || "").toLowerCase().includes(needle)
+  );
+  if (!match) {
+    return null;
+  }
+
+  const personalDashboardStage = getTracePersonalDashboardStage(match);
+  const personalDashboardScore = explainPersonalDashboardScore(match.articleId);
+  const identityNoiseGuardDiagnostics = getIdentityNoiseGuardDiagnosticsForTrace(match);
+
+  return {
+    articleId: match.articleId,
+    title: match.title,
+    finalResult: match.finalResult || "",
+    finalReason: match.finalReason || "",
+    personalDashboardResult: personalDashboardStage
+      ? {
+          result: personalDashboardStage.result,
+          reason: personalDashboardStage.reason,
+          rejectedCategory: personalDashboardStage.metadata?.category || personalDashboardStage.metadata?.rejectedCategory || "",
+        }
+      : null,
+    personalDashboardScore,
+    identityNoiseGuardDiagnostics,
+  };
 }
 
 function getDominantDomainDiagnosticsForTrace(trace) {
@@ -6619,6 +6920,14 @@ function getPersonalDashboardTraceMetadata(article, rejection = null, personalDa
   const identityDecisionDiagnostics = isFilterPipelineDiagnosticsEnabled() && isIdentityDocumentsPersonalDashboardSelected(selectedInterests)
     ? getIdentityDecisionDiagnostics(article, { rejection })
     : null;
+  const identityNoiseGuardDiagnostics = personalDashboardScore?.metadata?.identityNoiseGuardDiagnostics ||
+    (isFilterPipelineDiagnosticsEnabled() && isIdentityDocumentsPersonalDashboardSelected(selectedInterests)
+      ? getIdentityNoiseGuardDiagnostics(article, {
+          ...(personalDashboardScore
+            ? { personalDashboardPassed: Boolean(personalDashboardScore.passed) }
+            : {}),
+        })
+      : null);
   const dominantDomainDiagnostics = personalDashboardScore?.metadata?.dominantDomainDiagnostics ||
     (isFilterPipelineDiagnosticsEnabled() ? getDominantDomainDecisionDiagnostics(article) : null);
 
@@ -6648,6 +6957,7 @@ function getPersonalDashboardTraceMetadata(article, rejection = null, personalDa
     selectedSharedSecurityInterests: selectedSharedInterests,
     polymerChildMatchDiagnostics,
     identityDecisionDiagnostics,
+    identityNoiseGuardDiagnostics,
     dominantDomainDiagnostics,
     dominantDomainDecisionDiagnostics: dominantDomainDiagnostics,
     score: topScore,
@@ -7232,6 +7542,34 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push("disabled");
   }
 
+  const identityNoiseGuardDiagnosticsSummary = diagnostics.identityNoiseGuardDiagnosticsSummary;
+  lines.push("");
+  lines.push("Identity Noise Guard Diagnostics");
+  if (identityNoiseGuardDiagnosticsSummary?.enabled) {
+    lines.push(formatPipelineSummaryLine("evaluatedSurvivors", identityNoiseGuardDiagnosticsSummary.evaluatedSurvivors));
+    lines.push(formatPipelineSummaryLine("noisySurvivorCandidates", identityNoiseGuardDiagnosticsSummary.noisySurvivorCandidates));
+    lines.push(formatPipelineSummaryLine("wouldLegacyVisibleArticlesRejectCount", identityNoiseGuardDiagnosticsSummary.wouldLegacyVisibleArticlesRejectCount));
+    lines.push(formatPipelineSummaryLine("likelyPipelineBypassCount", identityNoiseGuardDiagnosticsSummary.likelyPipelineBypassCount));
+    if (identityNoiseGuardDiagnosticsSummary.topNoiseCategories?.length) {
+      lines.push("topNoiseCategories:");
+      identityNoiseGuardDiagnosticsSummary.topNoiseCategories.forEach((entry) => {
+        lines.push(`- ${entry.category}: ${entry.count}`);
+      });
+    } else {
+      lines.push("topNoiseCategories: none");
+    }
+    if (identityNoiseGuardDiagnosticsSummary.topTriggeredLegacyGuards?.length) {
+      lines.push("topTriggeredLegacyGuards:");
+      identityNoiseGuardDiagnosticsSummary.topTriggeredLegacyGuards.forEach((entry) => {
+        lines.push(`- ${entry.guard}: ${entry.count}`);
+      });
+    } else {
+      lines.push("topTriggeredLegacyGuards: none");
+    }
+  } else {
+    lines.push("disabled");
+  }
+
   const polymerChildMatchDiagnosticsSummary = diagnostics.polymerChildMatchDiagnosticsSummary;
   lines.push("");
   lines.push("Polymer Child Match Diagnostics");
@@ -7677,6 +8015,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     personalDashboardScoreDistribution: diagnostics.personalDashboardScoreDistribution || null,
     dominantDomainDiagnosticsSummary: diagnostics.dominantDomainDiagnosticsSummary || null,
     identityDiagnosticsSummary: diagnostics.identityDiagnosticsSummary || null,
+    identityNoiseGuardDiagnosticsSummary: diagnostics.identityNoiseGuardDiagnosticsSummary || null,
     polymerChildMatchDiagnosticsSummary: diagnostics.polymerChildMatchDiagnosticsSummary || null,
     polymerFalseNegativeDiagnostics: diagnostics.polymerFalseNegativeDiagnostics || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
@@ -7929,6 +8268,14 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.listIdentityTechniqueBridgeMisses = (limit) => listIdentityTechniqueBridgeMisses(limit);
   }
 
+  if (typeof window.listNoisyIdentitySurvivors !== "function") {
+    window.listNoisyIdentitySurvivors = (limit) => listNoisyIdentitySurvivors(limit);
+  }
+
+  if (typeof window.explainIdentityNoiseByTitle !== "function") {
+    window.explainIdentityNoiseByTitle = (titlePart) => explainIdentityNoiseByTitle(titlePart);
+  }
+
   if (typeof window.explainDominantDomainByTitle !== "function") {
     window.explainDominantDomainByTitle = (titlePart) => explainDominantDomainByTitle(titlePart);
   }
@@ -7981,6 +8328,8 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.explainIdentityMatchByTitle(titlePart)",
         "window.listIdentityScoreTooLow(limit)",
         "window.listIdentityTechniqueBridgeMisses(limit)",
+        "window.listNoisyIdentitySurvivors(limit)",
+        "window.explainIdentityNoiseByTitle(titlePart)",
         "window.explainDominantDomainByTitle(titlePart)",
         "window.listDominantDomainMisses(limit)",
         "window.listLowConfidenceDominantDomains(limit)",
@@ -8024,6 +8373,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.personalDashboardScoreDistribution = getPersonalDashboardScoreDistribution(diagnostics);
   diagnostics.dominantDomainDiagnosticsSummary = getDominantDomainDiagnosticsSummary(diagnostics);
   diagnostics.identityDiagnosticsSummary = getIdentityDiagnosticsSummary(diagnostics);
+  diagnostics.identityNoiseGuardDiagnosticsSummary = getIdentityNoiseGuardDiagnosticsSummary(diagnostics);
   diagnostics.polymerChildMatchDiagnosticsSummary = getPolymerChildMatchDiagnosticsSummary(diagnostics);
   diagnostics.polymerFalseNegativeDiagnostics = getPolymerFalseNegativeDiagnosticsSummary(diagnostics);
   publishFilterDecisionTraceDiagnostics(diagnostics);
@@ -8057,6 +8407,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("personalDashboardScoreDistribution", diagnostics.personalDashboardScoreDistribution);
   console.log("dominantDomainDiagnosticsSummary", diagnostics.dominantDomainDiagnosticsSummary);
   console.log("identityDiagnosticsSummary", diagnostics.identityDiagnosticsSummary);
+  console.log("identityNoiseGuardDiagnosticsSummary", diagnostics.identityNoiseGuardDiagnosticsSummary);
   console.log("polymerChildMatchDiagnosticsSummary", diagnostics.polymerChildMatchDiagnosticsSummary);
   console.log("polymerFalseNegativeDiagnostics", diagnostics.polymerFalseNegativeDiagnostics);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
@@ -24232,7 +24583,10 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
   inputArticles.forEach((article) => {
     const dashboardPassed = articleMatchesPersonalDashboardSelection(article);
     if (dashboardPassed) {
-      const personalDashboardScore = buildPersonalDashboardScore(article, { passed: true });
+      const personalDashboardScore = buildPersonalDashboardScore(article, {
+        passed: true,
+        branch: diagnostics?.branch || "",
+      });
       recordPersonalDashboardScore(diagnostics, article, personalDashboardScore);
       recordFilterDecisionStage(diagnostics, article, {
         stage: "personal_dashboard",
@@ -24248,6 +24602,7 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
     const personalDashboardScore = buildPersonalDashboardScore(article, {
       passed: false,
       rejection,
+      branch: diagnostics?.branch || "",
     });
     recordPersonalDashboardScore(diagnostics, article, personalDashboardScore);
     recordFilterDecisionStage(diagnostics, article, {
