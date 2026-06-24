@@ -5385,6 +5385,140 @@ function getIdentitySharedSecurityGuardBridgeAssessment(article, selectedInteres
   });
 }
 
+function shouldRescueProfessionalIdentityArticle(article) {
+  const text = [
+    article?.title,
+    article?.description,
+    article?.summary,
+    article?.source,
+    article?.topic,
+    article?.topicType,
+    article?.url,
+    getArticleTags(article).join(" "),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (!text) {
+    return false;
+  }
+
+  const hasAny = (keywords) => normalizeKeywordList(keywords).some((keyword) => textMatchesKeyword(text, keyword));
+  const consumerTravelNoise = hasAny([
+    "passport renewal",
+    "renew your passport",
+    "holiday",
+    "vacation",
+    "visa advice",
+    "travel advice",
+    "travel tips",
+    "airport queue",
+    "airport queues",
+    "airport delay",
+    "airport delays",
+    "travel disruption",
+    "tourism",
+    "tourist",
+    "youtube",
+    "tiktok",
+    "instagram",
+    "murder",
+    "shooting",
+    "kidnapping",
+    "lost passport",
+    "stolen passport",
+    "celebrity",
+    "influencer",
+  ]);
+  if (consumerTravelNoise || isHardPassportNoise(article) || isIdentityTravelNoiseArticle(article)) {
+    return false;
+  }
+
+  const professionalIdentityObject = hasAny([
+    "secure identity document",
+    "secure identity documents",
+    "identity document",
+    "identity documents",
+    "id document",
+    "id documents",
+    "national id",
+    "national identity card",
+    "national id card",
+    "id card",
+    "identity card",
+    "biometric id",
+    "biometric identity",
+    "digital travel credential",
+    "dtc",
+    "eid",
+    "electronic id",
+    "travel document",
+  ]);
+  const professionalIdentityAction = hasAny([
+    "identity issuance",
+    "document issuance",
+    "id issuance",
+    "government rollout",
+    "rollout",
+    "pilot",
+    "launch",
+    "national id renewal",
+    "identity renewal",
+    "document personalization",
+    "document personalisation",
+    "personalization",
+    "personalisation",
+    "enrollment system",
+    "enrolment system",
+    "identity infrastructure",
+    "identity management system",
+    "secure document",
+    "secure documents",
+    "document security",
+    "security printing",
+    "polycarbonate",
+    "biometric",
+  ]);
+  const professionalVendor = hasAny([
+    "veridos",
+    "thales",
+    "idemia",
+    "iq structures",
+    "entrust",
+    "hid",
+    "emptech",
+    "covestro",
+    "dnp",
+    "bundesdruckerei",
+    "in groupe",
+    "ingroupe",
+    "semlex",
+    "muhlbauer",
+    "mühlbauer",
+    "iris corporation",
+    "toppan",
+    "top pan",
+    "topPan",
+  ]);
+  const governmentIdentityContext = hasAny([
+    "government",
+    "ministry",
+    "interior ministry",
+    "civil registry",
+    "identity authority",
+    "national identity",
+    "citizen identity",
+    "public authority",
+    "issuing authority",
+  ]);
+
+  return professionalIdentityObject && (
+    professionalVendor ||
+    (professionalIdentityAction && governmentIdentityContext) ||
+    (professionalIdentityAction && getArticleDominantDomain(article) === "identity_documents")
+  );
+}
+
 function getIdentityProfessionalRelevanceGuardAssessment(article, options = {}) {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
@@ -5398,6 +5532,14 @@ function getIdentityProfessionalRelevanceGuardAssessment(article, options = {}) 
   const highConfidencePassportAssessment = getHighConfidencePassportAssessment(article);
   const identityDocumentRelevance = getIdentityDocumentRelevance(article);
   const uiRelevantIntelligenceArticle = isUiRelevantIntelligenceArticle(article);
+  const professionalIdentityRescueMatched = Boolean(
+    enabled &&
+    !hardPassportNoise &&
+    !passportRejected &&
+    !lowRelevancePassportArticle &&
+    !uiRelevantIntelligenceArticle &&
+    shouldRescueProfessionalIdentityArticle(article)
+  );
   const triggeredGuards = [];
   if (hardPassportNoise) {
     triggeredGuards.push("isHardPassportNoise");
@@ -5428,7 +5570,7 @@ function getIdentityProfessionalRelevanceGuardAssessment(article, options = {}) 
     uiRelevantIntelligenceArticle;
   const bridgeAssessment = getIdentitySharedSecurityGuardBridgeAssessment(article, selectedInterests);
   const bridgeRescued = Boolean(enabled && !legacyGuardPassed && bridgeAssessment.bridgeMatched);
-  const passed = !enabled || legacyGuardPassed || bridgeRescued;
+  const passed = !enabled || legacyGuardPassed || professionalIdentityRescueMatched || bridgeRescued;
   const bridgeRejected = Boolean(
     enabled &&
     bridgeAssessment.combinationMode &&
@@ -5444,7 +5586,7 @@ function getIdentityProfessionalRelevanceGuardAssessment(article, options = {}) 
       rejectionReason = "legacy passport professional relevance guard rejected article";
     } else if (lowRelevancePassportArticle) {
       rejectionReason = "legacy low-relevance passport guard rejected article";
-    } else if (!uiRelevantIntelligenceArticle) {
+    } else if (!uiRelevantIntelligenceArticle && !professionalIdentityRescueMatched) {
       rejectionReason = "legacy UI intelligence relevance guard rejected article";
     } else {
       rejectionReason = "legacy Identity professional relevance guard rejected article";
@@ -5473,6 +5615,15 @@ function getIdentityProfessionalRelevanceGuardAssessment(article, options = {}) 
     rejected: enabled && !passed,
     rejectionReason,
     firstFailingGate,
+    professionalIdentityRescued: professionalIdentityRescueMatched,
+    professionalIdentityRescueRejected: Boolean(
+      enabled &&
+      !hardPassportNoise &&
+      !passportRejected &&
+      !lowRelevancePassportArticle &&
+      !uiRelevantIntelligenceArticle &&
+      !professionalIdentityRescueMatched
+    ),
     legacyGuardPassed,
     combinationMode: bridgeAssessment.combinationMode,
     bridgeMatched: bridgeAssessment.bridgeMatched,
@@ -6299,6 +6450,9 @@ function getIdentityProfessionalRelevanceGuardSummary(diagnostics) {
     .filter((entry) => entry.stage?.metadata?.enabled);
   const guardStages = guardTraceEntries.map((entry) => entry.stage);
   const triggeredGuardCounts = new Map();
+  const professionalIdentityRescuedTitles = [];
+  let professionalIdentityRescued = 0;
+  let professionalIdentityRescueRejected = 0;
   const firstFailingGateCounts = {
     hard_passport_noise: 0,
     shouldRejectPassportArticle: 0,
@@ -6321,6 +6475,15 @@ function getIdentityProfessionalRelevanceGuardSummary(diagnostics) {
     (stage.metadata?.selectedSharedSecurityInterests || []).forEach((interestId) => {
       sharedSecurityInterestSet.add(interestId);
     });
+    if (stage.metadata?.professionalIdentityRescued) {
+      professionalIdentityRescued += 1;
+      if (professionalIdentityRescuedTitles.length < 25) {
+        professionalIdentityRescuedTitles.push(trace?.title || stage.metadata?.title || "Untitled article");
+      }
+    }
+    if (stage.metadata?.professionalIdentityRescueRejected) {
+      professionalIdentityRescueRejected += 1;
+    }
     if (stage.result === "rejected") {
       const firstFailingGate = stage.metadata?.firstFailingGate ||
         getIdentityProfessionalRelevanceFirstFailingGate(stage.metadata || {});
@@ -6345,6 +6508,9 @@ function getIdentityProfessionalRelevanceGuardSummary(diagnostics) {
     combinationMode: guardStages.some((stage) => Boolean(stage.metadata?.combinationMode)),
     bridgeRescued: guardStages.filter((stage) => Boolean(stage.metadata?.bridgeRescued)).length,
     bridgeRejected: guardStages.filter((stage) => Boolean(stage.metadata?.bridgeRejected)).length,
+    professionalIdentityRescued,
+    professionalIdentityRescueRejected,
+    professionalIdentityRescuedTitles,
     identityOnlyMode: guardStages.some((stage) => !stage.metadata?.combinationMode),
     sharedSecurityInterests: Array.from(sharedSecurityInterestSet),
     triggeredGuards: Array.from(triggeredGuardCounts.entries())
@@ -7994,6 +8160,8 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push(formatPipelineSummaryLine("passed", identityProfessionalRelevanceGuardSummary.passed));
     lines.push(formatPipelineSummaryLine("bridgeRescued", identityProfessionalRelevanceGuardSummary.bridgeRescued));
     lines.push(formatPipelineSummaryLine("bridgeRejected", identityProfessionalRelevanceGuardSummary.bridgeRejected));
+    lines.push(formatPipelineSummaryLine("professionalIdentityRescued", identityProfessionalRelevanceGuardSummary.professionalIdentityRescued));
+    lines.push(formatPipelineSummaryLine("professionalIdentityRescueRejected", identityProfessionalRelevanceGuardSummary.professionalIdentityRescueRejected));
     lines.push(`combinationMode: ${identityProfessionalRelevanceGuardSummary.combinationMode ? "yes" : "no"}`);
     lines.push(`identityOnlyMode: ${identityProfessionalRelevanceGuardSummary.identityOnlyMode ? "yes" : "no"}`);
     lines.push(`branch: ${identityProfessionalRelevanceGuardSummary.branch || ""}`);
@@ -8018,6 +8186,12 @@ function logCompactFilterPipelineSummary(diagnostics) {
     ].forEach((gate) => {
       lines.push(`- ${gate}: ${Number(firstFailingGateBreakdown[gate]) || 0}`);
     });
+    if (identityProfessionalRelevanceGuardSummary.professionalIdentityRescuedTitles?.length) {
+      lines.push("professionalIdentityRescuedTitles:");
+      identityProfessionalRelevanceGuardSummary.professionalIdentityRescuedTitles.slice(0, 10).forEach((title) => {
+        lines.push(`- ${title}`);
+      });
+    }
   } else {
     lines.push("disabled");
   }
