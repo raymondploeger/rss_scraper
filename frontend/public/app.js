@@ -4584,6 +4584,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     identityProfessionalRelevanceGuardSummary: null,
     evidenceBuilderDiagnosticsSummary: null,
     evidenceBuilderParitySummary: null,
+    evidenceBuilderIdCardsParitySummary: null,
     polymerChildMatchDiagnosticsSummary: null,
     polymerFalseNegativeDiagnostics: null,
     paginationPipeline: null,
@@ -4680,6 +4681,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Evidence Builder is diagnostics-only",
             "Evidence Builder parity diagnostics active",
             "Evidence Builder compared against legacy helpers",
+            "Evidence Builder ID Cards parity diagnostics improved",
             "Diagnostics only",
             "Diagnostics export state sync active",
             "Latest completed diagnostic export available",
@@ -4998,6 +5000,16 @@ function evidenceEntriesContainTerm(articleEvidence, evidenceGroup, terms = []) 
   });
 }
 
+function evidenceEntriesContainId(articleEvidence, evidenceGroup, ids = []) {
+  const normalizedIds = ids.map((id) => normalizeEvidenceId(id)).filter(Boolean);
+  if (!normalizedIds.length) {
+    return false;
+  }
+  return getEvidenceEntriesForGroup(articleEvidence, evidenceGroup).some((entry) =>
+    normalizedIds.includes(normalizeEvidenceId(entry?.id || ""))
+  );
+}
+
 function summarizeArticleEvidenceForParity(articleEvidence) {
   const evidence = articleEvidence?.evidence || {};
   return {
@@ -5047,6 +5059,26 @@ function compareArticleEvidenceParity(article) {
     "passports",
     "travel document",
   ]);
+  const evidenceHasExplicitIdCardEvidence = evidenceEntriesContainId(articleEvidence, "documentTypes", [
+    "id_cards",
+    "id_card",
+    "identity_card",
+    "national_id",
+    "electronic_identity_card",
+    "national_id_documents",
+    "hybrid_id_documents",
+  ]);
+  const evidenceHasRelatedIdentityEvidence = evidenceEntriesContainId(articleEvidence, "documentTypes", [
+    "secure_id_documents",
+    "physical_identity_documents",
+    "identity_document_protection",
+    "identity_documents",
+  ]) || evidenceHasIdentityObject;
+  const evidenceHasWeakOrIndirectIdCardEvidence = evidenceEntriesContainId(articleEvidence, "documentTypes", [
+    "card_issuance",
+    "polycarbonate_id",
+    "identity_card_design",
+  ]);
   const evidenceHasVendor = evidenceSummary.vendors > 0;
   const evidenceHasTechnology = evidenceSummary.technologies > 0;
   const evidenceHasEventSignal = evidenceSummary.eventSignals > 0;
@@ -5056,8 +5088,14 @@ function compareArticleEvidenceParity(article) {
   if (getArticleDominantDomain(article) === "identity_documents" && !evidenceHasIdentityObject) {
     parityWarnings.push("legacy_identity_domain_without_identity_object_evidence");
   }
-  if ((legacyIdCardsBoost?.score || 0) > 0 && !evidenceHasIdCardDocumentType) {
-    parityWarnings.push("legacy_id_cards_score_without_id_card_document_type_evidence");
+  if ((legacyIdCardsBoost?.score || 0) > 0 && !evidenceHasExplicitIdCardEvidence) {
+    if (evidenceHasRelatedIdentityEvidence) {
+      parityWarnings.push("legacy_id_cards_score_with_related_identity_evidence_only");
+    } else if (evidenceHasWeakOrIndirectIdCardEvidence) {
+      parityWarnings.push("legacy_id_cards_score_from_weak_or_indirect_evidence");
+    } else {
+      parityWarnings.push("legacy_id_cards_score_without_any_id_or_identity_document_evidence");
+    }
   }
   if (legacyShouldRejectPassport && !evidenceHasPassportDocumentType && !evidenceHasNoiseSignal) {
     parityWarnings.push("legacy_passport_guard_without_passport_or_noise_evidence");
@@ -5079,6 +5117,9 @@ function compareArticleEvidenceParity(article) {
     evidenceHasIdentityObject,
     evidenceHasIdCardDocumentType,
     evidenceHasPassportDocumentType,
+    evidenceHasExplicitIdCardEvidence,
+    evidenceHasRelatedIdentityEvidence,
+    evidenceHasWeakOrIndirectIdCardEvidence,
     evidenceHasVendor,
     evidenceHasTechnology,
     evidenceHasEventSignal,
@@ -5131,7 +5172,7 @@ function getEvidenceBuilderParitySummary(diagnostics) {
     incrementParityAgreement(agreements, "identityObjectAgreement",
       parity.legacyDominantDomain !== "identity_documents" || parity.evidenceHasIdentityObject);
     incrementParityAgreement(agreements, "idCardsEvidenceVsScorePositive",
-      !(parity.legacyIdCardsScore > 0) || parity.evidenceHasIdCardDocumentType);
+      !(parity.legacyIdCardsScore > 0) || parity.evidenceHasExplicitIdCardEvidence);
     incrementParityAgreement(agreements, "passportEvidenceVsPassportGuard",
       !parity.legacyShouldRejectPassport || parity.evidenceHasPassportDocumentType || parity.evidenceHasNoiseSignal);
     incrementParityAgreement(agreements, "vendorEvidenceVsProfessionalRescue",
@@ -5157,6 +5198,75 @@ function getEvidenceBuilderParitySummary(diagnostics) {
     uiRelevantVsEventEvidence: agreements.uiRelevantVsEventEvidence || { agree: 0, mismatch: 0 },
     warningCount,
     topWarnings: getTopParityWarnings(warnings),
+  };
+}
+
+function getEvidenceBuilderIdCardsParitySummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+
+  const traces = Array.from(diagnostics.filterDecisionTraceMap.values());
+  const idCardEvidenceCounts = new Map();
+  const missingEvidenceWarnings = new Map();
+  let legacyPositiveIdCardsScore = 0;
+  let explicitIdCardEvidenceCount = 0;
+  let relatedIdentityEvidenceOnlyCount = 0;
+  let noIdOrIdentityEvidenceCount = 0;
+  let weakOrIndirectEvidenceCount = 0;
+
+  traces.forEach((trace) => {
+    const parity = trace.evidenceParityDiagnostics;
+    if (!parity) {
+      return;
+    }
+    const hasPositiveIdCardsScore = (parity.legacyIdCardsScore || 0) > 0;
+    if (hasPositiveIdCardsScore) {
+      legacyPositiveIdCardsScore += 1;
+    }
+    if (parity.evidenceHasExplicitIdCardEvidence) {
+      explicitIdCardEvidenceCount += 1;
+    } else if (hasPositiveIdCardsScore && parity.evidenceHasRelatedIdentityEvidence) {
+      relatedIdentityEvidenceOnlyCount += 1;
+    } else if (hasPositiveIdCardsScore && parity.evidenceHasWeakOrIndirectIdCardEvidence) {
+      weakOrIndirectEvidenceCount += 1;
+    } else if (hasPositiveIdCardsScore) {
+      noIdOrIdentityEvidenceCount += 1;
+    }
+
+    getEvidenceEntriesForGroup(trace.evidenceDiagnostics, "documentTypes")
+      .filter((entry) => [
+        "id_cards",
+        "id_card",
+        "identity_card",
+        "national_id",
+        "electronic_identity_card",
+        "secure_id_documents",
+        "physical_identity_documents",
+        "card_issuance",
+        "polycarbonate_id",
+        "identity_card_design",
+        "identity_document_protection",
+        "national_id_documents",
+        "hybrid_id_documents",
+        "identity_documents",
+      ].includes(entry.id))
+      .forEach((entry) => incrementEvidenceCount(idCardEvidenceCounts, entry));
+    (parity.parityWarnings || [])
+      .filter((warning) => warning.startsWith("legacy_id_cards_score_"))
+      .forEach((warning) => missingEvidenceWarnings.set(warning, (missingEvidenceWarnings.get(warning) || 0) + 1));
+  });
+
+  return {
+    enabled: true,
+    evaluatedArticles: traces.length,
+    legacyPositiveIdCardsScore,
+    explicitIdCardEvidenceCount,
+    relatedIdentityEvidenceOnlyCount,
+    noIdOrIdentityEvidenceCount,
+    weakOrIndirectEvidenceCount,
+    topMatchedIdCardEvidence: getTopEvidenceCounts(idCardEvidenceCounts),
+    topMissingEvidenceWarnings: getTopParityWarnings(missingEvidenceWarnings),
   };
 }
 
@@ -8493,6 +8603,32 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push("disabled");
   }
 
+  const evidenceBuilderIdCardsParitySummary = diagnostics.evidenceBuilderIdCardsParitySummary;
+  lines.push("");
+  lines.push("Evidence Builder ID Cards Parity");
+  if (evidenceBuilderIdCardsParitySummary?.enabled) {
+    lines.push(formatPipelineSummaryLine("evaluatedArticles", evidenceBuilderIdCardsParitySummary.evaluatedArticles));
+    lines.push(formatPipelineSummaryLine("legacyPositiveIdCardsScore", evidenceBuilderIdCardsParitySummary.legacyPositiveIdCardsScore));
+    lines.push(formatPipelineSummaryLine("explicitIdCardEvidenceCount", evidenceBuilderIdCardsParitySummary.explicitIdCardEvidenceCount));
+    lines.push(formatPipelineSummaryLine("relatedIdentityEvidenceOnlyCount", evidenceBuilderIdCardsParitySummary.relatedIdentityEvidenceOnlyCount));
+    lines.push(formatPipelineSummaryLine("noIdOrIdentityEvidenceCount", evidenceBuilderIdCardsParitySummary.noIdOrIdentityEvidenceCount));
+    lines.push(formatPipelineSummaryLine("weakOrIndirectEvidenceCount", evidenceBuilderIdCardsParitySummary.weakOrIndirectEvidenceCount));
+    if (evidenceBuilderIdCardsParitySummary.topMatchedIdCardEvidence?.length) {
+      lines.push("topMatchedIdCardEvidence:");
+      evidenceBuilderIdCardsParitySummary.topMatchedIdCardEvidence.slice(0, 5).forEach((entry) => {
+        lines.push(`- ${entry.term}: ${entry.count}`);
+      });
+    }
+    if (evidenceBuilderIdCardsParitySummary.topMissingEvidenceWarnings?.length) {
+      lines.push("topMissingEvidenceWarnings:");
+      evidenceBuilderIdCardsParitySummary.topMissingEvidenceWarnings.slice(0, 5).forEach((entry) => {
+        lines.push(`- ${entry.warning}: ${entry.count}`);
+      });
+    }
+  } else {
+    lines.push("disabled");
+  }
+
   const personalDashboardScoring = diagnostics.personalDashboardScoring;
   lines.push("");
   lines.push("Personal Dashboard Scoring");
@@ -9098,6 +9234,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     identityProfessionalRelevanceGuardSummary: diagnostics.identityProfessionalRelevanceGuardSummary || null,
     evidenceBuilderDiagnosticsSummary: diagnostics.evidenceBuilderDiagnosticsSummary || null,
     evidenceBuilderParitySummary: diagnostics.evidenceBuilderParitySummary || null,
+    evidenceBuilderIdCardsParitySummary: diagnostics.evidenceBuilderIdCardsParitySummary || null,
     polymerChildMatchDiagnosticsSummary: diagnostics.polymerChildMatchDiagnosticsSummary || null,
     polymerFalseNegativeDiagnostics: diagnostics.polymerFalseNegativeDiagnostics || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
@@ -9495,6 +9632,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.identityProfessionalRelevanceGuardSummary = getIdentityProfessionalRelevanceGuardSummary(diagnostics);
   diagnostics.evidenceBuilderDiagnosticsSummary = getEvidenceBuilderDiagnosticsSummary(diagnostics);
   diagnostics.evidenceBuilderParitySummary = getEvidenceBuilderParitySummary(diagnostics);
+  diagnostics.evidenceBuilderIdCardsParitySummary = getEvidenceBuilderIdCardsParitySummary(diagnostics);
   diagnostics.polymerChildMatchDiagnosticsSummary = getPolymerChildMatchDiagnosticsSummary(diagnostics);
   diagnostics.polymerFalseNegativeDiagnostics = getPolymerFalseNegativeDiagnosticsSummary(diagnostics);
   publishFilterDecisionTraceDiagnostics(diagnostics);
@@ -9532,6 +9670,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("identityProfessionalRelevanceGuardSummary", diagnostics.identityProfessionalRelevanceGuardSummary);
   console.log("evidenceBuilderDiagnosticsSummary", diagnostics.evidenceBuilderDiagnosticsSummary);
   console.log("evidenceBuilderParitySummary", diagnostics.evidenceBuilderParitySummary);
+  console.log("evidenceBuilderIdCardsParitySummary", diagnostics.evidenceBuilderIdCardsParitySummary);
   console.log("polymerChildMatchDiagnosticsSummary", diagnostics.polymerChildMatchDiagnosticsSummary);
   console.log("polymerFalseNegativeDiagnostics", diagnostics.polymerFalseNegativeDiagnostics);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
@@ -11044,6 +11183,36 @@ function collectArticleEvidenceEntries(context, terms = [], options = {}) {
   return entries;
 }
 
+function collectMappedArticleEvidenceEntries(context, mappings = [], options = {}) {
+  const sections = getArticleEvidenceTextSections(context);
+  const entries = [];
+  const seen = new Set();
+  mappings.forEach((mapping) => {
+    const terms = normalizeKeywordList(mapping?.terms || []);
+    terms.forEach((term) => {
+      const locations = Object.entries(sections)
+        .filter(([, text]) => textMatchesKeyword(text, term))
+        .map(([location]) => location);
+      if (!locations.length) {
+        return;
+      }
+      const id = mapping.id || normalizeEvidenceId(term);
+      const key = `${id}:${term}:${locations.join("|")}`;
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      entries.push({
+        id,
+        term,
+        locations,
+        strength: mapping.strength || options.strength || "medium",
+      });
+    });
+  });
+  return entries;
+}
+
 function flattenEvidenceKeywordGroups(groups = []) {
   const flattenGroup = (group) => {
     if (Array.isArray(group)) {
@@ -11057,8 +11226,89 @@ function flattenEvidenceKeywordGroups(groups = []) {
   return flattenGroup(groups);
 }
 
+function getIdCardsEvidenceMappings() {
+  const idCardInterest = PERSONAL_DASHBOARD_INTEREST_MAP.get("id_cards") || {};
+  const profile = IDENTITY_INTELLIGENCE_PROFILES.id_cards || {};
+  return [
+    {
+      id: "id_cards",
+      terms: ["id card", "id cards", "identity card", "identity cards", "national id", "electronic identity card"],
+      strength: "strong",
+    },
+    {
+      id: "id_card",
+      terms: ["id card", "id cards", "czech id"],
+      strength: "strong",
+    },
+    {
+      id: "identity_card",
+      terms: ["identity card", "identity cards"],
+      strength: "strong",
+    },
+    {
+      id: "national_id",
+      terms: ["national id", "national identity card", "national id card"],
+      strength: "strong",
+    },
+    {
+      id: "electronic_identity_card",
+      terms: ["electronic identity card", "digital identity card"],
+      strength: "strong",
+    },
+    {
+      id: "secure_id_documents",
+      terms: ["secure id documents", "secure identity documents"],
+      strength: "medium",
+    },
+    {
+      id: "physical_identity_documents",
+      terms: ["physical identity documents", "physical document"],
+      strength: "medium",
+    },
+    {
+      id: "card_issuance",
+      terms: ["card issuance", "identity card issuance", "id issuance"],
+      strength: "medium",
+    },
+    {
+      id: "polycarbonate_id",
+      terms: ["polycarbonate id", "polycarbonate card"],
+      strength: "medium",
+    },
+    {
+      id: "identity_card_design",
+      terms: ["identity card design", "id card design", "card design"],
+      strength: "medium",
+    },
+    {
+      id: "identity_document_protection",
+      terms: ["identity document protection", "id protection", "document protection"],
+      strength: "medium",
+    },
+    {
+      id: "national_id_documents",
+      terms: ["national id documents"],
+      strength: "strong",
+    },
+    {
+      id: "hybrid_id_documents",
+      terms: ["hybrid id documents"],
+      strength: "strong",
+    },
+    {
+      id: "identity_documents",
+      terms: flattenEvidenceKeywordGroups([
+        idCardInterest.weak,
+        profile.mediumPositive,
+      ]),
+      strength: "medium",
+    },
+  ];
+}
+
 function buildArticleEvidence(article) {
   const context = buildArticleIntelligenceContext(article);
+  const idCardsEvidence = collectMappedArticleEvidenceEntries(context, getIdCardsEvidenceMappings());
   const domainObjectTerms = flattenEvidenceKeywordGroups([
     SIGNAL_CORE_OBJECT_KEYWORDS,
     BANKNOTE_SIGNAL_OBJECT_KEYWORDS,
@@ -11109,8 +11359,8 @@ function buildArticleEvidence(article) {
     IDENTITY_INTENT_AUTHORITY_SOURCES,
   ]);
   const evidence = {
-    domainObjects: collectArticleEvidenceEntries(context, domainObjectTerms, { strength: "strong" }),
-    documentTypes: collectArticleEvidenceEntries(context, documentTypeTerms, { strength: "strong" }),
+    domainObjects: collectArticleEvidenceEntries(context, domainObjectTerms, { strength: "strong" }).concat(idCardsEvidence),
+    documentTypes: collectArticleEvidenceEntries(context, documentTypeTerms, { strength: "strong" }).concat(idCardsEvidence),
     vendors: collectArticleEvidenceEntries(context, vendorTerms, { strength: "medium" }),
     materials: collectArticleEvidenceEntries(context, materialTerms, { strength: "medium" }),
     technologies: collectArticleEvidenceEntries(context, technologyTerms, { strength: "medium" }),
