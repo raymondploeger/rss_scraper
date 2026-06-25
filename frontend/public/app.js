@@ -4615,6 +4615,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     evidenceBuilderProfessionalParitySummary: null,
     evidenceBuilderEventSummary: null,
     v3DecisionEngineDiagnosticsSummary: null,
+    v3ConfidenceSummary: null,
     v3DecisionParitySummary: null,
     decisionParityExamples: null,
     decisionParityTopDisagreements: null,
@@ -4723,6 +4724,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Event Signals introduced",
             "V3 Decision Engine diagnostics active",
             "V3 Decision Engine is diagnostics-only",
+            "Confidence Engine V1 added",
             "Decision Parity enabled",
             "Shadow comparison active",
             "Legacy filtering still authoritative",
@@ -5010,6 +5012,8 @@ function getFilterDecisionDebugToolsSummary(diagnostics) {
       "window.listArticlesWithEvidence(evidenceGroup, limit)",
       "window.explainV3DecisionByTitle(titlePart)",
       "window.listV3DecisionDiagnostics(decision, limit)",
+      "window.listConfidenceBand(confidenceBand, limit)",
+      "window.explainConfidenceByTitle(titlePart)",
       "window.listDecisionParityMatches(limit)",
       "window.listDecisionParityMismatches(limit)",
       "window.explainDecisionParityByTitle(titlePart)",
@@ -5750,6 +5754,99 @@ function summarizeV3EvidenceGroup(articleEvidence, evidenceGroup) {
   };
 }
 
+function getV3ConfidenceBand(confidenceScore) {
+  if (confidenceScore >= 95) {
+    return "very_high";
+  }
+  if (confidenceScore >= 80) {
+    return "high";
+  }
+  if (confidenceScore >= 60) {
+    return "medium";
+  }
+  if (confidenceScore >= 40) {
+    return "low";
+  }
+  return "very_low";
+}
+
+function summarizeV3ConfidenceSignals(entries = []) {
+  return entries.slice(0, 5).map((entry) => ({
+    id: entry?.id || "",
+    term: entry?.term || entry?.matchedTerm || "",
+    category: entry?.category || "",
+    strength: entry?.strength || "",
+  }));
+}
+
+function buildV3Confidence(article, options = {}) {
+  const articleEvidence = options.articleEvidence || buildArticleEvidence(article);
+  const v3DecisionDiagnostics = options.v3DecisionDiagnostics || null;
+  const documentEntries = []
+    .concat(getEvidenceEntriesForGroup(articleEvidence, "domainObjects"))
+    .concat(getEvidenceEntriesForGroup(articleEvidence, "documentTypes"));
+  const professionalEntries = getEvidenceEntriesForGroup(articleEvidence, "professionalSignals");
+  const noiseEntries = getEvidenceEntriesForGroup(articleEvidence, "noiseSignals");
+  const eventEntries = getEvidenceEntriesForGroup(articleEvidence, "eventSignals");
+  const strongDocumentEntries = documentEntries.filter((entry) => entry?.strength === "strong");
+  const strongProfessionalEntries = professionalEntries.filter((entry) => entry?.strength === "strong");
+  const strongNoiseEntries = noiseEntries.filter((entry) => entry?.strength === "strong");
+  const positiveEvidence = {
+    documentEvidence: documentEntries.length,
+    strongDocumentEvidence: strongDocumentEntries.length,
+    professionalEvidence: professionalEntries.length,
+    strongProfessionalEvidence: strongProfessionalEntries.length,
+    eventEvidence: eventEntries.length,
+  };
+  const negativeEvidence = {
+    noiseEvidence: noiseEntries.length,
+    strongNoiseEvidence: strongNoiseEntries.length,
+    conflictingEvidence: professionalEntries.length > 0 && noiseEntries.length > 0,
+    missingDocumentEvidence: documentEntries.length === 0,
+    weakProfessionalEvidence: professionalEntries.length === 0,
+  };
+  let confidenceScore = 35;
+
+  confidenceScore += Math.min(25, documentEntries.length * 4 + strongDocumentEntries.length * 6);
+  confidenceScore += Math.min(25, professionalEntries.length * 3 + strongProfessionalEntries.length * 7);
+  confidenceScore += Math.min(10, eventEntries.length * 2);
+  confidenceScore -= Math.min(30, noiseEntries.length * 4 + strongNoiseEntries.length * 10);
+  if (negativeEvidence.conflictingEvidence) {
+    confidenceScore -= 12;
+  }
+  if (negativeEvidence.missingDocumentEvidence) {
+    confidenceScore -= 25;
+  }
+  if (v3DecisionDiagnostics?.suggestedDecision === "uncertain") {
+    confidenceScore -= 10;
+  }
+  confidenceScore = Math.max(0, Math.min(100, Math.round(confidenceScore)));
+  const confidenceBand = getV3ConfidenceBand(confidenceScore);
+  const strongestSignals = summarizeV3ConfidenceSignals(
+    strongProfessionalEntries.concat(strongDocumentEntries, eventEntries, professionalEntries, documentEntries)
+  );
+  const weakestSignals = summarizeV3ConfidenceSignals(
+    strongNoiseEntries.concat(noiseEntries)
+  );
+  const explanation = [
+    documentEntries.length ? "document evidence present" : "no document evidence",
+    professionalEntries.length ? "professional evidence present" : "weak professional evidence",
+    noiseEntries.length ? "noise evidence present" : "low noise",
+    eventEntries.length ? "event evidence present" : "limited event evidence",
+    negativeEvidence.conflictingEvidence ? "professional and noise evidence conflict" : "",
+  ].filter(Boolean).join("; ");
+
+  return {
+    confidenceScore,
+    confidenceBand,
+    positiveEvidence,
+    negativeEvidence,
+    strongestSignals,
+    weakestSignals,
+    explanation,
+  };
+}
+
 function buildV3DecisionDiagnostics(article, options = {}) {
   const articleEvidence = options.articleEvidence || buildArticleEvidence(article);
   const evidence = articleEvidence?.evidence || {};
@@ -5808,12 +5905,23 @@ function buildV3DecisionDiagnostics(article, options = {}) {
     suggestedDecision = "reject_candidate";
     confidence = 0.6;
   }
+  const preliminaryDecision = {
+    suggestedDecision,
+    confidence,
+  };
+  const confidenceDiagnostics = buildV3Confidence(article, {
+    articleEvidence,
+    v3DecisionDiagnostics: preliminaryDecision,
+  });
 
   return {
     articleId: articleEvidence?.articleId || getFilterDecisionTraceArticleId(article),
     title: article?.title || "Untitled article",
     suggestedDecision,
-    confidence: Number(confidence.toFixed(2)),
+    confidence: confidenceDiagnostics.confidenceScore,
+    confidenceBand: confidenceDiagnostics.confidenceBand,
+    confidenceExplanation: confidenceDiagnostics.explanation,
+    confidenceDiagnostics,
     reasons,
     evidenceSummary: {
       domainObjects: evidence.domainObjects?.length || 0,
@@ -5912,6 +6020,86 @@ function getV3DecisionEngineDiagnosticsSummary(diagnostics) {
     topRejectReasons: getTopV3DecisionReasons(rejectReasonCounts),
     topUncertainReasons: getTopV3DecisionReasons(uncertainReasonCounts),
     legacyAgreementSummary: legacyAgreement,
+  };
+}
+
+function incrementConfidenceBand(distribution, confidenceBand) {
+  const normalizedBand = confidenceBand || "unknown";
+  distribution[normalizedBand] = (distribution[normalizedBand] || 0) + 1;
+}
+
+function getTopConfidenceSignals(counts, limit = 10) {
+  return Array.from(counts.entries())
+    .map(([signal, count]) => ({ signal, count }))
+    .sort((left, right) => right.count - left.count || left.signal.localeCompare(right.signal))
+    .slice(0, limit);
+}
+
+function incrementConfidenceSignalCounts(counts, signals = []) {
+  signals.forEach((signal) => {
+    const key = signal?.id || normalizeEvidenceId(signal?.term || "");
+    if (!key) {
+      return;
+    }
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+}
+
+function getV3ConfidenceSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+
+  const traces = getHeavyDiagnosticsTraces(diagnostics);
+  const confidenceDistribution = {
+    very_high: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+    very_low: 0,
+  };
+  const byDecision = new Map();
+  const strongestSignalCounts = new Map();
+  const weakestSignalCounts = new Map();
+  let evaluatedArticles = 0;
+  let totalConfidence = 0;
+  let highestConfidence = 0;
+  let lowestConfidence = 100;
+
+  traces.forEach((trace) => {
+    const confidence = trace.v3DecisionDiagnostics?.confidenceDiagnostics;
+    if (!confidence) {
+      return;
+    }
+    evaluatedArticles += 1;
+    totalConfidence += confidence.confidenceScore;
+    highestConfidence = Math.max(highestConfidence, confidence.confidenceScore);
+    lowestConfidence = Math.min(lowestConfidence, confidence.confidenceScore);
+    incrementConfidenceBand(confidenceDistribution, confidence.confidenceBand);
+    incrementConfidenceSignalCounts(strongestSignalCounts, confidence.strongestSignals);
+    incrementConfidenceSignalCounts(weakestSignalCounts, confidence.weakestSignals);
+
+    const decision = trace.v3DecisionDiagnostics?.suggestedDecision || "uncertain";
+    const decisionBucket = byDecision.get(decision) || { decision, count: 0, totalConfidence: 0 };
+    decisionBucket.count += 1;
+    decisionBucket.totalConfidence += confidence.confidenceScore;
+    byDecision.set(decision, decisionBucket);
+  });
+
+  return {
+    enabled: true,
+    evaluatedArticles,
+    averageConfidence: evaluatedArticles ? Number((totalConfidence / evaluatedArticles).toFixed(1)) : 0,
+    highestConfidence: evaluatedArticles ? highestConfidence : 0,
+    lowestConfidence: evaluatedArticles ? lowestConfidence : 0,
+    confidenceDistribution,
+    averageByDecision: Array.from(byDecision.values()).map((entry) => ({
+      decision: entry.decision,
+      count: entry.count,
+      averageConfidence: entry.count ? Number((entry.totalConfidence / entry.count).toFixed(1)) : 0,
+    })),
+    strongestSignals: getTopConfidenceSignals(strongestSignalCounts),
+    weakestSignals: getTopConfidenceSignals(weakestSignalCounts),
   };
 }
 
@@ -8706,6 +8894,64 @@ function listV3DecisionDiagnostics(decision, limit = 25) {
     .slice(0, normalizedLimit);
 }
 
+function listConfidenceBand(confidenceBand, limit = 25) {
+  const normalizedBand = String(confidenceBand || "").trim();
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!traceMap) {
+    return [];
+  }
+  const validBands = ["very_high", "high", "medium", "low", "very_low"];
+  if (!validBands.includes(normalizedBand)) {
+    return {
+      error: "invalid confidenceBand",
+      validBands,
+    };
+  }
+  const normalizedLimit = Math.max(1, Number(limit) || 25);
+  return Array.from(traceMap.values())
+    .map((trace) => {
+      const confidence = trace.v3DecisionDiagnostics?.confidenceDiagnostics;
+      if (!confidence || confidence.confidenceBand !== normalizedBand) {
+        return null;
+      }
+      return {
+        articleId: trace.articleId,
+        title: trace.title,
+        finalResult: trace.finalResult || "",
+        finalReason: trace.finalReason || "",
+        suggestedDecision: trace.v3DecisionDiagnostics?.suggestedDecision || "",
+        confidenceScore: confidence.confidenceScore,
+        confidenceBand: confidence.confidenceBand,
+        explanation: confidence.explanation,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, normalizedLimit);
+}
+
+function explainConfidenceByTitle(titlePart) {
+  const needle = String(titlePart || "").trim().toLowerCase();
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!needle || !traceMap) {
+    return null;
+  }
+  const match = Array.from(traceMap.values()).find((trace) =>
+    String(trace?.title || "").toLowerCase().includes(needle)
+  );
+  if (!match) {
+    return null;
+  }
+  return {
+    articleId: match.articleId,
+    title: match.title,
+    finalResult: match.finalResult || "",
+    finalReason: match.finalReason || "",
+    suggestedDecision: match.v3DecisionDiagnostics?.suggestedDecision || "",
+    confidenceDiagnostics: match.v3DecisionDiagnostics?.confidenceDiagnostics || null,
+    heavyDiagnosticsEnabled: Boolean(match.heavyDiagnosticsEnabled),
+  };
+}
+
 function listDecisionParityEntries(options = {}) {
   const traceMap = getActiveFilterDecisionTraceMap();
   if (!traceMap) {
@@ -9714,6 +9960,37 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push("disabled");
   }
 
+  const v3ConfidenceSummary = diagnostics.v3ConfidenceSummary;
+  lines.push("");
+  lines.push("V3 Confidence Engine");
+  if (v3ConfidenceSummary?.enabled) {
+    lines.push(formatPipelineSummaryLine("evaluatedArticles", v3ConfidenceSummary.evaluatedArticles));
+    lines.push(formatPipelineSummaryLine("averageConfidence", v3ConfidenceSummary.averageConfidence));
+    lines.push(formatPipelineSummaryLine("highestConfidence", v3ConfidenceSummary.highestConfidence));
+    lines.push(formatPipelineSummaryLine("lowestConfidence", v3ConfidenceSummary.lowestConfidence));
+    lines.push(`confidenceDistribution: ${JSON.stringify(v3ConfidenceSummary.confidenceDistribution || {})}`);
+    if (v3ConfidenceSummary.averageByDecision?.length) {
+      lines.push("averageByDecision:");
+      v3ConfidenceSummary.averageByDecision.forEach((entry) => {
+        lines.push(`- ${entry.decision}: ${entry.averageConfidence} (${entry.count})`);
+      });
+    }
+    if (v3ConfidenceSummary.strongestSignals?.length) {
+      lines.push("strongestSignals:");
+      v3ConfidenceSummary.strongestSignals.slice(0, 5).forEach((entry) => {
+        lines.push(`- ${entry.signal}: ${entry.count}`);
+      });
+    }
+    if (v3ConfidenceSummary.weakestSignals?.length) {
+      lines.push("weakestSignals:");
+      v3ConfidenceSummary.weakestSignals.slice(0, 5).forEach((entry) => {
+        lines.push(`- ${entry.signal}: ${entry.count}`);
+      });
+    }
+  } else {
+    lines.push("disabled");
+  }
+
   const v3DecisionParitySummary = diagnostics.v3DecisionParitySummary;
   lines.push("");
   lines.push("V3 Decision Parity");
@@ -10383,6 +10660,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     evidenceBuilderProfessionalParitySummary: diagnostics.evidenceBuilderProfessionalParitySummary || null,
     evidenceBuilderEventSummary: diagnostics.evidenceBuilderEventSummary || null,
     v3DecisionEngineDiagnosticsSummary: diagnostics.v3DecisionEngineDiagnosticsSummary || null,
+    v3ConfidenceSummary: diagnostics.v3ConfidenceSummary || null,
     v3DecisionParitySummary: diagnostics.v3DecisionParitySummary || null,
     decisionParityExamples: diagnostics.decisionParityExamples || null,
     decisionParityTopDisagreements: diagnostics.decisionParityTopDisagreements || null,
@@ -10642,6 +10920,14 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.listV3DecisionDiagnostics = (decision, limit) => listV3DecisionDiagnostics(decision, limit);
   }
 
+  if (typeof window.listConfidenceBand !== "function") {
+    window.listConfidenceBand = (confidenceBand, limit) => listConfidenceBand(confidenceBand, limit);
+  }
+
+  if (typeof window.explainConfidenceByTitle !== "function") {
+    window.explainConfidenceByTitle = (titlePart) => explainConfidenceByTitle(titlePart);
+  }
+
   if (typeof window.listDecisionParityMatches !== "function") {
     window.listDecisionParityMatches = (limit) => listDecisionParityMatches(limit);
   }
@@ -10764,6 +11050,8 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.listArticlesWithEvidence(evidenceGroup, limit)",
         "window.explainV3DecisionByTitle(titlePart)",
         "window.listV3DecisionDiagnostics(decision, limit)",
+        "window.listConfidenceBand(confidenceBand, limit)",
+        "window.explainConfidenceByTitle(titlePart)",
         "window.listDecisionParityMatches(limit)",
         "window.listDecisionParityMismatches(limit)",
         "window.explainDecisionParityByTitle(titlePart)",
@@ -10839,6 +11127,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.evidenceBuilderProfessionalParitySummary = getEvidenceBuilderProfessionalParitySummary(diagnostics);
   diagnostics.evidenceBuilderEventSummary = getEvidenceBuilderEventSummary(diagnostics);
   diagnostics.v3DecisionEngineDiagnosticsSummary = getV3DecisionEngineDiagnosticsSummary(diagnostics);
+  diagnostics.v3ConfidenceSummary = getV3ConfidenceSummary(diagnostics);
   diagnostics.v3DecisionParitySummary = getV3DecisionParitySummary(diagnostics);
   diagnostics.decisionParityExamples = getDecisionParityExamples(diagnostics);
   diagnostics.decisionParityTopDisagreements = getDecisionParityTopDisagreements(diagnostics);
@@ -10887,6 +11176,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("evidenceBuilderProfessionalParitySummary", diagnostics.evidenceBuilderProfessionalParitySummary);
   console.log("evidenceBuilderEventSummary", diagnostics.evidenceBuilderEventSummary);
   console.log("v3DecisionEngineDiagnosticsSummary", diagnostics.v3DecisionEngineDiagnosticsSummary);
+  console.log("v3ConfidenceSummary", diagnostics.v3ConfidenceSummary);
   console.log("v3DecisionParitySummary", diagnostics.v3DecisionParitySummary);
   console.log("decisionParityExamples", diagnostics.decisionParityExamples);
   console.log("decisionParityTopDisagreements", diagnostics.decisionParityTopDisagreements);
