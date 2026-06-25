@@ -4588,6 +4588,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     evidenceBuilderPassportParitySummary: null,
     evidenceBuilderNoiseSummary: null,
     evidenceBuilderProfessionalSummary: null,
+    evidenceBuilderProfessionalParitySummary: null,
     polymerChildMatchDiagnosticsSummary: null,
     polymerFalseNegativeDiagnostics: null,
     paginationPipeline: null,
@@ -4688,6 +4689,8 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Evidence Builder Passport parity diagnostics improved",
             "Evidence Builder Noise diagnostics improved",
             "Professional Signals introduced",
+            "Evidence Builder Professional parity diagnostics active",
+            "Professional Signals included in parity checks",
             "Diagnostics only",
             "Diagnostics export state sync active",
             "Latest completed diagnostic export available",
@@ -5126,14 +5129,20 @@ function compareArticleEvidenceParity(article) {
     }
   }
   if (legacyShouldRejectPassport) {
-    if (evidenceHasExplicitPassportEvidence && !evidenceHasNoiseSignal) {
+    if (evidenceHasProfessionalSignal && evidenceHasExplicitPassportEvidence) {
+      parityWarnings.push("legacy_passport_guard_with_professional_and_document_signal");
+    } else if (evidenceHasProfessionalSignal && evidenceHasNoiseSignal) {
+      parityWarnings.push("legacy_passport_guard_with_professional_and_noise_signal");
+    } else if (evidenceHasProfessionalSignal) {
+      parityWarnings.push("legacy_passport_guard_with_professional_signal_only");
+    } else if (evidenceHasExplicitPassportEvidence && !evidenceHasNoiseSignal) {
       parityWarnings.push("legacy_passport_guard_with_passport_document_evidence_only");
     } else if (!evidenceHasExplicitPassportEvidence && evidenceHasCitizenshipOrTravelEvidence && !evidenceHasConsumerPassportNoise) {
       parityWarnings.push("legacy_passport_guard_with_citizenship_or_travel_evidence_only");
     } else if (!evidenceHasExplicitPassportEvidence && evidenceHasConsumerPassportNoise) {
       parityWarnings.push("legacy_passport_guard_with_consumer_passport_noise_only");
     } else if (!evidenceHasExplicitPassportEvidence && !evidenceHasNoiseSignal) {
-      parityWarnings.push("legacy_passport_guard_without_any_passport_or_noise_evidence");
+      parityWarnings.push("legacy_passport_guard_without_document_noise_or_professional_signal");
     }
   }
   if (legacyProfessionalIdentityRescue && !evidenceHasVendor && !evidenceHasProfessionalSignal) {
@@ -5228,9 +5237,9 @@ function getEvidenceBuilderParitySummary(diagnostics) {
     incrementParityAgreement(agreements, "idCardsEvidenceVsScorePositive",
       !(parity.legacyIdCardsScore > 0) || parity.evidenceHasExplicitIdCardEvidence);
     incrementParityAgreement(agreements, "passportEvidenceVsPassportGuard",
-      !parity.legacyShouldRejectPassport || parity.evidenceHasExplicitPassportEvidence || parity.evidenceHasConsumerPassportNoise);
+      !parity.legacyShouldRejectPassport || parity.evidenceHasExplicitPassportEvidence || parity.evidenceHasConsumerPassportNoise || parity.evidenceHasProfessionalSignal);
     incrementParityAgreement(agreements, "vendorEvidenceVsProfessionalRescue",
-      !parity.legacyProfessionalIdentityRescue || parity.evidenceHasVendor || (parity.evidenceSummary?.professionalSignals || 0) > 0);
+      !parity.legacyProfessionalIdentityRescue || parity.evidenceHasVendor || parity.evidenceHasProfessionalSignal);
     incrementParityAgreement(agreements, "noiseEvidenceVsLegacyNoise",
       !(parity.legacyHardPassportNoise || parity.legacyLowRelevancePassport) || parity.evidenceHasNoiseSignal);
     incrementParityAgreement(agreements, "uiRelevantVsEventEvidence",
@@ -5498,6 +5507,68 @@ function getEvidenceBuilderProfessionalSummary(diagnostics) {
       .sort((left, right) => right.count - left.count || left.helper.localeCompare(right.helper))
       .slice(0, 10),
     parityWarnings: getTopParityWarnings(warningCounts),
+  };
+}
+
+function getEvidenceBuilderProfessionalParitySummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+
+  const traces = Array.from(diagnostics.filterDecisionTraceMap.values());
+  const professionalSignalCounts = new Map();
+  const professionalWarningCounts = new Map();
+  let legacyProfessionalGuardTriggered = 0;
+  let professionalSignalCoverageCount = 0;
+  let professionalAndDocumentCoverageCount = 0;
+  let professionalAndNoiseCoverageCount = 0;
+  let noProfessionalEvidenceCount = 0;
+
+  traces.forEach((trace) => {
+    const parity = trace.evidenceParityDiagnostics;
+    if (!parity) {
+      return;
+    }
+    const legacyProfessionalTriggered = Boolean(
+      parity.legacyShouldRejectPassport
+      || parity.legacyProfessionalIdentityRescue
+      || parity.legacyKeesingIdentityRelevance?.hasRequiredComponent
+      || parity.legacyHighConfidencePassportAssessment?.kept
+      || (parity.legacyIdentityDocumentRelevance || 0) >= IDENTITY_DOCUMENT_RELEVANCE_THRESHOLD
+      || parity.legacyUiRelevant
+    );
+    if (legacyProfessionalTriggered) {
+      legacyProfessionalGuardTriggered += 1;
+      if (parity.evidenceHasProfessionalSignal) {
+        professionalSignalCoverageCount += 1;
+      } else {
+        noProfessionalEvidenceCount += 1;
+      }
+      if (parity.evidenceHasProfessionalSignal && (parity.evidenceHasExplicitPassportEvidence || parity.evidenceHasIdCardDocumentType || parity.evidenceHasIdentityObject)) {
+        professionalAndDocumentCoverageCount += 1;
+      }
+      if (parity.evidenceHasProfessionalSignal && parity.evidenceHasNoiseSignal) {
+        professionalAndNoiseCoverageCount += 1;
+      }
+    }
+
+    getEvidenceEntriesForGroup(trace.evidenceDiagnostics, "professionalSignals")
+      .forEach((entry) => incrementEvidenceCount(professionalSignalCounts, entry));
+    (parity.parityWarnings || [])
+      .filter((warning) => /professional|keesing|high_confidence|identity_relevance|ui_relevance|passport_guard/i.test(warning))
+      .forEach((warning) => professionalWarningCounts.set(warning, (professionalWarningCounts.get(warning) || 0) + 1));
+  });
+
+  return {
+    enabled: true,
+    evaluatedArticles: traces.length,
+    legacyProfessionalGuardTriggered,
+    professionalSignalCoverageCount,
+    professionalAndDocumentCoverageCount,
+    professionalAndNoiseCoverageCount,
+    noProfessionalEvidenceCount,
+    topProfessionalParityWarnings: getTopParityWarnings(professionalWarningCounts),
+    topProfessionalSignalCoverage: getTopEvidenceCounts(professionalSignalCounts),
   };
 }
 
@@ -8948,6 +9019,32 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push("disabled");
   }
 
+  const evidenceBuilderProfessionalParitySummary = diagnostics.evidenceBuilderProfessionalParitySummary;
+  lines.push("");
+  lines.push("Evidence Builder Professional Parity");
+  if (evidenceBuilderProfessionalParitySummary?.enabled) {
+    lines.push(formatPipelineSummaryLine("evaluatedArticles", evidenceBuilderProfessionalParitySummary.evaluatedArticles));
+    lines.push(formatPipelineSummaryLine("legacyProfessionalGuardTriggered", evidenceBuilderProfessionalParitySummary.legacyProfessionalGuardTriggered));
+    lines.push(formatPipelineSummaryLine("professionalSignalCoverageCount", evidenceBuilderProfessionalParitySummary.professionalSignalCoverageCount));
+    lines.push(formatPipelineSummaryLine("professionalAndDocumentCoverageCount", evidenceBuilderProfessionalParitySummary.professionalAndDocumentCoverageCount));
+    lines.push(formatPipelineSummaryLine("professionalAndNoiseCoverageCount", evidenceBuilderProfessionalParitySummary.professionalAndNoiseCoverageCount));
+    lines.push(formatPipelineSummaryLine("noProfessionalEvidenceCount", evidenceBuilderProfessionalParitySummary.noProfessionalEvidenceCount));
+    if (evidenceBuilderProfessionalParitySummary.topProfessionalParityWarnings?.length) {
+      lines.push("topProfessionalParityWarnings:");
+      evidenceBuilderProfessionalParitySummary.topProfessionalParityWarnings.slice(0, 5).forEach((entry) => {
+        lines.push(`- ${entry.warning}: ${entry.count}`);
+      });
+    }
+    if (evidenceBuilderProfessionalParitySummary.topProfessionalSignalCoverage?.length) {
+      lines.push("topProfessionalSignalCoverage:");
+      evidenceBuilderProfessionalParitySummary.topProfessionalSignalCoverage.slice(0, 5).forEach((entry) => {
+        lines.push(`- ${entry.term}: ${entry.count}`);
+      });
+    }
+  } else {
+    lines.push("disabled");
+  }
+
   const personalDashboardScoring = diagnostics.personalDashboardScoring;
   lines.push("");
   lines.push("Personal Dashboard Scoring");
@@ -9557,6 +9654,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     evidenceBuilderPassportParitySummary: diagnostics.evidenceBuilderPassportParitySummary || null,
     evidenceBuilderNoiseSummary: diagnostics.evidenceBuilderNoiseSummary || null,
     evidenceBuilderProfessionalSummary: diagnostics.evidenceBuilderProfessionalSummary || null,
+    evidenceBuilderProfessionalParitySummary: diagnostics.evidenceBuilderProfessionalParitySummary || null,
     polymerChildMatchDiagnosticsSummary: diagnostics.polymerChildMatchDiagnosticsSummary || null,
     polymerFalseNegativeDiagnostics: diagnostics.polymerFalseNegativeDiagnostics || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
@@ -9958,6 +10056,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.evidenceBuilderPassportParitySummary = getEvidenceBuilderPassportParitySummary(diagnostics);
   diagnostics.evidenceBuilderNoiseSummary = getEvidenceBuilderNoiseSummary(diagnostics);
   diagnostics.evidenceBuilderProfessionalSummary = getEvidenceBuilderProfessionalSummary(diagnostics);
+  diagnostics.evidenceBuilderProfessionalParitySummary = getEvidenceBuilderProfessionalParitySummary(diagnostics);
   diagnostics.polymerChildMatchDiagnosticsSummary = getPolymerChildMatchDiagnosticsSummary(diagnostics);
   diagnostics.polymerFalseNegativeDiagnostics = getPolymerFalseNegativeDiagnosticsSummary(diagnostics);
   publishFilterDecisionTraceDiagnostics(diagnostics);
@@ -9999,6 +10098,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("evidenceBuilderPassportParitySummary", diagnostics.evidenceBuilderPassportParitySummary);
   console.log("evidenceBuilderNoiseSummary", diagnostics.evidenceBuilderNoiseSummary);
   console.log("evidenceBuilderProfessionalSummary", diagnostics.evidenceBuilderProfessionalSummary);
+  console.log("evidenceBuilderProfessionalParitySummary", diagnostics.evidenceBuilderProfessionalParitySummary);
   console.log("polymerChildMatchDiagnosticsSummary", diagnostics.polymerChildMatchDiagnosticsSummary);
   console.log("polymerFalseNegativeDiagnostics", diagnostics.polymerFalseNegativeDiagnostics);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
