@@ -3501,6 +3501,21 @@ function isFilterPipelineDiagnosticsEnabled() {
   }
 }
 
+const DEFAULT_FILTER_PIPELINE_HEAVY_DIAGNOSTICS_LIMIT = 100;
+
+function getFilterPipelineHeavyDiagnosticsLimit() {
+  try {
+    const query = new URLSearchParams(window.location.search || "");
+    const rawLimit = query.get("debugFilterPipelineLimit") || window.localStorage?.getItem("debugFilterPipelineLimit");
+    const parsedLimit = Number.parseInt(rawLimit || "", 10);
+    return Number.isFinite(parsedLimit) && parsedLimit >= 0
+      ? parsedLimit
+      : DEFAULT_FILTER_PIPELINE_HEAVY_DIAGNOSTICS_LIMIT;
+  } catch {
+    return DEFAULT_FILTER_PIPELINE_HEAVY_DIAGNOSTICS_LIMIT;
+  }
+}
+
 function isSelectedFeedFullPoolEnabled() {
   try {
     const query = new URLSearchParams(window.location.search || "");
@@ -4543,6 +4558,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
   const candidateSource = resolveCandidateSource(candidateStrategy, normalizedFilterState, candidatePoolContext);
   const candidateProvider = resolveCandidateProvider(candidateStrategy, candidateSource, normalizedFilterState, candidatePoolContext);
   const strategyExecutionPlan = buildStrategyExecutionPlan(candidateStrategy, candidateProvider, normalizedFilterState, candidatePoolContext);
+  const heavyDiagnosticsLimit = enabled ? getFilterPipelineHeavyDiagnosticsLimit() : 0;
   return {
     enabled,
     timestamp: new Date().toISOString(),
@@ -4572,6 +4588,14 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     filterPipeline: null,
     filterPipelineStages: [],
     filterDecisionTraceMap: enabled ? new Map() : null,
+    diagnosticsPerformance: {
+      enabled,
+      heavyDiagnosticsLimit,
+      heavyDiagnosticsEvaluated: 0,
+      heavyDiagnosticsSkipped: 0,
+      fullCandidateCount: 0,
+      reason: "performance_guard",
+    },
     filterDecisionTraceSummary: null,
     filterDecisionDebugTools: null,
     filterDecisionRichTrace: null,
@@ -4695,6 +4719,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Event Signals introduced",
             "Diagnostics only",
             "Filtering unchanged",
+            "Filtering diagnostics performance guard active",
             "Diagnostics export state sync active",
             "Latest completed diagnostic export available",
             "Polymer child-match diagnostics active",
@@ -4765,6 +4790,31 @@ function getFilterDecisionTraceArticleId(article) {
   return String(rawId || "");
 }
 
+function reserveHeavyDiagnosticsSlot(diagnostics) {
+  const performance = diagnostics?.diagnosticsPerformance;
+  if (!performance?.enabled) {
+    return false;
+  }
+  const limit = Math.max(0, Number(performance.heavyDiagnosticsLimit) || 0);
+  if (performance.heavyDiagnosticsEvaluated < limit) {
+    performance.heavyDiagnosticsEvaluated += 1;
+    return true;
+  }
+  performance.heavyDiagnosticsSkipped += 1;
+  return false;
+}
+
+function isHeavyDiagnosticsTrace(trace) {
+  return Boolean(trace?.heavyDiagnosticsEnabled);
+}
+
+function getHeavyDiagnosticsTraces(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return [];
+  }
+  return Array.from(diagnostics.filterDecisionTraceMap.values()).filter(isHeavyDiagnosticsTrace);
+}
+
 function getFilterDecisionTrace(diagnostics, article) {
   if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap || !article) {
     return null;
@@ -4776,11 +4826,29 @@ function getFilterDecisionTrace(diagnostics, article) {
   }
 
   if (!diagnostics.filterDecisionTraceMap.has(articleId)) {
-    const articleEvidence = buildArticleEvidence(article);
-    const evidenceParity = compareArticleEvidenceParity(article);
+    const heavyDiagnosticsEnabled = reserveHeavyDiagnosticsSlot(diagnostics);
+    const articleEvidence = heavyDiagnosticsEnabled
+      ? buildArticleEvidence(article)
+      : {
+          articleId,
+          skipped: true,
+          reason: "performance_guard",
+          evidence: {},
+        };
+    const evidenceParity = heavyDiagnosticsEnabled
+      ? compareArticleEvidenceParity(article)
+      : {
+          articleId,
+          title: article?.title || "Untitled article",
+          skipped: true,
+          reason: "performance_guard",
+          parityWarnings: [],
+          evidenceSummary: {},
+        };
     diagnostics.filterDecisionTraceMap.set(articleId, {
       articleId,
       title: article?.title || "Untitled article",
+      heavyDiagnosticsEnabled,
       enteredPipeline: {
         renderId: diagnostics.renderId,
         timestamp: diagnostics.timestamp,
@@ -4804,8 +4872,8 @@ function recordFilterDecisionStage(diagnostics, article, stageEntry = {}) {
   }
 
   const metadata = stageEntry.metadata && typeof stageEntry.metadata === "object" ? { ...stageEntry.metadata } : {};
-  if (!metadata.evidenceBuilder && diagnostics?.enabled) {
-    metadata.evidenceBuilder = getCompactArticleEvidenceDiagnostics(article);
+  if (!metadata.evidenceBuilder && diagnostics?.enabled && isHeavyDiagnosticsTrace(trace)) {
+    metadata.evidenceBuilder = getCompactArticleEvidenceDiagnosticsFromEvidence(article, trace.evidenceDiagnostics);
   }
 
   trace.stages.push({
@@ -4844,6 +4912,7 @@ function freezeFilterDecisionTrace(trace) {
   return Object.freeze({
     articleId: trace.articleId,
     title: trace.title,
+    heavyDiagnosticsEnabled: Boolean(trace.heavyDiagnosticsEnabled),
     enteredPipeline: Object.freeze({
       ...(trace.enteredPipeline || {}),
     }),
@@ -4903,6 +4972,7 @@ function getFilterDecisionDebugToolsSummary(diagnostics) {
       "window.listRejectedArticles()",
       "window.listSurvivingArticles()",
       "window.explainArticleDecision(articleId)",
+      "window.setFilterDiagnosticsLimit(limit)",
       "window.explainArticleDecisionByTitle(titlePart)",
       "window.findTracedArticlesByKeyword(keyword)",
       "window.explainArticleEvidenceByTitle(titlePart)",
@@ -4971,7 +5041,7 @@ function getEvidenceBuilderDiagnosticsSummary(diagnostics) {
     "noiseSignals",
   ];
   const countsByGroup = Object.fromEntries(evidenceGroups.map((group) => [group, new Map()]));
-  const traces = Array.from(diagnostics.filterDecisionTraceMap.values());
+  const traces = getHeavyDiagnosticsTraces(diagnostics);
   let articlesWithEvidence = 0;
 
   traces.forEach((trace) => {
@@ -5225,7 +5295,7 @@ function getEvidenceBuilderParitySummary(diagnostics) {
     return null;
   }
 
-  const traces = Array.from(diagnostics.filterDecisionTraceMap.values());
+  const traces = getHeavyDiagnosticsTraces(diagnostics);
   const agreements = {};
   const warnings = new Map();
   let warningCount = 0;
@@ -5272,7 +5342,7 @@ function getEvidenceBuilderIdCardsParitySummary(diagnostics) {
     return null;
   }
 
-  const traces = Array.from(diagnostics.filterDecisionTraceMap.values());
+  const traces = getHeavyDiagnosticsTraces(diagnostics);
   const idCardEvidenceCounts = new Map();
   const missingEvidenceWarnings = new Map();
   let legacyPositiveIdCardsScore = 0;
@@ -5341,7 +5411,7 @@ function getEvidenceBuilderPassportParitySummary(diagnostics) {
     return null;
   }
 
-  const traces = Array.from(diagnostics.filterDecisionTraceMap.values());
+  const traces = getHeavyDiagnosticsTraces(diagnostics);
   const passportEvidenceCounts = new Map();
   const missingEvidenceWarnings = new Map();
   let legacyPassportGuardTriggered = 0;
@@ -5430,7 +5500,7 @@ function getEvidenceBuilderNoiseSummary(diagnostics) {
     return null;
   }
 
-  const traces = Array.from(diagnostics.filterDecisionTraceMap.values());
+  const traces = getHeavyDiagnosticsTraces(diagnostics);
   const categoryCounts = new Map();
   const termCounts = new Map();
   const warningCounts = new Map();
@@ -5468,7 +5538,7 @@ function getEvidenceBuilderProfessionalSummary(diagnostics) {
     return null;
   }
 
-  const traces = Array.from(diagnostics.filterDecisionTraceMap.values());
+  const traces = getHeavyDiagnosticsTraces(diagnostics);
   const categoryCounts = new Map();
   const signalCounts = new Map();
   const helperCoverageCounts = new Map();
@@ -5518,7 +5588,7 @@ function getEvidenceBuilderEventSummary(diagnostics) {
     return null;
   }
 
-  const traces = Array.from(diagnostics.filterDecisionTraceMap.values());
+  const traces = getHeavyDiagnosticsTraces(diagnostics);
   const categoryCounts = new Map();
   const signalCounts = new Map();
   const helperCoverageCounts = new Map();
@@ -5568,7 +5638,7 @@ function getEvidenceBuilderProfessionalParitySummary(diagnostics) {
     return null;
   }
 
-  const traces = Array.from(diagnostics.filterDecisionTraceMap.values());
+  const traces = getHeavyDiagnosticsTraces(diagnostics);
   const professionalSignalCounts = new Map();
   const professionalWarningCounts = new Map();
   let legacyProfessionalGuardTriggered = 0;
@@ -8880,6 +8950,18 @@ function logCompactFilterPipelineSummary(diagnostics) {
 
   const filterDecisionDebugTools = diagnostics.filterDecisionDebugTools;
   lines.push("");
+  lines.push("Diagnostics Performance");
+  if (diagnostics.diagnosticsPerformance?.enabled) {
+    lines.push(formatPipelineSummaryLine("heavyDiagnosticsLimit", diagnostics.diagnosticsPerformance.heavyDiagnosticsLimit));
+    lines.push(formatPipelineSummaryLine("heavyDiagnosticsEvaluated", diagnostics.diagnosticsPerformance.heavyDiagnosticsEvaluated));
+    lines.push(formatPipelineSummaryLine("heavyDiagnosticsSkipped", diagnostics.diagnosticsPerformance.heavyDiagnosticsSkipped));
+    lines.push(formatPipelineSummaryLine("fullCandidateCount", diagnostics.diagnosticsPerformance.fullCandidateCount));
+    lines.push(`reason: ${diagnostics.diagnosticsPerformance.reason || "performance_guard"}`);
+  } else {
+    lines.push("disabled");
+  }
+
+  lines.push("");
   lines.push("Filter Decision Debug Tools");
   if (filterDecisionDebugTools?.enabled) {
     lines.push(`traceStoreSize: ${filterDecisionDebugTools.traceStoreSize}`);
@@ -9726,6 +9808,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     pipelineExecutor: diagnostics.pipelineExecutor || null,
     filterPipeline: diagnostics.filterPipeline || null,
     filterPipelineStages: diagnostics.filterPipelineStages || [],
+    diagnosticsPerformance: diagnostics.diagnosticsPerformance || null,
     filterDecisionTraceSummary: diagnostics.filterDecisionTraceSummary || null,
     filterDecisionDebugTools: diagnostics.filterDecisionDebugTools || null,
     filterDecisionRichTrace: diagnostics.filterDecisionRichTrace || null,
@@ -9881,6 +9964,22 @@ function getLatestFilterPipelineDiagnosticsExportPayload() {
   };
 }
 
+function setFilterDiagnosticsLimit(limit) {
+  const normalizedLimit = Math.max(0, Number.parseInt(String(limit || ""), 10) || 0);
+  try {
+    window.localStorage?.setItem("debugFilterPipelineLimit", String(normalizedLimit));
+    console.info(
+      `FilterPipeline heavy diagnostics limit set to ${normalizedLimit}. Reload the page to apply it to the next render.`
+    );
+  } catch {
+    console.warn("Unable to store debugFilterPipelineLimit in localStorage.");
+  }
+  return {
+    debugFilterPipelineLimit: normalizedLimit,
+    instruction: "Reload the page to apply the new diagnostics limit.",
+  };
+}
+
 function downloadJsonFile(filename, payload) {
   const json = JSON.stringify(payload, null, 2);
   const blob = new Blob([json], { type: "application/json" });
@@ -9941,6 +10040,10 @@ function ensureFilterPipelineDiagnosticsExportTools() {
       console.info("FilterPipeline diagnostics copied to clipboard.");
       return payload;
     };
+  }
+
+  if (typeof window.setFilterDiagnosticsLimit !== "function") {
+    window.setFilterDiagnosticsLimit = (limit) => setFilterDiagnosticsLimit(limit);
   }
 
   if (typeof window.explainArticleDecision !== "function") {
@@ -10071,6 +10174,7 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.getActiveFilterPipelineDiagnostic()",
         "window.getActiveDashboardSelection()",
         "window.copyFilterPipelineDiagnostics()",
+        "window.setFilterDiagnosticsLimit(limit)",
         "window.listRejectedArticles()",
         "window.listSurvivingArticles()",
         "window.explainArticleDecision(articleId)",
@@ -10134,6 +10238,9 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.filterDecisionRichTrace = getFilterDecisionRichTraceSummary(diagnostics);
   diagnostics.personalDashboardScoring = getPersonalDashboardScoringSummary(diagnostics);
   diagnostics.personalDashboardScoreDistribution = getPersonalDashboardScoreDistribution(diagnostics);
+  if (diagnostics.diagnosticsPerformance) {
+    diagnostics.diagnosticsPerformance.fullCandidateCount = diagnostics.counts?.candidatePool || 0;
+  }
   diagnostics.dominantDomainDiagnosticsSummary = getDominantDomainDiagnosticsSummary(diagnostics);
   diagnostics.identityDiagnosticsSummary = getIdentityDiagnosticsSummary(diagnostics);
   diagnostics.identityNoiseGuardDiagnosticsSummary = getIdentityNoiseGuardDiagnosticsSummary(diagnostics);
@@ -10172,6 +10279,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("pipelineExecutor", diagnostics.pipelineExecutor);
   console.log("filterPipeline", diagnostics.filterPipeline);
   console.log("filterPipelineStages", diagnostics.filterPipelineStages);
+  console.log("diagnosticsPerformance", diagnostics.diagnosticsPerformance);
   console.log("filterDecisionTraceSummary", diagnostics.filterDecisionTraceSummary);
   console.log("filterDecisionDebugTools", diagnostics.filterDecisionDebugTools);
   console.log("filterDecisionRichTrace", diagnostics.filterDecisionRichTrace);
@@ -12424,11 +12532,12 @@ function buildArticleEvidence(article) {
   };
 }
 
-function getCompactArticleEvidenceDiagnostics(article) {
-  const articleEvidence = buildArticleEvidence(article);
+function getCompactArticleEvidenceDiagnosticsFromEvidence(article, articleEvidence) {
   const evidence = articleEvidence?.evidence || {};
   return {
     articleId: articleEvidence?.articleId || getFilterDecisionTraceArticleId(article),
+    skipped: Boolean(articleEvidence?.skipped),
+    reason: articleEvidence?.reason || "",
     counts: {
       domainObjects: evidence.domainObjects?.length || 0,
       documentTypes: evidence.documentTypes?.length || 0,
@@ -12442,6 +12551,11 @@ function getCompactArticleEvidenceDiagnostics(article) {
     },
     confidenceHints: evidence.confidenceHints || {},
   };
+}
+
+function getCompactArticleEvidenceDiagnostics(article) {
+  const articleEvidence = buildArticleEvidence(article);
+  return getCompactArticleEvidenceDiagnosticsFromEvidence(article, articleEvidence);
 }
 
 function countBoostKeywordMatches(text, keywords = []) {
