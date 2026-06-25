@@ -4582,6 +4582,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     identityDiagnosticsSummary: null,
     identityNoiseGuardDiagnosticsSummary: null,
     identityProfessionalRelevanceGuardSummary: null,
+    evidenceBuilderDiagnosticsSummary: null,
     polymerChildMatchDiagnosticsSummary: null,
     polymerFalseNegativeDiagnostics: null,
     paginationPipeline: null,
@@ -4674,6 +4675,8 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Dominant domain diagnostics v2 active",
             "Dominant domain score breakdown available",
             "Dominant domain behavior unchanged",
+            "Evidence Builder diagnostics active",
+            "Evidence Builder is diagnostics-only",
             "Diagnostics only",
             "Diagnostics export state sync active",
             "Latest completed diagnostic export available",
@@ -4756,6 +4759,7 @@ function getFilterDecisionTrace(diagnostics, article) {
   }
 
   if (!diagnostics.filterDecisionTraceMap.has(articleId)) {
+    const articleEvidence = buildArticleEvidence(article);
     diagnostics.filterDecisionTraceMap.set(articleId, {
       articleId,
       title: article?.title || "Untitled article",
@@ -4764,6 +4768,7 @@ function getFilterDecisionTrace(diagnostics, article) {
         timestamp: diagnostics.timestamp,
         branch: diagnostics.branch || "unknown",
       },
+      evidenceDiagnostics: articleEvidence,
       stages: [],
       finalResult: "",
       finalReason: "",
@@ -4779,13 +4784,18 @@ function recordFilterDecisionStage(diagnostics, article, stageEntry = {}) {
     return;
   }
 
+  const metadata = stageEntry.metadata && typeof stageEntry.metadata === "object" ? { ...stageEntry.metadata } : {};
+  if (!metadata.evidenceBuilder && diagnostics?.enabled) {
+    metadata.evidenceBuilder = getCompactArticleEvidenceDiagnostics(article);
+  }
+
   trace.stages.push({
     stage: stageEntry.stage || "unknown",
     result: stageEntry.result || "unknown",
     reason: stageEntry.reason || "",
     score: Number.isFinite(stageEntry.score) ? stageEntry.score : null,
     notes: Array.isArray(stageEntry.notes) ? stageEntry.notes.filter(Boolean) : [],
-    metadata: stageEntry.metadata && typeof stageEntry.metadata === "object" ? { ...stageEntry.metadata } : {},
+    metadata,
   });
 }
 
@@ -4818,6 +4828,7 @@ function freezeFilterDecisionTrace(trace) {
     enteredPipeline: Object.freeze({
       ...(trace.enteredPipeline || {}),
     }),
+    evidenceDiagnostics: Object.freeze(trace.evidenceDiagnostics || {}),
     stages: Object.freeze(frozenStages),
     finalResult: trace.finalResult || "survived",
     finalReason: trace.finalReason || "article survived traced filter pipeline",
@@ -4874,6 +4885,8 @@ function getFilterDecisionDebugToolsSummary(diagnostics) {
       "window.explainArticleDecision(articleId)",
       "window.explainArticleDecisionByTitle(titlePart)",
       "window.findTracedArticlesByKeyword(keyword)",
+      "window.explainArticleEvidenceByTitle(titlePart)",
+      "window.listArticlesWithEvidence(evidenceGroup, limit)",
       "window.explainRejectedArticle(titlePart)",
       "window.listRejectionReasons()",
       "window.explainPersonalDashboardScore(articleId)",
@@ -4891,6 +4904,77 @@ function getFilterDecisionDebugToolsSummary(diagnostics) {
       "window.listLikelyPolymerFalseNegatives(limit)",
     ],
     traceStoreSize,
+  };
+}
+
+function getEvidenceEntriesForGroup(articleEvidence, evidenceGroup) {
+  const evidence = articleEvidence?.evidence || {};
+  const entries = evidence[evidenceGroup];
+  return Array.isArray(entries) ? entries : [];
+}
+
+function incrementEvidenceCount(counts, entry) {
+  const key = entry?.id || normalizeEvidenceId(entry?.term || "");
+  if (!key) {
+    return;
+  }
+  const existing = counts.get(key) || {
+    id: key,
+    term: entry?.term || key,
+    count: 0,
+  };
+  existing.count += 1;
+  counts.set(key, existing);
+}
+
+function getTopEvidenceCounts(counts, limit = 10) {
+  return Array.from(counts.values())
+    .sort((left, right) => right.count - left.count || left.term.localeCompare(right.term))
+    .slice(0, limit);
+}
+
+function getEvidenceBuilderDiagnosticsSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+
+  const evidenceGroups = [
+    "domainObjects",
+    "documentTypes",
+    "vendors",
+    "materials",
+    "technologies",
+    "eventSignals",
+    "professionalSignals",
+    "noiseSignals",
+  ];
+  const countsByGroup = Object.fromEntries(evidenceGroups.map((group) => [group, new Map()]));
+  const traces = Array.from(diagnostics.filterDecisionTraceMap.values());
+  let articlesWithEvidence = 0;
+
+  traces.forEach((trace) => {
+    const articleEvidence = trace.evidenceDiagnostics;
+    const hasEvidence = evidenceGroups.some((group) => getEvidenceEntriesForGroup(articleEvidence, group).length > 0);
+    if (hasEvidence) {
+      articlesWithEvidence += 1;
+    }
+    evidenceGroups.forEach((group) => {
+      getEvidenceEntriesForGroup(articleEvidence, group).forEach((entry) => incrementEvidenceCount(countsByGroup[group], entry));
+    });
+  });
+
+  return {
+    enabled: true,
+    evaluatedArticles: traces.length,
+    articlesWithEvidence,
+    topDomainObjects: getTopEvidenceCounts(countsByGroup.domainObjects),
+    topDocumentTypes: getTopEvidenceCounts(countsByGroup.documentTypes),
+    topVendors: getTopEvidenceCounts(countsByGroup.vendors),
+    topMaterials: getTopEvidenceCounts(countsByGroup.materials),
+    topTechnologies: getTopEvidenceCounts(countsByGroup.technologies),
+    topEventSignals: getTopEvidenceCounts(countsByGroup.eventSignals),
+    topProfessionalSignals: getTopEvidenceCounts(countsByGroup.professionalSignals),
+    topNoiseSignals: getTopEvidenceCounts(countsByGroup.noiseSignals),
   };
 }
 
@@ -7393,6 +7477,74 @@ function findTracedArticlesByKeyword(keyword) {
     });
 }
 
+function explainArticleEvidenceByTitle(titlePart) {
+  const needle = String(titlePart || "").trim().toLowerCase();
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!needle || !traceMap) {
+    return null;
+  }
+
+  const match = Array.from(traceMap.values()).find((trace) =>
+    String(trace?.title || "").toLowerCase().includes(needle)
+  );
+  if (!match) {
+    return null;
+  }
+
+  return {
+    articleId: match.articleId,
+    title: match.title,
+    finalResult: match.finalResult || "",
+    finalReason: match.finalReason || "",
+    evidenceDiagnostics: match.evidenceDiagnostics || null,
+  };
+}
+
+function listArticlesWithEvidence(evidenceGroup, limit = 25) {
+  const normalizedGroup = String(evidenceGroup || "").trim();
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!normalizedGroup || !traceMap) {
+    return [];
+  }
+
+  const validGroups = [
+    "domainObjects",
+    "documentTypes",
+    "vendors",
+    "materials",
+    "technologies",
+    "eventSignals",
+    "professionalSignals",
+    "noiseSignals",
+    "sourceEvidence",
+  ];
+  if (!validGroups.includes(normalizedGroup)) {
+    return {
+      error: "invalid evidenceGroup",
+      validEvidenceGroups: validGroups,
+    };
+  }
+
+  const normalizedLimit = Math.max(1, Number(limit) || 25);
+  return Array.from(traceMap.values())
+    .map((trace) => {
+      const entries = getEvidenceEntriesForGroup(trace.evidenceDiagnostics, normalizedGroup);
+      if (!entries.length) {
+        return null;
+      }
+      return {
+        articleId: trace.articleId,
+        title: trace.title,
+        finalResult: trace.finalResult || "",
+        finalReason: trace.finalReason || "",
+        evidenceGroup: normalizedGroup,
+        evidence: entries,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, normalizedLimit);
+}
+
 function explainRejectedArticle(titlePart) {
   const needle = String(titlePart || "").trim().toLowerCase();
   const traceMap = getActiveFilterDecisionTraceMap();
@@ -7511,6 +7663,9 @@ function getPersonalDashboardTraceMetadata(article, rejection = null, personalDa
       : null);
   const dominantDomainDiagnostics = personalDashboardScore?.metadata?.dominantDomainDiagnostics ||
     (isFilterPipelineDiagnosticsEnabled() ? getDominantDomainDecisionDiagnostics(article) : null);
+  const evidenceBuilderDiagnostics = isFilterPipelineDiagnosticsEnabled()
+    ? getCompactArticleEvidenceDiagnostics(article)
+    : null;
 
   return {
     selectedMainDomains,
@@ -7539,6 +7694,7 @@ function getPersonalDashboardTraceMetadata(article, rejection = null, personalDa
     polymerChildMatchDiagnostics,
     identityDecisionDiagnostics,
     identityNoiseGuardDiagnostics,
+    evidenceBuilderDiagnostics,
     dominantDomainDiagnostics,
     dominantDomainDecisionDiagnostics: dominantDomainDiagnostics,
     score: topScore,
@@ -8036,6 +8192,34 @@ function logCompactFilterPipelineSummary(diagnostics) {
   if (filterDecisionRichTrace?.enabled) {
     lines.push(`metadataStages: ${filterDecisionRichTrace.metadataStages.join(", ")}`);
     lines.push(`helperCount: ${filterDecisionRichTrace.helperCount}`);
+  } else {
+    lines.push("disabled");
+  }
+
+  const evidenceBuilderDiagnosticsSummary = diagnostics.evidenceBuilderDiagnosticsSummary;
+  lines.push("");
+  lines.push("Evidence Builder");
+  if (evidenceBuilderDiagnosticsSummary?.enabled) {
+    lines.push(formatPipelineSummaryLine("evaluatedArticles", evidenceBuilderDiagnosticsSummary.evaluatedArticles));
+    lines.push(formatPipelineSummaryLine("articlesWithEvidence", evidenceBuilderDiagnosticsSummary.articlesWithEvidence));
+    [
+      ["topDomainObjects", evidenceBuilderDiagnosticsSummary.topDomainObjects],
+      ["topDocumentTypes", evidenceBuilderDiagnosticsSummary.topDocumentTypes],
+      ["topVendors", evidenceBuilderDiagnosticsSummary.topVendors],
+      ["topMaterials", evidenceBuilderDiagnosticsSummary.topMaterials],
+      ["topTechnologies", evidenceBuilderDiagnosticsSummary.topTechnologies],
+      ["topEventSignals", evidenceBuilderDiagnosticsSummary.topEventSignals],
+      ["topProfessionalSignals", evidenceBuilderDiagnosticsSummary.topProfessionalSignals],
+      ["topNoiseSignals", evidenceBuilderDiagnosticsSummary.topNoiseSignals],
+    ].forEach(([label, entries]) => {
+      if (!entries?.length) {
+        return;
+      }
+      lines.push(`${label}:`);
+      entries.slice(0, 5).forEach((entry) => {
+        lines.push(`- ${entry.term}: ${entry.count}`);
+      });
+    });
   } else {
     lines.push("disabled");
   }
@@ -8643,6 +8827,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     identityDiagnosticsSummary: diagnostics.identityDiagnosticsSummary || null,
     identityNoiseGuardDiagnosticsSummary: diagnostics.identityNoiseGuardDiagnosticsSummary || null,
     identityProfessionalRelevanceGuardSummary: diagnostics.identityProfessionalRelevanceGuardSummary || null,
+    evidenceBuilderDiagnosticsSummary: diagnostics.evidenceBuilderDiagnosticsSummary || null,
     polymerChildMatchDiagnosticsSummary: diagnostics.polymerChildMatchDiagnosticsSummary || null,
     polymerFalseNegativeDiagnostics: diagnostics.polymerFalseNegativeDiagnostics || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
@@ -8863,6 +9048,14 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.findTracedArticlesByKeyword = (keyword) => findTracedArticlesByKeyword(keyword);
   }
 
+  if (typeof window.explainArticleEvidenceByTitle !== "function") {
+    window.explainArticleEvidenceByTitle = (titlePart) => explainArticleEvidenceByTitle(titlePart);
+  }
+
+  if (typeof window.listArticlesWithEvidence !== "function") {
+    window.listArticlesWithEvidence = (evidenceGroup, limit) => listArticlesWithEvidence(evidenceGroup, limit);
+  }
+
   if (typeof window.explainRejectedArticle !== "function") {
     window.explainRejectedArticle = (titlePart) => explainRejectedArticle(titlePart);
   }
@@ -8960,6 +9153,8 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.explainArticleDecision(articleId)",
         "window.explainArticleDecisionByTitle(titlePart)",
         "window.findTracedArticlesByKeyword(keyword)",
+        "window.explainArticleEvidenceByTitle(titlePart)",
+        "window.listArticlesWithEvidence(evidenceGroup, limit)",
         "window.explainRejectedArticle(titlePart)",
         "window.listRejectionReasons()",
         "window.explainPersonalDashboardScore(articleId)",
@@ -9018,6 +9213,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.identityDiagnosticsSummary = getIdentityDiagnosticsSummary(diagnostics);
   diagnostics.identityNoiseGuardDiagnosticsSummary = getIdentityNoiseGuardDiagnosticsSummary(diagnostics);
   diagnostics.identityProfessionalRelevanceGuardSummary = getIdentityProfessionalRelevanceGuardSummary(diagnostics);
+  diagnostics.evidenceBuilderDiagnosticsSummary = getEvidenceBuilderDiagnosticsSummary(diagnostics);
   diagnostics.polymerChildMatchDiagnosticsSummary = getPolymerChildMatchDiagnosticsSummary(diagnostics);
   diagnostics.polymerFalseNegativeDiagnostics = getPolymerFalseNegativeDiagnosticsSummary(diagnostics);
   publishFilterDecisionTraceDiagnostics(diagnostics);
@@ -9053,6 +9249,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("identityDiagnosticsSummary", diagnostics.identityDiagnosticsSummary);
   console.log("identityNoiseGuardDiagnosticsSummary", diagnostics.identityNoiseGuardDiagnosticsSummary);
   console.log("identityProfessionalRelevanceGuardSummary", diagnostics.identityProfessionalRelevanceGuardSummary);
+  console.log("evidenceBuilderDiagnosticsSummary", diagnostics.evidenceBuilderDiagnosticsSummary);
   console.log("polymerChildMatchDiagnosticsSummary", diagnostics.polymerChildMatchDiagnosticsSummary);
   console.log("polymerFalseNegativeDiagnostics", diagnostics.polymerFalseNegativeDiagnostics);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
@@ -10515,6 +10712,166 @@ function buildArticleIntelligenceContext(article) {
 
 function getPersonalBoostContext(article) {
   return buildArticleIntelligenceContext(article);
+}
+
+function normalizeEvidenceId(term) {
+  return String(term || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function getArticleEvidenceTextSections(context) {
+  return {
+    title: context?.titleText || "",
+    metadata: context?.metadataText || "",
+    body: context?.bodyText || "",
+    source: [context?.sourceText, context?.domainText].filter(Boolean).join(" "),
+    tags: context?.tagText || "",
+  };
+}
+
+function collectArticleEvidenceEntries(context, terms = [], options = {}) {
+  const sections = getArticleEvidenceTextSections(context);
+  const strength = options.strength || "medium";
+  const entries = [];
+  const seen = new Set();
+  normalizeKeywordList(terms).forEach((term) => {
+    const locations = Object.entries(sections)
+      .filter(([, text]) => textMatchesKeyword(text, term))
+      .map(([location]) => location);
+    if (!locations.length) {
+      return;
+    }
+    const id = options.idPrefix
+      ? `${options.idPrefix}_${normalizeEvidenceId(term)}`
+      : normalizeEvidenceId(term);
+    const key = `${id}:${term}:${locations.join("|")}`;
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    entries.push({
+      id,
+      term,
+      locations,
+      strength,
+    });
+  });
+  return entries;
+}
+
+function flattenEvidenceKeywordGroups(groups = []) {
+  const flattenGroup = (group) => {
+    if (Array.isArray(group)) {
+      return group.flatMap(flattenGroup);
+    }
+    if (group && typeof group === "object") {
+      return Object.values(group).flatMap(flattenGroup);
+    }
+    return group ? [group] : [];
+  };
+  return flattenGroup(groups);
+}
+
+function buildArticleEvidence(article) {
+  const context = buildArticleIntelligenceContext(article);
+  const domainObjectTerms = flattenEvidenceKeywordGroups([
+    SIGNAL_CORE_OBJECT_KEYWORDS,
+    BANKNOTE_SIGNAL_OBJECT_KEYWORDS,
+    ID_SIGNAL_OBJECT_KEYWORDS,
+    SECURITY_PRINTING_TECHNIQUE_BRIDGE_DOCUMENT_CONTEXT,
+  ]);
+  const documentTypeTerms = flattenEvidenceKeywordGroups([
+    ID_SIGNAL_OBJECT_KEYWORDS,
+    BANKNOTE_SIGNAL_OBJECT_KEYWORDS,
+    SECURITY_PRINTING_TECHNIQUE_BRIDGE_DOCUMENT_CONTEXT,
+  ]);
+  const vendorTerms = flattenEvidenceKeywordGroups([SPECIALIST_SOURCE_INTERESTS]);
+  const materialTerms = flattenEvidenceKeywordGroups([
+    BANKNOTE_POLYMER_CHILD_MATCH_POLYMER_TERMS,
+    BANKNOTE_POLYMER_CHILD_MATCH_SUBSTRATE_TERMS,
+    SHARED_SECURITY_STANDALONE_RULES.security_inks?.strong || [],
+  ]);
+  const technologyTerms = flattenEvidenceKeywordGroups([
+    ID_SIGNAL_TECHNOLOGY_STRONG_KEYWORDS,
+    SECURITY_PRINTING_TECHNIQUE_BRIDGE_KEYWORDS,
+    SIGNAL_CATEGORIES.find((category) => category.id === "technology")?.strong || [],
+    SIGNAL_CATEGORIES.find((category) => category.id === "security-features")?.strong || [],
+  ]);
+  const eventSignalTerms = flattenEvidenceKeywordGroups([
+    ID_SIGNAL_SYSTEM_EVENT_KEYWORDS,
+    ID_SIGNAL_SYSTEM_IMPACT_KEYWORDS,
+    BANKNOTE_HIGH_PRIORITY_KEYWORDS,
+    SIGNAL_CATEGORIES.map((category) => category.strong || []),
+  ]);
+  const professionalSignalTerms = flattenEvidenceKeywordGroups([
+    SECURITY_PRINTING_TOP_LEVEL_STRONG_SIGNALS,
+    SECURITY_PRINTING_TOP_LEVEL_MEDIUM_SIGNALS,
+    SECURITY_PRINTING_TOP_LEVEL_SUPPORT_TERMS,
+    IDENTITY_DOCUMENT_HIGH_RELEVANCE_SIGNALS,
+    Object.values(KEESING_POSITIVE_SIGNALS),
+  ]);
+  const noiseTerms = flattenEvidenceKeywordGroups([
+    PASSPORT_HARD_NOISE_KEYWORDS,
+    ID_SIGNAL_NOISE_KEYWORDS,
+    ID_SIGNAL_NON_SYSTEM_NOISE_KEYWORDS,
+    ID_SIGNAL_NON_IMPACT_KEYWORDS,
+    SIGNAL_RELEVANCE_NOISE_KEYWORDS,
+    SIGNAL_NOISE_CONTEXT_KEYWORDS,
+  ]);
+  const sourceEvidenceTerms = flattenEvidenceKeywordGroups([
+    ID_DOCUMENT_SOURCE_AUTHORITY,
+    BANKNOTE_SOURCE_AUTHORITY,
+    IDENTITY_INTENT_AUTHORITY_SOURCES,
+  ]);
+  const evidence = {
+    domainObjects: collectArticleEvidenceEntries(context, domainObjectTerms, { strength: "strong" }),
+    documentTypes: collectArticleEvidenceEntries(context, documentTypeTerms, { strength: "strong" }),
+    vendors: collectArticleEvidenceEntries(context, vendorTerms, { strength: "medium" }),
+    materials: collectArticleEvidenceEntries(context, materialTerms, { strength: "medium" }),
+    technologies: collectArticleEvidenceEntries(context, technologyTerms, { strength: "medium" }),
+    eventSignals: collectArticleEvidenceEntries(context, eventSignalTerms, { strength: "medium" }),
+    professionalSignals: collectArticleEvidenceEntries(context, professionalSignalTerms, { strength: "medium" }),
+    noiseSignals: collectArticleEvidenceEntries(context, noiseTerms, { strength: "strong" }),
+    sourceEvidence: collectArticleEvidenceEntries(context, sourceEvidenceTerms, { strength: "medium" }),
+    confidenceHints: {},
+  };
+  evidence.confidenceHints = {
+    titleEvidenceCount: Object.values(evidence).flatMap((entries) => Array.isArray(entries) ? entries : [])
+      .filter((entry) => (entry.locations || []).includes("title")).length,
+    sourceEvidenceCount: Array.isArray(evidence.sourceEvidence) ? evidence.sourceEvidence.length : 0,
+    noiseEvidenceCount: Array.isArray(evidence.noiseSignals) ? evidence.noiseSignals.length : 0,
+    signalIdsCount: Array.isArray(context.signalIds) ? context.signalIds.length : 0,
+    eventType: context.eventType || "",
+    domain: context.domain || "",
+  };
+
+  return {
+    articleId: getFilterDecisionTraceArticleId(article),
+    evidence,
+  };
+}
+
+function getCompactArticleEvidenceDiagnostics(article) {
+  const articleEvidence = buildArticleEvidence(article);
+  const evidence = articleEvidence?.evidence || {};
+  return {
+    articleId: articleEvidence?.articleId || getFilterDecisionTraceArticleId(article),
+    counts: {
+      domainObjects: evidence.domainObjects?.length || 0,
+      documentTypes: evidence.documentTypes?.length || 0,
+      vendors: evidence.vendors?.length || 0,
+      materials: evidence.materials?.length || 0,
+      technologies: evidence.technologies?.length || 0,
+      eventSignals: evidence.eventSignals?.length || 0,
+      professionalSignals: evidence.professionalSignals?.length || 0,
+      noiseSignals: evidence.noiseSignals?.length || 0,
+      sourceEvidence: evidence.sourceEvidence?.length || 0,
+    },
+    confidenceHints: evidence.confidenceHints || {},
+  };
 }
 
 function countBoostKeywordMatches(text, keywords = []) {
