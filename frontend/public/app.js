@@ -4585,6 +4585,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     evidenceBuilderDiagnosticsSummary: null,
     evidenceBuilderParitySummary: null,
     evidenceBuilderIdCardsParitySummary: null,
+    evidenceBuilderPassportParitySummary: null,
     polymerChildMatchDiagnosticsSummary: null,
     polymerFalseNegativeDiagnostics: null,
     paginationPipeline: null,
@@ -4682,6 +4683,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Evidence Builder parity diagnostics active",
             "Evidence Builder compared against legacy helpers",
             "Evidence Builder ID Cards parity diagnostics improved",
+            "Evidence Builder Passport parity diagnostics improved",
             "Diagnostics only",
             "Diagnostics export state sync active",
             "Latest completed diagnostic export available",
@@ -5059,6 +5061,26 @@ function compareArticleEvidenceParity(article) {
     "passports",
     "travel document",
   ]);
+  const evidenceHasExplicitPassportEvidence = evidenceEntriesContainId(articleEvidence, "documentTypes", [
+    "passport",
+    "passports",
+    "travel_document",
+    "passport_issuance",
+    "passport_renewal",
+    "passport_application",
+    "passport_office",
+  ]) || evidenceHasPassportDocumentType;
+  const evidenceHasCitizenshipOrTravelEvidence = evidenceEntriesContainId(articleEvidence, "professionalSignals", [
+    "citizenship",
+    "proof_of_citizenship",
+    "airport_border_delay",
+  ]) || evidenceEntriesContainId(articleEvidence, "documentTypes", ["passport_deadline"]);
+  const evidenceHasConsumerPassportNoise = evidenceEntriesContainId(articleEvidence, "noiseSignals", [
+    "consumer_passport",
+    "passport_noise",
+    "travel_advice",
+    "lost_passport",
+  ]);
   const evidenceHasExplicitIdCardEvidence = evidenceEntriesContainId(articleEvidence, "documentTypes", [
     "id_cards",
     "id_card",
@@ -5097,8 +5119,16 @@ function compareArticleEvidenceParity(article) {
       parityWarnings.push("legacy_id_cards_score_without_any_id_or_identity_document_evidence");
     }
   }
-  if (legacyShouldRejectPassport && !evidenceHasPassportDocumentType && !evidenceHasNoiseSignal) {
-    parityWarnings.push("legacy_passport_guard_without_passport_or_noise_evidence");
+  if (legacyShouldRejectPassport) {
+    if (evidenceHasExplicitPassportEvidence && !evidenceHasNoiseSignal) {
+      parityWarnings.push("legacy_passport_guard_with_passport_document_evidence_only");
+    } else if (!evidenceHasExplicitPassportEvidence && evidenceHasCitizenshipOrTravelEvidence && !evidenceHasConsumerPassportNoise) {
+      parityWarnings.push("legacy_passport_guard_with_citizenship_or_travel_evidence_only");
+    } else if (!evidenceHasExplicitPassportEvidence && evidenceHasConsumerPassportNoise) {
+      parityWarnings.push("legacy_passport_guard_with_consumer_passport_noise_only");
+    } else if (!evidenceHasExplicitPassportEvidence && !evidenceHasNoiseSignal) {
+      parityWarnings.push("legacy_passport_guard_without_any_passport_or_noise_evidence");
+    }
   }
   if (legacyProfessionalIdentityRescue && !evidenceHasVendor && !evidenceSummary.professionalSignals) {
     parityWarnings.push("legacy_professional_rescue_without_vendor_or_professional_evidence");
@@ -5117,6 +5147,9 @@ function compareArticleEvidenceParity(article) {
     evidenceHasIdentityObject,
     evidenceHasIdCardDocumentType,
     evidenceHasPassportDocumentType,
+    evidenceHasExplicitPassportEvidence,
+    evidenceHasCitizenshipOrTravelEvidence,
+    evidenceHasConsumerPassportNoise,
     evidenceHasExplicitIdCardEvidence,
     evidenceHasRelatedIdentityEvidence,
     evidenceHasWeakOrIndirectIdCardEvidence,
@@ -5174,7 +5207,7 @@ function getEvidenceBuilderParitySummary(diagnostics) {
     incrementParityAgreement(agreements, "idCardsEvidenceVsScorePositive",
       !(parity.legacyIdCardsScore > 0) || parity.evidenceHasExplicitIdCardEvidence);
     incrementParityAgreement(agreements, "passportEvidenceVsPassportGuard",
-      !parity.legacyShouldRejectPassport || parity.evidenceHasPassportDocumentType || parity.evidenceHasNoiseSignal);
+      !parity.legacyShouldRejectPassport || parity.evidenceHasExplicitPassportEvidence || parity.evidenceHasConsumerPassportNoise);
     incrementParityAgreement(agreements, "vendorEvidenceVsProfessionalRescue",
       !parity.legacyProfessionalIdentityRescue || parity.evidenceHasVendor || (parity.evidenceSummary?.professionalSignals || 0) > 0);
     incrementParityAgreement(agreements, "noiseEvidenceVsLegacyNoise",
@@ -5266,6 +5299,79 @@ function getEvidenceBuilderIdCardsParitySummary(diagnostics) {
     noIdOrIdentityEvidenceCount,
     weakOrIndirectEvidenceCount,
     topMatchedIdCardEvidence: getTopEvidenceCounts(idCardEvidenceCounts),
+    topMissingEvidenceWarnings: getTopParityWarnings(missingEvidenceWarnings),
+  };
+}
+
+function getEvidenceBuilderPassportParitySummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+
+  const traces = Array.from(diagnostics.filterDecisionTraceMap.values());
+  const passportEvidenceCounts = new Map();
+  const missingEvidenceWarnings = new Map();
+  let legacyPassportGuardTriggered = 0;
+  let explicitPassportEvidenceCount = 0;
+  let citizenshipOrTravelEvidenceOnlyCount = 0;
+  let consumerPassportNoiseEvidenceCount = 0;
+  let noPassportOrNoiseEvidenceCount = 0;
+
+  traces.forEach((trace) => {
+    const parity = trace.evidenceParityDiagnostics;
+    if (!parity) {
+      return;
+    }
+    if (parity.legacyShouldRejectPassport) {
+      legacyPassportGuardTriggered += 1;
+      if (parity.evidenceHasConsumerPassportNoise) {
+        consumerPassportNoiseEvidenceCount += 1;
+      }
+      if (parity.evidenceHasExplicitPassportEvidence) {
+        explicitPassportEvidenceCount += 1;
+      } else if (parity.evidenceHasCitizenshipOrTravelEvidence) {
+        citizenshipOrTravelEvidenceOnlyCount += 1;
+      } else {
+        noPassportOrNoiseEvidenceCount += 1;
+      }
+    }
+
+    ["documentTypes", "professionalSignals", "noiseSignals"].forEach((group) => {
+      getEvidenceEntriesForGroup(trace.evidenceDiagnostics, group)
+        .filter((entry) => [
+          "passport",
+          "passports",
+          "passport_issuance",
+          "passport_renewal",
+          "passport_application",
+          "travel_document",
+          "citizenship",
+          "proof_of_citizenship",
+          "passport_counter",
+          "passport_office",
+          "passport_deadline",
+          "airport_border_delay",
+          "travel_advice",
+          "lost_passport",
+          "consumer_passport",
+          "passport_noise",
+        ].includes(entry.id))
+        .forEach((entry) => incrementEvidenceCount(passportEvidenceCounts, entry));
+    });
+    (parity.parityWarnings || [])
+      .filter((warning) => warning.startsWith("legacy_passport_guard_"))
+      .forEach((warning) => missingEvidenceWarnings.set(warning, (missingEvidenceWarnings.get(warning) || 0) + 1));
+  });
+
+  return {
+    enabled: true,
+    evaluatedArticles: traces.length,
+    legacyPassportGuardTriggered,
+    explicitPassportEvidenceCount,
+    citizenshipOrTravelEvidenceOnlyCount,
+    consumerPassportNoiseEvidenceCount,
+    noPassportOrNoiseEvidenceCount,
+    topMatchedPassportEvidence: getTopEvidenceCounts(passportEvidenceCounts),
     topMissingEvidenceWarnings: getTopParityWarnings(missingEvidenceWarnings),
   };
 }
@@ -8629,6 +8735,32 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push("disabled");
   }
 
+  const evidenceBuilderPassportParitySummary = diagnostics.evidenceBuilderPassportParitySummary;
+  lines.push("");
+  lines.push("Evidence Builder Passport Parity");
+  if (evidenceBuilderPassportParitySummary?.enabled) {
+    lines.push(formatPipelineSummaryLine("evaluatedArticles", evidenceBuilderPassportParitySummary.evaluatedArticles));
+    lines.push(formatPipelineSummaryLine("legacyPassportGuardTriggered", evidenceBuilderPassportParitySummary.legacyPassportGuardTriggered));
+    lines.push(formatPipelineSummaryLine("explicitPassportEvidenceCount", evidenceBuilderPassportParitySummary.explicitPassportEvidenceCount));
+    lines.push(formatPipelineSummaryLine("citizenshipOrTravelEvidenceOnlyCount", evidenceBuilderPassportParitySummary.citizenshipOrTravelEvidenceOnlyCount));
+    lines.push(formatPipelineSummaryLine("consumerPassportNoiseEvidenceCount", evidenceBuilderPassportParitySummary.consumerPassportNoiseEvidenceCount));
+    lines.push(formatPipelineSummaryLine("noPassportOrNoiseEvidenceCount", evidenceBuilderPassportParitySummary.noPassportOrNoiseEvidenceCount));
+    if (evidenceBuilderPassportParitySummary.topMatchedPassportEvidence?.length) {
+      lines.push("topMatchedPassportEvidence:");
+      evidenceBuilderPassportParitySummary.topMatchedPassportEvidence.slice(0, 5).forEach((entry) => {
+        lines.push(`- ${entry.term}: ${entry.count}`);
+      });
+    }
+    if (evidenceBuilderPassportParitySummary.topMissingEvidenceWarnings?.length) {
+      lines.push("topMissingEvidenceWarnings:");
+      evidenceBuilderPassportParitySummary.topMissingEvidenceWarnings.slice(0, 5).forEach((entry) => {
+        lines.push(`- ${entry.warning}: ${entry.count}`);
+      });
+    }
+  } else {
+    lines.push("disabled");
+  }
+
   const personalDashboardScoring = diagnostics.personalDashboardScoring;
   lines.push("");
   lines.push("Personal Dashboard Scoring");
@@ -9235,6 +9367,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     evidenceBuilderDiagnosticsSummary: diagnostics.evidenceBuilderDiagnosticsSummary || null,
     evidenceBuilderParitySummary: diagnostics.evidenceBuilderParitySummary || null,
     evidenceBuilderIdCardsParitySummary: diagnostics.evidenceBuilderIdCardsParitySummary || null,
+    evidenceBuilderPassportParitySummary: diagnostics.evidenceBuilderPassportParitySummary || null,
     polymerChildMatchDiagnosticsSummary: diagnostics.polymerChildMatchDiagnosticsSummary || null,
     polymerFalseNegativeDiagnostics: diagnostics.polymerFalseNegativeDiagnostics || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
@@ -9633,6 +9766,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.evidenceBuilderDiagnosticsSummary = getEvidenceBuilderDiagnosticsSummary(diagnostics);
   diagnostics.evidenceBuilderParitySummary = getEvidenceBuilderParitySummary(diagnostics);
   diagnostics.evidenceBuilderIdCardsParitySummary = getEvidenceBuilderIdCardsParitySummary(diagnostics);
+  diagnostics.evidenceBuilderPassportParitySummary = getEvidenceBuilderPassportParitySummary(diagnostics);
   diagnostics.polymerChildMatchDiagnosticsSummary = getPolymerChildMatchDiagnosticsSummary(diagnostics);
   diagnostics.polymerFalseNegativeDiagnostics = getPolymerFalseNegativeDiagnosticsSummary(diagnostics);
   publishFilterDecisionTraceDiagnostics(diagnostics);
@@ -9671,6 +9805,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("evidenceBuilderDiagnosticsSummary", diagnostics.evidenceBuilderDiagnosticsSummary);
   console.log("evidenceBuilderParitySummary", diagnostics.evidenceBuilderParitySummary);
   console.log("evidenceBuilderIdCardsParitySummary", diagnostics.evidenceBuilderIdCardsParitySummary);
+  console.log("evidenceBuilderPassportParitySummary", diagnostics.evidenceBuilderPassportParitySummary);
   console.log("polymerChildMatchDiagnosticsSummary", diagnostics.polymerChildMatchDiagnosticsSummary);
   console.log("polymerFalseNegativeDiagnostics", diagnostics.polymerFalseNegativeDiagnostics);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
@@ -11306,9 +11441,124 @@ function getIdCardsEvidenceMappings() {
   ];
 }
 
+function getPassportGuardEvidenceMappings() {
+  const passportInterest = PERSONAL_DASHBOARD_INTEREST_MAP.get("passports") || {};
+  return {
+    documentTypes: [
+      {
+        id: "passport",
+        terms: ["passport", "biometric passport", "e-passport", "epassport", "state department passport"],
+        strength: "strong",
+      },
+      {
+        id: "passports",
+        terms: ["passports"],
+        strength: "strong",
+      },
+      {
+        id: "travel_document",
+        terms: ["travel document", "travel documents"],
+        strength: "strong",
+      },
+      {
+        id: "passport_issuance",
+        terms: ["passport issuance", "issued passport", "issuance"],
+        strength: "medium",
+      },
+      {
+        id: "passport_renewal",
+        terms: ["passport renewal", "renewal"],
+        strength: "medium",
+      },
+      {
+        id: "passport_application",
+        terms: ["passport application", "appointment booking", "passport services"],
+        strength: "medium",
+      },
+      {
+        id: "passport_office",
+        terms: ["passport office", "state department"],
+        strength: "medium",
+      },
+      {
+        id: "passport_deadline",
+        terms: ["passport deadline", "entry requirements", "visa requirement", "6 month passport rule", "six month passport rule"],
+        strength: "weak",
+      },
+    ],
+    professionalSignals: [
+      {
+        id: "passport",
+        terms: flattenEvidenceKeywordGroups([
+          passportInterest.strong,
+          ARTICLE_TOPIC_TYPE_TRAVEL_PASSPORT_KEYWORDS,
+          HIGH_CONFIDENCE_PASSPORT_POSITIVE_SIGNALS,
+          KEESING_REQUIRED_COMPONENT_SIGNALS,
+        ]),
+        strength: "medium",
+      },
+      {
+        id: "citizenship",
+        terms: ["citizenship", "citizenship law", "nationality law", "naturalization"],
+        strength: "medium",
+      },
+      {
+        id: "proof_of_citizenship",
+        terms: ["proof of citizenship", "citizenship document", "nationality document"],
+        strength: "medium",
+      },
+      {
+        id: "passport_counter",
+        terms: ["passport counter", "passport services", "passport office"],
+        strength: "weak",
+      },
+      {
+        id: "airport_border_delay",
+        terms: ["airport", "airport delay", "airport delays", "border delays", "border queue", "airport disruption"],
+        strength: "weak",
+      },
+    ],
+    noiseSignals: [
+      {
+        id: "consumer_passport",
+        terms: flattenEvidenceKeywordGroups([
+          KEESING_NEGATIVE_SIGNALS.genericTravel,
+          HIGH_CONFIDENCE_PASSPORT_NEGATIVE_SIGNALS,
+          IDENTITY_CONTEXT_KEYWORDS.genericTravel,
+          IDENTITY_CONTEXT_KEYWORDS.unrelatedLifestyle,
+        ]),
+        strength: "strong",
+      },
+      {
+        id: "passport_noise",
+        terms: flattenEvidenceKeywordGroups([
+          PASSPORT_HARD_NOISE_KEYWORDS,
+          PASSPORT_EVENT_TYPE_RULES.passport_noise,
+          ARTICLE_TOPIC_TYPE_NOISE_KEYWORDS,
+        ]),
+        strength: "strong",
+      },
+      {
+        id: "travel_advice",
+        terms: ["travel advice", "tourism advice", "holiday travel tips", "travel tips", "travel hacks", "vacation planning"],
+        strength: "strong",
+      },
+      {
+        id: "lost_passport",
+        terms: ["lost passport", "stolen passport"],
+        strength: "strong",
+      },
+    ],
+  };
+}
+
 function buildArticleEvidence(article) {
   const context = buildArticleIntelligenceContext(article);
   const idCardsEvidence = collectMappedArticleEvidenceEntries(context, getIdCardsEvidenceMappings());
+  const passportGuardEvidence = getPassportGuardEvidenceMappings();
+  const passportDocumentEvidence = collectMappedArticleEvidenceEntries(context, passportGuardEvidence.documentTypes);
+  const passportProfessionalEvidence = collectMappedArticleEvidenceEntries(context, passportGuardEvidence.professionalSignals);
+  const passportNoiseEvidence = collectMappedArticleEvidenceEntries(context, passportGuardEvidence.noiseSignals);
   const domainObjectTerms = flattenEvidenceKeywordGroups([
     SIGNAL_CORE_OBJECT_KEYWORDS,
     BANKNOTE_SIGNAL_OBJECT_KEYWORDS,
@@ -11359,14 +11609,14 @@ function buildArticleEvidence(article) {
     IDENTITY_INTENT_AUTHORITY_SOURCES,
   ]);
   const evidence = {
-    domainObjects: collectArticleEvidenceEntries(context, domainObjectTerms, { strength: "strong" }).concat(idCardsEvidence),
-    documentTypes: collectArticleEvidenceEntries(context, documentTypeTerms, { strength: "strong" }).concat(idCardsEvidence),
+    domainObjects: collectArticleEvidenceEntries(context, domainObjectTerms, { strength: "strong" }).concat(idCardsEvidence, passportDocumentEvidence),
+    documentTypes: collectArticleEvidenceEntries(context, documentTypeTerms, { strength: "strong" }).concat(idCardsEvidence, passportDocumentEvidence),
     vendors: collectArticleEvidenceEntries(context, vendorTerms, { strength: "medium" }),
     materials: collectArticleEvidenceEntries(context, materialTerms, { strength: "medium" }),
     technologies: collectArticleEvidenceEntries(context, technologyTerms, { strength: "medium" }),
     eventSignals: collectArticleEvidenceEntries(context, eventSignalTerms, { strength: "medium" }),
-    professionalSignals: collectArticleEvidenceEntries(context, professionalSignalTerms, { strength: "medium" }),
-    noiseSignals: collectArticleEvidenceEntries(context, noiseTerms, { strength: "strong" }),
+    professionalSignals: collectArticleEvidenceEntries(context, professionalSignalTerms, { strength: "medium" }).concat(passportProfessionalEvidence),
+    noiseSignals: collectArticleEvidenceEntries(context, noiseTerms, { strength: "strong" }).concat(passportNoiseEvidence),
     sourceEvidence: collectArticleEvidenceEntries(context, sourceEvidenceTerms, { strength: "medium" }),
     confidenceHints: {},
   };
