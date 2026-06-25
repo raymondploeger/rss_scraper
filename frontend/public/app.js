@@ -4587,6 +4587,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     evidenceBuilderIdCardsParitySummary: null,
     evidenceBuilderPassportParitySummary: null,
     evidenceBuilderNoiseSummary: null,
+    evidenceBuilderProfessionalSummary: null,
     polymerChildMatchDiagnosticsSummary: null,
     polymerFalseNegativeDiagnostics: null,
     paginationPipeline: null,
@@ -4686,6 +4687,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Evidence Builder ID Cards parity diagnostics improved",
             "Evidence Builder Passport parity diagnostics improved",
             "Evidence Builder Noise diagnostics improved",
+            "Professional Signals introduced",
             "Diagnostics only",
             "Diagnostics export state sync active",
             "Latest completed diagnostic export available",
@@ -5107,6 +5109,8 @@ function compareArticleEvidenceParity(article) {
   const evidenceHasTechnology = evidenceSummary.technologies > 0;
   const evidenceHasEventSignal = evidenceSummary.eventSignals > 0;
   const evidenceHasNoiseSignal = evidenceSummary.noiseSignals > 0;
+  const evidenceHasProfessionalSignal = getEvidenceEntriesForGroup(articleEvidence, "professionalSignals")
+    .some((entry) => Boolean(entry?.category || entry?.sourceHelper));
   const parityWarnings = [];
 
   if (getArticleDominantDomain(article) === "identity_documents" && !evidenceHasIdentityObject) {
@@ -5132,8 +5136,20 @@ function compareArticleEvidenceParity(article) {
       parityWarnings.push("legacy_passport_guard_without_any_passport_or_noise_evidence");
     }
   }
-  if (legacyProfessionalIdentityRescue && !evidenceHasVendor && !evidenceSummary.professionalSignals) {
-    parityWarnings.push("legacy_professional_rescue_without_vendor_or_professional_evidence");
+  if (legacyProfessionalIdentityRescue && !evidenceHasVendor && !evidenceHasProfessionalSignal) {
+    parityWarnings.push("legacy_professional_rescue_without_professional_signal");
+  }
+  if (legacyKeesingIdentityRelevance?.hasRequiredComponent && !evidenceHasProfessionalSignal) {
+    parityWarnings.push("legacy_keesing_identity_without_professional_signal");
+  }
+  if (legacyHighConfidencePassportAssessment?.kept && !evidenceHasProfessionalSignal) {
+    parityWarnings.push("legacy_high_confidence_passport_without_professional_signal");
+  }
+  if (legacyUiRelevant && !evidenceHasProfessionalSignal && !evidenceHasEventSignal) {
+    parityWarnings.push("legacy_ui_relevance_without_professional_signal");
+  }
+  if ((legacyIdentityDocumentRelevance || 0) >= IDENTITY_DOCUMENT_RELEVANCE_THRESHOLD && !evidenceHasProfessionalSignal) {
+    parityWarnings.push("legacy_identity_relevance_without_professional_signal");
   }
   if (legacyHardPassportNoise && !evidenceHasNoiseSignal) {
     parityWarnings.push("legacy_hard_passport_noise_without_noise_evidence");
@@ -5161,6 +5177,7 @@ function compareArticleEvidenceParity(article) {
     evidenceHasTechnology,
     evidenceHasEventSignal,
     evidenceHasNoiseSignal,
+    evidenceHasProfessionalSignal,
     legacyDominantDomain: getArticleDominantDomain(article),
     legacyIdCardsScore: legacyIdCardsBoost?.score || 0,
     legacyIdentitySubinterestScore: legacyIdentitySubinterest?.score || 0,
@@ -5430,6 +5447,56 @@ function getEvidenceBuilderNoiseSummary(diagnostics) {
     articlesWithNoise,
     topNoiseCategories: getTopEvidenceCategoryCounts(categoryCounts),
     topNoiseTerms: getTopEvidenceCounts(termCounts),
+    parityWarnings: getTopParityWarnings(warningCounts),
+  };
+}
+
+function getEvidenceBuilderProfessionalSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+
+  const traces = Array.from(diagnostics.filterDecisionTraceMap.values());
+  const categoryCounts = new Map();
+  const signalCounts = new Map();
+  const helperCoverageCounts = new Map();
+  const warningCounts = new Map();
+  let articlesWithProfessionalSignals = 0;
+
+  traces.forEach((trace) => {
+    const professionalEntries = getEvidenceEntriesForGroup(trace.evidenceDiagnostics, "professionalSignals");
+    if (professionalEntries.length) {
+      articlesWithProfessionalSignals += 1;
+    }
+    professionalEntries.forEach((entry) => {
+      incrementEvidenceCategoryCount(categoryCounts, entry);
+      incrementEvidenceCount(signalCounts, {
+        id: entry?.id || normalizeEvidenceId(entry?.matchedTerm || entry?.term || ""),
+        term: entry?.matchedTerm || entry?.term || entry?.id || "",
+      });
+      if (entry?.sourceHelper) {
+        const existing = helperCoverageCounts.get(entry.sourceHelper) || {
+          helper: entry.sourceHelper,
+          count: 0,
+        };
+        existing.count += 1;
+        helperCoverageCounts.set(entry.sourceHelper, existing);
+      }
+    });
+    (trace.evidenceParityDiagnostics?.parityWarnings || [])
+      .filter((warning) => /professional|keesing|high_confidence|identity_relevance|ui_relevance/i.test(warning))
+      .forEach((warning) => warningCounts.set(warning, (warningCounts.get(warning) || 0) + 1));
+  });
+
+  return {
+    enabled: true,
+    evaluatedArticles: traces.length,
+    articlesWithProfessionalSignals,
+    topProfessionalCategories: getTopEvidenceCategoryCounts(categoryCounts),
+    topProfessionalSignals: getTopEvidenceCounts(signalCounts),
+    helperCoverage: Array.from(helperCoverageCounts.values())
+      .sort((left, right) => right.count - left.count || left.helper.localeCompare(right.helper))
+      .slice(0, 10),
     parityWarnings: getTopParityWarnings(warningCounts),
   };
 }
@@ -8847,6 +8914,40 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push("disabled");
   }
 
+  const evidenceBuilderProfessionalSummary = diagnostics.evidenceBuilderProfessionalSummary;
+  lines.push("");
+  lines.push("Evidence Builder Professional Signals");
+  if (evidenceBuilderProfessionalSummary?.enabled) {
+    lines.push(formatPipelineSummaryLine("evaluatedArticles", evidenceBuilderProfessionalSummary.evaluatedArticles));
+    lines.push(formatPipelineSummaryLine("articlesWithProfessionalSignals", evidenceBuilderProfessionalSummary.articlesWithProfessionalSignals));
+    if (evidenceBuilderProfessionalSummary.topProfessionalCategories?.length) {
+      lines.push("topProfessionalCategories:");
+      evidenceBuilderProfessionalSummary.topProfessionalCategories.slice(0, 5).forEach((entry) => {
+        lines.push(`- ${entry.category}: ${entry.count}`);
+      });
+    }
+    if (evidenceBuilderProfessionalSummary.topProfessionalSignals?.length) {
+      lines.push("topProfessionalSignals:");
+      evidenceBuilderProfessionalSummary.topProfessionalSignals.slice(0, 5).forEach((entry) => {
+        lines.push(`- ${entry.term}: ${entry.count}`);
+      });
+    }
+    if (evidenceBuilderProfessionalSummary.helperCoverage?.length) {
+      lines.push("helperCoverage:");
+      evidenceBuilderProfessionalSummary.helperCoverage.slice(0, 5).forEach((entry) => {
+        lines.push(`- ${entry.helper}: ${entry.count}`);
+      });
+    }
+    if (evidenceBuilderProfessionalSummary.parityWarnings?.length) {
+      lines.push("parityWarnings:");
+      evidenceBuilderProfessionalSummary.parityWarnings.slice(0, 5).forEach((entry) => {
+        lines.push(`- ${entry.warning}: ${entry.count}`);
+      });
+    }
+  } else {
+    lines.push("disabled");
+  }
+
   const personalDashboardScoring = diagnostics.personalDashboardScoring;
   lines.push("");
   lines.push("Personal Dashboard Scoring");
@@ -9455,6 +9556,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     evidenceBuilderIdCardsParitySummary: diagnostics.evidenceBuilderIdCardsParitySummary || null,
     evidenceBuilderPassportParitySummary: diagnostics.evidenceBuilderPassportParitySummary || null,
     evidenceBuilderNoiseSummary: diagnostics.evidenceBuilderNoiseSummary || null,
+    evidenceBuilderProfessionalSummary: diagnostics.evidenceBuilderProfessionalSummary || null,
     polymerChildMatchDiagnosticsSummary: diagnostics.polymerChildMatchDiagnosticsSummary || null,
     polymerFalseNegativeDiagnostics: diagnostics.polymerFalseNegativeDiagnostics || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
@@ -9855,6 +9957,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.evidenceBuilderIdCardsParitySummary = getEvidenceBuilderIdCardsParitySummary(diagnostics);
   diagnostics.evidenceBuilderPassportParitySummary = getEvidenceBuilderPassportParitySummary(diagnostics);
   diagnostics.evidenceBuilderNoiseSummary = getEvidenceBuilderNoiseSummary(diagnostics);
+  diagnostics.evidenceBuilderProfessionalSummary = getEvidenceBuilderProfessionalSummary(diagnostics);
   diagnostics.polymerChildMatchDiagnosticsSummary = getPolymerChildMatchDiagnosticsSummary(diagnostics);
   diagnostics.polymerFalseNegativeDiagnostics = getPolymerFalseNegativeDiagnosticsSummary(diagnostics);
   publishFilterDecisionTraceDiagnostics(diagnostics);
@@ -9895,6 +9998,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("evidenceBuilderIdCardsParitySummary", diagnostics.evidenceBuilderIdCardsParitySummary);
   console.log("evidenceBuilderPassportParitySummary", diagnostics.evidenceBuilderPassportParitySummary);
   console.log("evidenceBuilderNoiseSummary", diagnostics.evidenceBuilderNoiseSummary);
+  console.log("evidenceBuilderProfessionalSummary", diagnostics.evidenceBuilderProfessionalSummary);
   console.log("polymerChildMatchDiagnosticsSummary", diagnostics.polymerChildMatchDiagnosticsSummary);
   console.log("polymerFalseNegativeDiagnostics", diagnostics.polymerFalseNegativeDiagnostics);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
@@ -11435,6 +11539,7 @@ function collectMappedArticleEvidenceEntries(context, mappings = [], options = {
         locations,
         strength: mapping.strength || options.strength || "medium",
         ...(mapping.category ? { category: mapping.category } : {}),
+        ...(mapping.sourceHelper ? { sourceHelper: mapping.sourceHelper } : {}),
       });
     });
   });
@@ -11787,6 +11892,195 @@ function getCategorizedNoiseEvidenceMappings() {
   ];
 }
 
+function getProfessionalEvidenceMappings() {
+  const professionalVendorTerms = [
+    "veridos",
+    "thales",
+    "idemia",
+    "iq structures",
+    "entrust",
+    "hid",
+    "emptech",
+    "covestro",
+    "dnp",
+    "bundesdruckerei",
+    "in groupe",
+    "ingroupe",
+    "semlex",
+    "muhlbauer",
+    "mühlbauer",
+    "iris corporation",
+    "toppan",
+    "top pan",
+  ];
+  return [
+    {
+      id: "official_source",
+      category: "official_source",
+      terms: flattenEvidenceKeywordGroups([
+        ID_DOCUMENT_SOURCE_AUTHORITY.veryHigh,
+        PRIMARY_PASSPORT_SOURCE_POSITIVE_SIGNALS,
+      ]),
+      strength: "strong",
+      sourceHelper: "getIdentityDocumentSourceAuthority",
+    },
+    {
+      id: "government",
+      category: "government",
+      terms: IDENTITY_CONTEXT_KEYWORDS.government,
+      strength: "medium",
+      sourceHelper: "getIdentityContextSignals",
+    },
+    {
+      id: "identity_authority",
+      category: "identity_authority",
+      terms: [
+        "identity authority",
+        "national identity",
+        "citizen identity",
+        "public authority",
+        "issuing authority",
+        "civil registry",
+        "ministry of interior",
+      ],
+      strength: "strong",
+      sourceHelper: "shouldRescueProfessionalIdentityArticle",
+    },
+    {
+      id: "passport_authority",
+      category: "passport_authority",
+      terms: ["passport office", "passport agency", "passport service", "state department", "passport authority"],
+      strength: "strong",
+      sourceHelper: "getHighConfidencePassportAssessment",
+    },
+    {
+      id: "identity_infrastructure",
+      category: "identity_infrastructure",
+      terms: flattenEvidenceKeywordGroups([
+        PRIMARY_PASSPORT_SUBJECT_RULES.identity_infrastructure,
+        "identity infrastructure",
+        "identity management system",
+        "enrollment system",
+        "enrolment system",
+        "government identity system",
+        "government identity systems",
+      ]),
+      strength: "strong",
+      sourceHelper: "shouldRescueProfessionalIdentityArticle",
+    },
+    {
+      id: "border_control",
+      category: "border_control",
+      terms: flattenEvidenceKeywordGroups([
+        IDENTITY_CONTEXT_KEYWORDS.border,
+        KEESING_POSITIVE_SIGNALS.borderInfrastructure,
+        PRIMARY_PASSPORT_SUBJECT_RULES.border_systems,
+      ]),
+      strength: "strong",
+      sourceHelper: "getKeesingIdentityRelevance",
+    },
+    {
+      id: "icao",
+      category: "icao",
+      terms: ["icao", "doc 9303", "mrz", "mrtd", "emrtd", "travel document security"],
+      strength: "strong",
+      sourceHelper: "getKeesingIdentityRelevance",
+    },
+    {
+      id: "issuer",
+      category: "issuer",
+      terms: flattenEvidenceKeywordGroups([
+        IDENTITY_CONTEXT_KEYWORDS.issuance,
+        "document issuance",
+        "identity issuance",
+        "id issuance",
+        "government rollout",
+      ]),
+      strength: "medium",
+      sourceHelper: "getIdentityDocumentRelevance",
+    },
+    {
+      id: "security_vendor",
+      category: "security_vendor",
+      terms: professionalVendorTerms,
+      strength: "strong",
+      sourceHelper: "shouldRescueProfessionalIdentityArticle",
+    },
+    {
+      id: "verification",
+      category: "verification",
+      terms: ["identity verification", "document verification", "id verification", "passport verification", "nfc verification", "verification system"],
+      strength: "strong",
+      sourceHelper: "getKeesingIdentityRelevance",
+    },
+    {
+      id: "authentication",
+      category: "authentication",
+      terms: ["authentication", "document authentication", "chip authentication", "active authentication", "biometric authentication"],
+      strength: "medium",
+      sourceHelper: "getKeesingIdentityRelevance",
+    },
+    {
+      id: "biometrics",
+      category: "biometrics",
+      terms: ["biometric", "biometrics", "biometric checks", "biometric verification", "biometric passport", "biometric id", "biometric identity"],
+      strength: "strong",
+      sourceHelper: "getHighConfidencePassportAssessment",
+    },
+    {
+      id: "identity_management",
+      category: "identity_management",
+      terms: ["identity management", "identity management system", "identity platform", "identity system", "national id"],
+      strength: "medium",
+      sourceHelper: "shouldRescueProfessionalIdentityArticle",
+    },
+    {
+      id: "document_security",
+      category: "document_security",
+      terms: flattenEvidenceKeywordGroups([
+        IDENTITY_CONTEXT_KEYWORDS.security,
+        KEESING_POSITIVE_SIGNALS.documentSecurity,
+        "document security",
+        "secure document",
+        "secure documents",
+        "travel document security",
+      ]),
+      strength: "strong",
+      sourceHelper: "getIdentityDocumentRelevance",
+    },
+    {
+      id: "secure_documents",
+      category: "secure_documents",
+      terms: ["secure document", "secure documents", "secure identity document", "secure identity documents", "identity document", "identity documents"],
+      strength: "medium",
+      sourceHelper: "shouldRescueProfessionalIdentityArticle",
+    },
+    {
+      id: "professional_media",
+      category: "professional_media",
+      terms: flattenEvidenceKeywordGroups([
+        ID_DOCUMENT_SOURCE_AUTHORITY.medium,
+        "keesing",
+        "biometric update",
+        "security document world",
+        "securitydocumentworld",
+      ]),
+      strength: "medium",
+      sourceHelper: "getIdentityDocumentSourceAuthority",
+    },
+    {
+      id: "industry_source",
+      category: "industry_source",
+      terms: flattenEvidenceKeywordGroups([
+        ID_DOCUMENT_SOURCE_AUTHORITY.high,
+        professionalVendorTerms,
+      ]),
+      strength: "medium",
+      sourceHelper: "getIdentityDocumentSourceAuthority",
+    },
+  ];
+}
+
 function buildArticleEvidence(article) {
   const context = buildArticleIntelligenceContext(article);
   const idCardsEvidence = collectMappedArticleEvidenceEntries(context, getIdCardsEvidenceMappings());
@@ -11795,6 +12089,7 @@ function buildArticleEvidence(article) {
   const passportProfessionalEvidence = collectMappedArticleEvidenceEntries(context, passportGuardEvidence.professionalSignals);
   const passportNoiseEvidence = collectMappedArticleEvidenceEntries(context, passportGuardEvidence.noiseSignals);
   const categorizedNoiseEvidence = collectMappedArticleEvidenceEntries(context, getCategorizedNoiseEvidenceMappings());
+  const categorizedProfessionalEvidence = collectMappedArticleEvidenceEntries(context, getProfessionalEvidenceMappings());
   const domainObjectTerms = flattenEvidenceKeywordGroups([
     SIGNAL_CORE_OBJECT_KEYWORDS,
     BANKNOTE_SIGNAL_OBJECT_KEYWORDS,
@@ -11851,7 +12146,7 @@ function buildArticleEvidence(article) {
     materials: collectArticleEvidenceEntries(context, materialTerms, { strength: "medium" }),
     technologies: collectArticleEvidenceEntries(context, technologyTerms, { strength: "medium" }),
     eventSignals: collectArticleEvidenceEntries(context, eventSignalTerms, { strength: "medium" }),
-    professionalSignals: collectArticleEvidenceEntries(context, professionalSignalTerms, { strength: "medium" }).concat(passportProfessionalEvidence),
+    professionalSignals: collectArticleEvidenceEntries(context, professionalSignalTerms, { strength: "medium" }).concat(passportProfessionalEvidence, categorizedProfessionalEvidence),
     noiseSignals: collectArticleEvidenceEntries(context, noiseTerms, { strength: "strong", category: "legacy_noise" }).concat(passportNoiseEvidence, categorizedNoiseEvidence),
     sourceEvidence: collectArticleEvidenceEntries(context, sourceEvidenceTerms, { strength: "medium" }),
     confidenceHints: {},
