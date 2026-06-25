@@ -10452,7 +10452,7 @@ function getPersonalDashboardBackendDomainPlan() {
   };
 }
 
-function getPersonalBoostContext(article) {
+function buildArticleIntelligenceContext(article) {
   return getCachedArticleValue(article, "personalBoostContext", () => {
     const normalizedEvent = article?._intelligence?.normalizedEvent || normalizeIntelligenceEvent(article);
     const signalIds = getArticleSignalCategories(article);
@@ -10511,6 +10511,10 @@ function getPersonalBoostContext(article) {
       domain: String(normalizedEvent?.domain || ""),
     };
   });
+}
+
+function getPersonalBoostContext(article) {
+  return buildArticleIntelligenceContext(article);
 }
 
 function countBoostKeywordMatches(text, keywords = []) {
