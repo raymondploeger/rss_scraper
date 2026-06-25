@@ -4589,6 +4589,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     evidenceBuilderNoiseSummary: null,
     evidenceBuilderProfessionalSummary: null,
     evidenceBuilderProfessionalParitySummary: null,
+    evidenceBuilderEventSummary: null,
     polymerChildMatchDiagnosticsSummary: null,
     polymerFalseNegativeDiagnostics: null,
     paginationPipeline: null,
@@ -4691,7 +4692,9 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Professional Signals introduced",
             "Evidence Builder Professional parity diagnostics active",
             "Professional Signals included in parity checks",
+            "Event Signals introduced",
             "Diagnostics only",
+            "Filtering unchanged",
             "Diagnostics export state sync active",
             "Latest completed diagnostic export available",
             "Polymer child-match diagnostics active",
@@ -5503,6 +5506,56 @@ function getEvidenceBuilderProfessionalSummary(diagnostics) {
     articlesWithProfessionalSignals,
     topProfessionalCategories: getTopEvidenceCategoryCounts(categoryCounts),
     topProfessionalSignals: getTopEvidenceCounts(signalCounts),
+    helperCoverage: Array.from(helperCoverageCounts.values())
+      .sort((left, right) => right.count - left.count || left.helper.localeCompare(right.helper))
+      .slice(0, 10),
+    parityWarnings: getTopParityWarnings(warningCounts),
+  };
+}
+
+function getEvidenceBuilderEventSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+
+  const traces = Array.from(diagnostics.filterDecisionTraceMap.values());
+  const categoryCounts = new Map();
+  const signalCounts = new Map();
+  const helperCoverageCounts = new Map();
+  const warningCounts = new Map();
+  let articlesWithEvents = 0;
+
+  traces.forEach((trace) => {
+    const eventEntries = getEvidenceEntriesForGroup(trace.evidenceDiagnostics, "eventSignals");
+    if (eventEntries.length) {
+      articlesWithEvents += 1;
+    }
+    eventEntries.forEach((entry) => {
+      incrementEvidenceCategoryCount(categoryCounts, entry);
+      incrementEvidenceCount(signalCounts, {
+        id: entry?.id || normalizeEvidenceId(entry?.matchedTerm || entry?.term || ""),
+        term: entry?.matchedTerm || entry?.term || entry?.id || "",
+      });
+      if (entry?.sourceHelper) {
+        const existing = helperCoverageCounts.get(entry.sourceHelper) || {
+          helper: entry.sourceHelper,
+          count: 0,
+        };
+        existing.count += 1;
+        helperCoverageCounts.set(entry.sourceHelper, existing);
+      }
+    });
+    (trace.evidenceParityDiagnostics?.parityWarnings || [])
+      .filter((warning) => /event|ui_relevant|signal/i.test(warning))
+      .forEach((warning) => warningCounts.set(warning, (warningCounts.get(warning) || 0) + 1));
+  });
+
+  return {
+    enabled: true,
+    evaluatedArticles: traces.length,
+    articlesWithEvents,
+    topEventCategories: getTopEvidenceCategoryCounts(categoryCounts),
+    topEventSignals: getTopEvidenceCounts(signalCounts),
     helperCoverage: Array.from(helperCoverageCounts.values())
       .sort((left, right) => right.count - left.count || left.helper.localeCompare(right.helper))
       .slice(0, 10),
@@ -9019,6 +9072,40 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push("disabled");
   }
 
+  const evidenceBuilderEventSummary = diagnostics.evidenceBuilderEventSummary;
+  lines.push("");
+  lines.push("Evidence Builder Event Signals");
+  if (evidenceBuilderEventSummary?.enabled) {
+    lines.push(formatPipelineSummaryLine("evaluatedArticles", evidenceBuilderEventSummary.evaluatedArticles));
+    lines.push(formatPipelineSummaryLine("articlesWithEvents", evidenceBuilderEventSummary.articlesWithEvents));
+    if (evidenceBuilderEventSummary.topEventCategories?.length) {
+      lines.push("topEventCategories:");
+      evidenceBuilderEventSummary.topEventCategories.slice(0, 5).forEach((entry) => {
+        lines.push(`- ${entry.category}: ${entry.count}`);
+      });
+    }
+    if (evidenceBuilderEventSummary.topEventSignals?.length) {
+      lines.push("topEventSignals:");
+      evidenceBuilderEventSummary.topEventSignals.slice(0, 5).forEach((entry) => {
+        lines.push(`- ${entry.term}: ${entry.count}`);
+      });
+    }
+    if (evidenceBuilderEventSummary.helperCoverage?.length) {
+      lines.push("helperCoverage:");
+      evidenceBuilderEventSummary.helperCoverage.slice(0, 5).forEach((entry) => {
+        lines.push(`- ${entry.helper}: ${entry.count}`);
+      });
+    }
+    if (evidenceBuilderEventSummary.parityWarnings?.length) {
+      lines.push("parityWarnings:");
+      evidenceBuilderEventSummary.parityWarnings.slice(0, 5).forEach((entry) => {
+        lines.push(`- ${entry.warning}: ${entry.count}`);
+      });
+    }
+  } else {
+    lines.push("disabled");
+  }
+
   const evidenceBuilderProfessionalParitySummary = diagnostics.evidenceBuilderProfessionalParitySummary;
   lines.push("");
   lines.push("Evidence Builder Professional Parity");
@@ -9655,6 +9742,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     evidenceBuilderNoiseSummary: diagnostics.evidenceBuilderNoiseSummary || null,
     evidenceBuilderProfessionalSummary: diagnostics.evidenceBuilderProfessionalSummary || null,
     evidenceBuilderProfessionalParitySummary: diagnostics.evidenceBuilderProfessionalParitySummary || null,
+    evidenceBuilderEventSummary: diagnostics.evidenceBuilderEventSummary || null,
     polymerChildMatchDiagnosticsSummary: diagnostics.polymerChildMatchDiagnosticsSummary || null,
     polymerFalseNegativeDiagnostics: diagnostics.polymerFalseNegativeDiagnostics || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
@@ -10057,6 +10145,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.evidenceBuilderNoiseSummary = getEvidenceBuilderNoiseSummary(diagnostics);
   diagnostics.evidenceBuilderProfessionalSummary = getEvidenceBuilderProfessionalSummary(diagnostics);
   diagnostics.evidenceBuilderProfessionalParitySummary = getEvidenceBuilderProfessionalParitySummary(diagnostics);
+  diagnostics.evidenceBuilderEventSummary = getEvidenceBuilderEventSummary(diagnostics);
   diagnostics.polymerChildMatchDiagnosticsSummary = getPolymerChildMatchDiagnosticsSummary(diagnostics);
   diagnostics.polymerFalseNegativeDiagnostics = getPolymerFalseNegativeDiagnosticsSummary(diagnostics);
   publishFilterDecisionTraceDiagnostics(diagnostics);
@@ -10099,6 +10188,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("evidenceBuilderNoiseSummary", diagnostics.evidenceBuilderNoiseSummary);
   console.log("evidenceBuilderProfessionalSummary", diagnostics.evidenceBuilderProfessionalSummary);
   console.log("evidenceBuilderProfessionalParitySummary", diagnostics.evidenceBuilderProfessionalParitySummary);
+  console.log("evidenceBuilderEventSummary", diagnostics.evidenceBuilderEventSummary);
   console.log("polymerChildMatchDiagnosticsSummary", diagnostics.polymerChildMatchDiagnosticsSummary);
   console.log("polymerFalseNegativeDiagnostics", diagnostics.polymerFalseNegativeDiagnostics);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
@@ -11608,6 +11698,7 @@ function collectArticleEvidenceEntries(context, terms = [], options = {}) {
       locations,
       strength,
       ...(options.category ? { category: options.category } : {}),
+      ...(options.sourceHelper ? { sourceHelper: options.sourceHelper } : {}),
     });
   });
   return entries;
@@ -12181,6 +12272,66 @@ function getProfessionalEvidenceMappings() {
   ];
 }
 
+function getEventEvidenceMappings() {
+  return [
+    { id: "launch", category: "launch", terms: ["launch", "launched", "launching", "go-live", "introduced", "unveiled"], strength: "strong", sourceHelper: "extractActionTerms" },
+    { id: "rollout", category: "rollout", terms: ["rollout", "rolled out", "deployed", "implemented", "deployment", "circulation rollout"], strength: "strong", sourceHelper: "extractActionTerms" },
+    { id: "pilot", category: "pilot", terms: ["pilot", "pilot project", "pilot program", "trial"], strength: "medium", sourceHelper: "normalizeIntelligenceEvent" },
+    { id: "issuance", category: "issuance", terms: flattenEvidenceKeywordGroups([IDENTITY_CONTEXT_KEYWORDS.issuance, EVENT_FINGERPRINT_ACTION_KEYWORDS.find(([id]) => id === "issuance")?.[1] || []]), strength: "strong", sourceHelper: "extractActionTerms" },
+    { id: "production", category: "production", terms: ["production", "printing", "security printer", "manufacturing", "booklet production", "currency production"], strength: "strong", sourceHelper: "extractActionTerms" },
+    { id: "contract", category: "contract", terms: ["contract", "awarded contract", "contract award"], strength: "medium", sourceHelper: "getArticleSignalMatches" },
+    { id: "award", category: "award", terms: ["award", "awarded", "award winner", "sap quality awards"], strength: "medium", sourceHelper: "getArticleSignalMatches" },
+    { id: "procurement", category: "procurement", terms: ["procurement", "tender", "request for proposal", "rfp", "bid"], strength: "medium", sourceHelper: "getGroupingSubcategory" },
+    { id: "certification", category: "certification", terms: ["certification", "certified", "compliance"], strength: "medium", sourceHelper: "getArticleSignalMatches" },
+    { id: "approval", category: "approval", terms: ["approval", "approved", "authorized", "authorised"], strength: "medium", sourceHelper: "normalizeIntelligenceEvent" },
+    { id: "delay", category: "delay", terms: flattenEvidenceKeywordGroups([EVENT_FINGERPRINT_ACTION_KEYWORDS.find(([id]) => id === "border-delays")?.[1] || [], "delay", "delays", "backlog", "technical problem", "technical outage", "rollout delay", "implementation delay"]), strength: "strong", sourceHelper: "extractActionTerms" },
+    { id: "maintenance", category: "maintenance", terms: ["maintenance", "road maintenance", "system maintenance"], strength: "weak", sourceHelper: "getArticleSignalMatches" },
+    { id: "incident", category: "incident", terms: ["incident", "airport incident", "passenger incident", "traveler incident", "traveller incident"], strength: "medium", sourceHelper: "getDetailedArticleEventType" },
+    { id: "breach", category: "breach", terms: ["breach", "data breach", "system vulnerability", "vulnerability"], strength: "strong", sourceHelper: "getArticleSignalMatches" },
+    { id: "recall", category: "recall", terms: ["recall", "recalled"], strength: "medium", sourceHelper: "normalizeIntelligenceEvent" },
+    { id: "upgrade", category: "upgrade", terms: ["upgrade", "upgraded", "system upgrade", "modernization", "modernisation"], strength: "medium", sourceHelper: "getArticleSignalMatches" },
+    { id: "migration", category: "migration", terms: flattenEvidenceKeywordGroups([EVENT_FINGERPRINT_ACTION_KEYWORDS.find(([id]) => id === "migration")?.[1] || [], "polymer migration", "polymer transition", "substrate migration"]), strength: "strong", sourceHelper: "extractActionTerms" },
+    { id: "expansion", category: "expansion", terms: ["expansion", "expanded", "scale up", "capacity expansion"], strength: "medium", sourceHelper: "getArticleSignalMatches" },
+    { id: "investment", category: "investment", terms: ["investment", "invested", "funding", "capacity investment"], strength: "medium", sourceHelper: "getArticleSignalMatches" },
+    { id: "partnership", category: "partnership", terms: ["partnership", "partnered", "cooperation", "collaboration"], strength: "medium", sourceHelper: "getArticleSignalMatches" },
+    { id: "merger", category: "merger", terms: ["merger", "merged"], strength: "medium", sourceHelper: "getArticleSignalMatches" },
+    { id: "acquisition", category: "acquisition", terms: ["acquisition", "acquired", "takeover"], strength: "medium", sourceHelper: "getArticleSignalMatches" },
+    { id: "regulation", category: "regulation", terms: flattenEvidenceKeywordGroups([SIGNAL_CATEGORIES.find((category) => category.id === "regulations")?.strong || [], SIGNAL_CATEGORIES.find((category) => category.id === "regulations")?.weak || [], EVENT_FINGERPRINT_ACTION_KEYWORDS.find(([id]) => id === "law-update")?.[1] || []]), strength: "strong", sourceHelper: "getArticleSignalMatches" },
+    { id: "legislation", category: "legislation", terms: ["law", "legislation", "bill", "amendment", "mandate", "directive"], strength: "strong", sourceHelper: "extractActionTerms" },
+    { id: "consultation", category: "consultation", terms: ["consultation", "public consultation", "consulted"], strength: "medium", sourceHelper: "normalizeIntelligenceEvent" },
+    { id: "standard_update", category: "standard_update", terms: ["standard", "standards", "compliance", "doc 9303", "travel document standards"], strength: "medium", sourceHelper: "getArticleSignalMatches" },
+    { id: "icao_update", category: "icao_update", terms: ["icao", "icao newsroom", "icao trip", "doc 9303", "pkd", "mrtd", "emrtd"], strength: "strong", sourceHelper: "normalizeIntelligenceEvent" },
+    { id: "technology_release", category: "technology_release", terms: ["technology release", "released", "introduced", "new technology", "verification system", "biometric system", "digital id system"], strength: "medium", sourceHelper: "getArticleSignalMatches" },
+    { id: "vendor_announcement", category: "vendor_announcement", terms: ["announced", "confirms", "introduces", "launches", "vendor announcement"], strength: "medium", sourceHelper: "getArticleSignalMatches" },
+    { id: "withdrawal", category: "withdrawal", terms: flattenEvidenceKeywordGroups([EVENT_FINGERPRINT_ACTION_KEYWORDS.find(([id]) => id === "withdrawal")?.[1] || [], BANKNOTE_EVENT_TYPE_RULES.banknote_withdrawal]), strength: "strong", sourceHelper: "extractActionTerms" },
+    { id: "counterfeit", category: "incident", terms: flattenEvidenceKeywordGroups([EVENT_FINGERPRINT_ACTION_KEYWORDS.find(([id]) => id === "counterfeiting")?.[1] || [], BANKNOTE_EVENT_TYPE_RULES.counterfeit_banknotes]), strength: "strong", sourceHelper: "getDetailedArticleEventType" },
+  ];
+}
+
+function getNormalizedEventEvidenceEntries(article, context) {
+  const entries = [];
+  const normalizedEvent = article?._intelligence?.normalizedEvent || normalizeIntelligenceEvent(article);
+  const addNormalizedEventEntry = (id, category, term, sourceHelper) => {
+    if (!term) {
+      return;
+    }
+    entries.push({
+      id,
+      category,
+      term,
+      matchedTerm: term,
+      locations: ["metadata"],
+      strength: "medium",
+      sourceHelper,
+    });
+  };
+  addNormalizedEventEntry("normalized_event_type", normalizedEvent?.canonicalEventType || "", normalizedEvent?.canonicalEventType || "", "normalizeIntelligenceEvent");
+  addNormalizedEventEntry("normalized_action", normalizedEvent?.action || "", normalizedEvent?.action || "", "getNormalizedAction");
+  addNormalizedEventEntry("normalized_operational_context", normalizedEvent?.operationalContext || "", normalizedEvent?.operationalContext || "", "getNormalizedOperationalContext");
+  addNormalizedEventEntry("article_event_type", context?.eventType || "", context?.eventType || "", "getDetailedArticleEventType");
+  return entries;
+}
+
 function buildArticleEvidence(article) {
   const context = buildArticleIntelligenceContext(article);
   const idCardsEvidence = collectMappedArticleEvidenceEntries(context, getIdCardsEvidenceMappings());
@@ -12190,6 +12341,8 @@ function buildArticleEvidence(article) {
   const passportNoiseEvidence = collectMappedArticleEvidenceEntries(context, passportGuardEvidence.noiseSignals);
   const categorizedNoiseEvidence = collectMappedArticleEvidenceEntries(context, getCategorizedNoiseEvidenceMappings());
   const categorizedProfessionalEvidence = collectMappedArticleEvidenceEntries(context, getProfessionalEvidenceMappings());
+  const categorizedEventEvidence = collectMappedArticleEvidenceEntries(context, getEventEvidenceMappings())
+    .concat(getNormalizedEventEvidenceEntries(article, context));
   const domainObjectTerms = flattenEvidenceKeywordGroups([
     SIGNAL_CORE_OBJECT_KEYWORDS,
     BANKNOTE_SIGNAL_OBJECT_KEYWORDS,
@@ -12245,7 +12398,11 @@ function buildArticleEvidence(article) {
     vendors: collectArticleEvidenceEntries(context, vendorTerms, { strength: "medium" }),
     materials: collectArticleEvidenceEntries(context, materialTerms, { strength: "medium" }),
     technologies: collectArticleEvidenceEntries(context, technologyTerms, { strength: "medium" }),
-    eventSignals: collectArticleEvidenceEntries(context, eventSignalTerms, { strength: "medium" }),
+    eventSignals: collectArticleEvidenceEntries(context, eventSignalTerms, {
+      strength: "medium",
+      category: "legacy_event",
+      sourceHelper: "legacyEventKeywordSets",
+    }).concat(categorizedEventEvidence),
     professionalSignals: collectArticleEvidenceEntries(context, professionalSignalTerms, { strength: "medium" }).concat(passportProfessionalEvidence, categorizedProfessionalEvidence),
     noiseSignals: collectArticleEvidenceEntries(context, noiseTerms, { strength: "strong", category: "legacy_noise" }).concat(passportNoiseEvidence, categorizedNoiseEvidence),
     sourceEvidence: collectArticleEvidenceEntries(context, sourceEvidenceTerms, { strength: "medium" }),
