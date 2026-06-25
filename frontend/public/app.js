@@ -4615,6 +4615,9 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     evidenceBuilderProfessionalParitySummary: null,
     evidenceBuilderEventSummary: null,
     v3DecisionEngineDiagnosticsSummary: null,
+    v3DecisionParitySummary: null,
+    decisionParityExamples: null,
+    decisionParityTopDisagreements: null,
     polymerChildMatchDiagnosticsSummary: null,
     polymerFalseNegativeDiagnostics: null,
     paginationPipeline: null,
@@ -4720,6 +4723,9 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Event Signals introduced",
             "V3 Decision Engine diagnostics active",
             "V3 Decision Engine is diagnostics-only",
+            "Decision Parity enabled",
+            "Shadow comparison active",
+            "Legacy filtering still authoritative",
             "Diagnostics only",
             "Filtering unchanged",
             "Filtering diagnostics performance guard active",
@@ -4920,6 +4926,9 @@ function freezeFilterDecisionTrace(trace) {
       ),
     };
   }
+  if (trace.heavyDiagnosticsEnabled && trace.v3DecisionDiagnostics) {
+    trace.decisionParityDiagnostics = compareLegacyDecisionWithV3Decision(trace);
+  }
 
   const frozenStages = (Array.isArray(trace.stages) ? trace.stages : []).map((stage) =>
     Object.freeze({
@@ -4939,6 +4948,7 @@ function freezeFilterDecisionTrace(trace) {
     evidenceDiagnostics: Object.freeze(trace.evidenceDiagnostics || {}),
     evidenceParityDiagnostics: Object.freeze(trace.evidenceParityDiagnostics || {}),
     v3DecisionDiagnostics: Object.freeze(trace.v3DecisionDiagnostics || {}),
+    decisionParityDiagnostics: Object.freeze(trace.decisionParityDiagnostics || {}),
     stages: Object.freeze(frozenStages),
     finalResult: trace.finalResult || "survived",
     finalReason: trace.finalReason || "article survived traced filter pipeline",
@@ -5000,6 +5010,9 @@ function getFilterDecisionDebugToolsSummary(diagnostics) {
       "window.listArticlesWithEvidence(evidenceGroup, limit)",
       "window.explainV3DecisionByTitle(titlePart)",
       "window.listV3DecisionDiagnostics(decision, limit)",
+      "window.listDecisionParityMatches(limit)",
+      "window.listDecisionParityMismatches(limit)",
+      "window.explainDecisionParityByTitle(titlePart)",
       "window.explainEvidenceParityByTitle(titlePart)",
       "window.listEvidenceParityWarnings(limit)",
       "window.explainRejectedArticle(titlePart)",
@@ -5900,6 +5913,167 @@ function getV3DecisionEngineDiagnosticsSummary(diagnostics) {
     topUncertainReasons: getTopV3DecisionReasons(uncertainReasonCounts),
     legacyAgreementSummary: legacyAgreement,
   };
+}
+
+function getDecisionParityValue(legacyDecision, v3Decision) {
+  if (legacyDecision === "include_candidate" && v3Decision === "include_candidate") {
+    return "match_include";
+  }
+  if (legacyDecision === "reject_candidate" && v3Decision === "reject_candidate") {
+    return "match_reject";
+  }
+  if (legacyDecision === "include_candidate" && v3Decision === "reject_candidate") {
+    return "legacy_include_v3_reject";
+  }
+  if (legacyDecision === "reject_candidate" && v3Decision === "include_candidate") {
+    return "legacy_reject_v3_include";
+  }
+  if (legacyDecision === "include_candidate" && v3Decision === "uncertain") {
+    return "legacy_include_v3_uncertain";
+  }
+  if (legacyDecision === "reject_candidate" && v3Decision === "uncertain") {
+    return "legacy_reject_v3_uncertain";
+  }
+  return "unknown";
+}
+
+function getDecisionParityDisagreementReason(parity, v3Reasons = []) {
+  if (parity === "match_include" || parity === "match_reject") {
+    return "legacy and V3 shadow decision agree";
+  }
+  if (parity === "legacy_include_v3_reject") {
+    return v3Reasons.includes("strong_noise_evidence")
+      ? "V3 sees strong noise evidence on a legacy survivor"
+      : "V3 shadow rejected a legacy survivor";
+  }
+  if (parity === "legacy_reject_v3_include") {
+    return v3Reasons.includes("strong_professional_evidence")
+      ? "V3 sees strong professional evidence on a legacy rejection"
+      : "V3 shadow included a legacy rejection";
+  }
+  if (parity === "legacy_include_v3_uncertain") {
+    return "V3 has mixed or weak evidence for a legacy survivor";
+  }
+  if (parity === "legacy_reject_v3_uncertain") {
+    return "V3 has mixed or weak evidence for a legacy rejection";
+  }
+  return "unknown parity state";
+}
+
+function compareLegacyDecisionWithV3Decision(trace) {
+  if (!trace?.v3DecisionDiagnostics) {
+    return null;
+  }
+  const legacyDecision = trace.finalResult === "rejected" ? "reject_candidate" : "include_candidate";
+  const v3Decision = trace.v3DecisionDiagnostics.suggestedDecision || "uncertain";
+  const parity = getDecisionParityValue(legacyDecision, v3Decision);
+  const v3Reasons = Array.isArray(trace.v3DecisionDiagnostics.reasons)
+    ? trace.v3DecisionDiagnostics.reasons.slice()
+    : [];
+  return {
+    articleId: trace.articleId || "",
+    title: trace.title || "Untitled article",
+    legacyDecision,
+    v3Decision,
+    parity,
+    confidence: Number(trace.v3DecisionDiagnostics.confidence || 0),
+    legacyReason: trace.finalReason || "",
+    v3Reasons,
+    disagreementReason: getDecisionParityDisagreementReason(parity, v3Reasons),
+  };
+}
+
+function isDecisionParityMatch(parity) {
+  return parity === "match_include" || parity === "match_reject";
+}
+
+function isDecisionParityUncertain(parity) {
+  return parity === "legacy_include_v3_uncertain" || parity === "legacy_reject_v3_uncertain";
+}
+
+function getDecisionParityDiagnostics(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return [];
+  }
+  return getHeavyDiagnosticsTraces(diagnostics)
+    .map((trace) => trace.decisionParityDiagnostics || compareLegacyDecisionWithV3Decision(trace))
+    .filter(Boolean);
+}
+
+function getV3DecisionParitySummary(diagnostics) {
+  const parityDiagnostics = getDecisionParityDiagnostics(diagnostics);
+  if (!diagnostics?.enabled) {
+    return null;
+  }
+  const disagreementCounts = new Map();
+  const agreementCounts = new Map();
+  let matches = 0;
+  let mismatches = 0;
+  let uncertain = 0;
+  let includeMatches = 0;
+  let rejectMatches = 0;
+  let includeRejectConflicts = 0;
+  let rejectIncludeConflicts = 0;
+  let uncertainConflicts = 0;
+
+  parityDiagnostics.forEach((entry) => {
+    if (isDecisionParityMatch(entry.parity)) {
+      matches += 1;
+      incrementReasonCount(agreementCounts, entry.disagreementReason);
+    } else {
+      mismatches += 1;
+      incrementReasonCount(disagreementCounts, entry.disagreementReason);
+    }
+    if (entry.parity === "match_include") {
+      includeMatches += 1;
+    } else if (entry.parity === "match_reject") {
+      rejectMatches += 1;
+    } else if (entry.parity === "legacy_include_v3_reject") {
+      includeRejectConflicts += 1;
+    } else if (entry.parity === "legacy_reject_v3_include") {
+      rejectIncludeConflicts += 1;
+    } else if (isDecisionParityUncertain(entry.parity)) {
+      uncertain += 1;
+      uncertainConflicts += 1;
+    }
+  });
+
+  return {
+    enabled: true,
+    evaluatedArticles: parityDiagnostics.length,
+    matches,
+    mismatches,
+    uncertain,
+    matchPercentage: parityDiagnostics.length ? Number(((matches / parityDiagnostics.length) * 100).toFixed(1)) : 0,
+    includeMatches,
+    rejectMatches,
+    includeRejectConflicts,
+    rejectIncludeConflicts,
+    uncertainConflicts,
+    topDisagreementReasons: getTopV3DecisionReasons(disagreementCounts),
+    topAgreementReasons: getTopV3DecisionReasons(agreementCounts),
+  };
+}
+
+function getDecisionParityExamples(diagnostics, limit = 10) {
+  return getDecisionParityDiagnostics(diagnostics)
+    .slice(0, limit)
+    .map((entry) => ({
+      articleId: entry.articleId,
+      title: entry.title,
+      legacyDecision: entry.legacyDecision,
+      v3Decision: entry.v3Decision,
+      parity: entry.parity,
+      confidence: entry.confidence,
+      disagreementReason: entry.disagreementReason,
+    }));
+}
+
+function getDecisionParityTopDisagreements(diagnostics, limit = 10) {
+  return getDecisionParityDiagnostics(diagnostics)
+    .filter((entry) => !isDecisionParityMatch(entry.parity))
+    .sort((left, right) => Number(right.confidence || 0) - Number(left.confidence || 0))
+    .slice(0, limit);
 }
 
 function getFilterDecisionRichTraceSummary(diagnostics) {
@@ -8532,6 +8706,62 @@ function listV3DecisionDiagnostics(decision, limit = 25) {
     .slice(0, normalizedLimit);
 }
 
+function listDecisionParityEntries(options = {}) {
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!traceMap) {
+    return [];
+  }
+  const normalizedLimit = Math.max(1, Number(options.limit) || 25);
+  return Array.from(traceMap.values())
+    .map((trace) => trace.decisionParityDiagnostics || null)
+    .filter((entry) => {
+      if (!entry) {
+        return false;
+      }
+      if (options.matchOnly) {
+        return isDecisionParityMatch(entry.parity);
+      }
+      if (options.mismatchOnly) {
+        return !isDecisionParityMatch(entry.parity);
+      }
+      return true;
+    })
+    .slice(0, normalizedLimit);
+}
+
+function listDecisionParityMatches(limit = 25) {
+  return listDecisionParityEntries({ limit, matchOnly: true });
+}
+
+function listDecisionParityMismatches(limit = 25) {
+  return listDecisionParityEntries({ limit, mismatchOnly: true });
+}
+
+function explainDecisionParityByTitle(titlePart) {
+  const needle = String(titlePart || "").trim().toLowerCase();
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!needle || !traceMap) {
+    return null;
+  }
+
+  const match = Array.from(traceMap.values()).find((trace) =>
+    String(trace?.title || "").toLowerCase().includes(needle)
+  );
+  if (!match) {
+    return null;
+  }
+
+  return {
+    articleId: match.articleId,
+    title: match.title,
+    finalResult: match.finalResult || "",
+    finalReason: match.finalReason || "",
+    decisionParityDiagnostics: match.decisionParityDiagnostics || null,
+    v3DecisionDiagnostics: match.v3DecisionDiagnostics || null,
+    heavyDiagnosticsEnabled: Boolean(match.heavyDiagnosticsEnabled),
+  };
+}
+
 function explainEvidenceParityByTitle(titlePart) {
   const needle = String(titlePart || "").trim().toLowerCase();
   const traceMap = getActiveFilterDecisionTraceMap();
@@ -9484,6 +9714,36 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push("disabled");
   }
 
+  const v3DecisionParitySummary = diagnostics.v3DecisionParitySummary;
+  lines.push("");
+  lines.push("V3 Decision Parity");
+  if (v3DecisionParitySummary?.enabled) {
+    lines.push(formatPipelineSummaryLine("evaluatedArticles", v3DecisionParitySummary.evaluatedArticles));
+    lines.push(formatPipelineSummaryLine("matches", v3DecisionParitySummary.matches));
+    lines.push(formatPipelineSummaryLine("mismatches", v3DecisionParitySummary.mismatches));
+    lines.push(formatPipelineSummaryLine("uncertain", v3DecisionParitySummary.uncertain));
+    lines.push(formatPipelineSummaryLine("matchPercentage", v3DecisionParitySummary.matchPercentage));
+    lines.push(formatPipelineSummaryLine("includeMatches", v3DecisionParitySummary.includeMatches));
+    lines.push(formatPipelineSummaryLine("rejectMatches", v3DecisionParitySummary.rejectMatches));
+    lines.push(formatPipelineSummaryLine("includeRejectConflicts", v3DecisionParitySummary.includeRejectConflicts));
+    lines.push(formatPipelineSummaryLine("rejectIncludeConflicts", v3DecisionParitySummary.rejectIncludeConflicts));
+    lines.push(formatPipelineSummaryLine("uncertainConflicts", v3DecisionParitySummary.uncertainConflicts));
+    if (v3DecisionParitySummary.topDisagreementReasons?.length) {
+      lines.push("topDisagreementReasons:");
+      v3DecisionParitySummary.topDisagreementReasons.slice(0, 5).forEach((entry) => {
+        lines.push(`- ${entry.reason}: ${entry.count}`);
+      });
+    }
+    if (v3DecisionParitySummary.topAgreementReasons?.length) {
+      lines.push("topAgreementReasons:");
+      v3DecisionParitySummary.topAgreementReasons.slice(0, 5).forEach((entry) => {
+        lines.push(`- ${entry.reason}: ${entry.count}`);
+      });
+    }
+  } else {
+    lines.push("disabled");
+  }
+
   const evidenceBuilderProfessionalParitySummary = diagnostics.evidenceBuilderProfessionalParitySummary;
   lines.push("");
   lines.push("Evidence Builder Professional Parity");
@@ -10123,6 +10383,9 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     evidenceBuilderProfessionalParitySummary: diagnostics.evidenceBuilderProfessionalParitySummary || null,
     evidenceBuilderEventSummary: diagnostics.evidenceBuilderEventSummary || null,
     v3DecisionEngineDiagnosticsSummary: diagnostics.v3DecisionEngineDiagnosticsSummary || null,
+    v3DecisionParitySummary: diagnostics.v3DecisionParitySummary || null,
+    decisionParityExamples: diagnostics.decisionParityExamples || null,
+    decisionParityTopDisagreements: diagnostics.decisionParityTopDisagreements || null,
     polymerChildMatchDiagnosticsSummary: diagnostics.polymerChildMatchDiagnosticsSummary || null,
     polymerFalseNegativeDiagnostics: diagnostics.polymerFalseNegativeDiagnostics || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
@@ -10379,6 +10642,18 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.listV3DecisionDiagnostics = (decision, limit) => listV3DecisionDiagnostics(decision, limit);
   }
 
+  if (typeof window.listDecisionParityMatches !== "function") {
+    window.listDecisionParityMatches = (limit) => listDecisionParityMatches(limit);
+  }
+
+  if (typeof window.listDecisionParityMismatches !== "function") {
+    window.listDecisionParityMismatches = (limit) => listDecisionParityMismatches(limit);
+  }
+
+  if (typeof window.explainDecisionParityByTitle !== "function") {
+    window.explainDecisionParityByTitle = (titlePart) => explainDecisionParityByTitle(titlePart);
+  }
+
   if (typeof window.explainEvidenceParityByTitle !== "function") {
     window.explainEvidenceParityByTitle = (titlePart) => explainEvidenceParityByTitle(titlePart);
   }
@@ -10489,6 +10764,9 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.listArticlesWithEvidence(evidenceGroup, limit)",
         "window.explainV3DecisionByTitle(titlePart)",
         "window.listV3DecisionDiagnostics(decision, limit)",
+        "window.listDecisionParityMatches(limit)",
+        "window.listDecisionParityMismatches(limit)",
+        "window.explainDecisionParityByTitle(titlePart)",
         "window.explainEvidenceParityByTitle(titlePart)",
         "window.listEvidenceParityWarnings(limit)",
         "window.explainRejectedArticle(titlePart)",
@@ -10561,6 +10839,9 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.evidenceBuilderProfessionalParitySummary = getEvidenceBuilderProfessionalParitySummary(diagnostics);
   diagnostics.evidenceBuilderEventSummary = getEvidenceBuilderEventSummary(diagnostics);
   diagnostics.v3DecisionEngineDiagnosticsSummary = getV3DecisionEngineDiagnosticsSummary(diagnostics);
+  diagnostics.v3DecisionParitySummary = getV3DecisionParitySummary(diagnostics);
+  diagnostics.decisionParityExamples = getDecisionParityExamples(diagnostics);
+  diagnostics.decisionParityTopDisagreements = getDecisionParityTopDisagreements(diagnostics);
   diagnostics.polymerChildMatchDiagnosticsSummary = getPolymerChildMatchDiagnosticsSummary(diagnostics);
   diagnostics.polymerFalseNegativeDiagnostics = getPolymerFalseNegativeDiagnosticsSummary(diagnostics);
   publishFilterDecisionTraceDiagnostics(diagnostics);
@@ -10606,6 +10887,9 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("evidenceBuilderProfessionalParitySummary", diagnostics.evidenceBuilderProfessionalParitySummary);
   console.log("evidenceBuilderEventSummary", diagnostics.evidenceBuilderEventSummary);
   console.log("v3DecisionEngineDiagnosticsSummary", diagnostics.v3DecisionEngineDiagnosticsSummary);
+  console.log("v3DecisionParitySummary", diagnostics.v3DecisionParitySummary);
+  console.log("decisionParityExamples", diagnostics.decisionParityExamples);
+  console.log("decisionParityTopDisagreements", diagnostics.decisionParityTopDisagreements);
   console.log("polymerChildMatchDiagnosticsSummary", diagnostics.polymerChildMatchDiagnosticsSummary);
   console.log("polymerFalseNegativeDiagnostics", diagnostics.polymerFalseNegativeDiagnostics);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
