@@ -5241,6 +5241,29 @@ function evidenceEntriesContainId(articleEvidence, evidenceGroup, ids = []) {
   );
 }
 
+const EXPLICIT_ID_CARD_EVIDENCE_IDS = [
+  "id_cards",
+  "id_card",
+  "identity_card",
+  "national_id",
+  "electronic_identity_card",
+  "secure_id_documents",
+  "national_id_documents",
+  "hybrid_id_documents",
+];
+
+function getMatchedEvidenceIds(articleEvidence, evidenceGroup, ids = []) {
+  const normalizedIds = ids.map((id) => normalizeEvidenceId(id)).filter(Boolean);
+  if (!normalizedIds.length) {
+    return [];
+  }
+  return Array.from(new Set(
+    getEvidenceEntriesForGroup(articleEvidence, evidenceGroup)
+      .map((entry) => normalizeEvidenceId(entry?.id || ""))
+      .filter((id) => normalizedIds.includes(id))
+  ));
+}
+
 function summarizeArticleEvidenceForParity(articleEvidence) {
   const evidence = articleEvidence?.evidence || {};
   return {
@@ -5310,17 +5333,12 @@ function compareArticleEvidenceParity(article) {
     "travel_advice",
     "lost_passport",
   ]);
-  const evidenceHasExplicitIdCardEvidence = evidenceEntriesContainId(articleEvidence, "documentTypes", [
-    "id_cards",
-    "id_card",
-    "identity_card",
-    "national_id",
-    "electronic_identity_card",
-    "national_id_documents",
-    "hybrid_id_documents",
-  ]);
+  const evidenceHasExplicitIdCardEvidence = evidenceEntriesContainId(
+    articleEvidence,
+    "documentTypes",
+    EXPLICIT_ID_CARD_EVIDENCE_IDS
+  );
   const evidenceHasRelatedIdentityEvidence = evidenceEntriesContainId(articleEvidence, "documentTypes", [
-    "secure_id_documents",
     "physical_identity_documents",
     "identity_document_protection",
     "identity_documents",
@@ -24787,6 +24805,12 @@ function buildIdCardDecisionContext(article) {
   const idCardsBoost = computePersonalInterestBoost(article, "id_cards");
   const subinterestScore = getIdentityDocumentSubinterestScore(article, ["id_cards"]);
   const signals = getIdentityDocumentInterestSignals(article);
+  const articleEvidence = buildArticleEvidence(article);
+  const explicitIdCardEvidenceIds = getMatchedEvidenceIds(
+    articleEvidence,
+    "documentTypes",
+    EXPLICIT_ID_CARD_EVIDENCE_IDS
+  );
   const idCardsHolographyBridgeMatched = matchesIdCardsHolographyOvdCombinationBridge(
     article,
     ["id_cards"],
@@ -24803,6 +24827,7 @@ function buildIdCardDecisionContext(article) {
     subinterestScore,
     bestSelectedScore: Number(subinterestScore?.bestSelectedScore || subinterestScore?.score) || 0,
     signals,
+    explicitIdCardEvidenceIds,
     idCardsHolographyBridgeMatched,
     identityTechniqueBridgeMatched,
   };
@@ -24838,7 +24863,8 @@ const NoIdCardSignalRule = {
     const rejected = context.idCardsScore <= 0
       && context.bestSelectedScore <= 0
       && Number(context.signals?.idCardHits || 0) <= 0
-      && Number(context.signals?.polycarbonateHits || 0) <= 0;
+      && Number(context.signals?.polycarbonateHits || 0) <= 0
+      && !context.explicitIdCardEvidenceIds?.length;
     const reason = rejected ? "no ID Card signal from legacy helpers" : "";
     return {
       matched: rejected,
@@ -24849,6 +24875,7 @@ const NoIdCardSignalRule = {
         bestSelectedScore: context.bestSelectedScore,
         idCardHits: Number(context.signals?.idCardHits || 0),
         polycarbonateHits: Number(context.signals?.polycarbonateHits || 0),
+        explicitIdCardEvidenceCount: context.explicitIdCardEvidenceIds?.length || 0,
       },
       evidence: {
         idCardsBoost: context.idCardsBoost,
@@ -24863,6 +24890,7 @@ const NoIdCardSignalRule = {
         idCardsScore: context.idCardsScore,
         bestSelectedScore: context.bestSelectedScore,
         signals: context.signals,
+        explicitIdCardEvidenceIds: context.explicitIdCardEvidenceIds,
       },
     };
   },
@@ -24891,6 +24919,7 @@ const ProfessionalIdCardKeepRule = {
         idCardsScore: context.idCardsScore,
         threshold: 18,
         idCardsBoost: context.idCardsBoost,
+        explicitIdCardEvidenceIds: context.explicitIdCardEvidenceIds,
       },
     };
   },
@@ -24955,6 +24984,7 @@ const WeakIdCardIdentitySignalRule = {
         bestSelectedScore: context.bestSelectedScore,
         threshold: 18,
         signals: context.signals,
+        explicitIdCardEvidenceIds: context.explicitIdCardEvidenceIds,
       },
     };
   },
