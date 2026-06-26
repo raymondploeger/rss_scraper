@@ -4642,6 +4642,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     passportDecisionComparisonExamples: null,
     idCardDecisionEngineSummary: null,
     residencePermitDecisionEngineSummary: null,
+    visaDecisionEngineSummary: null,
     polymerChildMatchDiagnosticsSummary: null,
     polymerFalseNegativeDiagnostics: null,
     paginationPipeline: null,
@@ -4923,6 +4924,9 @@ function getFilterDecisionTrace(diagnostics, article) {
     const residencePermitDecision = heavyDiagnosticsEnabled
       ? evaluateResidencePermitDecisionRules(article)
       : null;
+    const visaDecision = heavyDiagnosticsEnabled
+      ? evaluateVisaDecisionRules(article)
+      : null;
     diagnostics.filterDecisionTraceMap.set(articleId, {
       articleId,
       title: article?.title || "Untitled article",
@@ -4942,6 +4946,7 @@ function getFilterDecisionTrace(diagnostics, article) {
       passportDecisionComparison,
       idCardDecisionDiagnostics: idCardDecision,
       residencePermitDecisionDiagnostics: residencePermitDecision,
+      visaDecisionDiagnostics: visaDecision,
       stages: [],
       finalResult: "",
       finalReason: "",
@@ -5035,6 +5040,7 @@ function freezeFilterDecisionTrace(trace) {
     passportDecisionComparison: Object.freeze(trace.passportDecisionComparison || {}),
     idCardDecisionDiagnostics: Object.freeze(trace.idCardDecisionDiagnostics || {}),
     residencePermitDecisionDiagnostics: Object.freeze(trace.residencePermitDecisionDiagnostics || {}),
+    visaDecisionDiagnostics: Object.freeze(trace.visaDecisionDiagnostics || {}),
     stages: Object.freeze(frozenStages),
     finalResult: trace.finalResult || "survived",
     finalReason: trace.finalReason || "article survived traced filter pipeline",
@@ -7805,6 +7811,44 @@ function getResidencePermitDecisionEngineSummary(diagnostics) {
     notes: [
       "Residence Permit rule set runs in shadow diagnostics only",
       "Residence Permit uses DocumentDecisionEngine in diagnostic mode",
+      "Legacy filtering remains authoritative",
+    ],
+  };
+}
+
+function getVisaDecisionEngineSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+  const ruleCounts = new Map();
+  let evaluated = 0;
+  let rejected = 0;
+  let kept = 0;
+  getHeavyDiagnosticsTraces(diagnostics).forEach((trace) => {
+    const visaDecision = trace.visaDecisionDiagnostics;
+    if (!visaDecision) {
+      return;
+    }
+    evaluated += 1;
+    if (visaDecision.rejected) {
+      rejected += 1;
+    } else {
+      kept += 1;
+    }
+    incrementReasonCount(ruleCounts, visaDecision.matchedRuleId || "unknown");
+  });
+
+  return {
+    enabled: true,
+    evaluated,
+    ruleSetActive: true,
+    documentType: VISA_RULE_SET.documentType,
+    kept,
+    rejected,
+    topMatchedRules: getTopV3DecisionReasons(ruleCounts, 10),
+    notes: [
+      "Visa rule set runs in shadow diagnostics only",
+      "Visa uses DocumentDecisionEngine in diagnostic mode",
       "Legacy filtering remains authoritative",
     ],
   };
@@ -11019,6 +11063,32 @@ function compareResidencePermitDecisionByTitle(titlePart) {
   };
 }
 
+function compareVisaDecisionByTitle(titlePart) {
+  const needle = String(titlePart || "").trim().toLowerCase();
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!needle || !traceMap) {
+    return null;
+  }
+  const match = Array.from(traceMap.values()).find((trace) =>
+    String(trace?.title || "").toLowerCase().includes(needle)
+  );
+  if (!match) {
+    return null;
+  }
+  return {
+    articleId: match.articleId,
+    title: match.title,
+    finalResult: match.finalResult || "",
+    finalReason: match.finalReason || "",
+    visaDecisionDiagnostics: match.visaDecisionDiagnostics || null,
+    heavyDiagnosticsEnabled: Boolean(match.heavyDiagnosticsEnabled),
+    notes: [
+      "Visa rule set is shadow-only",
+      "Legacy filtering remains authoritative",
+    ],
+  };
+}
+
 function listPassportParityMismatches(limit = 25) {
   return getPassportDecisionComparisonEntries({ limit, mismatchOnly: true });
 }
@@ -12891,6 +12961,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     passportDecisionComparisonExamples: diagnostics.passportDecisionComparisonExamples || null,
     idCardDecisionEngineSummary: diagnostics.idCardDecisionEngineSummary || null,
     residencePermitDecisionEngineSummary: diagnostics.residencePermitDecisionEngineSummary || null,
+    visaDecisionEngineSummary: diagnostics.visaDecisionEngineSummary || null,
     polymerChildMatchDiagnosticsSummary: diagnostics.polymerChildMatchDiagnosticsSummary || null,
     polymerFalseNegativeDiagnostics: diagnostics.polymerFalseNegativeDiagnostics || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
@@ -13209,6 +13280,10 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.compareResidencePermitDecisionByTitle = (titlePart) => compareResidencePermitDecisionByTitle(titlePart);
   }
 
+  if (typeof window.compareVisaDecisionByTitle !== "function") {
+    window.compareVisaDecisionByTitle = (titlePart) => compareVisaDecisionByTitle(titlePart);
+  }
+
   if (typeof window.listPassportParityMismatches !== "function") {
     window.listPassportParityMismatches = (limit) => listPassportParityMismatches(limit);
   }
@@ -13354,6 +13429,7 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.comparePassportDecisionByTitle(titlePart)",
         "window.compareIdCardDecisionByTitle(titlePart)",
         "window.compareResidencePermitDecisionByTitle(titlePart)",
+        "window.compareVisaDecisionByTitle(titlePart)",
         "window.listPassportParityMismatches(limit)",
         "window.listPassportPerfectMatches(limit)",
         "window.listDecisionParityMatches(limit)",
@@ -13458,6 +13534,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.passportDecisionComparisonExamples = getPassportDecisionComparisonExamples(diagnostics);
   diagnostics.idCardDecisionEngineSummary = getIdCardDecisionEngineSummary(diagnostics);
   diagnostics.residencePermitDecisionEngineSummary = getResidencePermitDecisionEngineSummary(diagnostics);
+  diagnostics.visaDecisionEngineSummary = getVisaDecisionEngineSummary(diagnostics);
   diagnostics.polymerChildMatchDiagnosticsSummary = getPolymerChildMatchDiagnosticsSummary(diagnostics);
   diagnostics.polymerFalseNegativeDiagnostics = getPolymerFalseNegativeDiagnosticsSummary(diagnostics);
   publishFilterDecisionTraceDiagnostics(diagnostics);
@@ -13530,6 +13607,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("passportDecisionComparisonExamples", diagnostics.passportDecisionComparisonExamples);
   console.log("idCardDecisionEngineSummary", diagnostics.idCardDecisionEngineSummary);
   console.log("residencePermitDecisionEngineSummary", diagnostics.residencePermitDecisionEngineSummary);
+  console.log("visaDecisionEngineSummary", diagnostics.visaDecisionEngineSummary);
   console.log("polymerChildMatchDiagnosticsSummary", diagnostics.polymerChildMatchDiagnosticsSummary);
   console.log("polymerFalseNegativeDiagnostics", diagnostics.polymerFalseNegativeDiagnostics);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
@@ -24992,6 +25070,227 @@ const RESIDENCE_PERMIT_RULE_SET = {
   contextBuilder: buildResidencePermitDecisionContext,
 };
 
+function buildVisaDecisionContext(article) {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const selectedSharedSecurityInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
+  const visaBoost = computePersonalInterestBoost(article, "visas");
+  const subinterestScore = getIdentityDocumentSubinterestScore(article, ["visas"]);
+  const signals = getIdentityDocumentInterestSignals(article);
+  const identityTechniqueBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, ["visas"]);
+  const visaSpamNoise = hasIdentityTravelNoise(article, IDENTITY_VISA_SPAM_TERMS);
+
+  return {
+    selectedInterests,
+    selectedSharedSecurityInterests,
+    primaryDomain: getArticleDominantDomain(article),
+    visaBoost,
+    visaScore: Number(visaBoost?.score) || 0,
+    subinterestScore,
+    bestSelectedScore: Number(subinterestScore?.bestSelectedScore || subinterestScore?.score) || 0,
+    signals,
+    identityTechniqueBridgeMatched,
+    visaSpamNoise,
+  };
+}
+
+const VisaNavigationPageRule = {
+  id: "visa_navigation_page",
+  description: "Reject Visa navigation-page articles using the existing identity navigation helper.",
+  category: "consumer_travel_context",
+  evaluate(article) {
+    const rejected = isIdentityNavigationPageArticle(article);
+    const reason = rejected ? "identity navigation page" : "";
+    return {
+      matched: rejected,
+      reason,
+      category: this.category,
+      scoreBreakdown: {},
+      evidence: { navigationPage: rejected },
+      terminal: rejected,
+      rejected,
+      rejectionReason: reason,
+      rejectionCategory: this.category,
+      metadata: { navigationPage: rejected },
+    };
+  },
+};
+
+const NoVisaSignalRule = {
+  id: "no_visa_signal",
+  description: "Reject when existing Visa scoring and signal helpers find no visa evidence.",
+  category: "weak_visa_signal",
+  evaluate(article, context) {
+    const rejected = context.visaScore <= 0
+      && context.bestSelectedScore <= 0
+      && Number(context.signals?.visaHits || 0) <= 0
+      && Number(context.signals?.borderHits || 0) <= 0;
+    const reason = rejected ? "no Visa signal from legacy helpers" : "";
+    return {
+      matched: rejected,
+      reason,
+      category: this.category,
+      scoreBreakdown: {
+        visaScore: context.visaScore,
+        bestSelectedScore: context.bestSelectedScore,
+        visaHits: Number(context.signals?.visaHits || 0),
+        borderHits: Number(context.signals?.borderHits || 0),
+      },
+      evidence: {
+        visaBoost: context.visaBoost,
+        subinterestScore: context.subinterestScore,
+        signals: context.signals,
+      },
+      terminal: rejected,
+      rejected,
+      rejectionReason: reason,
+      rejectionCategory: this.category,
+      metadata: {
+        visaScore: context.visaScore,
+        bestSelectedScore: context.bestSelectedScore,
+        signals: context.signals,
+      },
+    };
+  },
+};
+
+const VisaApplicationNoiseRule = {
+  id: "visa_application_noise",
+  description: "Reject Visa consumer/spam context using the existing visa spam noise helper terms.",
+  category: "consumer_travel_context",
+  evaluate(article, context) {
+    const rejected = Boolean(context.visaSpamNoise) && context.visaScore < 18;
+    const reason = rejected ? "Visa consumer or spam context below legacy identity interest threshold" : "";
+    return {
+      matched: rejected,
+      reason,
+      category: this.category,
+      scoreBreakdown: {
+        visaScore: context.visaScore,
+        threshold: 18,
+        visaSpamNoise: Boolean(context.visaSpamNoise),
+      },
+      evidence: {
+        visaSpamNoise: Boolean(context.visaSpamNoise),
+        signals: context.signals,
+      },
+      terminal: rejected,
+      rejected,
+      rejectionReason: reason,
+      rejectionCategory: this.category,
+      metadata: {
+        visaScore: context.visaScore,
+        threshold: 18,
+        visaSpamNoise: Boolean(context.visaSpamNoise),
+        signals: context.signals,
+      },
+    };
+  },
+};
+
+const ProfessionalVisaKeepRule = {
+  id: "professional_visa_keep",
+  description: "Keep when the existing Visa boost reaches the legacy identity interest threshold.",
+  category: "professional_visa_keep",
+  evaluate(article, context) {
+    const matched = context.visaScore >= 18;
+    return {
+      matched,
+      reason: "",
+      category: this.category,
+      scoreBreakdown: {
+        visaScore: context.visaScore,
+        threshold: 18,
+      },
+      evidence: context.visaBoost,
+      terminal: matched,
+      rejected: false,
+      rejectionReason: "",
+      rejectionCategory: this.category,
+      metadata: {
+        visaScore: context.visaScore,
+        threshold: 18,
+        visaBoost: context.visaBoost,
+      },
+    };
+  },
+};
+
+const VisaBridgeKeepRule = {
+  id: "immigration_system_keep",
+  description: "Keep when existing Visa identity/shared-security bridge helpers match.",
+  category: "immigration_system_keep",
+  evaluate(article, context) {
+    const matched = Boolean(context.identityTechniqueBridgeMatched);
+    return {
+      matched,
+      reason: "",
+      category: this.category,
+      scoreBreakdown: {},
+      evidence: {
+        identityTechniqueBridgeMatched: context.identityTechniqueBridgeMatched,
+      },
+      terminal: matched,
+      rejected: false,
+      rejectionReason: "",
+      rejectionCategory: this.category,
+      metadata: {
+        identityTechniqueBridgeMatched: context.identityTechniqueBridgeMatched,
+      },
+    };
+  },
+};
+
+const WeakVisaSignalRule = {
+  id: "weak_visa_signal",
+  description: "Reject when existing Visa scoring remains below the legacy identity interest threshold.",
+  category: "weak_visa_signal",
+  evaluate(article, context) {
+    const rejected = context.visaScore < 18 && !context.identityTechniqueBridgeMatched;
+    const reason = rejected ? "Visa score below legacy identity interest threshold" : "";
+    return {
+      matched: true,
+      reason,
+      category: rejected ? this.category : "visa_shadow_keep",
+      scoreBreakdown: {
+        visaScore: context.visaScore,
+        threshold: 18,
+        bestSelectedScore: context.bestSelectedScore,
+      },
+      evidence: {
+        visaBoost: context.visaBoost,
+        subinterestScore: context.subinterestScore,
+        signals: context.signals,
+      },
+      terminal: true,
+      rejected,
+      rejectionReason: reason,
+      rejectionCategory: rejected ? this.category : "visa_shadow_keep",
+      metadata: {
+        visaScore: context.visaScore,
+        bestSelectedScore: context.bestSelectedScore,
+        threshold: 18,
+        signals: context.signals,
+      },
+    };
+  },
+};
+
+const VISA_REJECTION_RULES = [
+  VisaNavigationPageRule,
+  NoVisaSignalRule,
+  VisaApplicationNoiseRule,
+  ProfessionalVisaKeepRule,
+  VisaBridgeKeepRule,
+  WeakVisaSignalRule,
+];
+
+const VISA_RULE_SET = {
+  documentType: "visa",
+  baseRules: IDENTITY_BASE_RULES,
+  rules: VISA_REJECTION_RULES,
+  contextBuilder: buildVisaDecisionContext,
+};
+
 function evaluateDocumentDecisionRules(article, ruleSet, context = null) {
   const documentType = ruleSet?.documentType || "unknown";
   const rules = Array.isArray(ruleSet?.rules) ? ruleSet.rules : [];
@@ -25058,6 +25357,10 @@ function evaluateIdCardDecisionRules(article, context = null) {
 
 function evaluateResidencePermitDecisionRules(article, context = null) {
   return evaluateDocumentDecisionRules(article, RESIDENCE_PERMIT_RULE_SET, context);
+}
+
+function evaluateVisaDecisionRules(article, context = null) {
+  return evaluateDocumentDecisionRules(article, VISA_RULE_SET, context);
 }
 
 function shouldRejectPassportArticle(article) {
