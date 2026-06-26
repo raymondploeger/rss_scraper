@@ -24234,50 +24234,198 @@ function isPrimaryPassportIntelligence(article) {
   return primarySubject !== "unrelated";
 }
 
+const PASSPORT_REJECTION_RULES = [
+  {
+    id: "outside_passport_identity_scope",
+    description: "Keep articles that are outside the passport or identity topic scope.",
+    evaluate(article) {
+      const inScope = isPassportOrIdentityTopicArticle(article);
+      return {
+        matched: !inScope,
+        terminal: !inScope,
+        rejected: false,
+        rejectionReason: "",
+        rejectionCategory: "out_of_scope_keep",
+        metadata: { inScope },
+      };
+    },
+  },
+  {
+    id: "no_central_identity_signal",
+    description: "Reject passport-topic articles that do not pass the high-confidence passport intelligence assessment.",
+    evaluate(article) {
+      const assessment = getHighConfidencePassportAssessment(article);
+      const rejected = !assessment.kept;
+      return {
+        matched: rejected,
+        terminal: rejected,
+        rejected,
+        rejectionReason: assessment.rejectedReason || "weak passport identity confidence",
+        rejectionCategory: "passport_identity_confidence",
+        metadata: assessment,
+      };
+    },
+  },
+  {
+    id: "weak_keesing_identity_relevance",
+    description: "Reject when Keesing-style identity relevance is missing required document components.",
+    evaluate(article, context) {
+      context.keesingAssessment = context.keesingAssessment || getKeesingIdentityRelevance(article);
+      const rejected = !context.keesingAssessment.hasRequiredComponent;
+      return {
+        matched: rejected,
+        terminal: rejected,
+        rejected,
+        rejectionReason: "missing required identity document component",
+        rejectionCategory: "professional_relevance",
+        metadata: context.keesingAssessment,
+      };
+    },
+  },
+  {
+    id: "primary_subject_unrelated",
+    description: "Reject when the Keesing primary subject is unrelated.",
+    evaluate(article, context) {
+      context.keesingAssessment = context.keesingAssessment || getKeesingIdentityRelevance(article);
+      const rejected = context.keesingAssessment.primarySubject === "unrelated";
+      return {
+        matched: rejected,
+        terminal: rejected,
+        rejected,
+        rejectionReason: "primary subject unrelated",
+        rejectionCategory: "unrelated_usage",
+        metadata: context.keesingAssessment,
+      };
+    },
+  },
+  {
+    id: "weak_keesing_identity_relevance_score",
+    description: "Reject when the Keesing relevance score is below the legacy threshold.",
+    evaluate(article, context) {
+      context.keesingAssessment = context.keesingAssessment || getKeesingIdentityRelevance(article);
+      const rejected = context.keesingAssessment.score < KEESING_RELEVANCE_THRESHOLD;
+      return {
+        matched: rejected,
+        terminal: rejected,
+        rejected,
+        rejectionReason: "below Keesing relevance threshold",
+        rejectionCategory: "professional_relevance",
+        metadata: {
+          ...context.keesingAssessment,
+          threshold: KEESING_RELEVANCE_THRESHOLD,
+        },
+      };
+    },
+  },
+  {
+    id: "professional_identity_keep",
+    description: "Keep when strong professional identity context is present.",
+    evaluate(article, context) {
+      context.identityContext = context.identityContext || getIdentityContextSignals(article);
+      const hasStrongPositiveContext = context.identityContext.government
+        || context.identityContext.border
+        || context.identityContext.immigration
+        || context.identityContext.fraud
+        || context.identityContext.security
+        || context.identityContext.issuance
+        || context.identityContext.infrastructure
+        || context.identityContext.travelRule;
+      return {
+        matched: Boolean(hasStrongPositiveContext),
+        terminal: Boolean(hasStrongPositiveContext),
+        rejected: false,
+        rejectionReason: "",
+        rejectionCategory: "professional_identity_keep",
+        metadata: {
+          ...context.identityContext,
+          hasStrongPositiveContext: Boolean(hasStrongPositiveContext),
+        },
+      };
+    },
+  },
+  {
+    id: "low_relevance_passport",
+    description: "Reject negative-context passport articles below the identity document relevance threshold.",
+    evaluate(article, context) {
+      context.identityContext = context.identityContext || getIdentityContextSignals(article);
+      const negativeContextCount = [
+        context.identityContext.unrelatedLifestyle,
+        context.identityContext.sports,
+        context.identityContext.pets,
+        context.identityContext.entertainment,
+        context.identityContext.education,
+        context.identityContext.genericTravel,
+      ].filter(Boolean).length;
+      const identityDocumentRelevance = negativeContextCount > 0 ? getIdentityDocumentRelevance(article) : null;
+      const rejected = negativeContextCount > 0 && identityDocumentRelevance < IDENTITY_DOCUMENT_RELEVANCE_THRESHOLD;
+      return {
+        matched: true,
+        terminal: true,
+        rejected,
+        rejectionReason: rejected ? "negative passport context below identity document relevance threshold" : "",
+        rejectionCategory: rejected ? "consumer_passport_noise" : "passport_identity_keep",
+        metadata: {
+          negativeContextCount,
+          identityDocumentRelevance,
+          threshold: IDENTITY_DOCUMENT_RELEVANCE_THRESHOLD,
+          context: context.identityContext,
+        },
+      };
+    },
+  },
+];
+
+function evaluatePassportRejectionRules(article) {
+  const context = {};
+  const ruleResults = [];
+  const decisionPath = [];
+  let matchedRule = null;
+
+  for (const rule of PASSPORT_REJECTION_RULES) {
+    const result = rule.evaluate(article, context);
+    const ruleResult = {
+      id: rule.id,
+      description: rule.description,
+      matched: Boolean(result.matched),
+      terminal: Boolean(result.terminal),
+      rejected: Boolean(result.rejected),
+      rejectionReason: result.rejectionReason || "",
+      rejectionCategory: result.rejectionCategory || "",
+      metadata: result.metadata || {},
+    };
+    ruleResults.push(ruleResult);
+    decisionPath.push(`${rule.id}:${ruleResult.rejected ? "reject" : "keep"}:${ruleResult.matched ? "matched" : "not_matched"}`);
+
+    if (ruleResult.terminal) {
+      matchedRule = ruleResult;
+      break;
+    }
+  }
+
+  const fallbackRule = matchedRule || {
+    id: "passport_rules_fallback_keep",
+    description: "Fallback keep when no passport rejection rule matched.",
+    matched: true,
+    terminal: true,
+    rejected: false,
+    rejectionReason: "",
+    rejectionCategory: "passport_identity_keep",
+    metadata: {},
+  };
+
+  return {
+    rejected: Boolean(fallbackRule.rejected),
+    matchedRule: fallbackRule,
+    matchedRuleId: fallbackRule.id,
+    rejectionReason: fallbackRule.rejectionReason || "",
+    rejectionCategory: fallbackRule.rejectionCategory || "",
+    ruleResults,
+    decisionPath,
+  };
+}
+
 function shouldRejectPassportArticle(article) {
-  if (!isPassportOrIdentityTopicArticle(article)) {
-    return false;
-  }
-
-  if (!isHighConfidencePassportIntelligence(article)) {
-    return true;
-  }
-
-  const keesingAssessment = getKeesingIdentityRelevance(article);
-  if (!keesingAssessment.hasRequiredComponent) {
-    return true;
-  }
-  if (keesingAssessment.primarySubject === "unrelated") {
-    return true;
-  }
-  if (keesingAssessment.score < KEESING_RELEVANCE_THRESHOLD) {
-    return true;
-  }
-
-  const context = getIdentityContextSignals(article);
-  const hasStrongPositiveContext = context.government
-    || context.border
-    || context.immigration
-    || context.fraud
-    || context.security
-    || context.issuance
-    || context.infrastructure
-    || context.travelRule;
-
-  if (hasStrongPositiveContext) {
-    return false;
-  }
-
-  const negativeContextCount = [
-    context.unrelatedLifestyle,
-    context.sports,
-    context.pets,
-    context.entertainment,
-    context.education,
-    context.genericTravel,
-  ].filter(Boolean).length;
-
-  return negativeContextCount > 0 && getIdentityDocumentRelevance(article) < IDENTITY_DOCUMENT_RELEVANCE_THRESHOLD;
+  return evaluatePassportRejectionRules(article).rejected;
 }
 
 function isLowRelevancePassportArticle(article) {
