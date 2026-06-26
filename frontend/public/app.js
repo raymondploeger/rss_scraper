@@ -24448,14 +24448,24 @@ const PASSPORT_REJECTION_RULES = [
   LowRelevancePassportRule,
 ];
 
-function evaluatePassportRejectionRules(article) {
-  const context = {};
+const PASSPORT_RULE_SET = {
+  documentType: "passport",
+  rules: PASSPORT_REJECTION_RULES,
+  contextBuilder() {
+    return {};
+  },
+};
+
+function evaluateDocumentDecisionRules(article, ruleSet, context = null) {
+  const documentType = ruleSet?.documentType || "unknown";
+  const rules = Array.isArray(ruleSet?.rules) ? ruleSet.rules : [];
+  const sharedContext = context || (typeof ruleSet?.contextBuilder === "function" ? ruleSet.contextBuilder(article) : {});
   const ruleResults = [];
   const decisionPath = [];
   let matchedRule = null;
 
-  for (const rule of PASSPORT_REJECTION_RULES) {
-    const result = rule.evaluate(article, context);
+  for (const rule of rules) {
+    const result = rule.evaluate(article, sharedContext);
     const ruleResult = {
       id: rule.id,
       description: rule.description,
@@ -24480,8 +24490,8 @@ function evaluatePassportRejectionRules(article) {
   }
 
   const fallbackRule = matchedRule || {
-    id: "passport_rules_fallback_keep",
-    description: "Fallback keep when no passport rejection rule matched.",
+    id: `${documentType}_rules_fallback_keep`,
+    description: `Fallback keep when no ${documentType} rejection rule matched.`,
     matched: true,
     terminal: true,
     rejected: false,
@@ -24498,7 +24508,12 @@ function evaluatePassportRejectionRules(article) {
     rejectionCategory: fallbackRule.rejectionCategory || "",
     ruleResults,
     decisionPath,
+    documentType,
   };
+}
+
+function evaluatePassportRejectionRules(article, context = null) {
+  return evaluateDocumentDecisionRules(article, PASSPORT_RULE_SET, context);
 }
 
 function shouldRejectPassportArticle(article) {
