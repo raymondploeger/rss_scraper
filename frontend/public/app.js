@@ -4641,6 +4641,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     passportDecisionParityV3: null,
     passportDecisionComparisonExamples: null,
     idCardDecisionEngineSummary: null,
+    residencePermitDecisionEngineSummary: null,
     polymerChildMatchDiagnosticsSummary: null,
     polymerFalseNegativeDiagnostics: null,
     paginationPipeline: null,
@@ -4919,6 +4920,9 @@ function getFilterDecisionTrace(diagnostics, article) {
     const idCardDecision = heavyDiagnosticsEnabled
       ? evaluateIdCardDecisionRules(article)
       : null;
+    const residencePermitDecision = heavyDiagnosticsEnabled
+      ? evaluateResidencePermitDecisionRules(article)
+      : null;
     diagnostics.filterDecisionTraceMap.set(articleId, {
       articleId,
       title: article?.title || "Untitled article",
@@ -4937,6 +4941,7 @@ function getFilterDecisionTrace(diagnostics, article) {
       passportDecisionV3Diagnostics: passportDecisionV3,
       passportDecisionComparison,
       idCardDecisionDiagnostics: idCardDecision,
+      residencePermitDecisionDiagnostics: residencePermitDecision,
       stages: [],
       finalResult: "",
       finalReason: "",
@@ -5029,6 +5034,7 @@ function freezeFilterDecisionTrace(trace) {
     passportDecisionV3Diagnostics: Object.freeze(trace.passportDecisionV3Diagnostics || {}),
     passportDecisionComparison: Object.freeze(trace.passportDecisionComparison || {}),
     idCardDecisionDiagnostics: Object.freeze(trace.idCardDecisionDiagnostics || {}),
+    residencePermitDecisionDiagnostics: Object.freeze(trace.residencePermitDecisionDiagnostics || {}),
     stages: Object.freeze(frozenStages),
     finalResult: trace.finalResult || "survived",
     finalReason: trace.finalReason || "article survived traced filter pipeline",
@@ -7761,6 +7767,44 @@ function getIdCardDecisionEngineSummary(diagnostics) {
     notes: [
       "ID Card rule set runs in shadow diagnostics only",
       "Generic DocumentDecisionEngine supports Passport and ID Cards",
+      "Legacy filtering remains authoritative",
+    ],
+  };
+}
+
+function getResidencePermitDecisionEngineSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+  const ruleCounts = new Map();
+  let evaluated = 0;
+  let rejected = 0;
+  let kept = 0;
+  getHeavyDiagnosticsTraces(diagnostics).forEach((trace) => {
+    const residencePermitDecision = trace.residencePermitDecisionDiagnostics;
+    if (!residencePermitDecision) {
+      return;
+    }
+    evaluated += 1;
+    if (residencePermitDecision.rejected) {
+      rejected += 1;
+    } else {
+      kept += 1;
+    }
+    incrementReasonCount(ruleCounts, residencePermitDecision.matchedRuleId || "unknown");
+  });
+
+  return {
+    enabled: true,
+    evaluated,
+    ruleSetActive: true,
+    documentType: RESIDENCE_PERMIT_RULE_SET.documentType,
+    kept,
+    rejected,
+    topMatchedRules: getTopV3DecisionReasons(ruleCounts, 10),
+    notes: [
+      "Residence Permit rule set runs in shadow diagnostics only",
+      "Residence Permit uses DocumentDecisionEngine in diagnostic mode",
       "Legacy filtering remains authoritative",
     ],
   };
@@ -10949,6 +10993,32 @@ function compareIdCardDecisionByTitle(titlePart) {
   };
 }
 
+function compareResidencePermitDecisionByTitle(titlePart) {
+  const needle = String(titlePart || "").trim().toLowerCase();
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!needle || !traceMap) {
+    return null;
+  }
+  const match = Array.from(traceMap.values()).find((trace) =>
+    String(trace?.title || "").toLowerCase().includes(needle)
+  );
+  if (!match) {
+    return null;
+  }
+  return {
+    articleId: match.articleId,
+    title: match.title,
+    finalResult: match.finalResult || "",
+    finalReason: match.finalReason || "",
+    residencePermitDecisionDiagnostics: match.residencePermitDecisionDiagnostics || null,
+    heavyDiagnosticsEnabled: Boolean(match.heavyDiagnosticsEnabled),
+    notes: [
+      "Residence Permit rule set is shadow-only",
+      "Legacy filtering remains authoritative",
+    ],
+  };
+}
+
 function listPassportParityMismatches(limit = 25) {
   return getPassportDecisionComparisonEntries({ limit, mismatchOnly: true });
 }
@@ -12820,6 +12890,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     passportDecisionParityV3: diagnostics.passportDecisionParityV3 || null,
     passportDecisionComparisonExamples: diagnostics.passportDecisionComparisonExamples || null,
     idCardDecisionEngineSummary: diagnostics.idCardDecisionEngineSummary || null,
+    residencePermitDecisionEngineSummary: diagnostics.residencePermitDecisionEngineSummary || null,
     polymerChildMatchDiagnosticsSummary: diagnostics.polymerChildMatchDiagnosticsSummary || null,
     polymerFalseNegativeDiagnostics: diagnostics.polymerFalseNegativeDiagnostics || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
@@ -13134,6 +13205,10 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.compareIdCardDecisionByTitle = (titlePart) => compareIdCardDecisionByTitle(titlePart);
   }
 
+  if (typeof window.compareResidencePermitDecisionByTitle !== "function") {
+    window.compareResidencePermitDecisionByTitle = (titlePart) => compareResidencePermitDecisionByTitle(titlePart);
+  }
+
   if (typeof window.listPassportParityMismatches !== "function") {
     window.listPassportParityMismatches = (limit) => listPassportParityMismatches(limit);
   }
@@ -13278,6 +13353,7 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.listPassportDecisionPaths(limit)",
         "window.comparePassportDecisionByTitle(titlePart)",
         "window.compareIdCardDecisionByTitle(titlePart)",
+        "window.compareResidencePermitDecisionByTitle(titlePart)",
         "window.listPassportParityMismatches(limit)",
         "window.listPassportPerfectMatches(limit)",
         "window.listDecisionParityMatches(limit)",
@@ -13381,6 +13457,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.passportDecisionParityV3 = getPassportDecisionParityV3(diagnostics);
   diagnostics.passportDecisionComparisonExamples = getPassportDecisionComparisonExamples(diagnostics);
   diagnostics.idCardDecisionEngineSummary = getIdCardDecisionEngineSummary(diagnostics);
+  diagnostics.residencePermitDecisionEngineSummary = getResidencePermitDecisionEngineSummary(diagnostics);
   diagnostics.polymerChildMatchDiagnosticsSummary = getPolymerChildMatchDiagnosticsSummary(diagnostics);
   diagnostics.polymerFalseNegativeDiagnostics = getPolymerFalseNegativeDiagnosticsSummary(diagnostics);
   publishFilterDecisionTraceDiagnostics(diagnostics);
@@ -13452,6 +13529,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("passportDecisionParityV3", diagnostics.passportDecisionParityV3);
   console.log("passportDecisionComparisonExamples", diagnostics.passportDecisionComparisonExamples);
   console.log("idCardDecisionEngineSummary", diagnostics.idCardDecisionEngineSummary);
+  console.log("residencePermitDecisionEngineSummary", diagnostics.residencePermitDecisionEngineSummary);
   console.log("polymerChildMatchDiagnosticsSummary", diagnostics.polymerChildMatchDiagnosticsSummary);
   console.log("polymerFalseNegativeDiagnostics", diagnostics.polymerFalseNegativeDiagnostics);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
@@ -24731,6 +24809,189 @@ const ID_CARD_RULE_SET = {
   contextBuilder: buildIdCardDecisionContext,
 };
 
+function buildResidencePermitDecisionContext(article) {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const selectedSharedSecurityInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
+  const residencePermitBoost = computePersonalInterestBoost(article, "residence_permits");
+  const subinterestScore = getIdentityDocumentSubinterestScore(article, ["residence_permits"]);
+  const signals = getIdentityDocumentInterestSignals(article);
+  const identityTechniqueBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, ["residence_permits"]);
+
+  return {
+    selectedInterests,
+    selectedSharedSecurityInterests,
+    primaryDomain: getArticleDominantDomain(article),
+    residencePermitBoost,
+    residencePermitScore: Number(residencePermitBoost?.score) || 0,
+    subinterestScore,
+    bestSelectedScore: Number(subinterestScore?.bestSelectedScore || subinterestScore?.score) || 0,
+    signals,
+    identityTechniqueBridgeMatched,
+  };
+}
+
+const ResidencePermitNavigationPageRule = {
+  id: "residence_permit_navigation_page",
+  description: "Reject Residence Permit navigation-page articles using the existing identity navigation helper.",
+  category: "consumer_residence_permit_context",
+  evaluate(article) {
+    const rejected = isIdentityNavigationPageArticle(article);
+    const reason = rejected ? "identity navigation page" : "";
+    return {
+      matched: rejected,
+      reason,
+      category: this.category,
+      scoreBreakdown: {},
+      evidence: { navigationPage: rejected },
+      terminal: rejected,
+      rejected,
+      rejectionReason: reason,
+      rejectionCategory: this.category,
+      metadata: { navigationPage: rejected },
+    };
+  },
+};
+
+const NoResidencePermitSignalRule = {
+  id: "no_residence_permit_signal",
+  description: "Reject when existing Residence Permit scoring and signal helpers find no permit evidence.",
+  category: "weak_residence_permit_signal",
+  evaluate(article, context) {
+    const rejected = context.residencePermitScore <= 0
+      && context.bestSelectedScore <= 0
+      && Number(context.signals?.residencePermitHits || 0) <= 0
+      && Number(context.signals?.issuanceHits || 0) <= 0;
+    const reason = rejected ? "no Residence Permit signal from legacy helpers" : "";
+    return {
+      matched: rejected,
+      reason,
+      category: this.category,
+      scoreBreakdown: {
+        residencePermitScore: context.residencePermitScore,
+        bestSelectedScore: context.bestSelectedScore,
+        residencePermitHits: Number(context.signals?.residencePermitHits || 0),
+        issuanceHits: Number(context.signals?.issuanceHits || 0),
+      },
+      evidence: {
+        residencePermitBoost: context.residencePermitBoost,
+        subinterestScore: context.subinterestScore,
+        signals: context.signals,
+      },
+      terminal: rejected,
+      rejected,
+      rejectionReason: reason,
+      rejectionCategory: this.category,
+      metadata: {
+        residencePermitScore: context.residencePermitScore,
+        bestSelectedScore: context.bestSelectedScore,
+        signals: context.signals,
+      },
+    };
+  },
+};
+
+const ProfessionalResidencePermitKeepRule = {
+  id: "professional_residence_permit_keep",
+  description: "Keep when the existing Residence Permit boost reaches the legacy identity interest threshold.",
+  category: "professional_residence_permit_keep",
+  evaluate(article, context) {
+    const matched = context.residencePermitScore >= 18;
+    return {
+      matched,
+      reason: "",
+      category: this.category,
+      scoreBreakdown: {
+        residencePermitScore: context.residencePermitScore,
+        threshold: 18,
+      },
+      evidence: context.residencePermitBoost,
+      terminal: matched,
+      rejected: false,
+      rejectionReason: "",
+      rejectionCategory: this.category,
+      metadata: {
+        residencePermitScore: context.residencePermitScore,
+        threshold: 18,
+        residencePermitBoost: context.residencePermitBoost,
+      },
+    };
+  },
+};
+
+const ResidencePermitBridgeKeepRule = {
+  id: "residence_permit_bridge_keep",
+  description: "Keep when existing Residence Permit identity/shared-security bridge helpers match.",
+  category: "residence_permit_bridge_keep",
+  evaluate(article, context) {
+    const matched = Boolean(context.identityTechniqueBridgeMatched);
+    return {
+      matched,
+      reason: "",
+      category: this.category,
+      scoreBreakdown: {},
+      evidence: {
+        identityTechniqueBridgeMatched: context.identityTechniqueBridgeMatched,
+      },
+      terminal: matched,
+      rejected: false,
+      rejectionReason: "",
+      rejectionCategory: this.category,
+      metadata: {
+        identityTechniqueBridgeMatched: context.identityTechniqueBridgeMatched,
+      },
+    };
+  },
+};
+
+const WeakResidencePermitSignalRule = {
+  id: "weak_residence_permit_signal",
+  description: "Reject when existing Residence Permit scoring remains below the legacy identity interest threshold.",
+  category: "weak_residence_permit_signal",
+  evaluate(article, context) {
+    const rejected = context.residencePermitScore < 18 && !context.identityTechniqueBridgeMatched;
+    const reason = rejected ? "Residence Permit score below legacy identity interest threshold" : "";
+    return {
+      matched: true,
+      reason,
+      category: rejected ? this.category : "residence_permit_shadow_keep",
+      scoreBreakdown: {
+        residencePermitScore: context.residencePermitScore,
+        threshold: 18,
+        bestSelectedScore: context.bestSelectedScore,
+      },
+      evidence: {
+        residencePermitBoost: context.residencePermitBoost,
+        subinterestScore: context.subinterestScore,
+        signals: context.signals,
+      },
+      terminal: true,
+      rejected,
+      rejectionReason: reason,
+      rejectionCategory: rejected ? this.category : "residence_permit_shadow_keep",
+      metadata: {
+        residencePermitScore: context.residencePermitScore,
+        bestSelectedScore: context.bestSelectedScore,
+        threshold: 18,
+        signals: context.signals,
+      },
+    };
+  },
+};
+
+const RESIDENCE_PERMIT_REJECTION_RULES = [
+  ResidencePermitNavigationPageRule,
+  NoResidencePermitSignalRule,
+  ProfessionalResidencePermitKeepRule,
+  ResidencePermitBridgeKeepRule,
+  WeakResidencePermitSignalRule,
+];
+
+const RESIDENCE_PERMIT_RULE_SET = {
+  documentType: "residence_permit",
+  rules: RESIDENCE_PERMIT_REJECTION_RULES,
+  contextBuilder: buildResidencePermitDecisionContext,
+};
+
 function evaluateDocumentDecisionRules(article, ruleSet, context = null) {
   const documentType = ruleSet?.documentType || "unknown";
   const rules = Array.isArray(ruleSet?.rules) ? ruleSet.rules : [];
@@ -24793,6 +25054,10 @@ function evaluatePassportRejectionRules(article, context = null) {
 
 function evaluateIdCardDecisionRules(article, context = null) {
   return evaluateDocumentDecisionRules(article, ID_CARD_RULE_SET, context);
+}
+
+function evaluateResidencePermitDecisionRules(article, context = null) {
+  return evaluateDocumentDecisionRules(article, RESIDENCE_PERMIT_RULE_SET, context);
 }
 
 function shouldRejectPassportArticle(article) {
