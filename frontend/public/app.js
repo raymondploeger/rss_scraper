@@ -7748,6 +7748,8 @@ function getIdCardDecisionEngineSummary(diagnostics) {
   let evaluated = 0;
   let rejected = 0;
   let kept = 0;
+  let explicitIdCardEvidenceCount = 0;
+  let relatedIdentityEvidenceOnlyCount = 0;
   getHeavyDiagnosticsTraces(diagnostics).forEach((trace) => {
     const idCardDecision = trace.idCardDecisionDiagnostics;
     if (!idCardDecision) {
@@ -7759,6 +7761,11 @@ function getIdCardDecisionEngineSummary(diagnostics) {
     } else {
       kept += 1;
     }
+    if (trace.evidenceParityDiagnostics?.evidenceHasExplicitIdCardEvidence) {
+      explicitIdCardEvidenceCount += 1;
+    } else if (trace.evidenceParityDiagnostics?.evidenceHasRelatedIdentityEvidence) {
+      relatedIdentityEvidenceOnlyCount += 1;
+    }
     incrementReasonCount(ruleCounts, idCardDecision.matchedRuleId || "unknown");
   });
 
@@ -7767,6 +7774,8 @@ function getIdCardDecisionEngineSummary(diagnostics) {
     evaluated,
     ruleSetActive: true,
     documentType: ID_CARD_RULE_SET.documentType,
+    explicitIdCardEvidenceCount,
+    relatedIdentityEvidenceOnlyCount,
     kept,
     rejected,
     topMatchedRules: getTopV3DecisionReasons(ruleCounts, 10),
@@ -24883,6 +24892,7 @@ const ID_CARD_REJECTION_RULES = [
 
 const ID_CARD_RULE_SET = {
   documentType: "id_card",
+  baseRules: IDENTITY_BASE_RULES,
   rules: ID_CARD_REJECTION_RULES,
   contextBuilder: buildIdCardDecisionContext,
 };
