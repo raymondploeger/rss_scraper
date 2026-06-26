@@ -24516,14 +24516,18 @@ const LowRelevancePassportRule = {
   },
 };
 
-const PASSPORT_REJECTION_RULES = [
-  OutsidePassportIdentityScopeRule,
-  NoCentralIdentitySignalRule,
+const IDENTITY_BASE_RULES = [
   WeakKeesingIdentityRelevanceRule,
   PrimarySubjectUnrelatedRule,
   WeakKeesingIdentityRelevanceScoreRule,
   ProfessionalIdentityKeepRule,
   LowRelevancePassportRule,
+];
+
+const PASSPORT_REJECTION_RULES = [
+  OutsidePassportIdentityScopeRule,
+  NoCentralIdentitySignalRule,
+  ...IDENTITY_BASE_RULES,
 ];
 
 const PASSPORT_RULE_SET = {
