@@ -4643,6 +4643,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     idCardDecisionEngineSummary: null,
     residencePermitDecisionEngineSummary: null,
     visaDecisionEngineSummary: null,
+    driverLicenseDecisionEngineSummary: null,
     polymerChildMatchDiagnosticsSummary: null,
     polymerFalseNegativeDiagnostics: null,
     paginationPipeline: null,
@@ -4927,6 +4928,9 @@ function getFilterDecisionTrace(diagnostics, article) {
     const visaDecision = heavyDiagnosticsEnabled
       ? evaluateVisaDecisionRules(article)
       : null;
+    const driverLicenseDecision = heavyDiagnosticsEnabled
+      ? evaluateDriverLicenseDecisionRules(article)
+      : null;
     diagnostics.filterDecisionTraceMap.set(articleId, {
       articleId,
       title: article?.title || "Untitled article",
@@ -4947,6 +4951,7 @@ function getFilterDecisionTrace(diagnostics, article) {
       idCardDecisionDiagnostics: idCardDecision,
       residencePermitDecisionDiagnostics: residencePermitDecision,
       visaDecisionDiagnostics: visaDecision,
+      driverLicenseDecisionDiagnostics: driverLicenseDecision,
       stages: [],
       finalResult: "",
       finalReason: "",
@@ -5041,6 +5046,7 @@ function freezeFilterDecisionTrace(trace) {
     idCardDecisionDiagnostics: Object.freeze(trace.idCardDecisionDiagnostics || {}),
     residencePermitDecisionDiagnostics: Object.freeze(trace.residencePermitDecisionDiagnostics || {}),
     visaDecisionDiagnostics: Object.freeze(trace.visaDecisionDiagnostics || {}),
+    driverLicenseDecisionDiagnostics: Object.freeze(trace.driverLicenseDecisionDiagnostics || {}),
     stages: Object.freeze(frozenStages),
     finalResult: trace.finalResult || "survived",
     finalReason: trace.finalReason || "article survived traced filter pipeline",
@@ -7858,6 +7864,44 @@ function getVisaDecisionEngineSummary(diagnostics) {
     notes: [
       "Visa rule set runs in shadow diagnostics only",
       "Visa uses DocumentDecisionEngine in diagnostic mode",
+      "Legacy filtering remains authoritative",
+    ],
+  };
+}
+
+function getDriverLicenseDecisionEngineSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+  const ruleCounts = new Map();
+  let evaluated = 0;
+  let rejected = 0;
+  let kept = 0;
+  getHeavyDiagnosticsTraces(diagnostics).forEach((trace) => {
+    const driverLicenseDecision = trace.driverLicenseDecisionDiagnostics;
+    if (!driverLicenseDecision) {
+      return;
+    }
+    evaluated += 1;
+    if (driverLicenseDecision.rejected) {
+      rejected += 1;
+    } else {
+      kept += 1;
+    }
+    incrementReasonCount(ruleCounts, driverLicenseDecision.matchedRuleId || "unknown");
+  });
+
+  return {
+    enabled: true,
+    evaluated,
+    ruleSetActive: true,
+    documentType: DRIVER_LICENSE_RULE_SET.documentType,
+    kept,
+    rejected,
+    topMatchedRules: getTopV3DecisionReasons(ruleCounts, 10),
+    notes: [
+      "Driver License rule set runs in shadow diagnostics only",
+      "Driver License uses DocumentDecisionEngine in diagnostic mode",
       "Legacy filtering remains authoritative",
     ],
   };
@@ -11098,6 +11142,32 @@ function compareVisaDecisionByTitle(titlePart) {
   };
 }
 
+function compareDriverLicenseDecisionByTitle(titlePart) {
+  const needle = String(titlePart || "").trim().toLowerCase();
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!needle || !traceMap) {
+    return null;
+  }
+  const match = Array.from(traceMap.values()).find((trace) =>
+    String(trace?.title || "").toLowerCase().includes(needle)
+  );
+  if (!match) {
+    return null;
+  }
+  return {
+    articleId: match.articleId,
+    title: match.title,
+    finalResult: match.finalResult || "",
+    finalReason: match.finalReason || "",
+    driverLicenseDecisionDiagnostics: match.driverLicenseDecisionDiagnostics || null,
+    heavyDiagnosticsEnabled: Boolean(match.heavyDiagnosticsEnabled),
+    notes: [
+      "Driver License rule set is shadow-only",
+      "Legacy filtering remains authoritative",
+    ],
+  };
+}
+
 function listPassportParityMismatches(limit = 25) {
   return getPassportDecisionComparisonEntries({ limit, mismatchOnly: true });
 }
@@ -12971,6 +13041,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     idCardDecisionEngineSummary: diagnostics.idCardDecisionEngineSummary || null,
     residencePermitDecisionEngineSummary: diagnostics.residencePermitDecisionEngineSummary || null,
     visaDecisionEngineSummary: diagnostics.visaDecisionEngineSummary || null,
+    driverLicenseDecisionEngineSummary: diagnostics.driverLicenseDecisionEngineSummary || null,
     polymerChildMatchDiagnosticsSummary: diagnostics.polymerChildMatchDiagnosticsSummary || null,
     polymerFalseNegativeDiagnostics: diagnostics.polymerFalseNegativeDiagnostics || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
@@ -13293,6 +13364,10 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.compareVisaDecisionByTitle = (titlePart) => compareVisaDecisionByTitle(titlePart);
   }
 
+  if (typeof window.compareDriverLicenseDecisionByTitle !== "function") {
+    window.compareDriverLicenseDecisionByTitle = (titlePart) => compareDriverLicenseDecisionByTitle(titlePart);
+  }
+
   if (typeof window.listPassportParityMismatches !== "function") {
     window.listPassportParityMismatches = (limit) => listPassportParityMismatches(limit);
   }
@@ -13439,6 +13514,7 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.compareIdCardDecisionByTitle(titlePart)",
         "window.compareResidencePermitDecisionByTitle(titlePart)",
         "window.compareVisaDecisionByTitle(titlePart)",
+        "window.compareDriverLicenseDecisionByTitle(titlePart)",
         "window.listPassportParityMismatches(limit)",
         "window.listPassportPerfectMatches(limit)",
         "window.listDecisionParityMatches(limit)",
@@ -13544,6 +13620,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.idCardDecisionEngineSummary = getIdCardDecisionEngineSummary(diagnostics);
   diagnostics.residencePermitDecisionEngineSummary = getResidencePermitDecisionEngineSummary(diagnostics);
   diagnostics.visaDecisionEngineSummary = getVisaDecisionEngineSummary(diagnostics);
+  diagnostics.driverLicenseDecisionEngineSummary = getDriverLicenseDecisionEngineSummary(diagnostics);
   diagnostics.polymerChildMatchDiagnosticsSummary = getPolymerChildMatchDiagnosticsSummary(diagnostics);
   diagnostics.polymerFalseNegativeDiagnostics = getPolymerFalseNegativeDiagnosticsSummary(diagnostics);
   publishFilterDecisionTraceDiagnostics(diagnostics);
@@ -13617,6 +13694,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("idCardDecisionEngineSummary", diagnostics.idCardDecisionEngineSummary);
   console.log("residencePermitDecisionEngineSummary", diagnostics.residencePermitDecisionEngineSummary);
   console.log("visaDecisionEngineSummary", diagnostics.visaDecisionEngineSummary);
+  console.log("driverLicenseDecisionEngineSummary", diagnostics.driverLicenseDecisionEngineSummary);
   console.log("polymerChildMatchDiagnosticsSummary", diagnostics.polymerChildMatchDiagnosticsSummary);
   console.log("polymerFalseNegativeDiagnostics", diagnostics.polymerFalseNegativeDiagnostics);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
@@ -25301,6 +25379,230 @@ const VISA_RULE_SET = {
   contextBuilder: buildVisaDecisionContext,
 };
 
+function buildDriverLicenseDecisionContext(article) {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const selectedSharedSecurityInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
+  const driverLicenseBoost = computePersonalInterestBoost(article, "drivers_licenses");
+  const subinterestScore = getIdentityDocumentSubinterestScore(article, ["drivers_licenses"]);
+  const signals = getIdentityDocumentInterestSignals(article);
+  const identityTechniqueBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, ["drivers_licenses"]);
+  const driverLicenseSpecific = isDriverLicenseSpecificArticle(article);
+  const genericDmvNoise = isGenericDmvNoise(article);
+
+  return {
+    selectedInterests,
+    selectedSharedSecurityInterests,
+    primaryDomain: getArticleDominantDomain(article),
+    driverLicenseBoost,
+    driverLicenseScore: Number(driverLicenseBoost?.score) || 0,
+    subinterestScore,
+    bestSelectedScore: Number(subinterestScore?.bestSelectedScore || subinterestScore?.score) || 0,
+    signals,
+    identityTechniqueBridgeMatched,
+    driverLicenseSpecific,
+    genericDmvNoise,
+  };
+}
+
+const DriverLicenseNavigationPageRule = {
+  id: "driver_license_navigation_page",
+  description: "Reject Driver License navigation-page articles using the existing identity navigation helper.",
+  category: "dmv_consumer_noise",
+  evaluate(article) {
+    const rejected = isIdentityNavigationPageArticle(article);
+    const reason = rejected ? "identity navigation page" : "";
+    return {
+      matched: rejected,
+      reason,
+      category: this.category,
+      scoreBreakdown: {},
+      evidence: { navigationPage: rejected },
+      terminal: rejected,
+      rejected,
+      rejectionReason: reason,
+      rejectionCategory: this.category,
+      metadata: { navigationPage: rejected },
+    };
+  },
+};
+
+const NoDriverLicenseSignalRule = {
+  id: "no_driver_license_signal",
+  description: "Reject when existing Driver License scoring and signal helpers find no license evidence.",
+  category: "weak_driver_license_signal",
+  evaluate(article, context) {
+    const rejected = context.driverLicenseScore <= 0
+      && context.bestSelectedScore <= 0
+      && Number(context.signals?.driverLicenseHits || 0) <= 0
+      && !context.driverLicenseSpecific;
+    const reason = rejected ? "no Driver License signal from legacy helpers" : "";
+    return {
+      matched: rejected,
+      reason,
+      category: this.category,
+      scoreBreakdown: {
+        driverLicenseScore: context.driverLicenseScore,
+        bestSelectedScore: context.bestSelectedScore,
+        driverLicenseHits: Number(context.signals?.driverLicenseHits || 0),
+        driverLicenseSpecific: Boolean(context.driverLicenseSpecific),
+      },
+      evidence: {
+        driverLicenseBoost: context.driverLicenseBoost,
+        subinterestScore: context.subinterestScore,
+        signals: context.signals,
+      },
+      terminal: rejected,
+      rejected,
+      rejectionReason: reason,
+      rejectionCategory: this.category,
+      metadata: {
+        driverLicenseScore: context.driverLicenseScore,
+        bestSelectedScore: context.bestSelectedScore,
+        driverLicenseSpecific: Boolean(context.driverLicenseSpecific),
+        signals: context.signals,
+      },
+    };
+  },
+};
+
+const DmvConsumerNoiseRule = {
+  id: "dmv_consumer_noise",
+  description: "Reject generic DMV noise using the existing DMV noise helper.",
+  category: "dmv_consumer_noise",
+  evaluate(article, context) {
+    const rejected = Boolean(context.genericDmvNoise) && context.driverLicenseScore < 18;
+    const reason = rejected ? "generic DMV context below legacy identity interest threshold" : "";
+    return {
+      matched: rejected,
+      reason,
+      category: this.category,
+      scoreBreakdown: {
+        driverLicenseScore: context.driverLicenseScore,
+        threshold: 18,
+        genericDmvNoise: Boolean(context.genericDmvNoise),
+      },
+      evidence: {
+        genericDmvNoise: Boolean(context.genericDmvNoise),
+        signals: context.signals,
+      },
+      terminal: rejected,
+      rejected,
+      rejectionReason: reason,
+      rejectionCategory: this.category,
+      metadata: {
+        driverLicenseScore: context.driverLicenseScore,
+        threshold: 18,
+        genericDmvNoise: Boolean(context.genericDmvNoise),
+        signals: context.signals,
+      },
+    };
+  },
+};
+
+const ProfessionalDriverLicenseKeepRule = {
+  id: "professional_driver_license_keep",
+  description: "Keep when the existing Driver License boost reaches the legacy identity interest threshold.",
+  category: "professional_driver_license_keep",
+  evaluate(article, context) {
+    const matched = context.driverLicenseScore >= 18;
+    return {
+      matched,
+      reason: "",
+      category: this.category,
+      scoreBreakdown: {
+        driverLicenseScore: context.driverLicenseScore,
+        threshold: 18,
+      },
+      evidence: context.driverLicenseBoost,
+      terminal: matched,
+      rejected: false,
+      rejectionReason: "",
+      rejectionCategory: this.category,
+      metadata: {
+        driverLicenseScore: context.driverLicenseScore,
+        threshold: 18,
+        driverLicenseBoost: context.driverLicenseBoost,
+      },
+    };
+  },
+};
+
+const DriverLicenseBridgeKeepRule = {
+  id: "dmv_identity_verification_keep",
+  description: "Keep when existing Driver License identity/shared-security bridge helpers match.",
+  category: "dmv_identity_verification_keep",
+  evaluate(article, context) {
+    const matched = Boolean(context.identityTechniqueBridgeMatched);
+    return {
+      matched,
+      reason: "",
+      category: this.category,
+      scoreBreakdown: {},
+      evidence: {
+        identityTechniqueBridgeMatched: context.identityTechniqueBridgeMatched,
+      },
+      terminal: matched,
+      rejected: false,
+      rejectionReason: "",
+      rejectionCategory: this.category,
+      metadata: {
+        identityTechniqueBridgeMatched: context.identityTechniqueBridgeMatched,
+      },
+    };
+  },
+};
+
+const WeakDriverLicenseSignalRule = {
+  id: "weak_driver_license_signal",
+  description: "Reject when existing Driver License scoring remains below the legacy identity interest threshold.",
+  category: "weak_driver_license_signal",
+  evaluate(article, context) {
+    const rejected = context.driverLicenseScore < 18 && !context.identityTechniqueBridgeMatched;
+    const reason = rejected ? "Driver License score below legacy identity interest threshold" : "";
+    return {
+      matched: true,
+      reason,
+      category: rejected ? this.category : "driver_license_shadow_keep",
+      scoreBreakdown: {
+        driverLicenseScore: context.driverLicenseScore,
+        threshold: 18,
+        bestSelectedScore: context.bestSelectedScore,
+      },
+      evidence: {
+        driverLicenseBoost: context.driverLicenseBoost,
+        subinterestScore: context.subinterestScore,
+        signals: context.signals,
+      },
+      terminal: true,
+      rejected,
+      rejectionReason: reason,
+      rejectionCategory: rejected ? this.category : "driver_license_shadow_keep",
+      metadata: {
+        driverLicenseScore: context.driverLicenseScore,
+        bestSelectedScore: context.bestSelectedScore,
+        threshold: 18,
+        signals: context.signals,
+      },
+    };
+  },
+};
+
+const DRIVER_LICENSE_REJECTION_RULES = [
+  DriverLicenseNavigationPageRule,
+  NoDriverLicenseSignalRule,
+  DmvConsumerNoiseRule,
+  ProfessionalDriverLicenseKeepRule,
+  DriverLicenseBridgeKeepRule,
+  WeakDriverLicenseSignalRule,
+];
+
+const DRIVER_LICENSE_RULE_SET = {
+  documentType: "driver_license",
+  baseRules: IDENTITY_BASE_RULES,
+  rules: DRIVER_LICENSE_REJECTION_RULES,
+  contextBuilder: buildDriverLicenseDecisionContext,
+};
+
 function evaluateDocumentDecisionRules(article, ruleSet, context = null) {
   const documentType = ruleSet?.documentType || "unknown";
   const rules = Array.isArray(ruleSet?.rules) ? ruleSet.rules : [];
@@ -25371,6 +25673,10 @@ function evaluateResidencePermitDecisionRules(article, context = null) {
 
 function evaluateVisaDecisionRules(article, context = null) {
   return evaluateDocumentDecisionRules(article, VISA_RULE_SET, context);
+}
+
+function evaluateDriverLicenseDecisionRules(article, context = null) {
+  return evaluateDocumentDecisionRules(article, DRIVER_LICENSE_RULE_SET, context);
 }
 
 function shouldRejectPassportArticle(article) {
