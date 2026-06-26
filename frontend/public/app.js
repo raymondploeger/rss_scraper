@@ -4627,6 +4627,10 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     passportDecisionParitySummary: null,
     passportDecisionExamples: null,
     passportDecisionMismatchExamples: null,
+    passportDecisionTreeSummary: null,
+    passportDecisionTreeExamples: null,
+    passportDecisionPaths: null,
+    passportDecisionExitHelpers: null,
     polymerChildMatchDiagnosticsSummary: null,
     polymerFalseNegativeDiagnostics: null,
     paginationPipeline: null,
@@ -4742,6 +4746,8 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Passport Decision Engine diagnostics active",
             "Passport Decision Engine is diagnostics-only",
             "Legacy shouldRejectPassportArticle remains authoritative",
+            "Passport Decision Tree tracing active",
+            "Legacy helper remains authoritative",
             "Diagnostics only",
             "Filtering unchanged",
             "Filtering diagnostics performance guard active",
@@ -4885,6 +4891,9 @@ function getFilterDecisionTrace(diagnostics, article) {
           confidenceDiagnostics: v3Decision?.confidenceDiagnostics,
         })
       : null;
+    const passportDecisionTree = heavyDiagnosticsEnabled
+      ? tracePassportDecisionTree(article)
+      : null;
     diagnostics.filterDecisionTraceMap.set(articleId, {
       articleId,
       title: article?.title || "Untitled article",
@@ -4899,6 +4908,7 @@ function getFilterDecisionTrace(diagnostics, article) {
       v3DecisionDiagnostics: v3Decision,
       professionalDecisionDiagnostics: professionalDecision,
       passportDecisionDiagnostics: passportDecision,
+      passportDecisionTreeDiagnostics: passportDecisionTree,
       stages: [],
       finalResult: "",
       finalReason: "",
@@ -4987,6 +4997,7 @@ function freezeFilterDecisionTrace(trace) {
     decisionParityDiagnostics: Object.freeze(trace.decisionParityDiagnostics || {}),
     professionalDecisionDiagnostics: Object.freeze(trace.professionalDecisionDiagnostics || {}),
     passportDecisionDiagnostics: Object.freeze(trace.passportDecisionDiagnostics || {}),
+    passportDecisionTreeDiagnostics: Object.freeze(trace.passportDecisionTreeDiagnostics || {}),
     stages: Object.freeze(frozenStages),
     finalResult: trace.finalResult || "survived",
     finalReason: trace.finalReason || "article survived traced filter pipeline",
@@ -5054,6 +5065,9 @@ function getFilterDecisionDebugToolsSummary(diagnostics) {
       "window.explainProfessionalDecisionByTitle(titlePart)",
       "window.listPassportDecisionDiagnostics(decision, limit)",
       "window.explainPassportDecisionByTitle(titlePart)",
+      "window.tracePassportDecisionByTitle(titlePart)",
+      "window.listPassportDecisionExitHelpers()",
+      "window.listPassportDecisionPaths(limit)",
       "window.listDecisionParityMatches(limit)",
       "window.listDecisionParityMismatches(limit)",
       "window.explainDecisionParityByTitle(titlePart)",
@@ -6712,6 +6726,279 @@ function getPassportDecisionMismatchExamples(diagnostics, limit = 10) {
       legacyComparison: decision.legacyComparison,
       explanation: decision.explanation,
     }));
+}
+
+function createPassportDecisionTreeStep(helper, result, explanation = "", metadata = {}) {
+  return {
+    helper,
+    result,
+    explanation,
+    metadata,
+  };
+}
+
+function tracePassportDecisionTree(article) {
+  const articleId = getFilterDecisionTraceArticleId(article);
+  const title = article?.title || "Untitled article";
+  const steps = [];
+  const helpersVisited = [];
+  const helpersSkipped = [];
+  const directHelperOrder = [
+    "isPassportOrIdentityTopicArticle",
+    "getHighConfidencePassportAssessment",
+    "isHighConfidencePassportIntelligence",
+    "getKeesingIdentityRelevance",
+    "getIdentityContextSignals",
+    "getIdentityDocumentRelevance",
+  ];
+  const markVisited = (helper) => {
+    if (!helpersVisited.includes(helper)) {
+      helpersVisited.push(helper);
+    }
+  };
+  const markSkipped = (helper) => {
+    if (!helpersVisited.includes(helper) && !helpersSkipped.includes(helper)) {
+      helpersSkipped.push(helper);
+    }
+  };
+  const skipRemaining = () => {
+    directHelperOrder.forEach(markSkipped);
+  };
+  const addStep = (helper, result, explanation = "", metadata = {}) => {
+    markVisited(helper);
+    steps.push(createPassportDecisionTreeStep(helper, result, explanation, metadata));
+  };
+  const finish = (legacyReject, exitHelper, explanation) => {
+    skipRemaining();
+    const decisionPath = steps.map((step) => `${step.helper}:${String(step.result)}`);
+    const legacyHelperResult = shouldRejectPassportArticle(article);
+    return {
+      articleId,
+      title,
+      steps,
+      finalDecision: {
+        legacyReject,
+        legacyHelperResult,
+        exitPoint: exitHelper,
+        explanation,
+      },
+      decisionPath,
+      decisionDepth: steps.length,
+      exitHelper,
+      helpersVisited,
+      helpersSkipped,
+      helpersSkippedCount: helpersSkipped.length,
+      helpersVisitedCount: helpersVisited.length,
+      relatedHelperDiagnostics: {
+        isHardPassportNoise: isHardPassportNoise(article),
+        isLowRelevancePassportArticle: isLowRelevancePassportArticle(article),
+        isUiRelevantIntelligenceArticle: isUiRelevantIntelligenceArticle(article),
+      },
+      mismatchWithLegacyHelper: legacyReject !== legacyHelperResult,
+    };
+  };
+
+  const passportOrIdentityTopic = isPassportOrIdentityTopicArticle(article);
+  addStep(
+    "isPassportOrIdentityTopicArticle",
+    passportOrIdentityTopic,
+    passportOrIdentityTopic
+      ? "article is in passport or identity topic scope"
+      : "article is outside passport or identity topic scope"
+  );
+  if (!passportOrIdentityTopic) {
+    return finish(false, "isPassportOrIdentityTopicArticle", "legacy helper exits early and keeps non-passport/non-identity article");
+  }
+
+  const highConfidencePassportAssessment = getHighConfidencePassportAssessment(article);
+  const highConfidencePassportIntelligence = isHighConfidencePassportIntelligence(article);
+  addStep(
+    "getHighConfidencePassportAssessment",
+    Boolean(highConfidencePassportAssessment?.kept),
+    highConfidencePassportAssessment?.kept
+      ? "high-confidence passport assessment kept article"
+      : highConfidencePassportAssessment?.rejectedReason || "high-confidence passport assessment rejected article",
+    highConfidencePassportAssessment
+  );
+  addStep(
+    "isHighConfidencePassportIntelligence",
+    Boolean(highConfidencePassportIntelligence),
+    highConfidencePassportIntelligence
+      ? "wrapper result kept article"
+      : "wrapper result rejected article because high-confidence assessment was not kept"
+  );
+  if (!highConfidencePassportIntelligence) {
+    return finish(true, "isHighConfidencePassportIntelligence", "legacy helper rejects when high-confidence passport intelligence is false");
+  }
+
+  const keesingAssessment = getKeesingIdentityRelevance(article);
+  addStep(
+    "getKeesingIdentityRelevance",
+    Boolean(keesingAssessment?.hasRequiredComponent),
+    keesingAssessment?.hasRequiredComponent
+      ? "Keesing relevance has required component"
+      : "Keesing relevance missing required component",
+    keesingAssessment
+  );
+  if (!keesingAssessment?.hasRequiredComponent) {
+    return finish(true, "getKeesingIdentityRelevance.hasRequiredComponent", "legacy helper rejects when required Keesing component is missing");
+  }
+  addStep(
+    "getKeesingIdentityRelevance.primarySubject",
+    keesingAssessment.primarySubject !== "unrelated",
+    keesingAssessment.primarySubject === "unrelated"
+      ? "Keesing primary subject is unrelated"
+      : `Keesing primary subject is ${keesingAssessment.primarySubject || "unknown"}`
+  );
+  if (keesingAssessment.primarySubject === "unrelated") {
+    return finish(true, "getKeesingIdentityRelevance.primarySubject", "legacy helper rejects unrelated Keesing primary subject");
+  }
+  addStep(
+    "getKeesingIdentityRelevance.score",
+    Number(keesingAssessment.score || 0) >= KEESING_RELEVANCE_THRESHOLD,
+    `Keesing score ${Number(keesingAssessment.score || 0)} compared to threshold ${KEESING_RELEVANCE_THRESHOLD}`,
+    {
+      score: keesingAssessment.score,
+      threshold: KEESING_RELEVANCE_THRESHOLD,
+    }
+  );
+  if (Number(keesingAssessment.score || 0) < KEESING_RELEVANCE_THRESHOLD) {
+    return finish(true, "getKeesingIdentityRelevance.score", "legacy helper rejects below Keesing relevance threshold");
+  }
+
+  const context = getIdentityContextSignals(article);
+  const hasStrongPositiveContext = context.government
+    || context.border
+    || context.immigration
+    || context.fraud
+    || context.security
+    || context.issuance
+    || context.infrastructure
+    || context.travelRule;
+  addStep(
+    "getIdentityContextSignals.strongPositiveContext",
+    Boolean(hasStrongPositiveContext),
+    hasStrongPositiveContext
+      ? "strong positive identity context found"
+      : "no strong positive identity context found",
+    context
+  );
+  if (hasStrongPositiveContext) {
+    markSkipped("getIdentityDocumentRelevance");
+    return finish(false, "getIdentityContextSignals.strongPositiveContext", "legacy helper keeps article when strong positive identity context is found");
+  }
+
+  const negativeContextCount = [
+    context.unrelatedLifestyle,
+    context.sports,
+    context.pets,
+    context.entertainment,
+    context.education,
+    context.genericTravel,
+  ].filter(Boolean).length;
+  addStep(
+    "getIdentityContextSignals.negativeContext",
+    negativeContextCount > 0,
+    negativeContextCount > 0
+      ? `${negativeContextCount} negative context flags found`
+      : "no negative context flags found",
+    {
+      negativeContextCount,
+      context,
+    }
+  );
+  if (!negativeContextCount) {
+    markSkipped("getIdentityDocumentRelevance");
+    return finish(false, "getIdentityContextSignals.negativeContext", "legacy helper keeps article because no negative context flags are present");
+  }
+
+  const identityDocumentRelevance = getIdentityDocumentRelevance(article);
+  addStep(
+    "getIdentityDocumentRelevance",
+    identityDocumentRelevance < IDENTITY_DOCUMENT_RELEVANCE_THRESHOLD,
+    `identity document relevance ${identityDocumentRelevance} compared to threshold ${IDENTITY_DOCUMENT_RELEVANCE_THRESHOLD}`,
+    {
+      identityDocumentRelevance,
+      threshold: IDENTITY_DOCUMENT_RELEVANCE_THRESHOLD,
+    }
+  );
+  return finish(
+    identityDocumentRelevance < IDENTITY_DOCUMENT_RELEVANCE_THRESHOLD,
+    "getIdentityDocumentRelevance",
+    identityDocumentRelevance < IDENTITY_DOCUMENT_RELEVANCE_THRESHOLD
+      ? "legacy helper rejects negative-context article below identity-document relevance threshold"
+      : "legacy helper keeps negative-context article at or above identity-document relevance threshold"
+  );
+}
+
+function getPassportDecisionTreeDiagnostics(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return [];
+  }
+  return getHeavyDiagnosticsTraces(diagnostics)
+    .map((trace) => trace.passportDecisionTreeDiagnostics || null)
+    .filter(Boolean);
+}
+
+function getPassportDecisionTreeSummary(diagnostics) {
+  const decisionTrees = getPassportDecisionTreeDiagnostics(diagnostics);
+  if (!diagnostics?.enabled) {
+    return null;
+  }
+  const exitHelperCounts = new Map();
+  const helperExecutionCounts = new Map();
+  const helperSkipCounts = new Map();
+  const decisionPathCounts = new Map();
+  let totalDecisionDepth = 0;
+
+  decisionTrees.forEach((tree) => {
+    totalDecisionDepth += Number(tree.decisionDepth || 0);
+    incrementReasonCount(exitHelperCounts, tree.exitHelper || "unknown");
+    (tree.helpersVisited || []).forEach((helper) => incrementReasonCount(helperExecutionCounts, helper));
+    (tree.helpersSkipped || []).forEach((helper) => incrementReasonCount(helperSkipCounts, helper));
+    incrementReasonCount(decisionPathCounts, (tree.decisionPath || []).join(" > ") || "unknown");
+  });
+
+  return {
+    enabled: true,
+    evaluatedArticles: decisionTrees.length,
+    mostCommonExitHelpers: getTopV3DecisionReasons(exitHelperCounts),
+    averageDecisionDepth: decisionTrees.length ? Number((totalDecisionDepth / decisionTrees.length).toFixed(2)) : 0,
+    helperExecutionFrequency: getTopV3DecisionReasons(helperExecutionCounts, 20),
+    helperSkipFrequency: getTopV3DecisionReasons(helperSkipCounts, 20),
+    mostCommonDecisionPaths: getTopV3DecisionReasons(decisionPathCounts, 20),
+  };
+}
+
+function getPassportDecisionTreeExamples(diagnostics, limit = 10) {
+  return getPassportDecisionTreeDiagnostics(diagnostics)
+    .slice(0, limit)
+    .map((tree) => ({
+      articleId: tree.articleId,
+      title: tree.title,
+      finalDecision: tree.finalDecision,
+      decisionDepth: tree.decisionDepth,
+      exitHelper: tree.exitHelper,
+      helpersVisited: tree.helpersVisited,
+      helpersSkipped: tree.helpersSkipped,
+      decisionPath: tree.decisionPath,
+    }));
+}
+
+function getPassportDecisionPaths(diagnostics, limit = 25) {
+  const pathCounts = new Map();
+  getPassportDecisionTreeDiagnostics(diagnostics).forEach((tree) => {
+    incrementReasonCount(pathCounts, (tree.decisionPath || []).join(" > ") || "unknown");
+  });
+  return getTopV3DecisionReasons(pathCounts, limit);
+}
+
+function getPassportDecisionExitHelpers(diagnostics, limit = 25) {
+  const exitHelperCounts = new Map();
+  getPassportDecisionTreeDiagnostics(diagnostics).forEach((tree) => {
+    incrementReasonCount(exitHelperCounts, tree.exitHelper || "unknown");
+  });
+  return getTopV3DecisionReasons(exitHelperCounts, limit);
 }
 
 function getDecisionParityValue(legacyDecision, v3Decision) {
@@ -9693,6 +9980,60 @@ function explainPassportDecisionByTitle(titlePart) {
   };
 }
 
+function tracePassportDecisionByTitle(titlePart) {
+  const needle = String(titlePart || "").trim().toLowerCase();
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!needle || !traceMap) {
+    return null;
+  }
+  const match = Array.from(traceMap.values()).find((trace) =>
+    String(trace?.title || "").toLowerCase().includes(needle)
+  );
+  if (!match) {
+    return null;
+  }
+  return {
+    articleId: match.articleId,
+    title: match.title,
+    finalResult: match.finalResult || "",
+    finalReason: match.finalReason || "",
+    passportDecisionTreeDiagnostics: match.passportDecisionTreeDiagnostics || null,
+    passportDecisionDiagnostics: match.passportDecisionDiagnostics || null,
+    heavyDiagnosticsEnabled: Boolean(match.heavyDiagnosticsEnabled),
+  };
+}
+
+function listPassportDecisionExitHelpers() {
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!traceMap) {
+    return [];
+  }
+  const exitHelperCounts = new Map();
+  Array.from(traceMap.values()).forEach((trace) => {
+    const tree = trace.passportDecisionTreeDiagnostics;
+    if (tree) {
+      incrementReasonCount(exitHelperCounts, tree.exitHelper || "unknown");
+    }
+  });
+  return getTopV3DecisionReasons(exitHelperCounts, 25);
+}
+
+function listPassportDecisionPaths(limit = 25) {
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!traceMap) {
+    return [];
+  }
+  const normalizedLimit = Math.max(1, Number(limit) || 25);
+  const pathCounts = new Map();
+  Array.from(traceMap.values()).forEach((trace) => {
+    const tree = trace.passportDecisionTreeDiagnostics;
+    if (tree) {
+      incrementReasonCount(pathCounts, (tree.decisionPath || []).join(" > ") || "unknown");
+    }
+  });
+  return getTopV3DecisionReasons(pathCounts, normalizedLimit);
+}
+
 function listDecisionParityEntries(options = {}) {
   const traceMap = getActiveFilterDecisionTraceMap();
   if (!traceMap) {
@@ -10787,6 +11128,28 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push("disabled");
   }
 
+  const passportDecisionTreeSummary = diagnostics.passportDecisionTreeSummary;
+  lines.push("");
+  lines.push("Passport Decision Tree");
+  if (passportDecisionTreeSummary?.enabled) {
+    lines.push(formatPipelineSummaryLine("evaluatedArticles", passportDecisionTreeSummary.evaluatedArticles));
+    lines.push(formatPipelineSummaryLine("averageDecisionDepth", passportDecisionTreeSummary.averageDecisionDepth));
+    if (passportDecisionTreeSummary.mostCommonExitHelpers?.length) {
+      lines.push("mostCommonExitHelpers:");
+      passportDecisionTreeSummary.mostCommonExitHelpers.slice(0, 5).forEach((entry) => {
+        lines.push(`- ${entry.reason}: ${entry.count}`);
+      });
+    }
+    if (passportDecisionTreeSummary.mostCommonDecisionPaths?.length) {
+      lines.push("mostCommonDecisionPaths:");
+      passportDecisionTreeSummary.mostCommonDecisionPaths.slice(0, 3).forEach((entry) => {
+        lines.push(`- ${entry.reason}: ${entry.count}`);
+      });
+    }
+  } else {
+    lines.push("disabled");
+  }
+
   const v3DecisionParitySummary = diagnostics.v3DecisionParitySummary;
   lines.push("");
   lines.push("V3 Decision Parity");
@@ -11468,6 +11831,10 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     passportDecisionParitySummary: diagnostics.passportDecisionParitySummary || null,
     passportDecisionExamples: diagnostics.passportDecisionExamples || null,
     passportDecisionMismatchExamples: diagnostics.passportDecisionMismatchExamples || null,
+    passportDecisionTreeSummary: diagnostics.passportDecisionTreeSummary || null,
+    passportDecisionTreeExamples: diagnostics.passportDecisionTreeExamples || null,
+    passportDecisionPaths: diagnostics.passportDecisionPaths || null,
+    passportDecisionExitHelpers: diagnostics.passportDecisionExitHelpers || null,
     polymerChildMatchDiagnosticsSummary: diagnostics.polymerChildMatchDiagnosticsSummary || null,
     polymerFalseNegativeDiagnostics: diagnostics.polymerFalseNegativeDiagnostics || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
@@ -11750,6 +12117,18 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.explainPassportDecisionByTitle = (titlePart) => explainPassportDecisionByTitle(titlePart);
   }
 
+  if (typeof window.tracePassportDecisionByTitle !== "function") {
+    window.tracePassportDecisionByTitle = (titlePart) => tracePassportDecisionByTitle(titlePart);
+  }
+
+  if (typeof window.listPassportDecisionExitHelpers !== "function") {
+    window.listPassportDecisionExitHelpers = () => listPassportDecisionExitHelpers();
+  }
+
+  if (typeof window.listPassportDecisionPaths !== "function") {
+    window.listPassportDecisionPaths = (limit) => listPassportDecisionPaths(limit);
+  }
+
   if (typeof window.listDecisionParityMatches !== "function") {
     window.listDecisionParityMatches = (limit) => listDecisionParityMatches(limit);
   }
@@ -11878,6 +12257,9 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.explainProfessionalDecisionByTitle(titlePart)",
         "window.listPassportDecisionDiagnostics(decision, limit)",
         "window.explainPassportDecisionByTitle(titlePart)",
+        "window.tracePassportDecisionByTitle(titlePart)",
+        "window.listPassportDecisionExitHelpers()",
+        "window.listPassportDecisionPaths(limit)",
         "window.listDecisionParityMatches(limit)",
         "window.listDecisionParityMismatches(limit)",
         "window.explainDecisionParityByTitle(titlePart)",
@@ -11965,6 +12347,10 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.passportDecisionParitySummary = getPassportDecisionParitySummary(diagnostics);
   diagnostics.passportDecisionExamples = getPassportDecisionExamples(diagnostics);
   diagnostics.passportDecisionMismatchExamples = getPassportDecisionMismatchExamples(diagnostics);
+  diagnostics.passportDecisionTreeSummary = getPassportDecisionTreeSummary(diagnostics);
+  diagnostics.passportDecisionTreeExamples = getPassportDecisionTreeExamples(diagnostics);
+  diagnostics.passportDecisionPaths = getPassportDecisionPaths(diagnostics);
+  diagnostics.passportDecisionExitHelpers = getPassportDecisionExitHelpers(diagnostics);
   diagnostics.polymerChildMatchDiagnosticsSummary = getPolymerChildMatchDiagnosticsSummary(diagnostics);
   diagnostics.polymerFalseNegativeDiagnostics = getPolymerFalseNegativeDiagnosticsSummary(diagnostics);
   publishFilterDecisionTraceDiagnostics(diagnostics);
@@ -12022,6 +12408,10 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("passportDecisionParitySummary", diagnostics.passportDecisionParitySummary);
   console.log("passportDecisionExamples", diagnostics.passportDecisionExamples);
   console.log("passportDecisionMismatchExamples", diagnostics.passportDecisionMismatchExamples);
+  console.log("passportDecisionTreeSummary", diagnostics.passportDecisionTreeSummary);
+  console.log("passportDecisionTreeExamples", diagnostics.passportDecisionTreeExamples);
+  console.log("passportDecisionPaths", diagnostics.passportDecisionPaths);
+  console.log("passportDecisionExitHelpers", diagnostics.passportDecisionExitHelpers);
   console.log("polymerChildMatchDiagnosticsSummary", diagnostics.polymerChildMatchDiagnosticsSummary);
   console.log("polymerFalseNegativeDiagnostics", diagnostics.polymerFalseNegativeDiagnostics);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
