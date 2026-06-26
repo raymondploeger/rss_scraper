@@ -4640,6 +4640,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     passportDecisionComparisonSummary: null,
     passportDecisionParityV3: null,
     passportDecisionComparisonExamples: null,
+    idCardDecisionEngineSummary: null,
     polymerChildMatchDiagnosticsSummary: null,
     polymerFalseNegativeDiagnostics: null,
     paginationPipeline: null,
@@ -4915,6 +4916,9 @@ function getFilterDecisionTrace(diagnostics, article) {
     const passportDecisionComparison = heavyDiagnosticsEnabled
       ? comparePassportDecisionV3WithLegacy(passportDecisionV3, passportDecisionTree)
       : null;
+    const idCardDecision = heavyDiagnosticsEnabled
+      ? evaluateIdCardDecisionRules(article)
+      : null;
     diagnostics.filterDecisionTraceMap.set(articleId, {
       articleId,
       title: article?.title || "Untitled article",
@@ -4932,6 +4936,7 @@ function getFilterDecisionTrace(diagnostics, article) {
       passportDecisionTreeDiagnostics: passportDecisionTree,
       passportDecisionV3Diagnostics: passportDecisionV3,
       passportDecisionComparison,
+      idCardDecisionDiagnostics: idCardDecision,
       stages: [],
       finalResult: "",
       finalReason: "",
@@ -5023,6 +5028,7 @@ function freezeFilterDecisionTrace(trace) {
     passportDecisionTreeDiagnostics: Object.freeze(trace.passportDecisionTreeDiagnostics || {}),
     passportDecisionV3Diagnostics: Object.freeze(trace.passportDecisionV3Diagnostics || {}),
     passportDecisionComparison: Object.freeze(trace.passportDecisionComparison || {}),
+    idCardDecisionDiagnostics: Object.freeze(trace.idCardDecisionDiagnostics || {}),
     stages: Object.freeze(frozenStages),
     finalResult: trace.finalResult || "survived",
     finalReason: trace.finalReason || "article survived traced filter pipeline",
@@ -7719,6 +7725,44 @@ function getPassportDecisionV3Summary(diagnostics) {
     averageConfidence: diagnosticsList.length ? Number((confidenceTotal / diagnosticsList.length).toFixed(1)) : 0,
     topReasons: getTopV3DecisionReasons(reasonCounts, 20),
     topCategories: getTopV3DecisionReasons(categoryCounts, 20),
+  };
+}
+
+function getIdCardDecisionEngineSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+  const ruleCounts = new Map();
+  let evaluated = 0;
+  let rejected = 0;
+  let kept = 0;
+  getHeavyDiagnosticsTraces(diagnostics).forEach((trace) => {
+    const idCardDecision = trace.idCardDecisionDiagnostics;
+    if (!idCardDecision) {
+      return;
+    }
+    evaluated += 1;
+    if (idCardDecision.rejected) {
+      rejected += 1;
+    } else {
+      kept += 1;
+    }
+    incrementReasonCount(ruleCounts, idCardDecision.matchedRuleId || "unknown");
+  });
+
+  return {
+    enabled: true,
+    evaluated,
+    ruleSetActive: true,
+    documentType: ID_CARD_RULE_SET.documentType,
+    kept,
+    rejected,
+    topMatchedRules: getTopV3DecisionReasons(ruleCounts, 10),
+    notes: [
+      "ID Card rule set runs in shadow diagnostics only",
+      "Generic DocumentDecisionEngine supports Passport and ID Cards",
+      "Legacy filtering remains authoritative",
+    ],
   };
 }
 
@@ -10879,6 +10923,32 @@ function comparePassportDecisionByTitle(titlePart) {
   };
 }
 
+function compareIdCardDecisionByTitle(titlePart) {
+  const needle = String(titlePart || "").trim().toLowerCase();
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!needle || !traceMap) {
+    return null;
+  }
+  const match = Array.from(traceMap.values()).find((trace) =>
+    String(trace?.title || "").toLowerCase().includes(needle)
+  );
+  if (!match) {
+    return null;
+  }
+  return {
+    articleId: match.articleId,
+    title: match.title,
+    finalResult: match.finalResult || "",
+    finalReason: match.finalReason || "",
+    idCardDecisionDiagnostics: match.idCardDecisionDiagnostics || null,
+    heavyDiagnosticsEnabled: Boolean(match.heavyDiagnosticsEnabled),
+    notes: [
+      "ID Card rule set is shadow-only",
+      "Legacy filtering remains authoritative",
+    ],
+  };
+}
+
 function listPassportParityMismatches(limit = 25) {
   return getPassportDecisionComparisonEntries({ limit, mismatchOnly: true });
 }
@@ -12749,6 +12819,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     passportDecisionComparisonSummary: diagnostics.passportDecisionComparisonSummary || null,
     passportDecisionParityV3: diagnostics.passportDecisionParityV3 || null,
     passportDecisionComparisonExamples: diagnostics.passportDecisionComparisonExamples || null,
+    idCardDecisionEngineSummary: diagnostics.idCardDecisionEngineSummary || null,
     polymerChildMatchDiagnosticsSummary: diagnostics.polymerChildMatchDiagnosticsSummary || null,
     polymerFalseNegativeDiagnostics: diagnostics.polymerFalseNegativeDiagnostics || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
@@ -13059,6 +13130,10 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.comparePassportDecisionByTitle = (titlePart) => comparePassportDecisionByTitle(titlePart);
   }
 
+  if (typeof window.compareIdCardDecisionByTitle !== "function") {
+    window.compareIdCardDecisionByTitle = (titlePart) => compareIdCardDecisionByTitle(titlePart);
+  }
+
   if (typeof window.listPassportParityMismatches !== "function") {
     window.listPassportParityMismatches = (limit) => listPassportParityMismatches(limit);
   }
@@ -13202,6 +13277,7 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.listPassportDecisionTreeKeeps(limit)",
         "window.listPassportDecisionPaths(limit)",
         "window.comparePassportDecisionByTitle(titlePart)",
+        "window.compareIdCardDecisionByTitle(titlePart)",
         "window.listPassportParityMismatches(limit)",
         "window.listPassportPerfectMatches(limit)",
         "window.listDecisionParityMatches(limit)",
@@ -13304,6 +13380,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.passportDecisionComparisonSummary = getPassportDecisionComparisonSummary(diagnostics);
   diagnostics.passportDecisionParityV3 = getPassportDecisionParityV3(diagnostics);
   diagnostics.passportDecisionComparisonExamples = getPassportDecisionComparisonExamples(diagnostics);
+  diagnostics.idCardDecisionEngineSummary = getIdCardDecisionEngineSummary(diagnostics);
   diagnostics.polymerChildMatchDiagnosticsSummary = getPolymerChildMatchDiagnosticsSummary(diagnostics);
   diagnostics.polymerFalseNegativeDiagnostics = getPolymerFalseNegativeDiagnosticsSummary(diagnostics);
   publishFilterDecisionTraceDiagnostics(diagnostics);
@@ -13374,6 +13451,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("passportDecisionComparisonSummary", diagnostics.passportDecisionComparisonSummary);
   console.log("passportDecisionParityV3", diagnostics.passportDecisionParityV3);
   console.log("passportDecisionComparisonExamples", diagnostics.passportDecisionComparisonExamples);
+  console.log("idCardDecisionEngineSummary", diagnostics.idCardDecisionEngineSummary);
   console.log("polymerChildMatchDiagnosticsSummary", diagnostics.polymerChildMatchDiagnosticsSummary);
   console.log("polymerFalseNegativeDiagnostics", diagnostics.polymerFalseNegativeDiagnostics);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
@@ -24456,6 +24534,199 @@ const PASSPORT_RULE_SET = {
   },
 };
 
+function buildIdCardDecisionContext(article) {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const selectedSharedSecurityInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
+  const idCardsBoost = computePersonalInterestBoost(article, "id_cards");
+  const subinterestScore = getIdentityDocumentSubinterestScore(article, ["id_cards"]);
+  const signals = getIdentityDocumentInterestSignals(article);
+  const idCardsHolographyBridgeMatched = matchesIdCardsHolographyOvdCombinationBridge(
+    article,
+    ["id_cards"],
+    selectedSharedSecurityInterests
+  );
+  const identityTechniqueBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, ["id_cards"]);
+
+  return {
+    selectedInterests,
+    selectedSharedSecurityInterests,
+    primaryDomain: getArticleDominantDomain(article),
+    idCardsBoost,
+    idCardsScore: Number(idCardsBoost?.score) || 0,
+    subinterestScore,
+    bestSelectedScore: Number(subinterestScore?.bestSelectedScore || subinterestScore?.score) || 0,
+    signals,
+    idCardsHolographyBridgeMatched,
+    identityTechniqueBridgeMatched,
+  };
+}
+
+const IdCardNavigationPageRule = {
+  id: "id_card_navigation_page",
+  description: "Reject ID Card navigation-page articles using the existing identity navigation helper.",
+  category: "consumer_id_context",
+  evaluate(article, context) {
+    const rejected = isIdentityNavigationPageArticle(article);
+    const reason = rejected ? "identity navigation page" : "";
+    return {
+      matched: rejected,
+      reason,
+      category: this.category,
+      scoreBreakdown: {},
+      evidence: { navigationPage: rejected },
+      terminal: rejected,
+      rejected,
+      rejectionReason: reason,
+      rejectionCategory: this.category,
+      metadata: { navigationPage: rejected },
+    };
+  },
+};
+
+const NoIdCardSignalRule = {
+  id: "no_id_card_signal",
+  description: "Reject when existing ID Card scoring and signal helpers find no ID Card evidence.",
+  category: "weak_identity_document_signal",
+  evaluate(article, context) {
+    const rejected = context.idCardsScore <= 0
+      && context.bestSelectedScore <= 0
+      && Number(context.signals?.idCardHits || 0) <= 0
+      && Number(context.signals?.polycarbonateHits || 0) <= 0;
+    const reason = rejected ? "no ID Card signal from legacy helpers" : "";
+    return {
+      matched: rejected,
+      reason,
+      category: this.category,
+      scoreBreakdown: {
+        idCardsScore: context.idCardsScore,
+        bestSelectedScore: context.bestSelectedScore,
+        idCardHits: Number(context.signals?.idCardHits || 0),
+        polycarbonateHits: Number(context.signals?.polycarbonateHits || 0),
+      },
+      evidence: {
+        idCardsBoost: context.idCardsBoost,
+        subinterestScore: context.subinterestScore,
+        signals: context.signals,
+      },
+      terminal: rejected,
+      rejected,
+      rejectionReason: reason,
+      rejectionCategory: this.category,
+      metadata: {
+        idCardsScore: context.idCardsScore,
+        bestSelectedScore: context.bestSelectedScore,
+        signals: context.signals,
+      },
+    };
+  },
+};
+
+const ProfessionalIdCardKeepRule = {
+  id: "professional_id_card_keep",
+  description: "Keep when the existing ID Cards boost reaches the legacy identity interest threshold.",
+  category: "professional_id_card_keep",
+  evaluate(article, context) {
+    const matched = context.idCardsScore >= 18;
+    return {
+      matched,
+      reason: "",
+      category: this.category,
+      scoreBreakdown: {
+        idCardsScore: context.idCardsScore,
+        threshold: 18,
+      },
+      evidence: context.idCardsBoost,
+      terminal: matched,
+      rejected: false,
+      rejectionReason: "",
+      rejectionCategory: this.category,
+      metadata: {
+        idCardsScore: context.idCardsScore,
+        threshold: 18,
+        idCardsBoost: context.idCardsBoost,
+      },
+    };
+  },
+};
+
+const SecureIdDocumentBridgeKeepRule = {
+  id: "secure_id_document_keep",
+  description: "Keep when existing ID Cards identity/shared-security bridge helpers match.",
+  category: "secure_id_document_keep",
+  evaluate(article, context) {
+    const matched = Boolean(context.idCardsHolographyBridgeMatched || context.identityTechniqueBridgeMatched);
+    return {
+      matched,
+      reason: "",
+      category: this.category,
+      scoreBreakdown: {},
+      evidence: {
+        idCardsHolographyBridgeMatched: context.idCardsHolographyBridgeMatched,
+        identityTechniqueBridgeMatched: context.identityTechniqueBridgeMatched,
+      },
+      terminal: matched,
+      rejected: false,
+      rejectionReason: "",
+      rejectionCategory: this.category,
+      metadata: {
+        idCardsHolographyBridgeMatched: context.idCardsHolographyBridgeMatched,
+        identityTechniqueBridgeMatched: context.identityTechniqueBridgeMatched,
+      },
+    };
+  },
+};
+
+const WeakIdCardIdentitySignalRule = {
+  id: "weak_identity_document_signal",
+  description: "Reject when existing ID Card scoring remains below the legacy identity interest threshold.",
+  category: "weak_identity_document_signal",
+  evaluate(article, context) {
+    const rejected = context.idCardsScore < 18
+      && !context.idCardsHolographyBridgeMatched
+      && !context.identityTechniqueBridgeMatched;
+    const reason = rejected ? "ID Cards score below legacy identity interest threshold" : "";
+    return {
+      matched: true,
+      reason,
+      category: rejected ? this.category : "id_card_shadow_keep",
+      scoreBreakdown: {
+        idCardsScore: context.idCardsScore,
+        threshold: 18,
+        bestSelectedScore: context.bestSelectedScore,
+      },
+      evidence: {
+        idCardsBoost: context.idCardsBoost,
+        subinterestScore: context.subinterestScore,
+        signals: context.signals,
+      },
+      terminal: true,
+      rejected,
+      rejectionReason: reason,
+      rejectionCategory: rejected ? this.category : "id_card_shadow_keep",
+      metadata: {
+        idCardsScore: context.idCardsScore,
+        bestSelectedScore: context.bestSelectedScore,
+        threshold: 18,
+        signals: context.signals,
+      },
+    };
+  },
+};
+
+const ID_CARD_REJECTION_RULES = [
+  IdCardNavigationPageRule,
+  NoIdCardSignalRule,
+  ProfessionalIdCardKeepRule,
+  SecureIdDocumentBridgeKeepRule,
+  WeakIdCardIdentitySignalRule,
+];
+
+const ID_CARD_RULE_SET = {
+  documentType: "id_card",
+  rules: ID_CARD_REJECTION_RULES,
+  contextBuilder: buildIdCardDecisionContext,
+};
+
 function evaluateDocumentDecisionRules(article, ruleSet, context = null) {
   const documentType = ruleSet?.documentType || "unknown";
   const rules = Array.isArray(ruleSet?.rules) ? ruleSet.rules : [];
@@ -24514,6 +24785,10 @@ function evaluateDocumentDecisionRules(article, ruleSet, context = null) {
 
 function evaluatePassportRejectionRules(article, context = null) {
   return evaluateDocumentDecisionRules(article, PASSPORT_RULE_SET, context);
+}
+
+function evaluateIdCardDecisionRules(article, context = null) {
+  return evaluateDocumentDecisionRules(article, ID_CARD_RULE_SET, context);
 }
 
 function shouldRejectPassportArticle(article) {
