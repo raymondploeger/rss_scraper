@@ -5347,6 +5347,10 @@ function summarizeArticleEvidenceForParity(articleEvidence) {
   };
 }
 
+function normalizeDiagnosticsText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function getCompactEvidenceEntriesForDiagnostics(articleEvidence, evidenceGroup, ids = null) {
   const normalizedIds = Array.isArray(ids) ? ids.map((id) => normalizeEvidenceId(id)).filter(Boolean) : null;
   return getEvidenceEntriesForGroup(articleEvidence, evidenceGroup)
@@ -5395,7 +5399,7 @@ function getIdCardEvidenceGapReason(legacySummary, explicitEvidence, relatedIden
   const genericProfileTerms = [
     ...(legacySummary.profileMatchedMedium || []),
     ...(legacySummary.profileMatchedWeak || []),
-  ].filter((term) => ["identity documents", "identity document"].includes(normalizeString(term)));
+  ].filter((term) => ["identity documents", "identity document"].includes(normalizeDiagnosticsText(term)));
   if (relatedIdentityEvidence.length && genericProfileTerms.length) {
     return "legacy_score_from_generic_identity_profile_terms";
   }
@@ -15526,7 +15530,7 @@ function getLegacyIdCardDerivedEvidenceEntries(article, context, existingEntries
 
   LEGACY_ID_CARD_EXPLICIT_EVIDENCE_TERM_MAP.forEach((mapping) => {
     const matchedTerms = mapping.terms.filter((term) =>
-      matchedLegacyTerms.some((matchedTerm) => normalizeString(matchedTerm) === normalizeString(term))
+      matchedLegacyTerms.some((matchedTerm) => normalizeDiagnosticsText(matchedTerm) === normalizeDiagnosticsText(term))
       || getArticleEvidenceLocationsForTerm(context, term).length
     );
     matchedTerms.forEach((term) => {
