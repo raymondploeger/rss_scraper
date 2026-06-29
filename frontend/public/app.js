@@ -5249,8 +5249,11 @@ const EXPLICIT_ID_CARD_EVIDENCE_IDS = [
   "electronic_identity_card",
   "eid_card",
   "secure_id_documents",
+  "id_documents",
+  "physical_identity_documents",
   "identity_card_issuance",
   "identity_document_protection",
+  "national_identity_guard",
   "national_id_documents",
   "hybrid_id_documents",
 ];
@@ -5342,7 +5345,6 @@ function compareArticleEvidenceParity(article) {
     EXPLICIT_ID_CARD_EVIDENCE_IDS
   );
   const evidenceHasRelatedIdentityEvidence = evidenceEntriesContainId(articleEvidence, "documentTypes", [
-    "physical_identity_documents",
     "identity_documents",
   ]) || evidenceHasIdentityObject;
   const evidenceHasWeakOrIndirectIdCardEvidence = evidenceEntriesContainId(articleEvidence, "documentTypes", [
@@ -5548,12 +5550,14 @@ function getEvidenceBuilderIdCardsParitySummary(diagnostics) {
         "electronic_identity_card",
         "eid_card",
         "secure_id_documents",
+        "id_documents",
         "identity_card_issuance",
         "physical_identity_documents",
         "card_issuance",
         "polycarbonate_id",
         "identity_card_design",
         "identity_document_protection",
+        "national_identity_guard",
         "national_id_documents",
         "hybrid_id_documents",
         "identity_documents",
@@ -15318,6 +15322,11 @@ function getIdCardsEvidenceMappings() {
       strength: "medium",
     },
     {
+      id: "id_documents",
+      terms: ["id documents"],
+      strength: "medium",
+    },
+    {
       id: "physical_identity_documents",
       terms: ["physical identity documents", "physical document"],
       strength: "medium",
@@ -15346,6 +15355,11 @@ function getIdCardsEvidenceMappings() {
       id: "identity_document_protection",
       terms: ["identity document protection", "id protection", "document protection"],
       strength: "medium",
+    },
+    {
+      id: "national_identity_guard",
+      terms: ["national identity guard"],
+      strength: "strong",
     },
     {
       id: "national_id_documents",
