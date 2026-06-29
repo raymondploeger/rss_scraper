@@ -5343,6 +5343,21 @@ const EXPLICIT_RESIDENCE_PERMIT_EVIDENCE_IDS = [
   "immigration_card",
 ];
 
+const EXPLICIT_DRIVER_LICENSE_EVIDENCE_IDS = [
+  "drivers_licenses",
+  "driver_license",
+  "drivers_license",
+  "driving_licence",
+  "driver_licence",
+  "license_card",
+  "real_id",
+  "mobile_driver_license",
+  "digital_driver_license",
+  "dmv_driver_license",
+  "driver_license_agency",
+  "department_of_motor_vehicles",
+];
+
 function getMatchedEvidenceIds(articleEvidence, evidenceGroup, ids = []) {
   const normalizedIds = ids.map((id) => normalizeEvidenceId(id)).filter(Boolean);
   if (!normalizedIds.length) {
@@ -8141,9 +8156,11 @@ function getDriverLicenseDecisionEngineSummary(diagnostics) {
     return null;
   }
   const ruleCounts = new Map();
+  const driverLicenseEvidenceCounts = new Map();
   let evaluated = 0;
   let rejected = 0;
   let kept = 0;
+  let explicitDriverLicenseEvidenceCount = 0;
   getHeavyDiagnosticsTraces(diagnostics).forEach((trace) => {
     const driverLicenseDecision = trace.driverLicenseDecisionDiagnostics;
     if (!driverLicenseDecision) {
@@ -8155,6 +8172,15 @@ function getDriverLicenseDecisionEngineSummary(diagnostics) {
     } else {
       kept += 1;
     }
+    const explicitIds = driverLicenseDecision.matchedRule?.metadata?.explicitDriverLicenseEvidenceIds ||
+      driverLicenseDecision.matchedRule?.evidence?.explicitDriverLicenseEvidenceIds ||
+      [];
+    if (Array.isArray(explicitIds) && explicitIds.length) {
+      explicitDriverLicenseEvidenceCount += 1;
+    }
+    getEvidenceEntriesForGroup(trace.evidenceDiagnostics, "documentTypes")
+      .filter((entry) => EXPLICIT_DRIVER_LICENSE_EVIDENCE_IDS.includes(entry.id))
+      .forEach((entry) => incrementEvidenceCount(driverLicenseEvidenceCounts, entry));
     incrementReasonCount(ruleCounts, driverLicenseDecision.matchedRuleId || "unknown");
   });
 
@@ -8163,12 +8189,15 @@ function getDriverLicenseDecisionEngineSummary(diagnostics) {
     evaluated,
     ruleSetActive: true,
     documentType: DRIVER_LICENSE_RULE_SET.documentType,
+    explicitDriverLicenseEvidenceCount,
     kept,
     rejected,
     topMatchedRules: getTopV3DecisionReasons(ruleCounts, 10),
+    topMatchedDriverLicenseEvidence: getTopEvidenceCounts(driverLicenseEvidenceCounts),
     notes: [
       "Driver License rule set runs in shadow diagnostics only",
       "Driver License uses DocumentDecisionEngine in diagnostic mode",
+      "Driver License evidence is selected from existing legacy Driver License concepts",
       "Legacy filtering remains authoritative",
     ],
   };
@@ -15567,6 +15596,21 @@ const LEGACY_RESIDENCE_PERMIT_EXPLICIT_EVIDENCE_TERM_MAP = [
   { id: "immigration_card", terms: ["immigration card"], strength: "medium" },
 ];
 
+const LEGACY_DRIVER_LICENSE_EXPLICIT_EVIDENCE_TERM_MAP = [
+  { id: "drivers_licenses", terms: ["driver license", "driver licenses", "driver's license", "driver's licenses", "driving licence", "driving licences"], strength: "strong" },
+  { id: "driver_license", terms: ["driver license", "driver's license"], strength: "strong" },
+  { id: "drivers_license", terms: ["drivers license"], strength: "strong" },
+  { id: "driving_licence", terms: ["driving licence", "driving licences"], strength: "strong" },
+  { id: "driver_licence", terms: ["driver licence"], strength: "strong" },
+  { id: "license_card", terms: ["license card"], strength: "medium" },
+  { id: "real_id", terms: ["real id"], strength: "strong" },
+  { id: "mobile_driver_license", terms: ["mobile driver license"], strength: "strong" },
+  { id: "digital_driver_license", terms: ["digital driver license"], strength: "strong" },
+  { id: "dmv_driver_license", terms: ["dmv", "dmv driver license"], strength: "medium" },
+  { id: "driver_license_agency", terms: ["driver license agency"], strength: "medium" },
+  { id: "department_of_motor_vehicles", terms: ["department of motor vehicles", "motor vehicle agency"], strength: "medium" },
+];
+
 function getLegacyIdCardDerivedEvidenceEntries(article, context, existingEntries = []) {
   if (evidenceEntriesContainId({ evidence: { documentTypes: existingEntries } }, "documentTypes", EXPLICIT_ID_CARD_EVIDENCE_IDS)) {
     return [];
@@ -15696,6 +15740,62 @@ function getLegacyResidencePermitDerivedEvidenceEntries(article, context, existi
     locations: ["metadata"],
     strength: "medium",
     sourceHelper: "computePersonalInterestBoost:residence_permits",
+  }];
+}
+
+function getLegacyDriverLicenseDerivedEvidenceEntries(article, context, existingEntries = []) {
+  if (evidenceEntriesContainId({ evidence: { documentTypes: existingEntries } }, "documentTypes", EXPLICIT_DRIVER_LICENSE_EVIDENCE_IDS)) {
+    return [];
+  }
+
+  const driverLicenseBoost = computePersonalInterestBoost(article, "drivers_licenses");
+  if ((Number(driverLicenseBoost?.score) || 0) <= 0 && !isDriverLicenseSpecificArticle(article)) {
+    return [];
+  }
+
+  const subinterestScore = getIdentityDocumentSubinterestScore(article, ["drivers_licenses"]);
+  const signals = getIdentityDocumentInterestSignals(article);
+  const entries = [];
+  const seen = new Set();
+
+  LEGACY_DRIVER_LICENSE_EXPLICIT_EVIDENCE_TERM_MAP.forEach((mapping) => {
+    const matchedTerms = mapping.terms.filter((term) => getArticleEvidenceLocationsForTerm(context, term).length);
+    matchedTerms.forEach((term) => {
+      const locations = getArticleEvidenceLocationsForTerm(context, term);
+      const key = `${mapping.id}:${term}:${locations.join("|")}`;
+      if (!locations.length || seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      entries.push({
+        id: mapping.id,
+        term,
+        matchedTerm: term,
+        locations,
+        strength: mapping.strength,
+        sourceHelper: "computePersonalInterestBoost:drivers_licenses",
+      });
+    });
+  });
+
+  if (entries.length) {
+    return entries;
+  }
+
+  const driverLicenseSignalScore =
+    Number(signals?.driverLicenseHits || 0)
+    + Math.max(0, Number(subinterestScore?.bestSelectedScore || 0));
+  if (driverLicenseSignalScore <= 0) {
+    return [];
+  }
+
+  return [{
+    id: "drivers_licenses",
+    term: "legacy Driver License score",
+    matchedTerm: "legacy Driver License score",
+    locations: ["metadata"],
+    strength: "medium",
+    sourceHelper: "computePersonalInterestBoost:drivers_licenses",
   }];
 }
 
@@ -15858,6 +15958,22 @@ function getResidencePermitEvidenceMappings() {
         profile.mediumPositive,
         profile.weakPositive,
         RESIDENCE_PERMIT_CARD_PRIORITY_TERMS,
+      ]),
+      strength: "medium",
+    },
+  ];
+}
+
+function getDriverLicenseEvidenceMappings() {
+  const driverLicenseInterest = PERSONAL_DASHBOARD_INTEREST_MAP.get("drivers_licenses") || {};
+  return [
+    ...LEGACY_DRIVER_LICENSE_EXPLICIT_EVIDENCE_TERM_MAP,
+    {
+      id: "driver_license_profile",
+      terms: flattenEvidenceKeywordGroups([
+        driverLicenseInterest.strong,
+        driverLicenseInterest.weak,
+        ARTICLE_TOPIC_TYPE_DRIVER_LICENSE_KEYWORDS,
       ]),
       strength: "medium",
     },
@@ -16372,6 +16488,8 @@ function buildArticleEvidence(article) {
   const legacyIdCardDerivedEvidence = getLegacyIdCardDerivedEvidenceEntries(article, context, idCardsEvidence);
   const residencePermitEvidence = collectMappedArticleEvidenceEntries(context, getResidencePermitEvidenceMappings());
   const legacyResidencePermitDerivedEvidence = getLegacyResidencePermitDerivedEvidenceEntries(article, context, residencePermitEvidence);
+  const driverLicenseEvidence = collectMappedArticleEvidenceEntries(context, getDriverLicenseEvidenceMappings());
+  const legacyDriverLicenseDerivedEvidence = getLegacyDriverLicenseDerivedEvidenceEntries(article, context, driverLicenseEvidence);
   const passportGuardEvidence = getPassportGuardEvidenceMappings();
   const passportDocumentEvidence = collectMappedArticleEvidenceEntries(context, passportGuardEvidence.documentTypes);
   const passportProfessionalEvidence = collectMappedArticleEvidenceEntries(context, passportGuardEvidence.professionalSignals);
@@ -16430,8 +16548,8 @@ function buildArticleEvidence(article) {
     IDENTITY_INTENT_AUTHORITY_SOURCES,
   ]);
   const evidence = {
-    domainObjects: collectArticleEvidenceEntries(context, domainObjectTerms, { strength: "strong" }).concat(idCardsEvidence, legacyIdCardDerivedEvidence, residencePermitEvidence, legacyResidencePermitDerivedEvidence, passportDocumentEvidence),
-    documentTypes: collectArticleEvidenceEntries(context, documentTypeTerms, { strength: "strong" }).concat(idCardsEvidence, legacyIdCardDerivedEvidence, residencePermitEvidence, legacyResidencePermitDerivedEvidence, passportDocumentEvidence),
+    domainObjects: collectArticleEvidenceEntries(context, domainObjectTerms, { strength: "strong" }).concat(idCardsEvidence, legacyIdCardDerivedEvidence, residencePermitEvidence, legacyResidencePermitDerivedEvidence, driverLicenseEvidence, legacyDriverLicenseDerivedEvidence, passportDocumentEvidence),
+    documentTypes: collectArticleEvidenceEntries(context, documentTypeTerms, { strength: "strong" }).concat(idCardsEvidence, legacyIdCardDerivedEvidence, residencePermitEvidence, legacyResidencePermitDerivedEvidence, driverLicenseEvidence, legacyDriverLicenseDerivedEvidence, passportDocumentEvidence),
     vendors: collectArticleEvidenceEntries(context, vendorTerms, { strength: "medium" }),
     materials: collectArticleEvidenceEntries(context, materialTerms, { strength: "medium" }),
     technologies: collectArticleEvidenceEntries(context, technologyTerms, { strength: "medium" }),
@@ -25939,6 +26057,12 @@ function buildDriverLicenseDecisionContext(article) {
   const driverLicenseBoost = computePersonalInterestBoost(article, "drivers_licenses");
   const subinterestScore = getIdentityDocumentSubinterestScore(article, ["drivers_licenses"]);
   const signals = getIdentityDocumentInterestSignals(article);
+  const articleEvidence = buildArticleEvidence(article);
+  const explicitDriverLicenseEvidenceIds = getMatchedEvidenceIds(
+    articleEvidence,
+    "documentTypes",
+    EXPLICIT_DRIVER_LICENSE_EVIDENCE_IDS
+  );
   const identityTechniqueBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, ["drivers_licenses"]);
   const driverLicenseSpecific = isDriverLicenseSpecificArticle(article);
   const genericDmvNoise = isGenericDmvNoise(article);
@@ -25952,6 +26076,7 @@ function buildDriverLicenseDecisionContext(article) {
     subinterestScore,
     bestSelectedScore: Number(subinterestScore?.bestSelectedScore || subinterestScore?.score) || 0,
     signals,
+    explicitDriverLicenseEvidenceIds,
     identityTechniqueBridgeMatched,
     driverLicenseSpecific,
     genericDmvNoise,
@@ -25999,6 +26124,7 @@ const NoDriverLicenseSignalRule = {
         bestSelectedScore: context.bestSelectedScore,
         driverLicenseHits: Number(context.signals?.driverLicenseHits || 0),
         driverLicenseSpecific: Boolean(context.driverLicenseSpecific),
+        explicitDriverLicenseEvidenceCount: context.explicitDriverLicenseEvidenceIds?.length || 0,
       },
       evidence: {
         driverLicenseBoost: context.driverLicenseBoost,
@@ -26014,6 +26140,7 @@ const NoDriverLicenseSignalRule = {
         bestSelectedScore: context.bestSelectedScore,
         driverLicenseSpecific: Boolean(context.driverLicenseSpecific),
         signals: context.signals,
+        explicitDriverLicenseEvidenceIds: context.explicitDriverLicenseEvidenceIds,
       },
     };
   },
@@ -26034,6 +26161,7 @@ const DmvConsumerNoiseRule = {
         driverLicenseScore: context.driverLicenseScore,
         threshold: 18,
         genericDmvNoise: Boolean(context.genericDmvNoise),
+        explicitDriverLicenseEvidenceCount: context.explicitDriverLicenseEvidenceIds?.length || 0,
       },
       evidence: {
         genericDmvNoise: Boolean(context.genericDmvNoise),
@@ -26048,6 +26176,7 @@ const DmvConsumerNoiseRule = {
         threshold: 18,
         genericDmvNoise: Boolean(context.genericDmvNoise),
         signals: context.signals,
+        explicitDriverLicenseEvidenceIds: context.explicitDriverLicenseEvidenceIds,
       },
     };
   },
@@ -26066,6 +26195,7 @@ const ProfessionalDriverLicenseKeepRule = {
       scoreBreakdown: {
         driverLicenseScore: context.driverLicenseScore,
         threshold: 18,
+        explicitDriverLicenseEvidenceCount: context.explicitDriverLicenseEvidenceIds?.length || 0,
       },
       evidence: context.driverLicenseBoost,
       terminal: matched,
@@ -26076,6 +26206,7 @@ const ProfessionalDriverLicenseKeepRule = {
         driverLicenseScore: context.driverLicenseScore,
         threshold: 18,
         driverLicenseBoost: context.driverLicenseBoost,
+        explicitDriverLicenseEvidenceIds: context.explicitDriverLicenseEvidenceIds,
       },
     };
   },
@@ -26121,6 +26252,7 @@ const WeakDriverLicenseSignalRule = {
         driverLicenseScore: context.driverLicenseScore,
         threshold: 18,
         bestSelectedScore: context.bestSelectedScore,
+        explicitDriverLicenseEvidenceCount: context.explicitDriverLicenseEvidenceIds?.length || 0,
       },
       evidence: {
         driverLicenseBoost: context.driverLicenseBoost,
@@ -26136,6 +26268,7 @@ const WeakDriverLicenseSignalRule = {
         bestSelectedScore: context.bestSelectedScore,
         threshold: 18,
         signals: context.signals,
+        explicitDriverLicenseEvidenceIds: context.explicitDriverLicenseEvidenceIds,
       },
     };
   },
