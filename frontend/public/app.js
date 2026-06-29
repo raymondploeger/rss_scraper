@@ -4792,6 +4792,21 @@ function recordPipelineCount(diagnostics, stage, count) {
   diagnostics.counts[stage] = Number(count) || 0;
 }
 
+function recordDiagnosticsReplayMetadata(diagnostics, metadata = {}) {
+  if (!diagnostics?.enabled) {
+    return;
+  }
+  diagnostics.diagnosticsReplay = {
+    ...(diagnostics.diagnosticsReplay || {}),
+    ...metadata,
+    traceStoreSize: diagnostics.filterDecisionTraceMap instanceof Map
+      ? diagnostics.filterDecisionTraceMap.size
+      : 0,
+    heavyDiagnosticsEvaluated: Number(diagnostics.diagnosticsPerformance?.heavyDiagnosticsEvaluated) || 0,
+    heavyDiagnosticsSkipped: Number(diagnostics.diagnosticsPerformance?.heavyDiagnosticsSkipped) || 0,
+  };
+}
+
 function addFilterPipelineNote(diagnostics, note) {
   if (!diagnostics?.enabled || !note) {
     return;
@@ -12066,6 +12081,22 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push("none");
   }
 
+  const diagnosticsReplay = diagnostics.diagnosticsReplay;
+  lines.push("");
+  lines.push("Diagnostics Replay");
+  if (diagnosticsReplay?.enabled) {
+    lines.push(`status: ${diagnosticsReplay.status || "unknown"}`);
+    lines.push(`diagnosticsInputSource: ${diagnosticsReplay.diagnosticsInputSource || "unknown"}`);
+    lines.push(formatPipelineSummaryLine("diagnosticsInputCount", diagnosticsReplay.diagnosticsInputCount));
+    lines.push(formatPipelineSummaryLine("summaryBuilderInputCount", diagnosticsReplay.summaryBuilderInputCount));
+    lines.push(formatPipelineSummaryLine("traceStoreSize", diagnosticsReplay.traceStoreSize));
+    if (diagnosticsReplay.errorMessage) {
+      lines.push(`error: ${diagnosticsReplay.errorMessage}`);
+    }
+  } else {
+    lines.push("none");
+  }
+
   const filterPipelineStages = diagnostics.filterPipelineStages;
   lines.push("");
   lines.push("Filter Pipeline Stages");
@@ -13164,6 +13195,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     candidateBuilderResult: diagnostics.candidateBuilderResult || null,
     pipelineExecutor: diagnostics.pipelineExecutor || null,
     filterPipeline: diagnostics.filterPipeline || null,
+    diagnosticsReplay: diagnostics.diagnosticsReplay || null,
     filterPipelineStages: diagnostics.filterPipelineStages || [],
     diagnosticsPerformance: diagnostics.diagnosticsPerformance || null,
     filterDecisionTraceSummary: diagnostics.filterDecisionTraceSummary || null,
@@ -32267,20 +32299,59 @@ function applyGroupingStage({ inputArticles, groupedArticles, groupedCount, diag
   };
 }
 
+function resolveDiagnosticsReplayInput(result = {}) {
+  const candidatePool = Array.isArray(result.candidatePool) ? result.candidatePool : [];
+  const filteredRawArticles = Array.isArray(result.filteredRawArticles) ? result.filteredRawArticles : [];
+  const articles = Array.isArray(result.articles) ? result.articles : [];
+  if (candidatePool.length) {
+    return {
+      source: "candidatePool",
+      articles: candidatePool,
+      candidatePool,
+      filteredRawArticles,
+      resultArticles: articles,
+    };
+  }
+  if (filteredRawArticles.length) {
+    return {
+      source: "filteredRawArticles",
+      articles: filteredRawArticles,
+      candidatePool,
+      filteredRawArticles,
+      resultArticles: articles,
+    };
+  }
+  return {
+    source: articles.length ? "articles" : "empty",
+    articles,
+    candidatePool,
+    filteredRawArticles,
+    resultArticles: articles,
+  };
+}
+
 function replayFilterDiagnosticsStage({ result, diagnostics, activeFeedId, useBackendQuery } = {}) {
   if (!diagnostics?.enabled || result?.pending) {
     recordFilterPipelineStages(diagnostics, []);
     return;
   }
 
-  const candidatePool = Array.isArray(result.candidatePool) ? result.candidatePool : [];
-  const filteredRawArticles = Array.isArray(result.filteredRawArticles) ? result.filteredRawArticles : [];
-  const articles = Array.isArray(result.articles) ? result.articles : [];
-  const diagnosticReplayArticles = candidatePool.length
-    ? candidatePool
-    : filteredRawArticles.length
-      ? filteredRawArticles
-      : articles;
+  const replayInput = resolveDiagnosticsReplayInput(result);
+  const candidatePool = replayInput.candidatePool;
+  const filteredRawArticles = replayInput.filteredRawArticles;
+  const diagnosticReplayArticles = replayInput.articles;
+  recordDiagnosticsReplayMetadata(diagnostics, {
+    enabled: true,
+    status: "started",
+    diagnosticsInputSource: replayInput.source,
+    diagnosticsInputCount: diagnosticReplayArticles.length,
+    candidatePoolInputCount: candidatePool.length,
+    filteredRawArticlesInputCount: filteredRawArticles.length,
+    resultArticlesInputCount: replayInput.resultArticles.length,
+    groupedResultCount: Number(result.groupedArticlesCount) || 0,
+    branch: result.branch || diagnostics?.branch || "",
+    useBackendQuery: Boolean(useBackendQuery),
+  });
   if (!candidatePool.length && diagnosticReplayArticles.length) {
     addFilterPipelineNote(
       diagnostics,
@@ -32342,6 +32413,11 @@ function replayFilterDiagnosticsStage({ result, diagnostics, activeFeedId, useBa
   recordPipelineCount(diagnostics, "afterSorting", filteredRawArticles.length);
   recordPipelineCount(diagnostics, "afterGrouping", result.groupedArticlesCount);
   recordFilterPipelineStages(diagnostics, stageResults);
+  recordDiagnosticsReplayMetadata(diagnostics, {
+    status: "completed",
+    summaryBuilderInputCount: getHeavyDiagnosticsTraces(diagnostics).length,
+    stageCount: stageResults.length,
+  });
 }
 
 function applyLegacyFilterPipeline({
@@ -32379,12 +32455,41 @@ function applyLegacyFilterPipeline({
   };
 
   recordFilterPipelineResult(diagnostics, result);
-  replayFilterDiagnosticsStage({
-    result,
-    diagnostics,
-    activeFeedId,
-    useBackendQuery,
-  });
+  try {
+    replayFilterDiagnosticsStage({
+      result,
+      diagnostics,
+      activeFeedId,
+      useBackendQuery,
+    });
+  } catch (error) {
+    const replayInput = resolveDiagnosticsReplayInput(result);
+    recordDiagnosticsReplayMetadata(diagnostics, {
+      enabled: true,
+      status: "failed",
+      diagnosticsInputSource: replayInput.source,
+      diagnosticsInputCount: replayInput.articles.length,
+      candidatePoolInputCount: replayInput.candidatePool.length,
+      filteredRawArticlesInputCount: replayInput.filteredRawArticles.length,
+      resultArticlesInputCount: replayInput.resultArticles.length,
+      groupedResultCount: Number(result.groupedArticlesCount) || 0,
+      summaryBuilderInputCount: getHeavyDiagnosticsTraces(diagnostics).length,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+    addFilterPipelineNote(diagnostics, "diagnostics replay failed; production filter result was preserved");
+    recordPipelineCount(diagnostics, "candidatePool", replayInput.articles.length);
+    recordPipelineCount(diagnostics, "afterSorting", result.filteredRawArticles.length);
+    recordPipelineCount(diagnostics, "afterGrouping", result.groupedArticlesCount);
+    recordFilterPipelineStages(diagnostics, [
+      createFilterPipelineStageResult(
+        "diagnostics_replay",
+        replayInput.articles.length,
+        getHeavyDiagnosticsTraces(diagnostics).length,
+        ["diagnostics replay failed; production filter result was preserved"],
+        [error instanceof Error ? error.message : String(error)]
+      ),
+    ]);
+  }
 
   return result;
 }
