@@ -5247,7 +5247,10 @@ const EXPLICIT_ID_CARD_EVIDENCE_IDS = [
   "identity_card",
   "national_id",
   "electronic_identity_card",
+  "eid_card",
   "secure_id_documents",
+  "identity_card_issuance",
+  "identity_document_protection",
   "national_id_documents",
   "hybrid_id_documents",
 ];
@@ -5340,7 +5343,6 @@ function compareArticleEvidenceParity(article) {
   );
   const evidenceHasRelatedIdentityEvidence = evidenceEntriesContainId(articleEvidence, "documentTypes", [
     "physical_identity_documents",
-    "identity_document_protection",
     "identity_documents",
   ]) || evidenceHasIdentityObject;
   const evidenceHasWeakOrIndirectIdCardEvidence = evidenceEntriesContainId(articleEvidence, "documentTypes", [
@@ -5544,7 +5546,9 @@ function getEvidenceBuilderIdCardsParitySummary(diagnostics) {
         "identity_card",
         "national_id",
         "electronic_identity_card",
+        "eid_card",
         "secure_id_documents",
+        "identity_card_issuance",
         "physical_identity_documents",
         "card_issuance",
         "polycarbonate_id",
@@ -15304,6 +15308,11 @@ function getIdCardsEvidenceMappings() {
       strength: "strong",
     },
     {
+      id: "eid_card",
+      terms: ["eid", "e-id", "eid card", "e-id card", "electronic id"],
+      strength: "strong",
+    },
+    {
       id: "secure_id_documents",
       terms: ["secure id documents", "secure identity documents"],
       strength: "medium",
@@ -15316,6 +15325,11 @@ function getIdCardsEvidenceMappings() {
     {
       id: "card_issuance",
       terms: ["card issuance", "identity card issuance", "id issuance"],
+      strength: "medium",
+    },
+    {
+      id: "identity_card_issuance",
+      terms: ["identity card issuance", "id issuance"],
       strength: "medium",
     },
     {
