@@ -5285,6 +5285,114 @@ function summarizeArticleEvidenceForParity(articleEvidence) {
   };
 }
 
+function getCompactEvidenceEntriesForDiagnostics(articleEvidence, evidenceGroup, ids = null) {
+  const normalizedIds = Array.isArray(ids) ? ids.map((id) => normalizeEvidenceId(id)).filter(Boolean) : null;
+  return getEvidenceEntriesForGroup(articleEvidence, evidenceGroup)
+    .filter((entry) => !normalizedIds || normalizedIds.includes(normalizeEvidenceId(entry?.id || "")))
+    .map((entry) => ({
+      id: entry?.id || "",
+      term: entry?.term || "",
+      matchedTerm: entry?.matchedTerm || entry?.term || "",
+      locations: Array.isArray(entry?.locations) ? entry.locations.slice() : [],
+      strength: entry?.strength || "",
+      sourceHelper: entry?.sourceHelper || "",
+    }));
+}
+
+function getIdCardLegacyScoreEvidenceSummary(article, legacyIdCardsBoost, legacyIdentitySubinterest) {
+  const profile = calculateIdentityProfileScore(article, "id_cards");
+  const signals = getIdentityDocumentInterestSignals(article);
+  return {
+    idCardsScore: Number(legacyIdCardsBoost?.score) || 0,
+    idCardsMatched: Boolean(legacyIdCardsBoost?.matched),
+    profileScore: Number(profile?.score) || 0,
+    profileMatchedStrong: Array.isArray(profile?.matchedStrong) ? profile.matchedStrong.slice() : [],
+    profileMatchedMedium: Array.isArray(profile?.matchedMedium) ? profile.matchedMedium.slice() : [],
+    profileMatchedWeak: Array.isArray(profile?.matchedWeak) ? profile.matchedWeak.slice() : [],
+    subinterestScore: Number(legacyIdentitySubinterest?.score) || 0,
+    bestSelectedScore: Number(legacyIdentitySubinterest?.bestSelectedScore) || 0,
+    matchedSubinterest: legacyIdentitySubinterest?.matchedSubinterest || "",
+    selectedSubinterest: legacyIdentitySubinterest?.selectedSubinterest || "",
+    signalCounts: {
+      idCardHits: Number(signals?.idCardHits || 0),
+      polycarbonateHits: Number(signals?.polycarbonateHits || 0),
+      issuanceHits: Number(signals?.issuanceHits || 0),
+      passportHits: Number(signals?.passportHits || 0),
+      noisyHits: Number(signals?.noisyHits || 0),
+    },
+  };
+}
+
+function getIdCardEvidenceGapReason(legacySummary, explicitEvidence, relatedIdentityEvidence, weakEvidence) {
+  if (explicitEvidence.length) {
+    return "explicit_id_card_evidence_selected";
+  }
+  if (weakEvidence.length) {
+    return "weak_or_indirect_id_card_evidence_selected";
+  }
+  const genericProfileTerms = [
+    ...(legacySummary.profileMatchedMedium || []),
+    ...(legacySummary.profileMatchedWeak || []),
+  ].filter((term) => ["identity documents", "identity document"].includes(normalizeString(term)));
+  if (relatedIdentityEvidence.length && genericProfileTerms.length) {
+    return "legacy_score_from_generic_identity_profile_terms";
+  }
+  if (relatedIdentityEvidence.length && legacySummary.signalCounts?.idCardHits > 0) {
+    return "legacy_id_card_hits_not_mapped_to_explicit_evidence";
+  }
+  if (relatedIdentityEvidence.length) {
+    return "generic_identity_evidence_selected";
+  }
+  if ((legacySummary.idCardsScore || 0) > 0) {
+    return "legacy_positive_score_without_selected_id_card_evidence";
+  }
+  return "no_id_card_gap";
+}
+
+function getIdCardEvidenceGapExplanation(article, articleEvidence, legacyIdCardsBoost, legacyIdentitySubinterest) {
+  const explicitEvidence = getCompactEvidenceEntriesForDiagnostics(
+    articleEvidence,
+    "documentTypes",
+    EXPLICIT_ID_CARD_EVIDENCE_IDS
+  );
+  const relatedIdentityEvidence = getCompactEvidenceEntriesForDiagnostics(articleEvidence, "documentTypes", [
+    "identity_documents",
+    "identity_document",
+    "secure_documents",
+  ]);
+  const weakEvidence = getCompactEvidenceEntriesForDiagnostics(articleEvidence, "documentTypes", [
+    "card_issuance",
+    "polycarbonate_id",
+    "identity_card_design",
+  ]);
+  const legacyEvidence = getIdCardLegacyScoreEvidenceSummary(article, legacyIdCardsBoost, legacyIdentitySubinterest);
+  const ruleSetDecision = evaluateIdCardDecisionRules(article);
+
+  return {
+    legacyEvidence,
+    selectedRuleSetEvidence: {
+      documentType: ruleSetDecision.documentType,
+      matchedRuleId: ruleSetDecision.matchedRuleId,
+      rejected: Boolean(ruleSetDecision.rejected),
+      rejectionCategory: ruleSetDecision.rejectionCategory || "",
+      rejectionReason: ruleSetDecision.rejectionReason || "",
+      matchedRuleEvidence: ruleSetDecision.matchedRule?.evidence || {},
+      matchedRuleScoreBreakdown: ruleSetDecision.matchedRule?.scoreBreakdown || {},
+    },
+    selectedEvidence: {
+      explicitIdCardEvidence: explicitEvidence,
+      relatedIdentityEvidence,
+      weakOrIndirectIdCardEvidence: weakEvidence,
+    },
+    reason: getIdCardEvidenceGapReason(legacyEvidence, explicitEvidence, relatedIdentityEvidence, weakEvidence),
+    notes: [
+      "diagnostics only",
+      "legacy filtering remains authoritative",
+      "ID Card evidence explanation compares legacy scoring signals with selected Evidence Builder entries",
+    ],
+  };
+}
+
 function compareArticleEvidenceParity(article) {
   const articleEvidence = buildArticleEvidence(article);
   const evidenceSummary = summarizeArticleEvidenceForParity(articleEvidence);
@@ -5358,6 +5466,12 @@ function compareArticleEvidenceParity(article) {
   const evidenceHasNoiseSignal = evidenceSummary.noiseSignals > 0;
   const evidenceHasProfessionalSignal = getEvidenceEntriesForGroup(articleEvidence, "professionalSignals")
     .some((entry) => Boolean(entry?.category || entry?.sourceHelper));
+  const idCardEvidenceGapExplanation = getIdCardEvidenceGapExplanation(
+    article,
+    articleEvidence,
+    legacyIdCardsBoost,
+    legacyIdentitySubinterest
+  );
   const parityWarnings = [];
 
   if (getArticleDominantDomain(article) === "identity_documents" && !evidenceHasIdentityObject) {
@@ -5442,6 +5556,7 @@ function compareArticleEvidenceParity(article) {
     legacyHighConfidencePassportAssessment,
     legacyIdentityDocumentRelevance,
     legacyProfessionalIdentityRescue,
+    idCardEvidenceGapExplanation,
     evidenceSummary,
     parityWarnings,
   };
@@ -5516,6 +5631,8 @@ function getEvidenceBuilderIdCardsParitySummary(diagnostics) {
   const traces = getHeavyDiagnosticsTraces(diagnostics);
   const idCardEvidenceCounts = new Map();
   const missingEvidenceWarnings = new Map();
+  const evidenceGapReasonCounts = new Map();
+  const evidenceGapExamplesByReason = new Map();
   let legacyPositiveIdCardsScore = 0;
   let explicitIdCardEvidenceCount = 0;
   let relatedIdentityEvidenceOnlyCount = 0;
@@ -5539,6 +5656,25 @@ function getEvidenceBuilderIdCardsParitySummary(diagnostics) {
       weakOrIndirectEvidenceCount += 1;
     } else if (hasPositiveIdCardsScore) {
       noIdOrIdentityEvidenceCount += 1;
+    }
+    const gapReason = parity.idCardEvidenceGapExplanation?.reason || "";
+    if (hasPositiveIdCardsScore && gapReason) {
+      incrementReasonCount(evidenceGapReasonCounts, gapReason);
+      if (!evidenceGapExamplesByReason.has(gapReason)) {
+        evidenceGapExamplesByReason.set(gapReason, []);
+      }
+      const examples = evidenceGapExamplesByReason.get(gapReason);
+      if (examples.length < 5) {
+        examples.push({
+          articleId: parity.articleId,
+          title: parity.title,
+          source: parity.source || "",
+          legacyIdCardsScore: parity.legacyIdCardsScore,
+          matchedRuleId: parity.idCardEvidenceGapExplanation?.selectedRuleSetEvidence?.matchedRuleId || "",
+          selectedEvidence: parity.idCardEvidenceGapExplanation?.selectedEvidence || {},
+          legacyEvidence: parity.idCardEvidenceGapExplanation?.legacyEvidence || {},
+        });
+      }
     }
 
     getEvidenceEntriesForGroup(trace.evidenceDiagnostics, "documentTypes")
@@ -5578,6 +5714,8 @@ function getEvidenceBuilderIdCardsParitySummary(diagnostics) {
     weakOrIndirectEvidenceCount,
     topMatchedIdCardEvidence: getTopEvidenceCounts(idCardEvidenceCounts),
     topMissingEvidenceWarnings: getTopParityWarnings(missingEvidenceWarnings),
+    topEvidenceGapReasons: getTopV3DecisionReasons(evidenceGapReasonCounts, 10),
+    evidenceGapExamplesByReason: Object.fromEntries(evidenceGapExamplesByReason.entries()),
   };
 }
 
@@ -11315,6 +11453,7 @@ function listEvidenceParityWarnings(limit = 50) {
         title: trace.title,
         source: parity.source || "",
         warnings: parity.parityWarnings,
+        idCardEvidenceGapExplanation: parity.idCardEvidenceGapExplanation || null,
         evidenceSummary: parity.evidenceSummary || {},
         legacySummary: {
           dominantDomain: parity.legacyDominantDomain,
@@ -12072,6 +12211,12 @@ function logCompactFilterPipelineSummary(diagnostics) {
       lines.push("topMissingEvidenceWarnings:");
       evidenceBuilderIdCardsParitySummary.topMissingEvidenceWarnings.slice(0, 5).forEach((entry) => {
         lines.push(`- ${entry.warning}: ${entry.count}`);
+      });
+    }
+    if (evidenceBuilderIdCardsParitySummary.topEvidenceGapReasons?.length) {
+      lines.push("topEvidenceGapReasons:");
+      evidenceBuilderIdCardsParitySummary.topEvidenceGapReasons.slice(0, 5).forEach((entry) => {
+        lines.push(`- ${entry.reason}: ${entry.count}`);
       });
     }
   } else {
