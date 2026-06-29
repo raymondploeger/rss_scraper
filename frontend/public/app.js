@@ -4644,6 +4644,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     residencePermitDecisionEngineSummary: null,
     visaDecisionEngineSummary: null,
     driverLicenseDecisionEngineSummary: null,
+    driverLicenseNoiseDiagnosticsSummary: null,
     polymerChildMatchDiagnosticsSummary: null,
     polymerFalseNegativeDiagnostics: null,
     paginationPipeline: null,
@@ -4766,6 +4767,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "V3 executes independently",
             "Passport Decision Engine V3 shadow mode active",
             "Legacy passport filtering remains authoritative",
+            "Driver License noise diagnostics active",
             "Legacy helper remains authoritative",
             "Diagnostics only",
             "Filtering unchanged",
@@ -4993,6 +4995,12 @@ function getFilterDecisionTrace(diagnostics, article) {
     const driverLicenseDecision = heavyDiagnosticsEnabled
       ? evaluateDriverLicenseDecisionRules(article)
       : null;
+    const driverLicenseNoise = heavyDiagnosticsEnabled
+      ? getDriverLicenseNoiseDiagnostics(article, {
+          articleEvidence,
+          driverLicenseDecision,
+        })
+      : null;
     diagnostics.filterDecisionTraceMap.set(articleId, {
       articleId,
       title: article?.title || "Untitled article",
@@ -5014,6 +5022,7 @@ function getFilterDecisionTrace(diagnostics, article) {
       residencePermitDecisionDiagnostics: residencePermitDecision,
       visaDecisionDiagnostics: visaDecision,
       driverLicenseDecisionDiagnostics: driverLicenseDecision,
+      driverLicenseNoiseDiagnostics: driverLicenseNoise,
       stages: [],
       finalResult: "",
       finalReason: "",
@@ -5109,6 +5118,7 @@ function freezeFilterDecisionTrace(trace) {
     residencePermitDecisionDiagnostics: Object.freeze(trace.residencePermitDecisionDiagnostics || {}),
     visaDecisionDiagnostics: Object.freeze(trace.visaDecisionDiagnostics || {}),
     driverLicenseDecisionDiagnostics: Object.freeze(trace.driverLicenseDecisionDiagnostics || {}),
+    driverLicenseNoiseDiagnostics: Object.freeze(trace.driverLicenseNoiseDiagnostics || {}),
     stages: Object.freeze(frozenStages),
     finalResult: trace.finalResult || "survived",
     finalReason: trace.finalReason || "article survived traced filter pipeline",
@@ -8199,6 +8209,305 @@ function getDriverLicenseDecisionEngineSummary(diagnostics) {
       "Driver License uses DocumentDecisionEngine in diagnostic mode",
       "Driver License evidence is selected from existing legacy Driver License concepts",
       "Legacy filtering remains authoritative",
+    ],
+  };
+}
+
+function getDriverLicenseNoiseCategoryDefinitions() {
+  return [
+    {
+      category: "passport_noise",
+      terms: flattenEvidenceKeywordGroups([
+        "passport",
+        "passports",
+        "passport renewal",
+        "passport application",
+        "passport office",
+        "lost passport",
+        "stolen passport",
+        PASSPORT_HARD_NOISE_KEYWORDS,
+        PASSPORT_EVENT_TYPE_RULES.passport_noise,
+        IDENTITY_PASSPORT_LIGHT_NOISE_TERMS,
+      ]),
+      evidenceIds: ["passport", "passports", "passport_renewal", "passport_application", "passport_noise", "lost_passport"],
+      evidenceCategories: ["passport_consumer", "passport_renewal", "passport_appointment"],
+    },
+    {
+      category: "airport_travel_noise",
+      terms: [
+        "airport",
+        "airport queue",
+        "airport delay",
+        "airport delays",
+        "travel advice",
+        "travel tips",
+        "holiday travel",
+        "tourism",
+        "vacation",
+        "border queue",
+      ],
+      evidenceIds: ["airport_border_delay", "travel_advice", "tourism", "queue_information", "holiday_notice"],
+      evidenceCategories: ["travel_advice", "tourism", "queue_information", "holiday_notice"],
+    },
+    {
+      category: "generic_government_notice",
+      terms: [
+        "government statement",
+        "ministry statement",
+        "minister said",
+        "official said",
+        "officials said",
+        "government says",
+        "authority said",
+        "authorities said",
+      ],
+    },
+    {
+      category: "funding_or_investment_noise",
+      terms: ["funding", "investment", "invested", "grant", "budget", "infrastructure funding"],
+      evidenceIds: ["investment"],
+      evidenceCategories: ["investment"],
+    },
+    {
+      category: "sports_or_player_noise",
+      terms: flattenEvidenceKeywordGroups([
+        "player",
+        "players",
+        "coach",
+        "team",
+        "match",
+        "game",
+        "sports",
+        IDENTITY_CONTEXT_KEYWORDS.sports,
+      ]),
+      evidenceIds: ["sports"],
+      evidenceCategories: ["sports"],
+    },
+    {
+      category: "general_news_noise",
+      terms: flattenEvidenceKeywordGroups([
+        "person says",
+        "individual says",
+        "man says",
+        "woman says",
+        "police said",
+        "court said",
+        ID_SIGNAL_NON_SYSTEM_NOISE_KEYWORDS,
+        SIGNAL_RELEVANCE_NOISE_KEYWORDS,
+      ]),
+      evidenceIds: ["general_news"],
+      evidenceCategories: ["general_news"],
+    },
+    {
+      category: "dmv_non_license_noise",
+      terms: ["vehicle registration", "registration renewal"],
+      helper(article) {
+        return isGenericDmvNoise(article) ? ["isGenericDmvNoise"] : [];
+      },
+    },
+    {
+      category: "road_or_transport_infrastructure_noise",
+      terms: ["road", "roads", "highway", "resurfacing", "bridge closure", "traffic", "transport infrastructure"],
+    },
+    {
+      category: "immigration_status_noise_without_license_document_focus",
+      terms: [
+        "immigration status",
+        "legal status",
+        "asylum",
+        "visa status",
+        "residency status",
+        "work permit",
+        "undocumented",
+      ],
+      evidenceIds: ["visa_consumer"],
+      evidenceCategories: ["visa_consumer"],
+    },
+  ];
+}
+
+function getDriverLicenseNoiseDiagnostics(article, options = {}) {
+  const articleEvidence = options.articleEvidence || buildArticleEvidence(article);
+  const evidence = articleEvidence?.evidence || {};
+  const context = buildArticleIntelligenceContext(article);
+  const sections = getArticleEvidenceTextSections(context);
+  const explicitDriverLicenseEvidenceIds = getMatchedEvidenceIds(
+    articleEvidence,
+    "documentTypes",
+    EXPLICIT_DRIVER_LICENSE_EVIDENCE_IDS
+  );
+  const driverLicenseDecision = options.driverLicenseDecision || evaluateDriverLicenseDecisionRules(article);
+  const textMatches = (terms = []) => normalizeKeywordList(terms)
+    .map((term) => ({
+      term,
+      locations: Object.entries(sections)
+        .filter(([, text]) => textMatchesKeyword(text, term))
+        .map(([location]) => location),
+    }))
+    .filter((match) => match.locations.length);
+  const evidenceMatches = (definition) => Object.entries(evidence)
+    .filter(([, entries]) => Array.isArray(entries))
+    .flatMap(([group, entries]) => entries
+      .filter((entry) => {
+        const id = normalizeEvidenceId(entry?.id || "");
+        const category = String(entry?.category || "");
+        return (definition.evidenceIds || []).map(normalizeEvidenceId).includes(id)
+          || (definition.evidenceCategories || []).includes(category);
+      })
+      .map((entry) => ({
+        group,
+        id: entry.id || "",
+        category: entry.category || "",
+        term: entry.term || entry.matchedTerm || "",
+        locations: Array.isArray(entry.locations) ? entry.locations.slice() : [],
+      })));
+
+  const categories = getDriverLicenseNoiseCategoryDefinitions()
+    .map((definition) => {
+      const matchedTerms = textMatches(definition.terms || []);
+      const matchedEvidence = evidenceMatches(definition);
+      const helperSignals = typeof definition.helper === "function" ? definition.helper(article) : [];
+      const matchedSignals = [
+        ...matchedTerms.map((match) => ({
+          type: "term",
+          term: match.term,
+          locations: match.locations,
+        })),
+        ...matchedEvidence.map((match) => ({
+          type: "evidence",
+          id: match.id,
+          category: match.category,
+          term: match.term,
+          locations: match.locations,
+        })),
+        ...helperSignals.map((signal) => ({
+          type: "helper",
+          term: signal,
+          locations: ["metadata"],
+        })),
+      ];
+      return {
+        category: definition.category,
+        matched: matchedSignals.length > 0,
+        matchedSignals,
+      };
+    })
+    .filter((entry) => entry.matched);
+
+  const explicitDriverLicenseEvidencePresent = explicitDriverLicenseEvidenceIds.length > 0;
+  const likelyTrueDriverLicenseArticle = explicitDriverLicenseEvidencePresent
+    && categories.length === 0
+    && !driverLicenseDecision?.rejected;
+  const likelyNoisyDriverLicenseCandidate = categories.length > 0
+    && (!explicitDriverLicenseEvidencePresent || Boolean(driverLicenseDecision?.rejected));
+  const mixedOrUncertainDriverLicenseCandidate = categories.length > 0 && explicitDriverLicenseEvidencePresent;
+
+  return {
+    articleId: getFilterDecisionTraceArticleId(article),
+    title: article?.title || "Untitled article",
+    source: getIdentityNoiseGuardSource(article),
+    explicitDriverLicenseEvidencePresent,
+    explicitDriverLicenseEvidenceIds,
+    driverLicenseDecision: driverLicenseDecision?.rejected ? "reject" : "keep",
+    matchedRuleId: driverLicenseDecision?.matchedRuleId || "",
+    categories,
+    likelyTrueDriverLicenseArticle,
+    likelyNoisyDriverLicenseCandidate,
+    mixedOrUncertainDriverLicenseCandidate,
+    notes: [
+      "Driver License noise diagnostics are diagnostics-only",
+      "Legacy filtering remains authoritative",
+    ],
+  };
+}
+
+function getDriverLicenseNoiseDiagnosticsSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+  const categoryCounts = new Map();
+  const categoryExamples = new Map();
+  const trueExamples = [];
+  const noisyExamples = [];
+  const mixedExamples = [];
+  let evaluatedArticles = 0;
+  let articlesWithNoise = 0;
+  let articlesWithExplicitDriverLicenseEvidence = 0;
+
+  const addExample = (bucket, example, limit = 10) => {
+    if (bucket.length < limit) {
+      bucket.push(example);
+    }
+  };
+
+  getHeavyDiagnosticsTraces(diagnostics).forEach((trace) => {
+    const noiseDiagnostics = trace.driverLicenseNoiseDiagnostics;
+    if (!noiseDiagnostics) {
+      return;
+    }
+    evaluatedArticles += 1;
+    if (noiseDiagnostics.explicitDriverLicenseEvidencePresent) {
+      articlesWithExplicitDriverLicenseEvidence += 1;
+    }
+    if (noiseDiagnostics.categories?.length) {
+      articlesWithNoise += 1;
+    }
+    const compactExample = {
+      title: noiseDiagnostics.title,
+      source: noiseDiagnostics.source,
+      explicitDriverLicenseEvidencePresent: noiseDiagnostics.explicitDriverLicenseEvidencePresent,
+      explicitDriverLicenseEvidenceIds: noiseDiagnostics.explicitDriverLicenseEvidenceIds,
+      driverLicenseDecision: noiseDiagnostics.driverLicenseDecision,
+      matchedRuleId: noiseDiagnostics.matchedRuleId,
+    };
+    if (noiseDiagnostics.likelyTrueDriverLicenseArticle) {
+      addExample(trueExamples, compactExample);
+    }
+    if (noiseDiagnostics.likelyNoisyDriverLicenseCandidate) {
+      addExample(noisyExamples, {
+        ...compactExample,
+        categories: noiseDiagnostics.categories.map((entry) => entry.category),
+      });
+    }
+    if (noiseDiagnostics.mixedOrUncertainDriverLicenseCandidate) {
+      addExample(mixedExamples, {
+        ...compactExample,
+        categories: noiseDiagnostics.categories.map((entry) => entry.category),
+      });
+    }
+    (noiseDiagnostics.categories || []).forEach((entry) => {
+      incrementReasonCount(categoryCounts, entry.category);
+      if (!categoryExamples.has(entry.category)) {
+        categoryExamples.set(entry.category, []);
+      }
+      const examples = categoryExamples.get(entry.category);
+      if (examples.length < 10) {
+        examples.push({
+          ...compactExample,
+          matchedSignals: (entry.matchedSignals || []).slice(0, 8),
+        });
+      }
+    });
+  });
+
+  return {
+    enabled: true,
+    evaluatedArticles,
+    articlesWithNoise,
+    articlesWithExplicitDriverLicenseEvidence,
+    topNoiseCategories: getTopV3DecisionReasons(categoryCounts, 20),
+    noiseCategoryBreakdown: Array.from(categoryExamples.entries()).map(([category, examples]) => ({
+      category,
+      count: categoryCounts.get(category) || 0,
+      examples,
+    })),
+    likelyTrueDriverLicenseExamples: trueExamples,
+    likelyNoisyDriverLicenseExamples: noisyExamples,
+    mixedOrUncertainDriverLicenseExamples: mixedExamples,
+    notes: [
+      "Driver License noise diagnostics active",
+      "Noise categories classify diagnostics only",
+      "Filtering behavior unchanged",
     ],
   };
 }
@@ -13380,6 +13689,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     residencePermitDecisionEngineSummary: diagnostics.residencePermitDecisionEngineSummary || null,
     visaDecisionEngineSummary: diagnostics.visaDecisionEngineSummary || null,
     driverLicenseDecisionEngineSummary: diagnostics.driverLicenseDecisionEngineSummary || null,
+    driverLicenseNoiseDiagnosticsSummary: diagnostics.driverLicenseNoiseDiagnosticsSummary || null,
     polymerChildMatchDiagnosticsSummary: diagnostics.polymerChildMatchDiagnosticsSummary || null,
     polymerFalseNegativeDiagnostics: diagnostics.polymerFalseNegativeDiagnostics || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
@@ -13959,6 +14269,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.residencePermitDecisionEngineSummary = getResidencePermitDecisionEngineSummary(diagnostics);
   diagnostics.visaDecisionEngineSummary = getVisaDecisionEngineSummary(diagnostics);
   diagnostics.driverLicenseDecisionEngineSummary = getDriverLicenseDecisionEngineSummary(diagnostics);
+  diagnostics.driverLicenseNoiseDiagnosticsSummary = getDriverLicenseNoiseDiagnosticsSummary(diagnostics);
   diagnostics.polymerChildMatchDiagnosticsSummary = getPolymerChildMatchDiagnosticsSummary(diagnostics);
   diagnostics.polymerFalseNegativeDiagnostics = getPolymerFalseNegativeDiagnosticsSummary(diagnostics);
   diagnostics.pipelineDiagnosticsArchitecture = getPipelineDiagnosticsArchitecture(diagnostics);
@@ -14034,6 +14345,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("residencePermitDecisionEngineSummary", diagnostics.residencePermitDecisionEngineSummary);
   console.log("visaDecisionEngineSummary", diagnostics.visaDecisionEngineSummary);
   console.log("driverLicenseDecisionEngineSummary", diagnostics.driverLicenseDecisionEngineSummary);
+  console.log("driverLicenseNoiseDiagnosticsSummary", diagnostics.driverLicenseNoiseDiagnosticsSummary);
   console.log("polymerChildMatchDiagnosticsSummary", diagnostics.polymerChildMatchDiagnosticsSummary);
   console.log("polymerFalseNegativeDiagnostics", diagnostics.polymerFalseNegativeDiagnostics);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
