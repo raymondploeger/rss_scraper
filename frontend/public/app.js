@@ -5320,6 +5320,29 @@ const EXPLICIT_ID_CARD_EVIDENCE_IDS = [
   "hybrid_id_documents",
 ];
 
+const EXPLICIT_RESIDENCE_PERMIT_EVIDENCE_IDS = [
+  "residence_permits",
+  "residence_permit",
+  "residence_permit_card",
+  "residence_card",
+  "resident_card",
+  "biometric_residence_permit",
+  "biometric_residence_card",
+  "brp",
+  "brc",
+  "electronic_residence_permit",
+  "digital_residence_permit",
+  "foreign_resident_card",
+  "secure_residence_document",
+  "residence_document",
+  "permit_card",
+  "permit_issuance",
+  "permit_personalization",
+  "permit_verification",
+  "permit_authentication",
+  "immigration_card",
+];
+
 function getMatchedEvidenceIds(articleEvidence, evidenceGroup, ids = []) {
   const normalizedIds = ids.map((id) => normalizeEvidenceId(id)).filter(Boolean);
   if (!normalizedIds.length) {
@@ -8028,9 +8051,11 @@ function getResidencePermitDecisionEngineSummary(diagnostics) {
     return null;
   }
   const ruleCounts = new Map();
+  const residencePermitEvidenceCounts = new Map();
   let evaluated = 0;
   let rejected = 0;
   let kept = 0;
+  let explicitResidencePermitEvidenceCount = 0;
   getHeavyDiagnosticsTraces(diagnostics).forEach((trace) => {
     const residencePermitDecision = trace.residencePermitDecisionDiagnostics;
     if (!residencePermitDecision) {
@@ -8042,6 +8067,15 @@ function getResidencePermitDecisionEngineSummary(diagnostics) {
     } else {
       kept += 1;
     }
+    const explicitIds = residencePermitDecision.matchedRule?.metadata?.explicitResidencePermitEvidenceIds ||
+      residencePermitDecision.matchedRule?.evidence?.explicitResidencePermitEvidenceIds ||
+      [];
+    if (Array.isArray(explicitIds) && explicitIds.length) {
+      explicitResidencePermitEvidenceCount += 1;
+    }
+    getEvidenceEntriesForGroup(trace.evidenceDiagnostics, "documentTypes")
+      .filter((entry) => EXPLICIT_RESIDENCE_PERMIT_EVIDENCE_IDS.includes(entry.id))
+      .forEach((entry) => incrementEvidenceCount(residencePermitEvidenceCounts, entry));
     incrementReasonCount(ruleCounts, residencePermitDecision.matchedRuleId || "unknown");
   });
 
@@ -8050,12 +8084,15 @@ function getResidencePermitDecisionEngineSummary(diagnostics) {
     evaluated,
     ruleSetActive: true,
     documentType: RESIDENCE_PERMIT_RULE_SET.documentType,
+    explicitResidencePermitEvidenceCount,
     kept,
     rejected,
     topMatchedRules: getTopV3DecisionReasons(ruleCounts, 10),
+    topMatchedResidencePermitEvidence: getTopEvidenceCounts(residencePermitEvidenceCounts),
     notes: [
       "Residence Permit rule set runs in shadow diagnostics only",
       "Residence Permit uses DocumentDecisionEngine in diagnostic mode",
+      "Residence Permit evidence is selected from existing legacy Residence Permit concepts",
       "Legacy filtering remains authoritative",
     ],
   };
@@ -15507,6 +15544,29 @@ const LEGACY_ID_CARD_EXPLICIT_EVIDENCE_TERM_MAP = [
   { id: "hybrid_id_documents", terms: ["hybrid id documents"], strength: "strong" },
 ];
 
+const LEGACY_RESIDENCE_PERMIT_EXPLICIT_EVIDENCE_TERM_MAP = [
+  { id: "residence_permits", terms: ["residence permit", "residence permits"], strength: "strong" },
+  { id: "residence_permit", terms: ["residence permit"], strength: "strong" },
+  { id: "residence_permit_card", terms: ["residence permit card", "residence permit cards"], strength: "strong" },
+  { id: "residence_card", terms: ["residence card", "residence cards"], strength: "strong" },
+  { id: "resident_card", terms: ["resident card", "residency card"], strength: "strong" },
+  { id: "biometric_residence_permit", terms: ["biometric residence permit", "biometric residence permits"], strength: "strong" },
+  { id: "biometric_residence_card", terms: ["biometric residence card", "biometric residence cards"], strength: "strong" },
+  { id: "brp", terms: ["brp"], strength: "medium" },
+  { id: "brc", terms: ["brc"], strength: "medium" },
+  { id: "electronic_residence_permit", terms: ["electronic residence permit", "epermit"], strength: "strong" },
+  { id: "digital_residence_permit", terms: ["digital residence permit"], strength: "strong" },
+  { id: "foreign_resident_card", terms: ["foreign resident card"], strength: "strong" },
+  { id: "secure_residence_document", terms: ["secure residence document", "secure permit document"], strength: "medium" },
+  { id: "residence_document", terms: ["residence document"], strength: "medium" },
+  { id: "permit_card", terms: ["permit card"], strength: "medium" },
+  { id: "permit_issuance", terms: ["permit issuance", "residence permit issuance", "issue residence permit card"], strength: "medium" },
+  { id: "permit_personalization", terms: ["permit personalization", "permit personalisation"], strength: "medium" },
+  { id: "permit_verification", terms: ["permit verification"], strength: "medium" },
+  { id: "permit_authentication", terms: ["permit authentication"], strength: "medium" },
+  { id: "immigration_card", terms: ["immigration card"], strength: "medium" },
+];
+
 function getLegacyIdCardDerivedEvidenceEntries(article, context, existingEntries = []) {
   if (evidenceEntriesContainId({ evidence: { documentTypes: existingEntries } }, "documentTypes", EXPLICIT_ID_CARD_EVIDENCE_IDS)) {
     return [];
@@ -15570,6 +15630,72 @@ function getLegacyIdCardDerivedEvidenceEntries(article, context, existingEntries
     locations: ["metadata"],
     strength: "medium",
     sourceHelper: "computePersonalInterestBoost:id_cards",
+  }];
+}
+
+function getLegacyResidencePermitDerivedEvidenceEntries(article, context, existingEntries = []) {
+  if (evidenceEntriesContainId({ evidence: { documentTypes: existingEntries } }, "documentTypes", EXPLICIT_RESIDENCE_PERMIT_EVIDENCE_IDS)) {
+    return [];
+  }
+
+  const residencePermitBoost = computePersonalInterestBoost(article, "residence_permits");
+  if ((Number(residencePermitBoost?.score) || 0) <= 0) {
+    return [];
+  }
+
+  const profile = calculateIdentityProfileScore(article, "residence_permits");
+  const subinterestScore = getIdentityDocumentSubinterestScore(article, ["residence_permits"]);
+  const signals = getIdentityDocumentInterestSignals(article);
+  const matchedLegacyTerms = Array.from(new Set([
+    ...(profile?.matchedStrong || []),
+    ...(profile?.matchedMedium || []),
+    ...(profile?.matchedWeak || []),
+  ]));
+  const entries = [];
+  const seen = new Set();
+
+  LEGACY_RESIDENCE_PERMIT_EXPLICIT_EVIDENCE_TERM_MAP.forEach((mapping) => {
+    const matchedTerms = mapping.terms.filter((term) =>
+      matchedLegacyTerms.some((matchedTerm) => normalizeDiagnosticsText(matchedTerm) === normalizeDiagnosticsText(term))
+      || getArticleEvidenceLocationsForTerm(context, term).length
+    );
+    matchedTerms.forEach((term) => {
+      const locations = getArticleEvidenceLocationsForTerm(context, term);
+      const key = `${mapping.id}:${term}:${locations.join("|")}`;
+      if (!locations.length || seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      entries.push({
+        id: mapping.id,
+        term,
+        matchedTerm: term,
+        locations,
+        strength: mapping.strength,
+        sourceHelper: "computePersonalInterestBoost:residence_permits",
+      });
+    });
+  });
+
+  if (entries.length) {
+    return entries;
+  }
+
+  const residencePermitSignalScore =
+    Number(signals?.residencePermitHits || 0)
+    + Number(signals?.issuanceHits || 0)
+    + Math.max(0, Number(subinterestScore?.bestSelectedScore || 0));
+  if (residencePermitSignalScore <= 0) {
+    return [];
+  }
+
+  return [{
+    id: "residence_permits",
+    term: "legacy Residence Permit score",
+    matchedTerm: "legacy Residence Permit score",
+    locations: ["metadata"],
+    strength: "medium",
+    sourceHelper: "computePersonalInterestBoost:residence_permits",
   }];
 }
 
@@ -15713,6 +15839,25 @@ function getIdCardsEvidenceMappings() {
       terms: flattenEvidenceKeywordGroups([
         idCardInterest.weak,
         profile.mediumPositive,
+      ]),
+      strength: "medium",
+    },
+  ];
+}
+
+function getResidencePermitEvidenceMappings() {
+  const residencePermitInterest = PERSONAL_DASHBOARD_INTEREST_MAP.get("residence_permits") || {};
+  const profile = IDENTITY_INTELLIGENCE_PROFILES.residence_permits || {};
+  return [
+    ...LEGACY_RESIDENCE_PERMIT_EXPLICIT_EVIDENCE_TERM_MAP,
+    {
+      id: "residence_permit_profile",
+      terms: flattenEvidenceKeywordGroups([
+        residencePermitInterest.strong,
+        profile.strongPositive,
+        profile.mediumPositive,
+        profile.weakPositive,
+        RESIDENCE_PERMIT_CARD_PRIORITY_TERMS,
       ]),
       strength: "medium",
     },
@@ -16225,6 +16370,8 @@ function buildArticleEvidence(article) {
   const context = buildArticleIntelligenceContext(article);
   const idCardsEvidence = collectMappedArticleEvidenceEntries(context, getIdCardsEvidenceMappings());
   const legacyIdCardDerivedEvidence = getLegacyIdCardDerivedEvidenceEntries(article, context, idCardsEvidence);
+  const residencePermitEvidence = collectMappedArticleEvidenceEntries(context, getResidencePermitEvidenceMappings());
+  const legacyResidencePermitDerivedEvidence = getLegacyResidencePermitDerivedEvidenceEntries(article, context, residencePermitEvidence);
   const passportGuardEvidence = getPassportGuardEvidenceMappings();
   const passportDocumentEvidence = collectMappedArticleEvidenceEntries(context, passportGuardEvidence.documentTypes);
   const passportProfessionalEvidence = collectMappedArticleEvidenceEntries(context, passportGuardEvidence.professionalSignals);
@@ -16283,8 +16430,8 @@ function buildArticleEvidence(article) {
     IDENTITY_INTENT_AUTHORITY_SOURCES,
   ]);
   const evidence = {
-    domainObjects: collectArticleEvidenceEntries(context, domainObjectTerms, { strength: "strong" }).concat(idCardsEvidence, legacyIdCardDerivedEvidence, passportDocumentEvidence),
-    documentTypes: collectArticleEvidenceEntries(context, documentTypeTerms, { strength: "strong" }).concat(idCardsEvidence, legacyIdCardDerivedEvidence, passportDocumentEvidence),
+    domainObjects: collectArticleEvidenceEntries(context, domainObjectTerms, { strength: "strong" }).concat(idCardsEvidence, legacyIdCardDerivedEvidence, residencePermitEvidence, legacyResidencePermitDerivedEvidence, passportDocumentEvidence),
+    documentTypes: collectArticleEvidenceEntries(context, documentTypeTerms, { strength: "strong" }).concat(idCardsEvidence, legacyIdCardDerivedEvidence, residencePermitEvidence, legacyResidencePermitDerivedEvidence, passportDocumentEvidence),
     vendors: collectArticleEvidenceEntries(context, vendorTerms, { strength: "medium" }),
     materials: collectArticleEvidenceEntries(context, materialTerms, { strength: "medium" }),
     technologies: collectArticleEvidenceEntries(context, technologyTerms, { strength: "medium" }),
@@ -25377,6 +25524,12 @@ function buildResidencePermitDecisionContext(article) {
   const residencePermitBoost = computePersonalInterestBoost(article, "residence_permits");
   const subinterestScore = getIdentityDocumentSubinterestScore(article, ["residence_permits"]);
   const signals = getIdentityDocumentInterestSignals(article);
+  const articleEvidence = buildArticleEvidence(article);
+  const explicitResidencePermitEvidenceIds = getMatchedEvidenceIds(
+    articleEvidence,
+    "documentTypes",
+    EXPLICIT_RESIDENCE_PERMIT_EVIDENCE_IDS
+  );
   const identityTechniqueBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, ["residence_permits"]);
 
   return {
@@ -25388,6 +25541,7 @@ function buildResidencePermitDecisionContext(article) {
     subinterestScore,
     bestSelectedScore: Number(subinterestScore?.bestSelectedScore || subinterestScore?.score) || 0,
     signals,
+    explicitResidencePermitEvidenceIds,
     identityTechniqueBridgeMatched,
   };
 }
@@ -25433,6 +25587,7 @@ const NoResidencePermitSignalRule = {
         bestSelectedScore: context.bestSelectedScore,
         residencePermitHits: Number(context.signals?.residencePermitHits || 0),
         issuanceHits: Number(context.signals?.issuanceHits || 0),
+        explicitResidencePermitEvidenceCount: context.explicitResidencePermitEvidenceIds?.length || 0,
       },
       evidence: {
         residencePermitBoost: context.residencePermitBoost,
@@ -25447,6 +25602,7 @@ const NoResidencePermitSignalRule = {
         residencePermitScore: context.residencePermitScore,
         bestSelectedScore: context.bestSelectedScore,
         signals: context.signals,
+        explicitResidencePermitEvidenceIds: context.explicitResidencePermitEvidenceIds,
       },
     };
   },
@@ -25475,6 +25631,7 @@ const ProfessionalResidencePermitKeepRule = {
         residencePermitScore: context.residencePermitScore,
         threshold: 18,
         residencePermitBoost: context.residencePermitBoost,
+        explicitResidencePermitEvidenceIds: context.explicitResidencePermitEvidenceIds,
       },
     };
   },
@@ -25535,6 +25692,7 @@ const WeakResidencePermitSignalRule = {
         bestSelectedScore: context.bestSelectedScore,
         threshold: 18,
         signals: context.signals,
+        explicitResidencePermitEvidenceIds: context.explicitResidencePermitEvidenceIds,
       },
     };
   },
