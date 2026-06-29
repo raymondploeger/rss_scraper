@@ -15203,6 +15203,12 @@ function getArticleEvidenceTextSections(context) {
   };
 }
 
+function getArticleEvidenceLocationsForTerm(context, term) {
+  return Object.entries(getArticleEvidenceTextSections(context))
+    .filter(([, text]) => textMatchesKeyword(text, term))
+    .map(([location]) => location);
+}
+
 function collectArticleEvidenceEntries(context, terms = [], options = {}) {
   const sections = getArticleEvidenceTextSections(context);
   const strength = options.strength || "medium";
@@ -15234,6 +15240,90 @@ function collectArticleEvidenceEntries(context, terms = [], options = {}) {
     });
   });
   return entries;
+}
+
+const LEGACY_ID_CARD_EXPLICIT_EVIDENCE_TERM_MAP = [
+  { id: "id_card", terms: ["id card", "id cards", "czech id"], strength: "strong" },
+  { id: "identity_card", terms: ["identity card", "identity cards"], strength: "strong" },
+  { id: "national_id", terms: ["national id", "national identity card", "national id card"], strength: "strong" },
+  { id: "electronic_identity_card", terms: ["electronic identity card", "digital identity card"], strength: "strong" },
+  { id: "eid_card", terms: ["eid", "e-id", "eid card", "e-id card", "electronic id"], strength: "strong" },
+  { id: "secure_id_documents", terms: ["secure id documents", "secure identity documents"], strength: "medium" },
+  { id: "id_documents", terms: ["id documents"], strength: "medium" },
+  { id: "physical_identity_documents", terms: ["physical identity documents", "physical document"], strength: "medium" },
+  { id: "identity_card_issuance", terms: ["identity card issuance", "id issuance"], strength: "medium" },
+  { id: "polycarbonate_id", terms: ["polycarbonate id", "polycarbonate card"], strength: "medium" },
+  { id: "identity_card_design", terms: ["identity card design", "id card design", "card design"], strength: "medium" },
+  { id: "identity_document_protection", terms: ["identity document protection", "id protection", "document protection"], strength: "medium" },
+  { id: "national_identity_guard", terms: ["national identity guard"], strength: "strong" },
+  { id: "national_id_documents", terms: ["national id documents"], strength: "strong" },
+  { id: "hybrid_id_documents", terms: ["hybrid id documents"], strength: "strong" },
+];
+
+function getLegacyIdCardDerivedEvidenceEntries(article, context, existingEntries = []) {
+  if (evidenceEntriesContainId({ evidence: { documentTypes: existingEntries } }, "documentTypes", EXPLICIT_ID_CARD_EVIDENCE_IDS)) {
+    return [];
+  }
+
+  const idCardsBoost = computePersonalInterestBoost(article, "id_cards");
+  if ((Number(idCardsBoost?.score) || 0) <= 0) {
+    return [];
+  }
+
+  const profile = calculateIdentityProfileScore(article, "id_cards");
+  const subinterestScore = getIdentityDocumentSubinterestScore(article, ["id_cards"]);
+  const signals = getIdentityDocumentInterestSignals(article);
+  const matchedLegacyTerms = Array.from(new Set([
+    ...(profile?.matchedStrong || []),
+    ...(profile?.matchedMedium || []),
+    ...(profile?.matchedWeak || []),
+  ]));
+  const entries = [];
+  const seen = new Set();
+
+  LEGACY_ID_CARD_EXPLICIT_EVIDENCE_TERM_MAP.forEach((mapping) => {
+    const matchedTerms = mapping.terms.filter((term) =>
+      matchedLegacyTerms.some((matchedTerm) => normalizeString(matchedTerm) === normalizeString(term))
+      || getArticleEvidenceLocationsForTerm(context, term).length
+    );
+    matchedTerms.forEach((term) => {
+      const locations = getArticleEvidenceLocationsForTerm(context, term);
+      const key = `${mapping.id}:${term}:${locations.join("|")}`;
+      if (!locations.length || seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      entries.push({
+        id: mapping.id,
+        term,
+        matchedTerm: term,
+        locations,
+        strength: mapping.strength,
+        sourceHelper: "computePersonalInterestBoost:id_cards",
+      });
+    });
+  });
+
+  if (entries.length) {
+    return entries;
+  }
+
+  const idCardSignalScore =
+    Number(signals?.idCardHits || 0)
+    + Number(signals?.polycarbonateHits || 0)
+    + Math.max(0, Number(subinterestScore?.bestSelectedScore || 0));
+  if (idCardSignalScore <= 0) {
+    return [];
+  }
+
+  return [{
+    id: "id_cards",
+    term: "legacy ID Card score",
+    matchedTerm: "legacy ID Card score",
+    locations: ["metadata"],
+    strength: "medium",
+    sourceHelper: "computePersonalInterestBoost:id_cards",
+  }];
 }
 
 function collectMappedArticleEvidenceEntries(context, mappings = [], options = {}) {
@@ -15887,6 +15977,7 @@ function getNormalizedEventEvidenceEntries(article, context) {
 function buildArticleEvidence(article) {
   const context = buildArticleIntelligenceContext(article);
   const idCardsEvidence = collectMappedArticleEvidenceEntries(context, getIdCardsEvidenceMappings());
+  const legacyIdCardDerivedEvidence = getLegacyIdCardDerivedEvidenceEntries(article, context, idCardsEvidence);
   const passportGuardEvidence = getPassportGuardEvidenceMappings();
   const passportDocumentEvidence = collectMappedArticleEvidenceEntries(context, passportGuardEvidence.documentTypes);
   const passportProfessionalEvidence = collectMappedArticleEvidenceEntries(context, passportGuardEvidence.professionalSignals);
@@ -15945,8 +16036,8 @@ function buildArticleEvidence(article) {
     IDENTITY_INTENT_AUTHORITY_SOURCES,
   ]);
   const evidence = {
-    domainObjects: collectArticleEvidenceEntries(context, domainObjectTerms, { strength: "strong" }).concat(idCardsEvidence, passportDocumentEvidence),
-    documentTypes: collectArticleEvidenceEntries(context, documentTypeTerms, { strength: "strong" }).concat(idCardsEvidence, passportDocumentEvidence),
+    domainObjects: collectArticleEvidenceEntries(context, domainObjectTerms, { strength: "strong" }).concat(idCardsEvidence, legacyIdCardDerivedEvidence, passportDocumentEvidence),
+    documentTypes: collectArticleEvidenceEntries(context, documentTypeTerms, { strength: "strong" }).concat(idCardsEvidence, legacyIdCardDerivedEvidence, passportDocumentEvidence),
     vendors: collectArticleEvidenceEntries(context, vendorTerms, { strength: "medium" }),
     materials: collectArticleEvidenceEntries(context, materialTerms, { strength: "medium" }),
     technologies: collectArticleEvidenceEntries(context, technologyTerms, { strength: "medium" }),
