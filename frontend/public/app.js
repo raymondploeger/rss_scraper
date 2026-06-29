@@ -32273,13 +32273,28 @@ function replayFilterDiagnosticsStage({ result, diagnostics, activeFeedId, useBa
     return;
   }
 
+  const candidatePool = Array.isArray(result.candidatePool) ? result.candidatePool : [];
+  const filteredRawArticles = Array.isArray(result.filteredRawArticles) ? result.filteredRawArticles : [];
+  const articles = Array.isArray(result.articles) ? result.articles : [];
+  const diagnosticReplayArticles = candidatePool.length
+    ? candidatePool
+    : filteredRawArticles.length
+      ? filteredRawArticles
+      : articles;
+  if (!candidatePool.length && diagnosticReplayArticles.length) {
+    addFilterPipelineNote(
+      diagnostics,
+      "diagnostics replay used active filtered article set because candidatePool was unavailable"
+    );
+  }
+
   const advancedFilterOptions =
     useBackendQuery || (activeFeedId && !state.filters.date)
       ? { ignoreFeedId: true, ignorePersonalDashboard: true }
       : { ignorePersonalDashboard: true };
   const stageResults = [];
   const feedScopeStage = applyFeedScopeStage({
-    articles: result.candidatePool,
+    articles: diagnosticReplayArticles,
     activeFeedId,
     diagnostics,
   });
@@ -32320,11 +32335,11 @@ function replayFilterDiagnosticsStage({ result, diagnostics, activeFeedId, useBa
   });
   stageResults.push(groupingStage.stage);
 
-  recordPipelineCount(diagnostics, "candidatePool", result.candidatePool.length);
+  recordPipelineCount(diagnostics, "candidatePool", diagnosticReplayArticles.length);
   recordPipelineCount(diagnostics, "afterFeedScope", feedScopeStage.articles.length);
   recordPipelineCount(diagnostics, "afterPersonalDashboard", personalDashboardStage.articles.length);
   recordPipelineCount(diagnostics, "afterAdvancedFilters", advancedFiltersStage.articles.length);
-  recordPipelineCount(diagnostics, "afterSorting", result.filteredRawArticles.length);
+  recordPipelineCount(diagnostics, "afterSorting", filteredRawArticles.length);
   recordPipelineCount(diagnostics, "afterGrouping", result.groupedArticlesCount);
   recordFilterPipelineStages(diagnostics, stageResults);
 }
