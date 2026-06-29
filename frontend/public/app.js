@@ -4807,6 +4807,53 @@ function recordDiagnosticsReplayMetadata(diagnostics, metadata = {}) {
   };
 }
 
+function getPipelineDiagnosticsArchitecture(diagnostics) {
+  const branch = String(diagnostics?.branch || "");
+  const backendQueryBranch = branch === "backend-query" || branch === "backend-query-loading";
+  const pipelineExecutorExpectedForBranch = true;
+  const pipelineExecutorPresent = Boolean(diagnostics?.pipelineExecutor);
+  const candidateBuilderResultPresent = Boolean(diagnostics?.candidateBuilderResult);
+  const pipelineOrchestratorPresent = Boolean(diagnostics?.pipelineOrchestrator);
+  const missingPipelineFields = [
+    !pipelineOrchestratorPresent ? "pipelineOrchestrator" : "",
+    !candidateBuilderResultPresent ? "candidateBuilderResult" : "",
+    !pipelineExecutorPresent ? "pipelineExecutor" : "",
+  ].filter(Boolean);
+
+  return {
+    backendQueryBypassesPipelineExecutor: false,
+    pipelineExecutorExpectedForBranch,
+    pipelineExecutorPresent,
+    candidateBuilderResultPresent,
+    pipelineOrchestratorPresent,
+    missingPipelineFields,
+    diagnosticsAuthorityForBranch: missingPipelineFields.length
+      ? [
+          "backendProviderStages",
+          "filterPipeline",
+          "diagnosticsReplay",
+        ]
+      : [
+          "pipelineOrchestrator",
+          "candidateBuilderResult",
+          "pipelineExecutor",
+          "filterPipeline",
+          "diagnosticsReplay",
+        ],
+    summaryPopulationSource: diagnostics?.diagnosticsReplay?.diagnosticsInputSource || "filterDecisionTraceMap",
+    reasonPipelineExecutorIsNull: !pipelineExecutorPresent
+      ? backendQueryBranch
+        ? "unexpected: backend-query should run through executePipelineOrchestrator; check diagnosticsReplay for an early diagnostics replay failure"
+        : "unexpected: renderArticles calls executePipelineOrchestrator for all article renders"
+      : "",
+    notes: [
+      "backend-query is expected to run through Pipeline Executor in the current architecture",
+      "filterPipeline can be recorded before later executor/orchestrator summaries if diagnostics replay aborts early",
+      "production filtering remains legacy-authoritative",
+    ],
+  };
+}
+
 function addFilterPipelineNote(diagnostics, note) {
   if (!diagnostics?.enabled || !note) {
     return;
@@ -12052,6 +12099,23 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push("none");
   }
 
+  const pipelineDiagnosticsArchitecture = diagnostics.pipelineDiagnosticsArchitecture;
+  lines.push("");
+  lines.push("Pipeline Diagnostics Architecture");
+  if (pipelineDiagnosticsArchitecture) {
+    lines.push(`backendQueryBypassesPipelineExecutor: ${pipelineDiagnosticsArchitecture.backendQueryBypassesPipelineExecutor}`);
+    lines.push(`pipelineExecutorExpectedForBranch: ${pipelineDiagnosticsArchitecture.pipelineExecutorExpectedForBranch}`);
+    lines.push(`pipelineExecutorPresent: ${pipelineDiagnosticsArchitecture.pipelineExecutorPresent}`);
+    lines.push(`candidateBuilderResultPresent: ${pipelineDiagnosticsArchitecture.candidateBuilderResultPresent}`);
+    lines.push(`pipelineOrchestratorPresent: ${pipelineDiagnosticsArchitecture.pipelineOrchestratorPresent}`);
+    lines.push(`summaryPopulationSource: ${pipelineDiagnosticsArchitecture.summaryPopulationSource}`);
+    if (pipelineDiagnosticsArchitecture.reasonPipelineExecutorIsNull) {
+      lines.push(`reasonPipelineExecutorIsNull: ${pipelineDiagnosticsArchitecture.reasonPipelineExecutorIsNull}`);
+    }
+  } else {
+    lines.push("none");
+  }
+
   const filterPipeline = diagnostics.filterPipeline;
   lines.push("");
   lines.push("Filter Pipeline");
@@ -13195,6 +13259,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     candidateBuilderResult: diagnostics.candidateBuilderResult || null,
     pipelineExecutor: diagnostics.pipelineExecutor || null,
     filterPipeline: diagnostics.filterPipeline || null,
+    pipelineDiagnosticsArchitecture: diagnostics.pipelineDiagnosticsArchitecture || null,
     diagnosticsReplay: diagnostics.diagnosticsReplay || null,
     filterPipelineStages: diagnostics.filterPipelineStages || [],
     diagnosticsPerformance: diagnostics.diagnosticsPerformance || null,
@@ -13826,6 +13891,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.driverLicenseDecisionEngineSummary = getDriverLicenseDecisionEngineSummary(diagnostics);
   diagnostics.polymerChildMatchDiagnosticsSummary = getPolymerChildMatchDiagnosticsSummary(diagnostics);
   diagnostics.polymerFalseNegativeDiagnostics = getPolymerFalseNegativeDiagnosticsSummary(diagnostics);
+  diagnostics.pipelineDiagnosticsArchitecture = getPipelineDiagnosticsArchitecture(diagnostics);
   publishFilterDecisionTraceDiagnostics(diagnostics);
   publishPersonalDashboardScores(diagnostics);
   storeFilterPipelineDiagnostics(diagnostics);
