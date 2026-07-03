@@ -15729,7 +15729,6 @@ function getPersonalDashboardBackendDomainPlan() {
           "driver's license",
           "driving licence",
           "driver licence",
-          "dmv",
           "license card",
           "real id",
           "mobile driver license",
