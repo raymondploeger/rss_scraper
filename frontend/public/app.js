@@ -4645,6 +4645,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     visaDecisionEngineSummary: null,
     driverLicenseDecisionEngineSummary: null,
     driverLicenseNoiseDiagnosticsSummary: null,
+    driverLicenseCandidateRetrievalDiagnostics: null,
     polymerChildMatchDiagnosticsSummary: null,
     polymerFalseNegativeDiagnostics: null,
     paginationPipeline: null,
@@ -8507,6 +8508,239 @@ function getDriverLicenseNoiseDiagnosticsSummary(diagnostics) {
     notes: [
       "Driver License noise diagnostics active",
       "Noise categories classify diagnostics only",
+      "Filtering behavior unchanged",
+    ],
+  };
+}
+
+function getDriverLicenseCandidateRetrievalNoisePatternDefinitions() {
+  return [
+    {
+      pattern: "road_infrastructure",
+      terms: ["road", "roads", "highway", "bridge", "resurfacing", "pavement", "traffic", "lane closure", "road closure"],
+    },
+    {
+      pattern: "airport_operations",
+      terms: ["airport", "runway", "flight", "terminal", "airline", "tsa", "airport operations"],
+    },
+    {
+      pattern: "generic_government_notice",
+      terms: ["government statement", "public notice", "official said", "officials said", "minister said", "department announced", "authority said"],
+    },
+    {
+      pattern: "funding_or_grants",
+      terms: ["funding", "grant", "grants", "investment", "budget", "appropriation", "capital project"],
+    },
+    {
+      pattern: "public_meeting_or_event_notice",
+      terms: ["public meeting", "board meeting", "community meeting", "public hearing", "town hall", "agenda", "event notice"],
+    },
+    {
+      pattern: "weather_or_emergency_notice",
+      terms: ["weather", "storm", "snow", "flood", "emergency notice", "emergency alert", "closure notice"],
+    },
+    {
+      pattern: "non_license_dmv_source_noise",
+      terms: ["vehicle registration", "registration renewal", "motor vehicle registration"],
+      helper(article) {
+        return isGenericDmvNoise(article) ? ["isGenericDmvNoise"] : [];
+      },
+    },
+  ];
+}
+
+function getDriverLicenseBackendSearchTermsFromRequests(backendRequests = []) {
+  return Array.from(new Set(
+    (Array.isArray(backendRequests) ? backendRequests : [])
+      .map((request) => String(request?.search || "").trim())
+      .filter(Boolean)
+  ));
+}
+
+function getDriverLicenseCandidateRetrievalText(article) {
+  const context = buildArticleIntelligenceContext(article);
+  return [
+    context.titleText,
+    context.summaryText,
+    context.metadataText,
+    context.bodyText,
+    context.sourceText,
+    context.domainText,
+    context.tagText,
+    article?.source || "",
+    article?.sourceName || "",
+    article?.feedTitle || "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function getDriverLicenseCandidateMatchedSearchTerms(article, backendSearchTerms = []) {
+  const text = getDriverLicenseCandidateRetrievalText(article);
+  return backendSearchTerms.filter((term) => textMatchesKeyword(text, term));
+}
+
+function getDriverLicenseCandidateNoisePatterns(article) {
+  const text = getDriverLicenseCandidateRetrievalText(article);
+  return getDriverLicenseCandidateRetrievalNoisePatternDefinitions()
+    .map((definition) => {
+      const matchedTerms = normalizeKeywordList(definition.terms || [])
+        .filter((term) => textMatchesKeyword(text, term));
+      const helperSignals = typeof definition.helper === "function" ? definition.helper(article) : [];
+      return {
+        pattern: definition.pattern,
+        matched: matchedTerms.length > 0 || helperSignals.length > 0,
+        matchedSignals: [
+          ...matchedTerms.map((term) => ({ type: "term", term })),
+          ...helperSignals.map((term) => ({ type: "helper", term })),
+        ],
+      };
+    })
+    .filter((entry) => entry.matched);
+}
+
+function getDriverLicenseCandidateRetrievalArticleSummary(article, backendSearchTerms = []) {
+  const articleEvidence = buildArticleEvidence(article);
+  const explicitDriverLicenseEvidenceIds = getMatchedEvidenceIds(
+    articleEvidence,
+    "documentTypes",
+    EXPLICIT_DRIVER_LICENSE_EVIDENCE_IDS
+  );
+  const driverLicenseBoost = computePersonalInterestBoost(article, "drivers_licenses");
+  const matchedSearchTerms = getDriverLicenseCandidateMatchedSearchTerms(article, backendSearchTerms);
+  const noisePatterns = getDriverLicenseCandidateNoisePatterns(article);
+  const hasExplicitDriverLicenseEvidence = explicitDriverLicenseEvidenceIds.length > 0;
+  const likelyValidDriverLicense = hasExplicitDriverLicenseEvidence
+    || Number(driverLicenseBoost?.score || 0) >= 18
+    || isDriverLicenseSpecificArticle(article);
+  const likelyNoise = noisePatterns.length > 0 && !likelyValidDriverLicense;
+
+  return {
+    articleId: getFilterDecisionTraceArticleId(article),
+    title: article?.title || "Untitled article",
+    source: getIdentityNoiseGuardSource(article),
+    matchedSearchTerms,
+    noisePatterns,
+    explicitDriverLicenseEvidenceIds,
+    driverLicenseScore: Number(driverLicenseBoost?.score) || 0,
+    likelyValidDriverLicense,
+    likelyNoise,
+  };
+}
+
+function getDriverLicenseCandidateRetrievalDiagnostics({
+  candidatePool = [],
+  groupedArticles = [],
+  filteredRawArticles = [],
+  backendRequests = [],
+} = {}) {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
+  if (!(selectedIdentityInterests.length === 1 && selectedIdentityInterests[0] === "drivers_licenses")) {
+    return null;
+  }
+
+  const backendSearchTerms = getDriverLicenseBackendSearchTermsFromRequests(backendRequests);
+  const candidateCountBySearchTerm = {};
+  const groupedCountBySearchTerm = {};
+  const likelyNoiseCountBySearchTerm = {};
+  const likelyValidDriverLicenseCountBySearchTerm = {};
+  const noisePatternCounts = new Map();
+  const examples = {
+    dmvOnlyCandidateExamples: [],
+    dmvValidCandidateExamples: [],
+    dmvGroupedCandidateExamples: [],
+  };
+  const addExample = (bucket, summary, extra = {}) => {
+    if (bucket.length >= 10) {
+      return;
+    }
+    bucket.push({
+      title: summary.title,
+      source: summary.source,
+      matchedSearchTerms: summary.matchedSearchTerms,
+      noisePatterns: summary.noisePatterns.map((entry) => entry.pattern),
+      matchedNoiseSignals: summary.noisePatterns.flatMap((entry) => entry.matchedSignals || []).slice(0, 8),
+      explicitDriverLicenseEvidenceIds: summary.explicitDriverLicenseEvidenceIds,
+      driverLicenseScore: summary.driverLicenseScore,
+      likelyValidDriverLicense: summary.likelyValidDriverLicense,
+      likelyNoise: summary.likelyNoise,
+      ...extra,
+    });
+  };
+
+  backendSearchTerms.forEach((term) => {
+    candidateCountBySearchTerm[term] = 0;
+    groupedCountBySearchTerm[term] = 0;
+    likelyNoiseCountBySearchTerm[term] = 0;
+    likelyValidDriverLicenseCountBySearchTerm[term] = 0;
+  });
+
+  const candidateSummaries = (Array.isArray(candidatePool) ? candidatePool : [])
+    .map((article) => getDriverLicenseCandidateRetrievalArticleSummary(article, backendSearchTerms));
+  candidateSummaries.forEach((summary) => {
+    summary.matchedSearchTerms.forEach((term) => {
+      candidateCountBySearchTerm[term] += 1;
+      if (summary.likelyNoise) {
+        likelyNoiseCountBySearchTerm[term] += 1;
+      }
+      if (summary.likelyValidDriverLicense) {
+        likelyValidDriverLicenseCountBySearchTerm[term] += 1;
+      }
+    });
+    summary.noisePatterns.forEach((entry) => incrementReasonCount(noisePatternCounts, entry.pattern));
+    const dmvOnly = summary.matchedSearchTerms.includes("dmv") && summary.matchedSearchTerms.length === 1;
+    if (dmvOnly && summary.likelyNoise) {
+      addExample(examples.dmvOnlyCandidateExamples, summary);
+    }
+    if (summary.matchedSearchTerms.includes("dmv") && summary.likelyValidDriverLicense) {
+      addExample(examples.dmvValidCandidateExamples, summary);
+    }
+  });
+
+  (Array.isArray(groupedArticles) ? groupedArticles : []).forEach((article) => {
+    const summary = getDriverLicenseCandidateRetrievalArticleSummary(article, backendSearchTerms);
+    summary.matchedSearchTerms.forEach((term) => {
+      groupedCountBySearchTerm[term] += 1;
+    });
+    const dmvOnly = summary.matchedSearchTerms.includes("dmv") && summary.matchedSearchTerms.length === 1;
+    if (dmvOnly) {
+      addExample(examples.dmvGroupedCandidateExamples, summary, { grouped: true });
+    }
+  });
+
+  const dmvOnlyCandidates = candidateSummaries.filter((summary) =>
+    summary.matchedSearchTerms.includes("dmv") && summary.matchedSearchTerms.length === 1
+  );
+  const dmvMatchedCandidates = candidateSummaries.filter((summary) => summary.matchedSearchTerms.includes("dmv"));
+  const dmvLikelyNoiseCandidates = dmvMatchedCandidates.filter((summary) => summary.likelyNoise);
+  const dmvLikelyValidCandidates = dmvMatchedCandidates.filter((summary) => summary.likelyValidDriverLicense);
+
+  return {
+    enabled: true,
+    attributionMode: "diagnostics_inferred_text_match",
+    backendSearchTerms,
+    candidatePoolCount: candidateSummaries.length,
+    filteredRawArticleCount: Array.isArray(filteredRawArticles) ? filteredRawArticles.length : 0,
+    groupedArticleCount: Array.isArray(groupedArticles) ? groupedArticles.length : 0,
+    candidateCountBySearchTerm,
+    groupedCountBySearchTerm,
+    likelyNoiseCountBySearchTerm,
+    likelyValidDriverLicenseCountBySearchTerm,
+    dmvImpact: {
+      matchedCandidateCount: dmvMatchedCandidates.length,
+      dmvOnlyCandidateCount: dmvOnlyCandidates.length,
+      likelyNoiseCandidateCount: dmvLikelyNoiseCandidates.length,
+      likelyValidDriverLicenseCandidateCount: dmvLikelyValidCandidates.length,
+    },
+    dmvOnlyCandidateExamples: examples.dmvOnlyCandidateExamples,
+    dmvValidCandidateExamples: examples.dmvValidCandidateExamples,
+    dmvGroupedCandidateExamples: examples.dmvGroupedCandidateExamples,
+    topNoisePatterns: getTopV3DecisionReasons(noisePatternCounts, 20),
+    notes: [
+      "Driver License backend retrieval attribution is diagnostics-only",
+      "Attribution is inferred by matching cached/grouped articles against backend search terms after merge/dedupe",
+      "Backend query terms unchanged",
       "Filtering behavior unchanged",
     ],
   };
@@ -13690,6 +13924,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     visaDecisionEngineSummary: diagnostics.visaDecisionEngineSummary || null,
     driverLicenseDecisionEngineSummary: diagnostics.driverLicenseDecisionEngineSummary || null,
     driverLicenseNoiseDiagnosticsSummary: diagnostics.driverLicenseNoiseDiagnosticsSummary || null,
+    driverLicenseCandidateRetrievalDiagnostics: diagnostics.driverLicenseCandidateRetrievalDiagnostics || null,
     polymerChildMatchDiagnosticsSummary: diagnostics.polymerChildMatchDiagnosticsSummary || null,
     polymerFalseNegativeDiagnostics: diagnostics.polymerFalseNegativeDiagnostics || null,
     paginationPipeline: diagnostics.paginationPipeline || null,
@@ -14346,6 +14581,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("visaDecisionEngineSummary", diagnostics.visaDecisionEngineSummary);
   console.log("driverLicenseDecisionEngineSummary", diagnostics.driverLicenseDecisionEngineSummary);
   console.log("driverLicenseNoiseDiagnosticsSummary", diagnostics.driverLicenseNoiseDiagnosticsSummary);
+  console.log("driverLicenseCandidateRetrievalDiagnostics", diagnostics.driverLicenseCandidateRetrievalDiagnostics);
   console.log("polymerChildMatchDiagnosticsSummary", diagnostics.polymerChildMatchDiagnosticsSummary);
   console.log("polymerFalseNegativeDiagnostics", diagnostics.polymerFalseNegativeDiagnostics);
   console.log("paginationPipeline", diagnostics.paginationPipeline);
@@ -33941,6 +34177,18 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
   }
   const filteredRawArticles = sortArticlesForCurrentDashboardMode(filteredBackendArticles);
   const groupedArticles = prepareDateFirstGroupedArticles(filteredRawArticles);
+  if (diagnostics?.enabled) {
+    diagnostics.driverLicenseCandidateRetrievalDiagnostics = getDriverLicenseCandidateRetrievalDiagnostics({
+      candidatePool,
+      filteredRawArticles,
+      groupedArticles,
+      backendRequests,
+    });
+    if (diagnostics.driverLicenseCandidateRetrievalDiagnostics) {
+      addFilterPipelineNote(diagnostics, "Driver License candidate retrieval diagnostics active");
+      addFilterPipelineNote(diagnostics, "Driver License backend retrieval attribution is diagnostics-only");
+    }
+  }
   return {
     stage: createBackendProviderStage(
       "backend_result_normalization",
