@@ -4614,6 +4614,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     evidenceBuilderProfessionalSummary: null,
     evidenceBuilderProfessionalParitySummary: null,
     evidenceBuilderEventSummary: null,
+    identityIssuanceDiagnostics: null,
     v3DecisionEngineDiagnosticsSummary: null,
     v3ConfidenceSummary: null,
     v3DecisionParitySummary: null,
@@ -4750,6 +4751,8 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Evidence Builder Professional parity diagnostics active",
             "Professional Signals included in parity checks",
             "Event Signals introduced",
+            "Identity issuance and personalization diagnostics active",
+            "Identity lifecycle diagnostics are cross-document and diagnostics-only",
             "Visa noise diagnostics active",
             "V3 Decision Engine diagnostics active",
             "V3 Decision Engine is diagnostics-only",
@@ -4965,6 +4968,9 @@ function getFilterDecisionTrace(diagnostics, article) {
     const v3Decision = heavyDiagnosticsEnabled
       ? buildV3DecisionDiagnostics(article, { articleEvidence })
       : null;
+    const identityIssuance = heavyDiagnosticsEnabled
+      ? getIdentityLifecyclePatternMatches(article, articleEvidence)
+      : null;
     const professionalDecision = heavyDiagnosticsEnabled
       ? buildProfessionalDecisionDiagnostics(article, {
           articleEvidence,
@@ -5022,6 +5028,7 @@ function getFilterDecisionTrace(diagnostics, article) {
       },
       evidenceDiagnostics: articleEvidence,
       evidenceParityDiagnostics: evidenceParity,
+      identityIssuanceDiagnostics: identityIssuance,
       v3DecisionDiagnostics: v3Decision,
       professionalDecisionDiagnostics: professionalDecision,
       passportDecisionDiagnostics: passportDecision,
@@ -5118,6 +5125,7 @@ function freezeFilterDecisionTrace(trace) {
     }),
     evidenceDiagnostics: Object.freeze(trace.evidenceDiagnostics || {}),
     evidenceParityDiagnostics: Object.freeze(trace.evidenceParityDiagnostics || {}),
+    identityIssuanceDiagnostics: Object.freeze(trace.identityIssuanceDiagnostics || {}),
     v3DecisionDiagnostics: Object.freeze(trace.v3DecisionDiagnostics || {}),
     decisionParityDiagnostics: Object.freeze(trace.decisionParityDiagnostics || {}),
     professionalDecisionDiagnostics: Object.freeze(trace.professionalDecisionDiagnostics || {}),
@@ -5300,6 +5308,308 @@ function getEvidenceBuilderDiagnosticsSummary(diagnostics) {
     topEventSignals: getTopEvidenceCounts(countsByGroup.eventSignals),
     topProfessionalSignals: getTopEvidenceCounts(countsByGroup.professionalSignals),
     topNoiseSignals: getTopEvidenceCounts(countsByGroup.noiseSignals),
+  };
+}
+
+function getIdentityIssuanceDocumentAssociations(articleEvidence, context) {
+  const documentEntries = []
+    .concat(getEvidenceEntriesForGroup(articleEvidence, "domainObjects"))
+    .concat(getEvidenceEntriesForGroup(articleEvidence, "documentTypes"));
+  const normalizedEntryText = documentEntries
+    .map((entry) => [entry?.id, entry?.term, entry?.matchedTerm].filter(Boolean).join(" "))
+    .join(" ")
+    .toLowerCase();
+  const text = [
+    normalizedEntryText,
+    context?.titleText || "",
+    context?.metadataText || "",
+    context?.tagText || "",
+  ].join(" ");
+  const associations = [];
+  const addAssociation = (documentType, terms = []) => {
+    if (terms.some((term) => textMatchesKeyword(text, term))) {
+      associations.push(documentType);
+    }
+  };
+
+  addAssociation("passport", ["passport", "passports", "travel document", "passport_issuance"]);
+  addAssociation("id_card", ["id card", "id cards", "identity card", "national id", "electronic identity card", "eid card", "identity_card_issuance", "card_issuance"]);
+  addAssociation("residence_permit", ["residence permit", "residence card", "resident card", "biometric residence permit", "permit_issuance"]);
+  addAssociation("visa", ["visa", "visas", "evisa", "e-visa", "electronic visa", "visa_issuance"]);
+  addAssociation("driver_license", ["driver license", "driver licence", "driving licence", "driving license", "mobile driver license", "real id", "license_issuance"]);
+
+  return Array.from(new Set(associations));
+}
+
+function getIdentityLifecyclePatternDefinitions() {
+  return {
+    strong: [
+      {
+        category: "issuance",
+        terms: [
+          "passport issuance system",
+          "id card issuance platform",
+          "identity card issuance",
+          "credential issuance",
+          "document issuance",
+          "secure issuance",
+          "secure credential issuance",
+          "government issuance system",
+          "government issuance contract",
+          "issuance modernization",
+          "issuance modernisation",
+          "visa issuance",
+          "residence permit issuance",
+          "driver license issuance",
+          "driver licence issuance",
+        ],
+      },
+      {
+        category: "personalization",
+        terms: [
+          "personalization system",
+          "personalisation system",
+          "card personalization",
+          "card personalisation",
+          "laser personalization",
+          "laser personalisation",
+          "document personalization",
+          "document personalisation",
+          "secure personalization",
+          "secure personalisation",
+        ],
+      },
+      {
+        category: "enrolment",
+        terms: [
+          "enrollment system",
+          "enrolment system",
+          "biometric enrollment",
+          "biometric enrolment",
+          "application processing system",
+        ],
+      },
+      {
+        category: "production",
+        terms: [
+          "document production",
+          "secure credential production",
+          "card production",
+          "booklet production",
+          "identity document production",
+          "credential production",
+        ],
+      },
+      {
+        category: "lifecycle",
+        terms: [
+          "document lifecycle",
+          "lifecycle management",
+          "identity management platform",
+          "document rollout",
+          "new generation document launch",
+          "next generation document",
+        ],
+      },
+    ],
+    weak: [
+      {
+        category: "issuance",
+        terms: ["issuance system", "issuance", "issued", "renewal system"],
+      },
+      {
+        category: "personalization",
+        terms: ["personalization", "personalisation"],
+      },
+      {
+        category: "enrolment",
+        terms: ["enrollment", "enrolment"],
+      },
+      {
+        category: "production",
+        terms: ["production", "printing", "manufacturing"],
+      },
+      {
+        category: "lifecycle",
+        terms: ["rollout", "launch", "launched", "introduced", "deployed"],
+      },
+    ],
+    noise: [
+      {
+        category: "unrelated_issuance_noise",
+        terms: [
+          "ticket issuance",
+          "certificate issuance",
+          "stock issuance",
+          "bond issuance",
+          "share issuance",
+          "financial issuance",
+          "debt issuance",
+          "permit issuance fee",
+          "building permit issuance",
+          "software release",
+          "generic software release",
+        ],
+      },
+    ],
+  };
+}
+
+function getIdentityLifecyclePatternMatches(article, articleEvidence = null) {
+  const context = buildArticleIntelligenceContext(article);
+  const sections = getArticleEvidenceTextSections(context);
+  const articleEvidenceInput = articleEvidence || buildArticleEvidence(article);
+  const documentTypeAssociation = getIdentityIssuanceDocumentAssociations(articleEvidenceInput, context);
+  const definitions = getIdentityLifecyclePatternDefinitions();
+  const collectMatches = (bucket, strength) => (definitions[bucket] || [])
+    .map((definition) => {
+      const matchedSignals = normalizeKeywordList(definition.terms || [])
+        .map((term) => ({
+          term,
+          locations: Object.entries(sections)
+            .filter(([, text]) => textMatchesKeyword(text, term))
+            .map(([location]) => location),
+        }))
+        .filter((entry) => entry.locations.length);
+      return {
+        category: definition.category,
+        strength,
+        matchedSignals,
+      };
+    })
+    .filter((entry) => entry.matchedSignals.length);
+
+  const strongMatches = collectMatches("strong", "strong");
+  const weakMatches = collectMatches("weak", "weak");
+  const noiseMatches = collectMatches("noise", "noise");
+  const hasDocumentContext = documentTypeAssociation.length > 0;
+  const strongLifecycleEvidence = strongMatches.length > 0 || (hasDocumentContext && weakMatches.length > 0);
+  const weakLifecycleEvidence = !strongLifecycleEvidence && weakMatches.length > 0;
+
+  return {
+    articleId: getFilterDecisionTraceArticleId(article),
+    title: article?.title || "Untitled article",
+    documentTypeAssociation,
+    strongMatches,
+    weakMatches,
+    noiseMatches,
+    strongLifecycleEvidence,
+    weakLifecycleEvidence,
+    lifecycleNoise: noiseMatches.length > 0 && !strongLifecycleEvidence,
+    reason: strongLifecycleEvidence
+      ? "strong lifecycle evidence"
+      : weakLifecycleEvidence
+        ? "weak lifecycle evidence without document context"
+        : noiseMatches.length
+          ? "unrelated issuance noise"
+          : "",
+    notes: [
+      "Identity issuance diagnostics are diagnostics-only",
+      "Document lifecycle evidence is linked to existing document evidence",
+      "Production filtering unchanged",
+    ],
+  };
+}
+
+function getIdentityIssuanceDiagnosticsSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+
+  const evidenceTermCounts = new Map();
+  const documentTypeCounts = new Map();
+  const strongExamples = [];
+  const weakExamples = [];
+  const noiseExamples = [];
+  let totalMatches = 0;
+  let strongIssuanceMatches = 0;
+  let weakIssuanceMatches = 0;
+  let noiseMatches = 0;
+
+  const addExample = (bucket, example, limit = 10) => {
+    if (bucket.length < limit) {
+      bucket.push(example);
+    }
+  };
+  const countSignals = (matches = []) => {
+    matches.forEach((match) => {
+      (match.matchedSignals || []).forEach((signal) => {
+        incrementEvidenceCount(evidenceTermCounts, {
+          id: normalizeEvidenceId(signal.term),
+          term: signal.term,
+        });
+      });
+    });
+  };
+
+  getHeavyDiagnosticsTraces(diagnostics).forEach((trace) => {
+    const issuanceDiagnostics = trace.identityIssuanceDiagnostics;
+    if (!issuanceDiagnostics) {
+      return;
+    }
+    const hasAnyMatch =
+      issuanceDiagnostics.strongMatches?.length ||
+      issuanceDiagnostics.weakMatches?.length ||
+      issuanceDiagnostics.noiseMatches?.length;
+    if (!hasAnyMatch) {
+      return;
+    }
+    totalMatches += 1;
+    (issuanceDiagnostics.documentTypeAssociation || []).forEach((documentType) => {
+      incrementReasonCount(documentTypeCounts, documentType);
+    });
+    countSignals(issuanceDiagnostics.strongMatches || []);
+    countSignals(issuanceDiagnostics.weakMatches || []);
+    countSignals(issuanceDiagnostics.noiseMatches || []);
+
+    const compactExample = {
+      title: issuanceDiagnostics.title,
+      documentTypeAssociation: issuanceDiagnostics.documentTypeAssociation || [],
+      reason: issuanceDiagnostics.reason || "",
+      includedByLegacy: String(trace.finalResult || "survived") !== "rejected",
+    };
+    if (issuanceDiagnostics.strongLifecycleEvidence) {
+      strongIssuanceMatches += 1;
+      addExample(strongExamples, {
+        ...compactExample,
+        strongMatches: (issuanceDiagnostics.strongMatches || []).map((entry) => entry.category),
+        weakMatches: (issuanceDiagnostics.weakMatches || []).map((entry) => entry.category),
+      });
+    } else if (issuanceDiagnostics.weakLifecycleEvidence) {
+      weakIssuanceMatches += 1;
+      addExample(weakExamples, {
+        ...compactExample,
+        weakMatches: (issuanceDiagnostics.weakMatches || []).map((entry) => entry.category),
+      });
+    }
+    if (issuanceDiagnostics.lifecycleNoise) {
+      noiseMatches += 1;
+      addExample(noiseExamples, {
+        ...compactExample,
+        noiseMatches: (issuanceDiagnostics.noiseMatches || []).map((entry) => entry.category),
+      });
+    }
+  });
+
+  return {
+    enabled: true,
+    evaluatedArticles: getHeavyDiagnosticsTraces(diagnostics).length,
+    totalMatches,
+    strongIssuanceMatches,
+    weakIssuanceMatches,
+    noiseMatches,
+    documentTypeAssociation: getTopV3DecisionReasons(documentTypeCounts, 10),
+    topEvidenceTerms: getTopEvidenceCounts(evidenceTermCounts, 20),
+    exampleArticles: {
+      strongLifecycleEvidence: strongExamples,
+      weakLifecycleEvidence: weakExamples,
+      unrelatedIssuanceNoise: noiseExamples,
+    },
+    notes: [
+      "Identity issuance and personalization diagnostics active",
+      "Lifecycle intelligence is cross-document diagnostics, not a document type",
+      "Production filtering unchanged",
+    ],
   };
 }
 
@@ -14594,6 +14904,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     evidenceBuilderProfessionalSummary: diagnostics.evidenceBuilderProfessionalSummary || null,
     evidenceBuilderProfessionalParitySummary: diagnostics.evidenceBuilderProfessionalParitySummary || null,
     evidenceBuilderEventSummary: diagnostics.evidenceBuilderEventSummary || null,
+    identityIssuanceDiagnostics: diagnostics.identityIssuanceDiagnostics || null,
     v3DecisionEngineDiagnosticsSummary: diagnostics.v3DecisionEngineDiagnosticsSummary || null,
     v3ConfidenceSummary: diagnostics.v3ConfidenceSummary || null,
     v3DecisionParitySummary: diagnostics.v3DecisionParitySummary || null,
@@ -15176,6 +15487,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.evidenceBuilderProfessionalSummary = getEvidenceBuilderProfessionalSummary(diagnostics);
   diagnostics.evidenceBuilderProfessionalParitySummary = getEvidenceBuilderProfessionalParitySummary(diagnostics);
   diagnostics.evidenceBuilderEventSummary = getEvidenceBuilderEventSummary(diagnostics);
+  diagnostics.identityIssuanceDiagnostics = getIdentityIssuanceDiagnosticsSummary(diagnostics);
   diagnostics.v3DecisionEngineDiagnosticsSummary = getV3DecisionEngineDiagnosticsSummary(diagnostics);
   diagnostics.v3ConfidenceSummary = getV3ConfidenceSummary(diagnostics);
   diagnostics.v3DecisionParitySummary = getV3DecisionParitySummary(diagnostics);
@@ -15253,6 +15565,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("evidenceBuilderProfessionalSummary", diagnostics.evidenceBuilderProfessionalSummary);
   console.log("evidenceBuilderProfessionalParitySummary", diagnostics.evidenceBuilderProfessionalParitySummary);
   console.log("evidenceBuilderEventSummary", diagnostics.evidenceBuilderEventSummary);
+  console.log("identityIssuanceDiagnostics", diagnostics.identityIssuanceDiagnostics);
   console.log("v3DecisionEngineDiagnosticsSummary", diagnostics.v3DecisionEngineDiagnosticsSummary);
   console.log("v3ConfidenceSummary", diagnostics.v3ConfidenceSummary);
   console.log("v3DecisionParitySummary", diagnostics.v3DecisionParitySummary);
