@@ -4616,6 +4616,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     evidenceBuilderEventSummary: null,
     identityIssuanceDiagnostics: null,
     identityIssuanceNoiseDiagnostics: null,
+    identityFraudVerificationDiagnostics: null,
     v3DecisionEngineDiagnosticsSummary: null,
     v3ConfidenceSummary: null,
     v3DecisionParitySummary: null,
@@ -4755,6 +4756,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Identity issuance and personalization diagnostics active",
             "Identity lifecycle diagnostics are cross-document and diagnostics-only",
             "Identity issuance operational noise diagnostics active",
+            "Identity Fraud & Verification diagnostics active",
             "Visa noise diagnostics active",
             "V3 Decision Engine diagnostics active",
             "V3 Decision Engine is diagnostics-only",
@@ -4973,6 +4975,9 @@ function getFilterDecisionTrace(diagnostics, article) {
     const identityIssuance = heavyDiagnosticsEnabled
       ? getIdentityLifecyclePatternMatches(article, articleEvidence)
       : null;
+    const identityFraudVerification = heavyDiagnosticsEnabled
+      ? getIdentityFraudVerificationPatternMatches(article, articleEvidence)
+      : null;
     const professionalDecision = heavyDiagnosticsEnabled
       ? buildProfessionalDecisionDiagnostics(article, {
           articleEvidence,
@@ -5031,6 +5036,7 @@ function getFilterDecisionTrace(diagnostics, article) {
       evidenceDiagnostics: articleEvidence,
       evidenceParityDiagnostics: evidenceParity,
       identityIssuanceDiagnostics: identityIssuance,
+      identityFraudVerificationDiagnostics: identityFraudVerification,
       v3DecisionDiagnostics: v3Decision,
       professionalDecisionDiagnostics: professionalDecision,
       passportDecisionDiagnostics: passportDecision,
@@ -5128,6 +5134,7 @@ function freezeFilterDecisionTrace(trace) {
     evidenceDiagnostics: Object.freeze(trace.evidenceDiagnostics || {}),
     evidenceParityDiagnostics: Object.freeze(trace.evidenceParityDiagnostics || {}),
     identityIssuanceDiagnostics: Object.freeze(trace.identityIssuanceDiagnostics || {}),
+    identityFraudVerificationDiagnostics: Object.freeze(trace.identityFraudVerificationDiagnostics || {}),
     v3DecisionDiagnostics: Object.freeze(trace.v3DecisionDiagnostics || {}),
     decisionParityDiagnostics: Object.freeze(trace.decisionParityDiagnostics || {}),
     professionalDecisionDiagnostics: Object.freeze(trace.professionalDecisionDiagnostics || {}),
@@ -5786,6 +5793,285 @@ function getIdentityIssuanceNoiseDiagnosticsSummary(diagnostics) {
       "Identity issuance operational noise diagnostics active",
       "Operational service terms do not suppress production behavior",
       "Professional lifecycle evidence rescues operational wording in diagnostics",
+      "Production filtering unchanged",
+    ],
+  };
+}
+
+function getIdentityFraudVerificationPatternDefinitions() {
+  return {
+    fraud: [
+      {
+        category: "document_fraud",
+        terms: [
+          "counterfeit passport",
+          "fake passport",
+          "forged passport",
+          "fake id",
+          "forged identity document",
+          "counterfeit document",
+          "document fraud",
+          "identity fraud",
+          "document forgery",
+          "fraudulent credentials",
+          "fraudulent issuance",
+          "breeder document fraud",
+        ],
+      },
+    ],
+    verification: [
+      {
+        category: "document_verification",
+        terms: [
+          "document verification",
+          "identity verification",
+          "document authentication",
+          "biometric verification",
+          "facial verification",
+          "face verification",
+          "nfc verification",
+          "chip authentication",
+          "emrtd verification",
+          "pki validation",
+          "digital signature verification",
+          "inspection system",
+          "border inspection",
+          "forensic document examination",
+        ],
+      },
+    ],
+    professionalContext: [
+      {
+        category: "authority_or_laboratory",
+        terms: [
+          "border authority",
+          "immigration authority",
+          "police investigation",
+          "forensic laboratory",
+          "forensic lab",
+        ],
+      },
+      {
+        category: "identity_platform",
+        terms: [
+          "government identity system",
+          "identity provider",
+          "verification platform",
+          "inspection technology",
+          "document inspection technology",
+        ],
+      },
+    ],
+    noise: [
+      {
+        category: "consumer_identity_theft_advice",
+        terms: ["identity theft advice", "protect yourself from identity theft", "identity theft protection", "password security tips", "security tips"],
+      },
+      {
+        category: "financial_or_online_fraud",
+        terms: [
+          "credit card fraud",
+          "account fraud",
+          "banking fraud",
+          "cryptocurrency fraud",
+          "crypto fraud",
+          "online scam",
+          "online scams",
+          "phishing",
+          "scam",
+        ],
+      },
+      {
+        category: "social_media_or_product_verification",
+        terms: ["social media verification", "verification badge", "verified user", "twitter verification", "product verification"],
+      },
+    ],
+  };
+}
+
+function getIdentityFraudVerificationPatternMatches(article, articleEvidence = null) {
+  const context = buildArticleIntelligenceContext(article);
+  const sections = getArticleEvidenceTextSections(context);
+  const articleEvidenceInput = articleEvidence || buildArticleEvidence(article);
+  const documentTypeAssociation = getIdentityIssuanceDocumentAssociations(articleEvidenceInput, context);
+  const definitions = getIdentityFraudVerificationPatternDefinitions();
+  const collectMatches = (bucket, strength) => (definitions[bucket] || [])
+    .map((definition) => {
+      const matchedSignals = normalizeKeywordList(definition.terms || [])
+        .map((term) => ({
+          term,
+          locations: Object.entries(sections)
+            .filter(([, text]) => textMatchesKeyword(text, term))
+            .map(([location]) => location),
+        }))
+        .filter((entry) => entry.locations.length);
+      return {
+        category: definition.category,
+        strength,
+        matchedSignals,
+      };
+    })
+    .filter((entry) => entry.matchedSignals.length);
+
+  const fraudMatches = collectMatches("fraud", "strong");
+  const verificationMatches = collectMatches("verification", "strong");
+  const professionalContextMatches = collectMatches("professionalContext", "medium");
+  const noiseMatches = collectMatches("noise", "noise");
+  const hasDocumentContext = documentTypeAssociation.length > 0;
+  const hasProfessionalContext = professionalContextMatches.length > 0;
+  const fraudEvidenceStrong = fraudMatches.length > 0 && (hasDocumentContext || hasProfessionalContext);
+  const verificationEvidenceStrong = verificationMatches.length > 0 && (hasDocumentContext || hasProfessionalContext);
+  const weakFraudVerificationEvidence =
+    (fraudMatches.length > 0 || verificationMatches.length > 0)
+    && !fraudEvidenceStrong
+    && !verificationEvidenceStrong;
+  const fraudVerificationNoise = noiseMatches.length > 0 && !fraudEvidenceStrong && !verificationEvidenceStrong;
+
+  return {
+    articleId: getFilterDecisionTraceArticleId(article),
+    title: article?.title || "Untitled article",
+    documentTypeAssociation,
+    fraudMatches,
+    verificationMatches,
+    professionalContextMatches,
+    noiseMatches,
+    fraudEvidenceStrong,
+    verificationEvidenceStrong,
+    weakFraudVerificationEvidence,
+    fraudVerificationNoise,
+    reason: fraudEvidenceStrong
+      ? "strong fraud evidence connected to identity document context"
+      : verificationEvidenceStrong
+        ? "strong verification evidence connected to identity document context"
+        : weakFraudVerificationEvidence
+          ? "fraud or verification term without identity document context"
+          : fraudVerificationNoise
+            ? "generic fraud or verification noise"
+            : "",
+    notes: [
+      "Identity Fraud & Verification diagnostics are diagnostics-only",
+      "Fraud and verification terms are strengthened by document or professional context",
+      "Production filtering unchanged",
+    ],
+  };
+}
+
+function getIdentityFraudVerificationDiagnosticsSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+
+  const fraudTermCounts = new Map();
+  const verificationTermCounts = new Map();
+  const noiseTermCounts = new Map();
+  const documentTypeCounts = new Map();
+  const fraudExamples = [];
+  const verificationExamples = [];
+  const noiseExamples = [];
+  const weakExamples = [];
+  let totalMatches = 0;
+  let fraudEvidenceCount = 0;
+  let verificationEvidenceCount = 0;
+  let noiseCount = 0;
+
+  const addExample = (bucket, example, limit = 10) => {
+    if (bucket.length < limit) {
+      bucket.push(example);
+    }
+  };
+  const countMatchedSignals = (counts, matches = []) => {
+    matches.forEach((match) => {
+      (match.matchedSignals || []).forEach((signal) => {
+        incrementEvidenceCount(counts, {
+          id: normalizeEvidenceId(signal.term),
+          term: signal.term,
+        });
+      });
+    });
+  };
+  const summarizeMatches = (matches = []) => matches.map((entry) => ({
+    category: entry.category,
+    terms: (entry.matchedSignals || []).map((signal) => signal.term).slice(0, 6),
+  }));
+
+  getHeavyDiagnosticsTraces(diagnostics).forEach((trace) => {
+    const fraudVerificationDiagnostics = trace.identityFraudVerificationDiagnostics;
+    if (!fraudVerificationDiagnostics) {
+      return;
+    }
+    const hasAnyMatch =
+      fraudVerificationDiagnostics.fraudMatches?.length ||
+      fraudVerificationDiagnostics.verificationMatches?.length ||
+      fraudVerificationDiagnostics.noiseMatches?.length;
+    if (!hasAnyMatch) {
+      return;
+    }
+    totalMatches += 1;
+    (fraudVerificationDiagnostics.documentTypeAssociation || []).forEach((documentType) => {
+      incrementReasonCount(documentTypeCounts, documentType);
+    });
+    countMatchedSignals(fraudTermCounts, fraudVerificationDiagnostics.fraudMatches || []);
+    countMatchedSignals(verificationTermCounts, fraudVerificationDiagnostics.verificationMatches || []);
+    countMatchedSignals(noiseTermCounts, fraudVerificationDiagnostics.noiseMatches || []);
+
+    const compactExample = {
+      title: fraudVerificationDiagnostics.title,
+      documentTypeAssociation: fraudVerificationDiagnostics.documentTypeAssociation || [],
+      reason: fraudVerificationDiagnostics.reason || "",
+      professionalContext: summarizeMatches(fraudVerificationDiagnostics.professionalContextMatches || []),
+      includedByLegacy: String(trace.finalResult || "survived") !== "rejected",
+    };
+    if (fraudVerificationDiagnostics.fraudEvidenceStrong) {
+      fraudEvidenceCount += 1;
+      addExample(fraudExamples, {
+        ...compactExample,
+        fraudSignals: summarizeMatches(fraudVerificationDiagnostics.fraudMatches || []),
+      });
+    }
+    if (fraudVerificationDiagnostics.verificationEvidenceStrong) {
+      verificationEvidenceCount += 1;
+      addExample(verificationExamples, {
+        ...compactExample,
+        verificationSignals: summarizeMatches(fraudVerificationDiagnostics.verificationMatches || []),
+      });
+    }
+    if (fraudVerificationDiagnostics.fraudVerificationNoise) {
+      noiseCount += 1;
+      addExample(noiseExamples, {
+        ...compactExample,
+        noiseSignals: summarizeMatches(fraudVerificationDiagnostics.noiseMatches || []),
+      });
+    }
+    if (fraudVerificationDiagnostics.weakFraudVerificationEvidence) {
+      addExample(weakExamples, {
+        ...compactExample,
+        fraudSignals: summarizeMatches(fraudVerificationDiagnostics.fraudMatches || []),
+        verificationSignals: summarizeMatches(fraudVerificationDiagnostics.verificationMatches || []),
+      });
+    }
+  });
+
+  return {
+    enabled: true,
+    evaluatedArticles: getHeavyDiagnosticsTraces(diagnostics).length,
+    totalMatches,
+    fraudEvidenceCount,
+    verificationEvidenceCount,
+    noiseCount,
+    documentAssociation: getTopV3DecisionReasons(documentTypeCounts, 10),
+    topFraudTerms: getTopEvidenceCounts(fraudTermCounts, 20),
+    topVerificationTerms: getTopEvidenceCounts(verificationTermCounts, 20),
+    topNoiseTerms: getTopEvidenceCounts(noiseTermCounts, 20),
+    examples: {
+      fraudEvidence: fraudExamples,
+      verificationEvidence: verificationExamples,
+      weakWithoutDocumentContext: weakExamples,
+      noise: noiseExamples,
+    },
+    notes: [
+      "Identity Fraud & Verification diagnostics active",
+      "Fraud and verification diagnostics are cross-document",
+      "Legacy filtering remains authoritative",
       "Production filtering unchanged",
     ],
   };
@@ -15084,6 +15370,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     evidenceBuilderEventSummary: diagnostics.evidenceBuilderEventSummary || null,
     identityIssuanceDiagnostics: diagnostics.identityIssuanceDiagnostics || null,
     identityIssuanceNoiseDiagnostics: diagnostics.identityIssuanceNoiseDiagnostics || null,
+    identityFraudVerificationDiagnostics: diagnostics.identityFraudVerificationDiagnostics || null,
     v3DecisionEngineDiagnosticsSummary: diagnostics.v3DecisionEngineDiagnosticsSummary || null,
     v3ConfidenceSummary: diagnostics.v3ConfidenceSummary || null,
     v3DecisionParitySummary: diagnostics.v3DecisionParitySummary || null,
@@ -15668,6 +15955,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.evidenceBuilderEventSummary = getEvidenceBuilderEventSummary(diagnostics);
   diagnostics.identityIssuanceDiagnostics = getIdentityIssuanceDiagnosticsSummary(diagnostics);
   diagnostics.identityIssuanceNoiseDiagnostics = getIdentityIssuanceNoiseDiagnosticsSummary(diagnostics);
+  diagnostics.identityFraudVerificationDiagnostics = getIdentityFraudVerificationDiagnosticsSummary(diagnostics);
   diagnostics.v3DecisionEngineDiagnosticsSummary = getV3DecisionEngineDiagnosticsSummary(diagnostics);
   diagnostics.v3ConfidenceSummary = getV3ConfidenceSummary(diagnostics);
   diagnostics.v3DecisionParitySummary = getV3DecisionParitySummary(diagnostics);
@@ -15747,6 +16035,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("evidenceBuilderEventSummary", diagnostics.evidenceBuilderEventSummary);
   console.log("identityIssuanceDiagnostics", diagnostics.identityIssuanceDiagnostics);
   console.log("identityIssuanceNoiseDiagnostics", diagnostics.identityIssuanceNoiseDiagnostics);
+  console.log("identityFraudVerificationDiagnostics", diagnostics.identityFraudVerificationDiagnostics);
   console.log("v3DecisionEngineDiagnosticsSummary", diagnostics.v3DecisionEngineDiagnosticsSummary);
   console.log("v3ConfidenceSummary", diagnostics.v3ConfidenceSummary);
   console.log("v3DecisionParitySummary", diagnostics.v3DecisionParitySummary);
