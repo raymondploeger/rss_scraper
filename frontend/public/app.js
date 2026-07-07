@@ -8327,6 +8327,168 @@ function getDriverLicenseNoiseCategoryDefinitions() {
   ];
 }
 
+function getDriverLicenseOperationalNoisePatternDefinitions() {
+  return [
+    {
+      pattern: "office_closed",
+      terms: [
+        "driver's license office closed",
+        "driver license office closed",
+        "drivers license office closed",
+        "licensing office closed",
+        "office closed",
+        "office closure",
+        "closed for holiday",
+        "holiday closure",
+      ],
+    },
+    {
+      pattern: "photo_center_closed",
+      terms: [
+        "photo center closed",
+        "photo centre closed",
+        "photo license center closed",
+        "photo licence centre closed",
+        "driver license photo center",
+        "driver licensing photo center",
+      ],
+    },
+    {
+      pattern: "holiday_closure",
+      terms: ["holiday closure", "holiday closures", "closed for holiday", "holiday hours", "holiday schedule"],
+    },
+    {
+      pattern: "service_center_closed",
+      terms: [
+        "service center closed",
+        "service centre closed",
+        "dmv office closed",
+        "licensing center closed",
+        "licensing centre closed",
+        "driver licensing center closed",
+      ],
+    },
+    {
+      pattern: "opening_hours",
+      terms: ["opening hours", "office hours", "hours of operation", "extended hours", "new hours", "business hours"],
+    },
+    {
+      pattern: "appointment_availability",
+      terms: [
+        "appointment availability",
+        "appointments available",
+        "appointment scheduling",
+        "schedule an appointment",
+        "walk-in appointments",
+        "booking appointments",
+      ],
+    },
+    {
+      pattern: "wait_time_queue_update",
+      terms: ["wait time", "wait times", "queue", "queues", "line wait", "waiting time", "long lines"],
+    },
+    {
+      pattern: "service_interruption",
+      terms: [
+        "service interruption",
+        "service interruptions",
+        "service disruption",
+        "service disruptions",
+        "outage",
+        "services unavailable",
+        "temporarily unavailable",
+      ],
+    },
+    {
+      pattern: "maintenance_notice",
+      terms: ["maintenance notice", "system maintenance", "website maintenance", "scheduled maintenance", "maintenance window"],
+    },
+    {
+      pattern: "local_office_notice",
+      terms: [
+        "local office",
+        "branch office",
+        "field office",
+        "service office",
+        "licensing office",
+        "dmv office",
+      ],
+    },
+    {
+      pattern: "public_service_notice",
+      terms: ["public service notice", "public notice", "service notice", "customer notice", "office notice"],
+    },
+  ];
+}
+
+function getDriverLicenseStrongIntelligencePatternDefinitions() {
+  return [
+    {
+      pattern: "document_redesign",
+      terms: ["redesign", "new design", "new card design", "driver license redesign", "driver licence redesign"],
+    },
+    {
+      pattern: "security_features",
+      terms: ["security feature", "security features", "hologram", "polycarbonate", "tamper resistant", "document security"],
+    },
+    {
+      pattern: "real_id_implementation",
+      terms: ["real id implementation", "real id compliant", "real id compliance", "real id rollout", "real id deadline"],
+    },
+    {
+      pattern: "mobile_or_digital_driver_license",
+      terms: ["mobile driver license", "mobile driver's license", "digital driver license", "digital driver's license", "mdl", "mDL"],
+    },
+    {
+      pattern: "driver_license_fraud",
+      terms: ["driver license fraud", "driver's license fraud", "fake driver license", "fraudulent driver license", "counterfeit driver license"],
+    },
+    {
+      pattern: "credential_verification",
+      terms: ["credential verification", "driver license verification", "identity verification", "document verification", "verification system"],
+    },
+    {
+      pattern: "identity_proofing",
+      terms: ["identity proofing", "proof of identity", "identity document proofing"],
+    },
+    {
+      pattern: "issuance_system_change",
+      terms: ["issuance system", "license issuance system", "driver license issuance", "driver licence issuance", "credential issuance"],
+    },
+    {
+      pattern: "card_production_or_personalization",
+      terms: ["card production", "card personalization", "card personalisation", "document production", "personalization system"],
+    },
+    {
+      pattern: "document_security_technology",
+      terms: ["document security technology", "card technology", "secure credential", "credential security", "digital credential"],
+    },
+  ];
+}
+
+function getDriverLicensePatternMatches(article, definitions = []) {
+  const context = buildArticleIntelligenceContext(article);
+  const sections = getArticleEvidenceTextSections(context);
+  return definitions
+    .map((definition) => {
+      const matchedSignals = normalizeKeywordList(definition.terms || [])
+        .map((term) => ({
+          type: "term",
+          term,
+          locations: Object.entries(sections)
+            .filter(([, text]) => textMatchesKeyword(text, term))
+            .map(([location]) => location),
+        }))
+        .filter((match) => match.locations.length);
+      return {
+        pattern: definition.pattern,
+        matched: matchedSignals.length > 0,
+        matchedSignals,
+      };
+    })
+    .filter((entry) => entry.matched);
+}
+
 function getDriverLicenseNoiseDiagnostics(article, options = {}) {
   const articleEvidence = options.articleEvidence || buildArticleEvidence(article);
   const evidence = articleEvidence?.evidence || {};
@@ -8395,13 +8557,25 @@ function getDriverLicenseNoiseDiagnostics(article, options = {}) {
     })
     .filter((entry) => entry.matched);
 
+  const operationalNoisePatterns = getDriverLicensePatternMatches(
+    article,
+    getDriverLicenseOperationalNoisePatternDefinitions()
+  );
+  const strongDriverLicenseIntelligence = getDriverLicensePatternMatches(
+    article,
+    getDriverLicenseStrongIntelligencePatternDefinitions()
+  );
   const explicitDriverLicenseEvidencePresent = explicitDriverLicenseEvidenceIds.length > 0;
+  const hasOperationalNoise = operationalNoisePatterns.length > 0;
+  const hasStrongDriverLicenseIntelligence = strongDriverLicenseIntelligence.length > 0;
   const likelyTrueDriverLicenseArticle = explicitDriverLicenseEvidencePresent
     && categories.length === 0
     && !driverLicenseDecision?.rejected;
   const likelyNoisyDriverLicenseCandidate = categories.length > 0
     && (!explicitDriverLicenseEvidencePresent || Boolean(driverLicenseDecision?.rejected));
   const mixedOrUncertainDriverLicenseCandidate = categories.length > 0 && explicitDriverLicenseEvidencePresent;
+  const likelyOperationalNoise = hasOperationalNoise && !hasStrongDriverLicenseIntelligence;
+  const operationalNoiseRescuedByStrongIntelligence = hasOperationalNoise && hasStrongDriverLicenseIntelligence;
 
   return {
     articleId: getFilterDecisionTraceArticleId(article),
@@ -8412,6 +8586,12 @@ function getDriverLicenseNoiseDiagnostics(article, options = {}) {
     driverLicenseDecision: driverLicenseDecision?.rejected ? "reject" : "keep",
     matchedRuleId: driverLicenseDecision?.matchedRuleId || "",
     categories,
+    operationalNoisePatterns,
+    strongDriverLicenseIntelligence,
+    hasOperationalNoise,
+    hasStrongDriverLicenseIntelligence,
+    likelyOperationalNoise,
+    operationalNoiseRescuedByStrongIntelligence,
     likelyTrueDriverLicenseArticle,
     likelyNoisyDriverLicenseCandidate,
     mixedOrUncertainDriverLicenseCandidate,
@@ -8428,12 +8608,18 @@ function getDriverLicenseNoiseDiagnosticsSummary(diagnostics) {
   }
   const categoryCounts = new Map();
   const categoryExamples = new Map();
+  const operationalPatternCounts = new Map();
   const trueExamples = [];
   const noisyExamples = [];
   const mixedExamples = [];
+  const operationalNoiseExamples = [];
+  const operationalNoiseRescuedExamples = [];
   let evaluatedArticles = 0;
   let articlesWithNoise = 0;
   let articlesWithExplicitDriverLicenseEvidence = 0;
+  let driverLicenseOperationalNoiseCount = 0;
+  let driverLicenseOperationalNoiseRescuedCount = 0;
+  let driverLicenseOperationalNoiseIncludedByLegacyCount = 0;
 
   const addExample = (bucket, example, limit = 10) => {
     if (bucket.length < limit) {
@@ -8453,6 +8639,16 @@ function getDriverLicenseNoiseDiagnosticsSummary(diagnostics) {
     if (noiseDiagnostics.categories?.length) {
       articlesWithNoise += 1;
     }
+    if (noiseDiagnostics.likelyOperationalNoise) {
+      driverLicenseOperationalNoiseCount += 1;
+    }
+    if (noiseDiagnostics.operationalNoiseRescuedByStrongIntelligence) {
+      driverLicenseOperationalNoiseRescuedCount += 1;
+    }
+    const includedByLegacy = String(trace.finalResult || "survived") !== "rejected";
+    if (noiseDiagnostics.hasOperationalNoise && includedByLegacy) {
+      driverLicenseOperationalNoiseIncludedByLegacyCount += 1;
+    }
     const compactExample = {
       title: noiseDiagnostics.title,
       source: noiseDiagnostics.source,
@@ -8460,6 +8656,7 @@ function getDriverLicenseNoiseDiagnosticsSummary(diagnostics) {
       explicitDriverLicenseEvidenceIds: noiseDiagnostics.explicitDriverLicenseEvidenceIds,
       driverLicenseDecision: noiseDiagnostics.driverLicenseDecision,
       matchedRuleId: noiseDiagnostics.matchedRuleId,
+      includedByLegacy,
     };
     if (noiseDiagnostics.likelyTrueDriverLicenseArticle) {
       addExample(trueExamples, compactExample);
@@ -8476,6 +8673,22 @@ function getDriverLicenseNoiseDiagnosticsSummary(diagnostics) {
         categories: noiseDiagnostics.categories.map((entry) => entry.category),
       });
     }
+    if (noiseDiagnostics.likelyOperationalNoise) {
+      addExample(operationalNoiseExamples, {
+        ...compactExample,
+        operationalNoisePatterns: noiseDiagnostics.operationalNoisePatterns.map((entry) => entry.pattern),
+        matchedOperationalSignals: noiseDiagnostics.operationalNoisePatterns.flatMap((entry) => entry.matchedSignals || []).slice(0, 8),
+        strongDriverLicenseIntelligence: noiseDiagnostics.strongDriverLicenseIntelligence.map((entry) => entry.pattern),
+      });
+    }
+    if (noiseDiagnostics.operationalNoiseRescuedByStrongIntelligence) {
+      addExample(operationalNoiseRescuedExamples, {
+        ...compactExample,
+        operationalNoisePatterns: noiseDiagnostics.operationalNoisePatterns.map((entry) => entry.pattern),
+        strongDriverLicenseIntelligence: noiseDiagnostics.strongDriverLicenseIntelligence.map((entry) => entry.pattern),
+        matchedStrongSignals: noiseDiagnostics.strongDriverLicenseIntelligence.flatMap((entry) => entry.matchedSignals || []).slice(0, 8),
+      });
+    }
     (noiseDiagnostics.categories || []).forEach((entry) => {
       incrementReasonCount(categoryCounts, entry.category);
       if (!categoryExamples.has(entry.category)) {
@@ -8489,6 +8702,9 @@ function getDriverLicenseNoiseDiagnosticsSummary(diagnostics) {
         });
       }
     });
+    (noiseDiagnostics.operationalNoisePatterns || []).forEach((entry) => {
+      incrementReasonCount(operationalPatternCounts, entry.pattern);
+    });
   });
 
   return {
@@ -8496,7 +8712,11 @@ function getDriverLicenseNoiseDiagnosticsSummary(diagnostics) {
     evaluatedArticles,
     articlesWithNoise,
     articlesWithExplicitDriverLicenseEvidence,
+    driverLicenseOperationalNoiseCount,
+    driverLicenseOperationalNoiseRescuedCount,
+    driverLicenseOperationalNoiseIncludedByLegacyCount,
     topNoiseCategories: getTopV3DecisionReasons(categoryCounts, 20),
+    topOperationalNoisePatterns: getTopV3DecisionReasons(operationalPatternCounts, 20),
     noiseCategoryBreakdown: Array.from(categoryExamples.entries()).map(([category, examples]) => ({
       category,
       count: categoryCounts.get(category) || 0,
@@ -8505,8 +8725,11 @@ function getDriverLicenseNoiseDiagnosticsSummary(diagnostics) {
     likelyTrueDriverLicenseExamples: trueExamples,
     likelyNoisyDriverLicenseExamples: noisyExamples,
     mixedOrUncertainDriverLicenseExamples: mixedExamples,
+    operationalNoiseExamples,
+    operationalNoiseRescuedByStrongIntelligenceExamples: operationalNoiseRescuedExamples,
     notes: [
       "Driver License noise diagnostics active",
+      "Driver License operational noise diagnostics active",
       "Noise categories classify diagnostics only",
       "Filtering behavior unchanged",
     ],
