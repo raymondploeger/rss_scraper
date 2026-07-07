@@ -4615,6 +4615,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     evidenceBuilderProfessionalParitySummary: null,
     evidenceBuilderEventSummary: null,
     identityIssuanceDiagnostics: null,
+    identityIssuanceNoiseDiagnostics: null,
     v3DecisionEngineDiagnosticsSummary: null,
     v3ConfidenceSummary: null,
     v3DecisionParitySummary: null,
@@ -4753,6 +4754,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Event Signals introduced",
             "Identity issuance and personalization diagnostics active",
             "Identity lifecycle diagnostics are cross-document and diagnostics-only",
+            "Identity issuance operational noise diagnostics active",
             "Visa noise diagnostics active",
             "V3 Decision Engine diagnostics active",
             "V3 Decision Engine is diagnostics-only",
@@ -5452,6 +5454,66 @@ function getIdentityLifecyclePatternDefinitions() {
         ],
       },
     ],
+    operationalNoise: [
+      {
+        category: "fees",
+        terms: ["passport fee", "passport fees", "fee increase", "fee reduction", "fees reduced", "application fee", "renewal fee"],
+      },
+      {
+        category: "office_service",
+        terms: ["passport office", "office opening", "service center", "service centre", "customer service", "administrative announcement"],
+      },
+      {
+        category: "appointment_availability",
+        terms: ["appointment", "appointment availability", "appointment booking", "available appointments"],
+      },
+      {
+        category: "queues_and_waiting",
+        terms: ["waiting time", "waiting times", "queue", "queues", "queue reduction", "processing time", "processing times", "application backlog", "backlog"],
+      },
+      {
+        category: "opening_hours_and_closures",
+        terms: ["opening hours", "service hours", "temporary closure", "temporarily closed", "office closed", "office closure", "holiday closure"],
+      },
+      {
+        category: "renewal_reminder",
+        terms: ["renewal reminder", "passport renewal reminder", "renew your passport", "renewal deadline"],
+      },
+      {
+        category: "delay_without_technology_change",
+        terms: ["office delay", "passport delay", "delayed passport", "service delay", "processing delay"],
+      },
+    ],
+    professionalRescue: [
+      {
+        category: "issuance_platform",
+        terms: ["new passport system", "new id system", "credential platform", "credential issuance platform", "issuance platform", "document issuance platform"],
+      },
+      {
+        category: "personalization_system",
+        terms: ["personalization", "personalisation", "personalization system", "personalisation system", "laser personalization", "laser personalisation"],
+      },
+      {
+        category: "production_manufacturing",
+        terms: ["document production", "card production", "credential production", "document manufacturing", "manufacturing", "secure credential production"],
+      },
+      {
+        category: "biometric_enrolment",
+        terms: ["biometric enrolment", "biometric enrollment", "enrolment system", "enrollment system"],
+      },
+      {
+        category: "security_upgrade",
+        terms: ["security upgrade", "document redesign", "redesigned document", "new security feature", "security features"],
+      },
+      {
+        category: "vendor_contract",
+        terms: ["vendor contract", "government contract", "implementation project", "vendor implementation", "government modernization", "government modernisation"],
+      },
+      {
+        category: "centralized_or_decentralized_issuance",
+        terms: ["centralized issuance", "centralised issuance", "decentralized issuance", "decentralised issuance"],
+      },
+    ],
   };
 }
 
@@ -5482,8 +5544,15 @@ function getIdentityLifecyclePatternMatches(article, articleEvidence = null) {
   const strongMatches = collectMatches("strong", "strong");
   const weakMatches = collectMatches("weak", "weak");
   const noiseMatches = collectMatches("noise", "noise");
+  const operationalNoiseMatches = collectMatches("operationalNoise", "noise");
+  const professionalRescueMatches = collectMatches("professionalRescue", "strong");
   const hasDocumentContext = documentTypeAssociation.length > 0;
-  const strongLifecycleEvidence = strongMatches.length > 0 || (hasDocumentContext && weakMatches.length > 0);
+  const hasProfessionalLifecycleSignal = strongMatches.length > 0 || professionalRescueMatches.length > 0;
+  const rescuedByTechnologySignal = operationalNoiseMatches.length > 0 && hasProfessionalLifecycleSignal;
+  const operationalServiceNoise = operationalNoiseMatches.length > 0 && !rescuedByTechnologySignal;
+  const strongLifecycleEvidence =
+    (strongMatches.length > 0 || (hasDocumentContext && weakMatches.length > 0))
+    && !operationalServiceNoise;
   const weakLifecycleEvidence = !strongLifecycleEvidence && weakMatches.length > 0;
 
   return {
@@ -5493,11 +5562,17 @@ function getIdentityLifecyclePatternMatches(article, articleEvidence = null) {
     strongMatches,
     weakMatches,
     noiseMatches,
+    operationalNoiseMatches,
+    professionalRescueMatches,
     strongLifecycleEvidence,
     weakLifecycleEvidence,
-    lifecycleNoise: noiseMatches.length > 0 && !strongLifecycleEvidence,
+    operationalServiceNoise,
+    rescuedByTechnologySignal,
+    lifecycleNoise: (noiseMatches.length > 0 || operationalServiceNoise) && !strongLifecycleEvidence,
     reason: strongLifecycleEvidence
       ? "strong lifecycle evidence"
+      : operationalServiceNoise
+        ? "operational issuance/service information"
       : weakLifecycleEvidence
         ? "weak lifecycle evidence without document context"
         : noiseMatches.length
@@ -5608,6 +5683,109 @@ function getIdentityIssuanceDiagnosticsSummary(diagnostics) {
     notes: [
       "Identity issuance and personalization diagnostics active",
       "Lifecycle intelligence is cross-document diagnostics, not a document type",
+      "Production filtering unchanged",
+    ],
+  };
+}
+
+function getIdentityIssuanceNoiseDiagnosticsSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+
+  const noiseTermCounts = new Map();
+  const professionalTermCounts = new Map();
+  const operationalExamples = [];
+  const professionalExamples = [];
+  const rescuedExamples = [];
+  let operationalNoiseCount = 0;
+  let professionalIssuanceCount = 0;
+  let rescuedByTechnologySignalCount = 0;
+
+  const addExample = (bucket, example, limit = 10) => {
+    if (bucket.length < limit) {
+      bucket.push(example);
+    }
+  };
+  const countMatchedSignals = (counts, matches = []) => {
+    matches.forEach((match) => {
+      (match.matchedSignals || []).forEach((signal) => {
+        incrementEvidenceCount(counts, {
+          id: normalizeEvidenceId(signal.term),
+          term: signal.term,
+        });
+      });
+    });
+  };
+  const summarizeMatches = (matches = []) => matches.map((entry) => ({
+    category: entry.category,
+    terms: (entry.matchedSignals || []).map((signal) => signal.term).slice(0, 6),
+  }));
+
+  getHeavyDiagnosticsTraces(diagnostics).forEach((trace) => {
+    const issuanceDiagnostics = trace.identityIssuanceDiagnostics;
+    if (!issuanceDiagnostics) {
+      return;
+    }
+    const compactExample = {
+      title: issuanceDiagnostics.title,
+      documentTypeAssociation: issuanceDiagnostics.documentTypeAssociation || [],
+      reason: issuanceDiagnostics.reason || "",
+      includedByLegacy: String(trace.finalResult || "survived") !== "rejected",
+    };
+
+    if (issuanceDiagnostics.operationalNoiseMatches?.length) {
+      countMatchedSignals(noiseTermCounts, issuanceDiagnostics.operationalNoiseMatches);
+    }
+    if (issuanceDiagnostics.professionalRescueMatches?.length || issuanceDiagnostics.strongMatches?.length) {
+      countMatchedSignals(professionalTermCounts, issuanceDiagnostics.professionalRescueMatches || []);
+      countMatchedSignals(professionalTermCounts, issuanceDiagnostics.strongMatches || []);
+    }
+    if (issuanceDiagnostics.operationalServiceNoise) {
+      operationalNoiseCount += 1;
+      addExample(operationalExamples, {
+        ...compactExample,
+        operationalNoise: summarizeMatches(issuanceDiagnostics.operationalNoiseMatches || []),
+      });
+    }
+    if (issuanceDiagnostics.strongLifecycleEvidence) {
+      professionalIssuanceCount += 1;
+      addExample(professionalExamples, {
+        ...compactExample,
+        professionalSignals: summarizeMatches(
+          (issuanceDiagnostics.strongMatches || []).concat(issuanceDiagnostics.professionalRescueMatches || [])
+        ),
+      });
+    }
+    if (issuanceDiagnostics.rescuedByTechnologySignal) {
+      rescuedByTechnologySignalCount += 1;
+      addExample(rescuedExamples, {
+        ...compactExample,
+        operationalNoise: summarizeMatches(issuanceDiagnostics.operationalNoiseMatches || []),
+        rescueSignals: summarizeMatches(
+          (issuanceDiagnostics.professionalRescueMatches || []).concat(issuanceDiagnostics.strongMatches || [])
+        ),
+      });
+    }
+  });
+
+  return {
+    enabled: true,
+    evaluatedArticles: getHeavyDiagnosticsTraces(diagnostics).length,
+    operationalNoiseCount,
+    professionalIssuanceCount,
+    rescuedByTechnologySignalCount,
+    topNoiseTerms: getTopEvidenceCounts(noiseTermCounts, 20),
+    topProfessionalTerms: getTopEvidenceCounts(professionalTermCounts, 20),
+    examples: {
+      operationalIssuanceNoise: operationalExamples,
+      professionalIssuanceIntelligence: professionalExamples,
+      rescuedByTechnologySignal: rescuedExamples,
+    },
+    notes: [
+      "Identity issuance operational noise diagnostics active",
+      "Operational service terms do not suppress production behavior",
+      "Professional lifecycle evidence rescues operational wording in diagnostics",
       "Production filtering unchanged",
     ],
   };
@@ -14905,6 +15083,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     evidenceBuilderProfessionalParitySummary: diagnostics.evidenceBuilderProfessionalParitySummary || null,
     evidenceBuilderEventSummary: diagnostics.evidenceBuilderEventSummary || null,
     identityIssuanceDiagnostics: diagnostics.identityIssuanceDiagnostics || null,
+    identityIssuanceNoiseDiagnostics: diagnostics.identityIssuanceNoiseDiagnostics || null,
     v3DecisionEngineDiagnosticsSummary: diagnostics.v3DecisionEngineDiagnosticsSummary || null,
     v3ConfidenceSummary: diagnostics.v3ConfidenceSummary || null,
     v3DecisionParitySummary: diagnostics.v3DecisionParitySummary || null,
@@ -15488,6 +15667,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.evidenceBuilderProfessionalParitySummary = getEvidenceBuilderProfessionalParitySummary(diagnostics);
   diagnostics.evidenceBuilderEventSummary = getEvidenceBuilderEventSummary(diagnostics);
   diagnostics.identityIssuanceDiagnostics = getIdentityIssuanceDiagnosticsSummary(diagnostics);
+  diagnostics.identityIssuanceNoiseDiagnostics = getIdentityIssuanceNoiseDiagnosticsSummary(diagnostics);
   diagnostics.v3DecisionEngineDiagnosticsSummary = getV3DecisionEngineDiagnosticsSummary(diagnostics);
   diagnostics.v3ConfidenceSummary = getV3ConfidenceSummary(diagnostics);
   diagnostics.v3DecisionParitySummary = getV3DecisionParitySummary(diagnostics);
@@ -15566,6 +15746,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("evidenceBuilderProfessionalParitySummary", diagnostics.evidenceBuilderProfessionalParitySummary);
   console.log("evidenceBuilderEventSummary", diagnostics.evidenceBuilderEventSummary);
   console.log("identityIssuanceDiagnostics", diagnostics.identityIssuanceDiagnostics);
+  console.log("identityIssuanceNoiseDiagnostics", diagnostics.identityIssuanceNoiseDiagnostics);
   console.log("v3DecisionEngineDiagnosticsSummary", diagnostics.v3DecisionEngineDiagnosticsSummary);
   console.log("v3ConfidenceSummary", diagnostics.v3ConfidenceSummary);
   console.log("v3DecisionParitySummary", diagnostics.v3DecisionParitySummary);
