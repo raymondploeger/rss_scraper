@@ -6762,6 +6762,9 @@ function getSharedSecurityDashboardMatcherDiagnosticsSummary(diagnostics) {
   const examplePassedArticles = [];
   const exampleRejectedArticles = [];
   let evaluated = 0;
+  let positiveScoreCandidateCount = 0;
+  let rescuedByLegacyReturnFixCount = 0;
+  let rejectedDespitePositiveScoreCount = 0;
   let passedBridgeCount = 0;
   let rejectedBridgeCount = 0;
   let sharedSecurityTechniqueMatched = 0;
@@ -6779,6 +6782,9 @@ function getSharedSecurityDashboardMatcherDiagnosticsSummary(diagnostics) {
       matchedBaseDomains: bridgeDecision.matchedBaseDomains || [],
       sharedSecurityTechniqueMatched: Boolean(bridgeDecision.sharedSecurityTechniqueMatched),
       matchedSharedSecurityInterests: bridgeDecision.matchedSharedSecurityInterests || [],
+      positiveScoreCandidate: Boolean(bridgeDecision.positiveScoreCandidate),
+      legacyReturnFixRescued: Boolean(bridgeDecision.legacyReturnFixRescued),
+      rescueScore: Number(bridgeDecision.rescueScore) || 0,
       directSharedSecurityTechniqueMatched: Boolean(bridgeDecision.directSharedSecurityTechniqueMatched),
       identityTechniqueBridgeMatched: Boolean(bridgeDecision.identityTechniqueBridgeMatched),
       banknoteTechniqueBridgeMatched: Boolean(bridgeDecision.banknoteTechniqueBridgeMatched),
@@ -6794,6 +6800,15 @@ function getSharedSecurityDashboardMatcherDiagnosticsSummary(diagnostics) {
     }
 
     evaluated += 1;
+    if (bridgeDecision.positiveScoreCandidate) {
+      positiveScoreCandidateCount += 1;
+    }
+    if (bridgeDecision.legacyReturnFixRescued) {
+      rescuedByLegacyReturnFixCount += 1;
+    }
+    if (!bridgeDecision.passed && bridgeDecision.positiveScoreCandidate) {
+      rejectedDespitePositiveScoreCount += 1;
+    }
     if (bridgeDecision.sharedSecurityTechniqueMatched) {
       sharedSecurityTechniqueMatched += 1;
       (bridgeDecision.matchedSharedSecurityInterests?.length
@@ -6821,6 +6836,9 @@ function getSharedSecurityDashboardMatcherDiagnosticsSummary(diagnostics) {
   return {
     enabled: true,
     evaluated,
+    positiveScoreCandidateCount,
+    rescuedByLegacyReturnFixCount,
+    rejectedDespitePositiveScoreCount,
     passedBridgeCount,
     rejectedBridgeCount,
     baseDomainMatchedCount: evaluated - (baseDomainCounts.get("none") || 0),
@@ -12463,7 +12481,7 @@ function getLegacyPersonalDashboardDecisionSignals(article, options = {}) {
     rejectionReason: options.rejection?.reason || "",
     passed: Object.prototype.hasOwnProperty.call(options, "passed") ? Boolean(options.passed) : articleMatchesPersonalDashboardSelection(article),
     threshold: selectedInterests.length ? 18 : 0,
-    decisionSource: "legacy-pass-fail",
+    decisionSource: options.decisionSource || "legacy-pass-fail",
   });
 }
 
@@ -13090,6 +13108,9 @@ function getPersonalDashboardScoringSummary(diagnostics) {
   const negativeScoreCount = scores.filter((scoreObject) => Number(scoreObject.totalScore) < 0).length;
   const totalThreshold = scores.reduce((sum, scoreObject) => sum + (Number(scoreObject.threshold) || 0), 0);
   const totalScore = scores.reduce((sum, scoreObject) => sum + (Number(scoreObject.totalScore) || 0), 0);
+  const decisionSources = Array.from(new Set(
+    scores.map((scoreObject) => scoreObject.decisionSource || "legacy-pass-fail")
+  ));
 
   return {
     enabled: true,
@@ -13101,7 +13122,8 @@ function getPersonalDashboardScoringSummary(diagnostics) {
     negativeScoreCount,
     passedCount,
     rejectedCount,
-    decisionSource: "legacy-pass-fail",
+    decisionSource: decisionSources.length === 1 ? decisionSources[0] : "mixed",
+    decisionSources,
   };
 }
 
@@ -17798,6 +17820,74 @@ function getSharedSecurityDashboardTechniqueMatch(article, selectedTechniqueInte
   };
 }
 
+function getSharedSecurityBridgeScoreRescueAssessment(article, options = {}) {
+  const selectedMainDomains = Array.isArray(options.selectedMainDomains) ? options.selectedMainDomains : [];
+  const selectedIdentityInterests = Array.isArray(options.selectedIdentityInterests) ? options.selectedIdentityInterests : [];
+  const selectedBanknoteInterests = Array.isArray(options.selectedBanknoteInterests) ? options.selectedBanknoteInterests : [];
+  const selectedIdentityBaseInterests = selectedIdentityInterests.filter(
+    (interestId) => !SHARED_SECURITY_BRIDGE_IDENTITY_TECHNIQUE_INTERESTS.has(interestId)
+  );
+  const identityInterestScores = selectedIdentityBaseInterests.map((interestId) => ({
+    interestId,
+    score: Number(computePersonalInterestBoost(article, interestId)?.score) || 0,
+  }));
+  const banknoteInterestScores = selectedBanknoteInterests.map((interestId) => ({
+    interestId,
+    score: Number(computePersonalInterestBoost(article, interestId)?.score) || 0,
+    matched: matchesBanknoteInterest(article, interestId),
+  }));
+  const domainMatch = getPersonalDashboardDomainMatch(article);
+  const matchedDashboardDomains = Array.isArray(domainMatch?.matchedDomains) ? domainMatch.matchedDomains : [];
+  const domainScores = domainMatch?.domainScores || {};
+  const identityBaseEvidenceMatched = selectedMainDomains.includes("identity_documents") && (
+    matchedDashboardDomains.includes("identity_documents") ||
+    Number(domainScores.identity_documents || 0) > 0 ||
+    identityInterestScores.some((entry) => entry.score > 0)
+  );
+  const banknoteBaseEvidenceMatched = selectedMainDomains.includes("banknotes") && (
+    matchedDashboardDomains.includes("banknote_intelligence") ||
+    Number(domainScores.banknote_intelligence || 0) > 0 ||
+    banknoteInterestScores.some((entry) => entry.score > 0 || entry.matched)
+  );
+  const scoreSignals = getLegacyPersonalDashboardDecisionSignals(article, {
+    passed: false,
+    rejection: {
+      category: "bridgeRejected",
+      reason: "shared security bridge candidate evaluated for legacy return rescue",
+    },
+    decisionSource: "legacy-pass-fail",
+  });
+  const scoreObject = buildPersonalDashboardScore(article, { signals: scoreSignals });
+
+  return {
+    positiveScoreCandidate: Number(scoreObject?.totalScore) > 0,
+    totalScore: Number(scoreObject?.totalScore) || 0,
+    identityBaseEvidenceMatched,
+    banknoteBaseEvidenceMatched,
+    baseEvidenceMatched: identityBaseEvidenceMatched || banknoteBaseEvidenceMatched,
+    matchedBaseDomainsFromScore: [
+      identityBaseEvidenceMatched ? "identity_documents" : "",
+      banknoteBaseEvidenceMatched ? "banknotes" : "",
+    ].filter(Boolean),
+    identityInterestScores,
+    banknoteInterestScores,
+    domainScores,
+  };
+}
+
+function hasObviousSharedSecurityBridgeNoise(article) {
+  const context = getPersonalBoostContext(article);
+  const haystack = [
+    context.titleText,
+    context.tagText,
+    context.metadataText,
+    context.bodyText,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return getSharedSecurityPatternDefinitions().noise.some((term) => textMatchesKeyword(haystack, term));
+}
+
 function getSharedSecurityBridgeDecision(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
   const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
   const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
@@ -17884,8 +17974,25 @@ function getSharedSecurityBridgeDecision(article, selectedInterests = normalizeP
     identityBaseMatched ? "identity_documents" : "",
     banknoteBaseMatched ? "banknotes" : "",
   ].filter(Boolean);
-  const baseDomainMatched = matchedBaseDomains.length > 0;
-  const passed = baseDomainMatched && sharedSecurityTechniqueMatched;
+  const strictBaseDomainMatched = matchedBaseDomains.length > 0;
+  const scoreRescueAssessment = getSharedSecurityBridgeScoreRescueAssessment(article, {
+    selectedMainDomains,
+    selectedIdentityInterests,
+    selectedBanknoteInterests,
+  });
+  const rescuedBaseDomains = scoreRescueAssessment.matchedBaseDomainsFromScore.filter(
+    (domain) => !matchedBaseDomains.includes(domain)
+  );
+  const effectiveMatchedBaseDomains = matchedBaseDomains.concat(rescuedBaseDomains);
+  const baseDomainMatched = effectiveMatchedBaseDomains.length > 0;
+  const obviousSharedSecurityNoise = hasObviousSharedSecurityBridgeNoise(article) &&
+    !scoreRescueAssessment.baseEvidenceMatched;
+  const legacyReturnFixRescued = !strictBaseDomainMatched &&
+    scoreRescueAssessment.positiveScoreCandidate &&
+    scoreRescueAssessment.baseEvidenceMatched &&
+    sharedSecurityTechniqueMatched &&
+    !obviousSharedSecurityNoise;
+  const passed = (strictBaseDomainMatched && sharedSecurityTechniqueMatched) || legacyReturnFixRescued;
   let bridgeMissReason = "";
   if (!baseDomainMatched && !sharedSecurityTechniqueMatched) {
     bridgeMissReason = "base_domain_and_shared_security_technique_mismatch";
@@ -17907,8 +18014,10 @@ function getSharedSecurityBridgeDecision(article, selectedInterests = normalizeP
     selectedBanknoteInterests,
     primaryDomain,
     matchedDashboardDomains,
-    matchedBaseDomains,
+    matchedBaseDomains: effectiveMatchedBaseDomains,
+    strictMatchedBaseDomains: matchedBaseDomains,
     baseDomainMatched,
+    strictBaseDomainMatched,
     identityBaseMatched,
     banknoteBaseMatched,
     sharedSecurityTechniqueMatched,
@@ -17918,6 +18027,11 @@ function getSharedSecurityBridgeDecision(article, selectedInterests = normalizeP
     identityTechniqueBridgeMatched,
     banknoteTechniqueBridgeMatched,
     idCardsHolographyOvdBridgeMatched,
+    positiveScoreCandidate: scoreRescueAssessment.positiveScoreCandidate,
+    rescueScore: scoreRescueAssessment.totalScore,
+    scoreRescueAssessment,
+    legacyReturnFixRescued,
+    obviousSharedSecurityNoise,
     bridgeMissReason,
     logic: "(identity_documents OR banknotes) AND shared_security_technique",
   };
@@ -35847,6 +35961,9 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
       const personalDashboardScore = buildPersonalDashboardScore(article, {
         passed: true,
         branch: diagnostics?.branch || "",
+        decisionSource: sharedSecurityBridgeDiagnostics?.legacyReturnFixRescued
+          ? "legacy-pass-fail+shared-security-bridge-rescue"
+          : "legacy-pass-fail",
       });
       recordPersonalDashboardScore(diagnostics, article, personalDashboardScore);
       recordFilterDecisionStage(diagnostics, article, {
