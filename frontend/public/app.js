@@ -4628,6 +4628,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     professionalDecisionMismatchExamples: null,
     passportDecisionDiagnosticsSummary: null,
     passportDecisionParitySummary: null,
+    passportProfessionalAlignmentDiagnostics: null,
     passportDecisionExamples: null,
     passportDecisionMismatchExamples: null,
     passportDecisionTreeSummary: null,
@@ -4773,6 +4774,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Passport Decision Tree tracing active",
             "Passport Decision Tree V2 diagnostics active",
             "Internal legacy passport rejection branches exposed",
+            "Passport professional alignment diagnostics active",
             "PassportDecisionEngineV3 active",
             "V3 executes independently",
             "Passport Decision Engine V3 shadow mode active",
@@ -4999,6 +5001,9 @@ function getFilterDecisionTrace(diagnostics, article) {
     const passportDecisionComparison = heavyDiagnosticsEnabled
       ? comparePassportDecisionV3WithLegacy(passportDecisionV3, passportDecisionTree)
       : null;
+    const passportProfessionalAlignment = heavyDiagnosticsEnabled
+      ? getPassportProfessionalAlignmentDiagnostics(article, articleEvidence)
+      : null;
     const idCardDecision = heavyDiagnosticsEnabled
       ? evaluateIdCardDecisionRules(article)
       : null;
@@ -5043,6 +5048,7 @@ function getFilterDecisionTrace(diagnostics, article) {
       passportDecisionTreeDiagnostics: passportDecisionTree,
       passportDecisionV3Diagnostics: passportDecisionV3,
       passportDecisionComparison,
+      passportProfessionalAlignmentDiagnostics: passportProfessionalAlignment,
       idCardDecisionDiagnostics: idCardDecision,
       residencePermitDecisionDiagnostics: residencePermitDecision,
       visaDecisionDiagnostics: visaDecision,
@@ -5142,6 +5148,7 @@ function freezeFilterDecisionTrace(trace) {
     passportDecisionTreeDiagnostics: Object.freeze(trace.passportDecisionTreeDiagnostics || {}),
     passportDecisionV3Diagnostics: Object.freeze(trace.passportDecisionV3Diagnostics || {}),
     passportDecisionComparison: Object.freeze(trace.passportDecisionComparison || {}),
+    passportProfessionalAlignmentDiagnostics: Object.freeze(trace.passportProfessionalAlignmentDiagnostics || {}),
     idCardDecisionDiagnostics: Object.freeze(trace.idCardDecisionDiagnostics || {}),
     residencePermitDecisionDiagnostics: Object.freeze(trace.residencePermitDecisionDiagnostics || {}),
     visaDecisionDiagnostics: Object.freeze(trace.visaDecisionDiagnostics || {}),
@@ -6077,6 +6084,221 @@ function getIdentityFraudVerificationDiagnosticsSummary(diagnostics) {
   };
 }
 
+function getPassportProfessionalAlignmentPatternDefinitions() {
+  return {
+    documentTechnology: [
+      "epassport",
+      "e-passport",
+      "electronic passport",
+      "biometric passport",
+      "passport chip",
+      "nfc passport",
+      "emrtd",
+      "chip",
+    ],
+    verification: [
+      "authentication",
+      "verification",
+      "document authentication",
+      "chip authentication",
+      "active authentication",
+      "passive authentication",
+      "inspection system",
+      "validation",
+      "pki",
+      "digital signature verification",
+      "emrtd verification",
+      "border inspection system",
+    ],
+    security: [
+      "document security",
+      "fraud detection",
+      "counterfeit detection",
+      "counterfeit passport detection",
+      "forensic examination",
+      "forensic document examination",
+      "passport security",
+    ],
+    standards: [
+      "icao",
+      "doc 9303",
+      "pki directory",
+      "icao pkd",
+      "pkd",
+    ],
+    consumerNoise: [
+      "passport fee",
+      "passport fees",
+      "passport renewal reminder",
+      "passport office hours",
+      "passport office",
+      "travel advice",
+      "application tips",
+      "appointment availability",
+      "passport appointment",
+      "celebrity passport",
+      "passport services",
+      "passport delay",
+      "processing time",
+      "opening hours",
+    ],
+  };
+}
+
+function getPassportProfessionalAlignmentDiagnostics(article, articleEvidence = null) {
+  const context = buildArticleIntelligenceContext(article);
+  const sections = getArticleEvidenceTextSections(context);
+  const articleEvidenceInput = articleEvidence || buildArticleEvidence(article);
+  const definitions = getPassportProfessionalAlignmentPatternDefinitions();
+  const passportDocumentEvidence = getIdentityIssuanceDocumentAssociations(articleEvidenceInput, context).includes("passport")
+    || evidenceEntriesContainId(articleEvidenceInput, "documentTypes", [
+      "passport",
+      "passports",
+      "travel_document",
+      "passport_issuance",
+    ])
+    || evidenceEntriesContainTerm(articleEvidenceInput, "documentTypes", [
+      "passport",
+      "passports",
+      "travel document",
+      "e-passport",
+      "epassport",
+      "biometric passport",
+    ]);
+  const collectCategoryMatches = (category, terms = []) => {
+    const matchedSignals = normalizeKeywordList(terms)
+      .map((term) => ({
+        term,
+        locations: Object.entries(sections)
+          .filter(([, text]) => textMatchesKeyword(text, term))
+          .map(([location]) => location),
+      }))
+      .filter((entry) => entry.locations.length);
+    return matchedSignals.length ? { category, matchedSignals } : null;
+  };
+  const professionalMatches = [
+    collectCategoryMatches("document_technology", definitions.documentTechnology),
+    collectCategoryMatches("verification", definitions.verification),
+    collectCategoryMatches("security", definitions.security),
+    collectCategoryMatches("standards", definitions.standards),
+  ].filter(Boolean);
+  const consumerNoiseMatches = [
+    collectCategoryMatches("consumer_passport_noise", definitions.consumerNoise),
+  ].filter(Boolean);
+  const legacyRejected = shouldRejectPassportArticle(article);
+  const hasProfessionalPassportEvidence = passportDocumentEvidence && professionalMatches.length > 0;
+  const consumerNoiseBlocked = consumerNoiseMatches.length > 0;
+  const professionalRescueCandidate = legacyRejected && hasProfessionalPassportEvidence && !consumerNoiseBlocked;
+  const remainingMismatch = legacyRejected && hasProfessionalPassportEvidence && !professionalRescueCandidate;
+
+  return {
+    articleId: getFilterDecisionTraceArticleId(article),
+    title: article?.title || "Untitled article",
+    legacyRejected,
+    passportDocumentEvidence,
+    hasProfessionalPassportEvidence,
+    professionalMatches,
+    consumerNoiseMatches,
+    consumerNoiseBlocked,
+    professionalRescueCandidate,
+    remainingMismatch,
+    rescueReason: professionalRescueCandidate
+      ? "passport/document evidence plus professional passport technology, verification, security, or standards evidence"
+      : "",
+    evidenceCombination: {
+      passportDocumentEvidence,
+      professionalCategories: professionalMatches.map((entry) => entry.category),
+      consumerNoiseCategories: consumerNoiseMatches.map((entry) => entry.category),
+    },
+    notes: [
+      "Passport professional alignment diagnostics active",
+      "Legacy passport guard remains authoritative",
+      "Consumer passport noise remains blocked",
+      "Production filtering unchanged",
+    ],
+  };
+}
+
+function getPassportProfessionalAlignmentDiagnosticsSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+
+  const rescueReasonCounts = new Map();
+  const evidenceCombinationCounts = new Map();
+  const rescuedExamples = [];
+  const rejectedExamples = [];
+  const remainingMismatchExamples = [];
+  let evaluated = 0;
+  let rescued = 0;
+  let rejected = 0;
+
+  const addExample = (bucket, example, limit = 10) => {
+    if (bucket.length < limit) {
+      bucket.push(example);
+    }
+  };
+  const summarizeMatches = (matches = []) => matches.map((entry) => ({
+    category: entry.category,
+    terms: (entry.matchedSignals || []).map((signal) => signal.term).slice(0, 6),
+  }));
+
+  getHeavyDiagnosticsTraces(diagnostics).forEach((trace) => {
+    const alignment = trace.passportProfessionalAlignmentDiagnostics;
+    if (!alignment || (!alignment.legacyRejected && !alignment.hasProfessionalPassportEvidence)) {
+      return;
+    }
+    evaluated += 1;
+    const combinationKey = [
+      alignment.passportDocumentEvidence ? "passport_document" : "no_passport_document",
+      ...(alignment.evidenceCombination?.professionalCategories || []),
+      ...(alignment.evidenceCombination?.consumerNoiseCategories || []),
+    ].join("+") || "none";
+    incrementReasonCount(evidenceCombinationCounts, combinationKey);
+
+    const compactExample = {
+      title: alignment.title,
+      legacyRejected: alignment.legacyRejected,
+      rescueReason: alignment.rescueReason || "",
+      evidenceCombination: alignment.evidenceCombination,
+      professionalMatches: summarizeMatches(alignment.professionalMatches || []),
+      consumerNoiseMatches: summarizeMatches(alignment.consumerNoiseMatches || []),
+      includedByLegacy: String(trace.finalResult || "survived") !== "rejected",
+    };
+
+    if (alignment.professionalRescueCandidate) {
+      rescued += 1;
+      incrementReasonCount(rescueReasonCounts, alignment.rescueReason || "professional_passport_alignment");
+      addExample(rescuedExamples, compactExample);
+    } else if (alignment.legacyRejected) {
+      rejected += 1;
+      addExample(rejectedExamples, compactExample);
+    }
+    if (alignment.remainingMismatch) {
+      addExample(remainingMismatchExamples, compactExample);
+    }
+  });
+
+  return {
+    enabled: true,
+    evaluated,
+    rescued,
+    rejected,
+    rescueReasons: getTopV3DecisionReasons(rescueReasonCounts, 10),
+    evidenceCombinations: getTopV3DecisionReasons(evidenceCombinationCounts, 10),
+    rescuedExamples,
+    rejectedExamples,
+    remainingMismatchExamples,
+    notes: [
+      "Passport professional alignment diagnostics active",
+      "Professional passport evidence is aligned in shadow diagnostics only",
+      "Consumer passport noise remains blocked",
+      "Legacy filtering remains authoritative",
+      "Production filtering unchanged",
+    ],
+  };
+}
+
 function evidenceEntriesContainTerm(articleEvidence, evidenceGroup, terms = []) {
   const normalizedTerms = normalizeKeywordList(terms);
   if (!normalizedTerms.length) {
@@ -6332,6 +6554,7 @@ function compareArticleEvidenceParity(article) {
   const legacyHardPassportNoise = isHardPassportNoise(article);
   const legacyLowRelevancePassport = isLowRelevancePassportArticle(article);
   const legacyProfessionalIdentityRescue = shouldRescueProfessionalIdentityArticle(article);
+  const passportProfessionalAlignment = getPassportProfessionalAlignmentDiagnostics(article, articleEvidence);
   const evidenceHasIdentityObject = evidenceEntriesContainTerm(articleEvidence, "domainObjects", [
     "identity",
     "id document",
@@ -6413,7 +6636,9 @@ function compareArticleEvidenceParity(article) {
     }
   }
   if (legacyShouldRejectPassport) {
-    if (evidenceHasProfessionalSignal && evidenceHasExplicitPassportEvidence) {
+    if (passportProfessionalAlignment.professionalRescueCandidate) {
+      parityWarnings.push("legacy_passport_guard_aligned_professional_passport_rescue_candidate");
+    } else if (evidenceHasProfessionalSignal && evidenceHasExplicitPassportEvidence) {
       parityWarnings.push("legacy_passport_guard_with_professional_and_document_signal");
     } else if (evidenceHasProfessionalSignal && evidenceHasNoiseSignal) {
       parityWarnings.push("legacy_passport_guard_with_professional_and_noise_signal");
@@ -6482,6 +6707,7 @@ function compareArticleEvidenceParity(article) {
     legacyHighConfidencePassportAssessment,
     legacyIdentityDocumentRelevance,
     legacyProfessionalIdentityRescue,
+    passportProfessionalAlignment,
     idCardEvidenceGapExplanation,
     evidenceSummary,
     parityWarnings,
@@ -15382,6 +15608,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     professionalDecisionMismatchExamples: diagnostics.professionalDecisionMismatchExamples || null,
     passportDecisionDiagnosticsSummary: diagnostics.passportDecisionDiagnosticsSummary || null,
     passportDecisionParitySummary: diagnostics.passportDecisionParitySummary || null,
+    passportProfessionalAlignmentDiagnostics: diagnostics.passportProfessionalAlignmentDiagnostics || null,
     passportDecisionExamples: diagnostics.passportDecisionExamples || null,
     passportDecisionMismatchExamples: diagnostics.passportDecisionMismatchExamples || null,
     passportDecisionTreeSummary: diagnostics.passportDecisionTreeSummary || null,
@@ -15967,6 +16194,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.professionalDecisionMismatchExamples = getProfessionalDecisionMismatchExamples(diagnostics);
   diagnostics.passportDecisionDiagnosticsSummary = getPassportDecisionDiagnosticsSummary(diagnostics);
   diagnostics.passportDecisionParitySummary = getPassportDecisionParitySummary(diagnostics);
+  diagnostics.passportProfessionalAlignmentDiagnostics = getPassportProfessionalAlignmentDiagnosticsSummary(diagnostics);
   diagnostics.passportDecisionExamples = getPassportDecisionExamples(diagnostics);
   diagnostics.passportDecisionMismatchExamples = getPassportDecisionMismatchExamples(diagnostics);
   diagnostics.passportDecisionTreeSummary = getPassportDecisionTreeSummary(diagnostics);
@@ -16047,6 +16275,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("professionalDecisionMismatchExamples", diagnostics.professionalDecisionMismatchExamples);
   console.log("passportDecisionDiagnosticsSummary", diagnostics.passportDecisionDiagnosticsSummary);
   console.log("passportDecisionParitySummary", diagnostics.passportDecisionParitySummary);
+  console.log("passportProfessionalAlignmentDiagnostics", diagnostics.passportProfessionalAlignmentDiagnostics);
   console.log("passportDecisionExamples", diagnostics.passportDecisionExamples);
   console.log("passportDecisionMismatchExamples", diagnostics.passportDecisionMismatchExamples);
   console.log("passportDecisionTreeSummary", diagnostics.passportDecisionTreeSummary);
