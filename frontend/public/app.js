@@ -4618,6 +4618,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     identityIssuanceNoiseDiagnostics: null,
     identityFraudVerificationDiagnostics: null,
     identityBorderControlDiagnostics: null,
+    sharedSecurityDiagnostics: null,
     v3DecisionEngineDiagnosticsSummary: null,
     v3ConfidenceSummary: null,
     v3DecisionParitySummary: null,
@@ -4760,6 +4761,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Identity issuance operational noise diagnostics active",
             "Identity Fraud & Verification diagnostics active",
             "ICAO & Border Control diagnostics active",
+            "Shared Security Printing diagnostics active",
             "Visa noise diagnostics active",
             "V3 Decision Engine diagnostics active",
             "V3 Decision Engine is diagnostics-only",
@@ -4985,6 +4987,9 @@ function getFilterDecisionTrace(diagnostics, article) {
     const identityBorderControl = heavyDiagnosticsEnabled
       ? getIdentityBorderControlPatternMatches(article, articleEvidence)
       : null;
+    const sharedSecurity = heavyDiagnosticsEnabled
+      ? getSharedSecurityPatternMatches(article, articleEvidence)
+      : null;
     const professionalDecision = heavyDiagnosticsEnabled
       ? buildProfessionalDecisionDiagnostics(article, {
           articleEvidence,
@@ -5048,6 +5053,7 @@ function getFilterDecisionTrace(diagnostics, article) {
       identityIssuanceDiagnostics: identityIssuance,
       identityFraudVerificationDiagnostics: identityFraudVerification,
       identityBorderControlDiagnostics: identityBorderControl,
+      sharedSecurityDiagnostics: sharedSecurity,
       v3DecisionDiagnostics: v3Decision,
       professionalDecisionDiagnostics: professionalDecision,
       passportDecisionDiagnostics: passportDecision,
@@ -5148,6 +5154,7 @@ function freezeFilterDecisionTrace(trace) {
     identityIssuanceDiagnostics: Object.freeze(trace.identityIssuanceDiagnostics || {}),
     identityFraudVerificationDiagnostics: Object.freeze(trace.identityFraudVerificationDiagnostics || {}),
     identityBorderControlDiagnostics: Object.freeze(trace.identityBorderControlDiagnostics || {}),
+    sharedSecurityDiagnostics: Object.freeze(trace.sharedSecurityDiagnostics || {}),
     v3DecisionDiagnostics: Object.freeze(trace.v3DecisionDiagnostics || {}),
     decisionParityDiagnostics: Object.freeze(trace.decisionParityDiagnostics || {}),
     professionalDecisionDiagnostics: Object.freeze(trace.professionalDecisionDiagnostics || {}),
@@ -6435,6 +6442,299 @@ function getIdentityBorderControlDiagnosticsSummary(diagnostics) {
     notes: [
       "ICAO & Border Control diagnostics active",
       "PKD/eMRTD/DTC and border-control evidence are diagnostics-only",
+      "Legacy filtering remains authoritative",
+      "Production filtering unchanged",
+    ],
+  };
+}
+
+function getSharedSecurityPatternDefinitions() {
+  return {
+    holography: [
+      "hologram",
+      "holographic feature",
+      "holographic foil",
+      "security hologram",
+      "diffractive optical element",
+      "dovid",
+      "ovd",
+      "optical variable device",
+      "optically variable device",
+    ],
+    microOptics: [
+      "micro optics",
+      "micro-optics",
+      "microlens",
+      "microlens array",
+      "micro optical structure",
+      "nano optical structure",
+      "optical security feature",
+      "microstructure",
+    ],
+    securityInks: [
+      "security ink",
+      "security inks",
+      "optically variable ink",
+      "ovi",
+      "colour shifting ink",
+      "color shifting ink",
+      "magnetic ink",
+      "fluorescent ink",
+      "uv ink",
+      "infrared ink",
+    ],
+    materials: [
+      "polycarbonate",
+      "secure substrate",
+      "document substrate",
+      "laser engraving",
+      "laser personalization",
+      "laser personalisation",
+    ],
+    laminates: [
+      "security laminate",
+      "protective laminate",
+      "overlay",
+      "security overlay",
+      "patch",
+    ],
+    threadsFoils: [
+      "security thread",
+      "window thread",
+      "windowed thread",
+      "foil stripe",
+      "security foil",
+      "holographic foil",
+    ],
+    identityContext: [
+      "passport",
+      "passports",
+      "id card",
+      "identity card",
+      "identity document",
+      "identity documents",
+      "travel document",
+      "credential",
+      "residence permit",
+      "driver license",
+      "driver licence",
+    ],
+    banknoteContext: [
+      "banknote",
+      "banknotes",
+      "currency",
+      "central bank",
+      "denomination",
+      "cash",
+      "currency note",
+      "banknote security",
+    ],
+    noise: [
+      "normal printing",
+      "commercial label",
+      "commercial labels",
+      "packaging foil",
+      "decorative hologram",
+      "decorative holograms",
+      "car wrap",
+      "car wraps",
+      "plastic manufacturing",
+      "generic material science",
+      "medical micro optics",
+      "electronics microstructures",
+      "semiconductor microstructure",
+    ],
+  };
+}
+
+function getSharedSecurityPatternMatches(article, articleEvidence = null) {
+  const context = buildArticleIntelligenceContext(article);
+  const sections = getArticleEvidenceTextSections(context);
+  const articleEvidenceInput = articleEvidence || buildArticleEvidence(article);
+  const definitions = getSharedSecurityPatternDefinitions();
+  const identityAssociations = getIdentityIssuanceDocumentAssociations(articleEvidenceInput, context);
+  const collectMatches = (category, terms = [], strength = "strong") => {
+    const matchedSignals = normalizeKeywordList(terms)
+      .map((term) => ({
+        term,
+        locations: Object.entries(sections)
+          .filter(([, text]) => textMatchesKeyword(text, term))
+          .map(([location]) => location),
+      }))
+      .filter((entry) => entry.locations.length);
+    return matchedSignals.length ? { category, strength, matchedSignals } : null;
+  };
+  const categoryMatches = [
+    collectMatches("holography", definitions.holography),
+    collectMatches("micro_optics", definitions.microOptics),
+    collectMatches("security_inks", definitions.securityInks),
+    collectMatches("materials", definitions.materials),
+    collectMatches("laminates", definitions.laminates),
+    collectMatches("threads_foils", definitions.threadsFoils),
+  ].filter(Boolean);
+  const identityContextMatches = [collectMatches("identity_document_context", definitions.identityContext, "medium")].filter(Boolean);
+  const banknoteContextMatches = [collectMatches("banknote_context", definitions.banknoteContext, "medium")].filter(Boolean);
+  const noiseMatches = [collectMatches("shared_security_noise", definitions.noise, "noise")].filter(Boolean);
+  const identityDocumentAssociations = Array.from(new Set(
+    identityAssociations.concat(identityContextMatches.length ? ["identity_document_context"] : [])
+  ));
+  const banknoteAssociations = banknoteContextMatches.length ? ["banknote_context"] : [];
+  const hasSecurityFeature = categoryMatches.length > 0;
+  const hasIdentityBridge = identityDocumentAssociations.length > 0;
+  const hasBanknoteBridge = banknoteAssociations.length > 0;
+  const professionalStrength = hasSecurityFeature && (hasIdentityBridge || hasBanknoteBridge);
+  const noiseOnly = noiseMatches.length > 0 && !professionalStrength;
+
+  return {
+    articleId: getFilterDecisionTraceArticleId(article),
+    title: article?.title || "Untitled article",
+    holographyMatches: categoryMatches.filter((entry) => entry.category === "holography"),
+    microOpticsMatches: categoryMatches.filter((entry) => entry.category === "micro_optics"),
+    securityInkMatches: categoryMatches.filter((entry) => entry.category === "security_inks"),
+    materialMatches: categoryMatches.filter((entry) => entry.category === "materials"),
+    laminateMatches: categoryMatches.filter((entry) => entry.category === "laminates"),
+    threadFoilMatches: categoryMatches.filter((entry) => entry.category === "threads_foils"),
+    identityDocumentAssociations,
+    banknoteAssociations,
+    identityContextMatches,
+    banknoteContextMatches,
+    noiseMatches,
+    professionalStrength,
+    noiseOnly,
+    reason: professionalStrength
+      ? "shared security printing evidence anchored to identity document or banknote context"
+      : noiseOnly
+        ? "security-printing-like term without secure document context"
+        : hasSecurityFeature
+          ? "shared security printing evidence without identity or banknote anchor"
+          : "",
+    notes: [
+      "Shared Security Printing diagnostics are diagnostics-only",
+      "Security feature evidence is strongest with identity document or banknote context",
+      "Production filtering unchanged",
+    ],
+  };
+}
+
+function getSharedSecurityDiagnosticsSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+
+  const evidenceTermCounts = new Map();
+  const identityAssociationCounts = new Map();
+  const banknoteAssociationCounts = new Map();
+  const exampleArticles = [];
+  const noiseExamples = [];
+  let evaluated = 0;
+  let holographyMatches = 0;
+  let microOpticsMatches = 0;
+  let securityInkMatches = 0;
+  let materialMatches = 0;
+  let laminateMatches = 0;
+  let threadFoilMatches = 0;
+  let identityDocumentAssociations = 0;
+  let banknoteAssociations = 0;
+  let noiseMatches = 0;
+
+  const addExample = (bucket, example, limit = 10) => {
+    if (bucket.length < limit) {
+      bucket.push(example);
+    }
+  };
+  const countMatchedSignals = (counts, matches = []) => {
+    matches.forEach((match) => {
+      (match.matchedSignals || []).forEach((signal) => {
+        incrementEvidenceCount(counts, {
+          id: normalizeEvidenceId(signal.term),
+          term: signal.term,
+        });
+      });
+    });
+  };
+  const summarizeMatches = (matches = []) => matches.map((entry) => ({
+    category: entry.category,
+    terms: (entry.matchedSignals || []).map((signal) => signal.term).slice(0, 6),
+  }));
+
+  getHeavyDiagnosticsTraces(diagnostics).forEach((trace) => {
+    const sharedSecurity = trace.sharedSecurityDiagnostics;
+    if (!sharedSecurity) {
+      return;
+    }
+    const allMatches = []
+      .concat(
+        sharedSecurity.holographyMatches || [],
+        sharedSecurity.microOpticsMatches || [],
+        sharedSecurity.securityInkMatches || [],
+        sharedSecurity.materialMatches || [],
+        sharedSecurity.laminateMatches || [],
+        sharedSecurity.threadFoilMatches || [],
+        sharedSecurity.noiseMatches || []
+      );
+    if (!allMatches.length) {
+      return;
+    }
+    evaluated += 1;
+    if (sharedSecurity.holographyMatches?.length) holographyMatches += 1;
+    if (sharedSecurity.microOpticsMatches?.length) microOpticsMatches += 1;
+    if (sharedSecurity.securityInkMatches?.length) securityInkMatches += 1;
+    if (sharedSecurity.materialMatches?.length) materialMatches += 1;
+    if (sharedSecurity.laminateMatches?.length) laminateMatches += 1;
+    if (sharedSecurity.threadFoilMatches?.length) threadFoilMatches += 1;
+    if (sharedSecurity.identityDocumentAssociations?.length) identityDocumentAssociations += 1;
+    if (sharedSecurity.banknoteAssociations?.length) banknoteAssociations += 1;
+    if (sharedSecurity.noiseMatches?.length) noiseMatches += 1;
+    (sharedSecurity.identityDocumentAssociations || []).forEach((entry) => incrementReasonCount(identityAssociationCounts, entry));
+    (sharedSecurity.banknoteAssociations || []).forEach((entry) => incrementReasonCount(banknoteAssociationCounts, entry));
+    countMatchedSignals(evidenceTermCounts, allMatches);
+
+    const compactExample = {
+      title: sharedSecurity.title,
+      reason: sharedSecurity.reason || "",
+      identityDocumentAssociations: sharedSecurity.identityDocumentAssociations || [],
+      banknoteAssociations: sharedSecurity.banknoteAssociations || [],
+      includedByLegacy: String(trace.finalResult || "survived") !== "rejected",
+    };
+    if (sharedSecurity.professionalStrength) {
+      addExample(exampleArticles, {
+        ...compactExample,
+        holography: summarizeMatches(sharedSecurity.holographyMatches || []),
+        microOptics: summarizeMatches(sharedSecurity.microOpticsMatches || []),
+        securityInks: summarizeMatches(sharedSecurity.securityInkMatches || []),
+        materials: summarizeMatches(sharedSecurity.materialMatches || []),
+        laminates: summarizeMatches(sharedSecurity.laminateMatches || []),
+        threadsFoils: summarizeMatches(sharedSecurity.threadFoilMatches || []),
+      });
+    }
+    if (sharedSecurity.noiseOnly) {
+      addExample(noiseExamples, {
+        ...compactExample,
+        noise: summarizeMatches(sharedSecurity.noiseMatches || []),
+      });
+    }
+  });
+
+  return {
+    enabled: true,
+    evaluated,
+    holographyMatches,
+    microOpticsMatches,
+    securityInkMatches,
+    materialMatches,
+    laminateMatches,
+    threadFoilMatches,
+    identityDocumentAssociations,
+    banknoteAssociations,
+    noiseMatches,
+    identityAssociationBreakdown: getTopV3DecisionReasons(identityAssociationCounts, 10),
+    banknoteAssociationBreakdown: getTopV3DecisionReasons(banknoteAssociationCounts, 10),
+    topEvidenceTerms: getTopEvidenceCounts(evidenceTermCounts, 20),
+    exampleArticles,
+    noiseExamples,
+    notes: [
+      "Shared Security Printing diagnostics active",
+      "Shared security evidence bridges identity documents and banknotes",
       "Legacy filtering remains authoritative",
       "Production filtering unchanged",
     ],
@@ -15955,6 +16255,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     identityIssuanceNoiseDiagnostics: diagnostics.identityIssuanceNoiseDiagnostics || null,
     identityFraudVerificationDiagnostics: diagnostics.identityFraudVerificationDiagnostics || null,
     identityBorderControlDiagnostics: diagnostics.identityBorderControlDiagnostics || null,
+    sharedSecurityDiagnostics: diagnostics.sharedSecurityDiagnostics || null,
     v3DecisionEngineDiagnosticsSummary: diagnostics.v3DecisionEngineDiagnosticsSummary || null,
     v3ConfidenceSummary: diagnostics.v3ConfidenceSummary || null,
     v3DecisionParitySummary: diagnostics.v3DecisionParitySummary || null,
@@ -16542,6 +16843,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.identityIssuanceNoiseDiagnostics = getIdentityIssuanceNoiseDiagnosticsSummary(diagnostics);
   diagnostics.identityFraudVerificationDiagnostics = getIdentityFraudVerificationDiagnosticsSummary(diagnostics);
   diagnostics.identityBorderControlDiagnostics = getIdentityBorderControlDiagnosticsSummary(diagnostics);
+  diagnostics.sharedSecurityDiagnostics = getSharedSecurityDiagnosticsSummary(diagnostics);
   diagnostics.v3DecisionEngineDiagnosticsSummary = getV3DecisionEngineDiagnosticsSummary(diagnostics);
   diagnostics.v3ConfidenceSummary = getV3ConfidenceSummary(diagnostics);
   diagnostics.v3DecisionParitySummary = getV3DecisionParitySummary(diagnostics);
@@ -16624,6 +16926,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("identityIssuanceNoiseDiagnostics", diagnostics.identityIssuanceNoiseDiagnostics);
   console.log("identityFraudVerificationDiagnostics", diagnostics.identityFraudVerificationDiagnostics);
   console.log("identityBorderControlDiagnostics", diagnostics.identityBorderControlDiagnostics);
+  console.log("sharedSecurityDiagnostics", diagnostics.sharedSecurityDiagnostics);
   console.log("v3DecisionEngineDiagnosticsSummary", diagnostics.v3DecisionEngineDiagnosticsSummary);
   console.log("v3ConfidenceSummary", diagnostics.v3ConfidenceSummary);
   console.log("v3DecisionParitySummary", diagnostics.v3DecisionParitySummary);
