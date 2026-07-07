@@ -17827,41 +17827,55 @@ function getSharedSecurityBridgeScoreRescueAssessment(article, options = {}) {
   const selectedIdentityBaseInterests = selectedIdentityInterests.filter(
     (interestId) => !SHARED_SECURITY_BRIDGE_IDENTITY_TECHNIQUE_INTERESTS.has(interestId)
   );
-  const identityInterestScores = selectedIdentityBaseInterests.map((interestId) => ({
-    interestId,
-    score: Number(computePersonalInterestBoost(article, interestId)?.score) || 0,
-  }));
-  const banknoteInterestScores = selectedBanknoteInterests.map((interestId) => ({
-    interestId,
-    score: Number(computePersonalInterestBoost(article, interestId)?.score) || 0,
-    matched: matchesBanknoteInterest(article, interestId),
-  }));
-  const domainMatch = getPersonalDashboardDomainMatch(article);
-  const matchedDashboardDomains = Array.isArray(domainMatch?.matchedDomains) ? domainMatch.matchedDomains : [];
-  const domainScores = domainMatch?.domainScores || {};
+  const context = getPersonalBoostContext(article);
+  const identitySignals = getIdentityDocumentInterestSignals(article);
+  const banknoteSignals = getBanknoteInterestSignals(article);
+  const identityDomainContext = getPersonalDomainContextProfile(context, "identity_documents");
+  const banknoteDomainContext = getPersonalDomainContextProfile(context, "banknote_intelligence");
+  const identityInterestScores = selectedIdentityBaseInterests.map((interestId) => {
+    let score = 0;
+    if (interestId === "passports") score = Number(identitySignals.passportHits || 0);
+    else if (interestId === "id_cards") score = Number(identitySignals.idCardHits || 0);
+    else if (interestId === "residence_permits") score = Number(identitySignals.residencePermitHits || 0);
+    else if (interestId === "drivers_licenses") score = Number(identitySignals.driverLicenseHits || 0);
+    else if (interestId === "visas") score = Number(identitySignals.visaHits || 0);
+    else if (interestId === "fraud") score = Number(identitySignals.fraudHits || 0);
+    else if (interestId === "icao") score = Number(identitySignals.icaoHits || 0);
+    else if (interestId === "border_control") score = Number(identitySignals.borderHits || 0);
+    else if (interestId === "issuance") score = Number(identitySignals.issuanceHits || 0);
+    else score = Number(identitySignals.primaryContextHits || 0);
+    return { interestId, score };
+  });
+  const banknoteInterestScores = selectedBanknoteInterests.map((interestId) => {
+    let score = 0;
+    if (interestId === "banknotes") score = Number(banknoteSignals.contextHits || 0);
+    else if (interestId === "polymer") score = Number(banknoteSignals.polymerHits || 0);
+    else if (interestId === "substrate") score = Number(banknoteSignals.substrateHits || 0);
+    else if (interestId === "security_features") score = Number(banknoteSignals.securityFeatureHits || 0);
+    else if (interestId === "security_printing") score = Number(banknoteSignals.securityPrintingHits || 0);
+    else if (interestId === "counterfeit") score = Number(banknoteSignals.counterfeitHits || 0);
+    else score = Number(banknoteSignals.contextHits || 0);
+    return { interestId, score, matched: score > 0 };
+  });
   const identityBaseEvidenceMatched = selectedMainDomains.includes("identity_documents") && (
-    matchedDashboardDomains.includes("identity_documents") ||
-    Number(domainScores.identity_documents || 0) > 0 ||
+    Number(identityDomainContext.score || 0) > 0 ||
+    Number(identitySignals.primaryContextHits || 0) > 0 ||
     identityInterestScores.some((entry) => entry.score > 0)
   );
   const banknoteBaseEvidenceMatched = selectedMainDomains.includes("banknotes") && (
-    matchedDashboardDomains.includes("banknote_intelligence") ||
-    Number(domainScores.banknote_intelligence || 0) > 0 ||
+    Number(banknoteDomainContext.score || 0) > 0 ||
+    Number(banknoteSignals.contextHits || 0) > 0 ||
     banknoteInterestScores.some((entry) => entry.score > 0 || entry.matched)
   );
-  const scoreSignals = getLegacyPersonalDashboardDecisionSignals(article, {
-    passed: false,
-    rejection: {
-      category: "bridgeRejected",
-      reason: "shared security bridge candidate evaluated for legacy return rescue",
-    },
-    decisionSource: "legacy-pass-fail",
-  });
-  const scoreObject = buildPersonalDashboardScore(article, { signals: scoreSignals });
+  const totalScore =
+    Number(identityDomainContext.score || 0) +
+    Number(banknoteDomainContext.score || 0) +
+    identityInterestScores.reduce((sum, entry) => sum + (Number(entry.score) || 0), 0) +
+    banknoteInterestScores.reduce((sum, entry) => sum + (Number(entry.score) || 0), 0);
 
   return {
-    positiveScoreCandidate: Number(scoreObject?.totalScore) > 0,
-    totalScore: Number(scoreObject?.totalScore) || 0,
+    positiveScoreCandidate: totalScore > 0,
+    totalScore,
     identityBaseEvidenceMatched,
     banknoteBaseEvidenceMatched,
     baseEvidenceMatched: identityBaseEvidenceMatched || banknoteBaseEvidenceMatched,
@@ -17871,7 +17885,10 @@ function getSharedSecurityBridgeScoreRescueAssessment(article, options = {}) {
     ].filter(Boolean),
     identityInterestScores,
     banknoteInterestScores,
-    domainScores,
+    domainScores: {
+      identity_documents: Number(identityDomainContext.score || 0),
+      banknote_intelligence: Number(banknoteDomainContext.score || 0),
+    },
   };
 }
 
@@ -17921,35 +17938,44 @@ function getSharedSecurityBridgeDecision(article, selectedInterests = normalizeP
     };
   }
 
+  // Recursion safety: this active matcher helper must not call dashboard
+  // scoring/matching entry points such as articleMatchesPersonalDashboardSelection,
+  // computePersonalInterestBoost, or getPersonalDashboardDomainMatch.
+  const context = getPersonalBoostContext(article);
   const primaryDomain = getArticleDominantDomain(article);
-  const domainMatch = getPersonalDashboardDomainMatch(article);
-  const matchedDashboardDomains = Array.isArray(domainMatch?.matchedDomains) ? domainMatch.matchedDomains : [];
+  const matchedDashboardDomains = [];
   const sharedSecurityTechniqueMatch = getSharedSecurityDashboardTechniqueMatch(article, selectedBridgeTechniqueInterests);
-  const identityTechniqueBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, normalizedInterests);
-  const banknoteTechniqueBridgeMatched = articleMatchesSelectedBanknoteTechniqueBridge(article, normalizedInterests);
-  const directSharedSecurityTechniqueMatched = sharedSecurityTechniqueMatch.matched ||
-    matchesSelectedSharedSecurityTechnique(article, normalizedInterests);
-  const sharedSecurityTechniqueMatched =
-    directSharedSecurityTechniqueMatched ||
-    identityTechniqueBridgeMatched ||
-    banknoteTechniqueBridgeMatched;
+  const identitySignals = getIdentityDocumentInterestSignals(article);
+  const banknoteSignals = getBanknoteInterestSignals(article);
+  const directSharedSecurityTechniqueMatched = sharedSecurityTechniqueMatch.matched;
+  const sharedSecurityTechniqueMatched = directSharedSecurityTechniqueMatched;
+  const identityTechniqueBridgeMatched = false;
+  const banknoteTechniqueBridgeMatched = false;
 
   const idCardsHolographyOvdBridgeMatched = matchesIdCardsHolographyOvdCombinationBridge(
     article,
     selectedIdentityInterests,
     selectedSharedInterests
   );
-  const identityInterestMatched = !selectedIdentityInterests.length || selectedIdentityInterests.some((interestId) =>
-    computePersonalInterestBoost(article, interestId).score >= 18
-  );
+  const identityDomainContext = getPersonalDomainContextProfile(context, "identity_documents");
+  const banknoteDomainContext = getPersonalDomainContextProfile(context, "banknote_intelligence");
+  const identityInterestMatched = selectedIdentityInterests
+    .filter((interestId) => !SHARED_SECURITY_BRIDGE_IDENTITY_TECHNIQUE_INTERESTS.has(interestId))
+    .some((interestId) => {
+      if (interestId === "passports") return Number(identitySignals.passportHits || 0) > 0;
+      if (interestId === "id_cards") return Number(identitySignals.idCardHits || 0) > 0;
+      if (interestId === "residence_permits") return Number(identitySignals.residencePermitHits || 0) > 0;
+      if (interestId === "drivers_licenses") return Number(identitySignals.driverLicenseHits || 0) > 0;
+      if (interestId === "visas") return Number(identitySignals.visaHits || 0) > 0;
+      return Number(identitySignals.primaryContextHits || 0) > 0;
+    });
   const identityBaseMatched = selectedMainDomains.includes("identity_documents") &&
     !isIdentityNavigationPageArticle(article) &&
     (
-      matchedDashboardDomains.includes("identity_documents") ||
       primaryDomain === "identity_documents" ||
-      identityTechniqueBridgeMatched ||
       idCardsHolographyOvdBridgeMatched ||
-      identityInterestMatched
+      identityInterestMatched ||
+      Number(identityDomainContext.score || 0) > 0
     );
 
   const banknoteInterestResolution = resolvePersonalDashboardParentChildInterests(
@@ -17958,16 +17984,23 @@ function getSharedSecurityBridgeDecision(article, selectedInterests = normalizeP
   );
   const banknoteInterestIds = banknoteInterestResolution.effectiveInterestIds;
   const banknoteInterestMatched = !banknoteInterestIds.length ||
-    banknoteInterestIds.some((interestId) => matchesBanknoteInterest(article, interestId));
+    banknoteInterestIds.some((interestId) => {
+      if (interestId === "banknotes") return Number(banknoteSignals.contextHits || 0) > 0;
+      if (interestId === "polymer") return Number(banknoteSignals.polymerHits || 0) > 0;
+      if (interestId === "substrate") return Number(banknoteSignals.substrateHits || 0) > 0;
+      if (interestId === "security_features") return Number(banknoteSignals.securityFeatureHits || 0) > 0;
+      if (interestId === "security_printing") return Number(banknoteSignals.securityPrintingHits || 0) > 0;
+      if (interestId === "counterfeit") return Number(banknoteSignals.counterfeitHits || 0) > 0;
+      return Number(banknoteSignals.contextHits || 0) > 0;
+    });
   const banknoteBaseMatched = selectedMainDomains.includes("banknotes") &&
     !isBanknoteContaminated(article) &&
     (
-      matchedDashboardDomains.includes("banknote_intelligence") ||
       primaryDomain === "banknotes" ||
-      banknoteTechniqueBridgeMatched ||
       isBanknotePrimary(article) ||
       isBanknoteAdjacent(article) ||
-      banknoteInterestMatched
+      banknoteInterestMatched ||
+      Number(banknoteDomainContext.score || 0) > 0
     );
 
   const matchedBaseDomains = [
