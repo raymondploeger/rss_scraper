@@ -4643,6 +4643,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     idCardDecisionEngineSummary: null,
     residencePermitDecisionEngineSummary: null,
     visaDecisionEngineSummary: null,
+    visaNoiseDiagnosticsSummary: null,
     driverLicenseDecisionEngineSummary: null,
     driverLicenseNoiseDiagnosticsSummary: null,
     driverLicenseCandidateRetrievalDiagnostics: null,
@@ -4749,6 +4750,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Evidence Builder Professional parity diagnostics active",
             "Professional Signals included in parity checks",
             "Event Signals introduced",
+            "Visa noise diagnostics active",
             "V3 Decision Engine diagnostics active",
             "V3 Decision Engine is diagnostics-only",
             "Confidence Engine V1 added",
@@ -4993,6 +4995,13 @@ function getFilterDecisionTrace(diagnostics, article) {
     const visaDecision = heavyDiagnosticsEnabled
       ? evaluateVisaDecisionRules(article)
       : null;
+    const selectedIdentityInterestsForTrace = getSelectedIdentityDocumentSubinterests();
+    const visaNoise = heavyDiagnosticsEnabled && selectedIdentityInterestsForTrace.includes("visas")
+      ? getVisaNoiseDiagnostics(article, {
+          articleEvidence,
+          visaDecision,
+        })
+      : null;
     const driverLicenseDecision = heavyDiagnosticsEnabled
       ? evaluateDriverLicenseDecisionRules(article)
       : null;
@@ -5022,6 +5031,7 @@ function getFilterDecisionTrace(diagnostics, article) {
       idCardDecisionDiagnostics: idCardDecision,
       residencePermitDecisionDiagnostics: residencePermitDecision,
       visaDecisionDiagnostics: visaDecision,
+      visaNoiseDiagnostics: visaNoise,
       driverLicenseDecisionDiagnostics: driverLicenseDecision,
       driverLicenseNoiseDiagnostics: driverLicenseNoise,
       stages: [],
@@ -5118,6 +5128,7 @@ function freezeFilterDecisionTrace(trace) {
     idCardDecisionDiagnostics: Object.freeze(trace.idCardDecisionDiagnostics || {}),
     residencePermitDecisionDiagnostics: Object.freeze(trace.residencePermitDecisionDiagnostics || {}),
     visaDecisionDiagnostics: Object.freeze(trace.visaDecisionDiagnostics || {}),
+    visaNoiseDiagnostics: Object.freeze(trace.visaNoiseDiagnostics || {}),
     driverLicenseDecisionDiagnostics: Object.freeze(trace.driverLicenseDecisionDiagnostics || {}),
     driverLicenseNoiseDiagnostics: Object.freeze(trace.driverLicenseNoiseDiagnostics || {}),
     stages: Object.freeze(frozenStages),
@@ -5367,6 +5378,32 @@ const EXPLICIT_DRIVER_LICENSE_EVIDENCE_IDS = [
   "dmv_driver_license",
   "driver_license_agency",
   "department_of_motor_vehicles",
+];
+
+const EXPLICIT_VISA_EVIDENCE_IDS = [
+  "visas",
+  "visa",
+  "visa_document",
+  "visa_sticker",
+  "evisa",
+  "e_visa",
+  "electronic_visa",
+  "digital_visa",
+  "visa_issuance",
+  "visa_application",
+  "visa_application_system",
+  "visa_processing",
+  "biometric_visa_processing",
+  "visa_verification",
+  "visa_fraud",
+  "visa_policy",
+  "visa_waiver",
+  "visa_exemption",
+  "travel_authorization",
+  "entry_permit",
+  "consular_services",
+  "consular_system",
+  "digital_visa_platform",
 ];
 
 function getMatchedEvidenceIds(articleEvidence, evidenceGroup, ids = []) {
@@ -8173,9 +8210,11 @@ function getVisaDecisionEngineSummary(diagnostics) {
     return null;
   }
   const ruleCounts = new Map();
+  const visaEvidenceCounts = new Map();
   let evaluated = 0;
   let rejected = 0;
   let kept = 0;
+  let visaEvidenceCount = 0;
   getHeavyDiagnosticsTraces(diagnostics).forEach((trace) => {
     const visaDecision = trace.visaDecisionDiagnostics;
     if (!visaDecision) {
@@ -8187,6 +8226,15 @@ function getVisaDecisionEngineSummary(diagnostics) {
     } else {
       kept += 1;
     }
+    const explicitIds = visaDecision.matchedRule?.metadata?.explicitVisaEvidenceIds ||
+      visaDecision.matchedRule?.evidence?.explicitVisaEvidenceIds ||
+      [];
+    if (Array.isArray(explicitIds) && explicitIds.length) {
+      visaEvidenceCount += 1;
+    }
+    getEvidenceEntriesForGroup(trace.evidenceDiagnostics, "documentTypes")
+      .filter((entry) => EXPLICIT_VISA_EVIDENCE_IDS.includes(entry.id))
+      .forEach((entry) => incrementEvidenceCount(visaEvidenceCounts, entry));
     incrementReasonCount(ruleCounts, visaDecision.matchedRuleId || "unknown");
   });
 
@@ -8195,13 +8243,272 @@ function getVisaDecisionEngineSummary(diagnostics) {
     evaluated,
     ruleSetActive: true,
     documentType: VISA_RULE_SET.documentType,
+    visaEvidenceCount,
     kept,
     rejected,
     topMatchedRules: getTopV3DecisionReasons(ruleCounts, 10),
+    topVisaEvidenceTerms: getTopEvidenceCounts(visaEvidenceCounts),
     notes: [
       "Visa rule set runs in shadow diagnostics only",
       "Visa uses DocumentDecisionEngine in diagnostic mode",
+      "Visa evidence is selected from existing legacy Visa concepts",
       "Legacy filtering remains authoritative",
+    ],
+  };
+}
+
+function getVisaNoisePatternDefinitions() {
+  return [
+    {
+      pattern: "generic_immigration_politics",
+      terms: ["immigration politics", "immigration debate", "immigration policy debate", "asylum debate", "migration politics", "border politics"],
+    },
+    {
+      pattern: "general_travel_advice",
+      terms: flattenEvidenceKeywordGroups([
+        "travel advice",
+        "travel tips",
+        "entry requirements",
+        "visa requirements",
+        "visa advice",
+        "travel advisory",
+        "holiday travel",
+        "vacation",
+        IDENTITY_VISA_SPAM_TERMS,
+      ]),
+    },
+    {
+      pattern: "tourism_promotion",
+      terms: ["tourism promotion", "tourist attractions", "tourist visa", "tourism campaign", "travel destination", "destination ranking", "tour package"],
+    },
+    {
+      pattern: "student_or_work_migration_without_document_focus",
+      terms: ["student visa guide", "work visa guide", "work migration", "migration story", "study abroad", "foreign workers"],
+    },
+    {
+      pattern: "visa_holder_lifestyle",
+      terms: ["visa holder lifestyle", "visa holder", "digital nomad visa", "golden visa", "investor visa", "lifestyle", "expat lifestyle"],
+    },
+    {
+      pattern: "court_or_political_commentary",
+      terms: ["court ruling", "court said", "political commentary", "opinion", "lawsuit", "legal challenge", "supreme court"],
+    },
+    {
+      pattern: "celebrity_or_sports_visa_story",
+      terms: ["celebrity visa", "player visa", "sports visa", "athlete visa", "footballer visa", "singer visa", "actor visa"],
+    },
+    {
+      pattern: "embassy_appointment_notice",
+      terms: ["embassy appointment", "visa appointment", "appointment availability", "visa center appointment", "consular appointment"],
+    },
+    {
+      pattern: "generic_h1b_news",
+      terms: ["h-1b", "h1b", "h-1b visa", "h1b visa", "h-1b lottery", "h1b lottery"],
+    },
+  ];
+}
+
+function getVisaStrongIntelligencePatternDefinitions() {
+  return [
+    {
+      pattern: "visa_document",
+      terms: ["visa document", "visa sticker", "secure visa document", "entry permit"],
+    },
+    {
+      pattern: "electronic_or_digital_visa",
+      terms: ["electronic visa", "e-visa", "evisa", "digital visa", "digital visa platform"],
+    },
+    {
+      pattern: "visa_issuance_or_processing_system",
+      terms: ["visa issuance", "visa application system", "visa processing system", "consular system", "consular systems"],
+    },
+    {
+      pattern: "visa_verification",
+      terms: ["visa verification", "document verification", "credential verification", "verification system"],
+    },
+    {
+      pattern: "visa_fraud",
+      terms: ["visa fraud", "fake visa", "fraudulent visa", "counterfeit visa", "visa forgery"],
+    },
+    {
+      pattern: "visa_security_features",
+      terms: ["visa security", "visa security feature", "visa security features", "security feature", "document security"],
+    },
+    {
+      pattern: "biometric_visa_processing",
+      terms: ["biometric visa", "biometric visa processing", "biometric processing", "biometric enrollment", "biometric enrolment"],
+    },
+    {
+      pattern: "visa_policy_with_document_impact",
+      terms: ["visa policy rollout", "visa regulation", "visa issuance policy", "visa waiver program", "travel authorization"],
+    },
+  ];
+}
+
+function getVisaPatternMatches(article, definitions = []) {
+  const context = buildArticleIntelligenceContext(article);
+  const sections = getArticleEvidenceTextSections(context);
+  return definitions
+    .map((definition) => {
+      const matchedSignals = normalizeKeywordList(definition.terms || [])
+        .map((term) => ({
+          type: "term",
+          term,
+          locations: Object.entries(sections)
+            .filter(([, text]) => textMatchesKeyword(text, term))
+            .map(([location]) => location),
+        }))
+        .filter((match) => match.locations.length);
+      return {
+        pattern: definition.pattern,
+        matched: matchedSignals.length > 0,
+        matchedSignals,
+      };
+    })
+    .filter((entry) => entry.matched);
+}
+
+function getVisaNoiseDiagnostics(article, options = {}) {
+  const articleEvidence = options.articleEvidence || buildArticleEvidence(article);
+  const explicitVisaEvidenceIds = getMatchedEvidenceIds(
+    articleEvidence,
+    "documentTypes",
+    EXPLICIT_VISA_EVIDENCE_IDS
+  );
+  const visaDecision = options.visaDecision || evaluateVisaDecisionRules(article);
+  const visaNoisePatterns = getVisaPatternMatches(article, getVisaNoisePatternDefinitions());
+  const strongVisaIntelligence = getVisaPatternMatches(article, getVisaStrongIntelligencePatternDefinitions());
+  const explicitVisaEvidencePresent = explicitVisaEvidenceIds.length > 0;
+  const hasVisaNoise = visaNoisePatterns.length > 0;
+  const hasStrongVisaIntelligence = strongVisaIntelligence.length > 0;
+  const likelyTrueVisaIntelligence = explicitVisaEvidencePresent
+    && hasStrongVisaIntelligence
+    && !visaDecision?.rejected;
+  const likelyVisaNoise = hasVisaNoise && !hasStrongVisaIntelligence;
+  const mixedOrUncertainVisaCandidate = hasVisaNoise && (hasStrongVisaIntelligence || explicitVisaEvidencePresent);
+  const visaNoiseRescuedByStrongIntelligence = hasVisaNoise && hasStrongVisaIntelligence;
+
+  return {
+    articleId: getFilterDecisionTraceArticleId(article),
+    title: article?.title || "Untitled article",
+    source: getIdentityNoiseGuardSource(article),
+    explicitVisaEvidencePresent,
+    explicitVisaEvidenceIds,
+    visaDecision: visaDecision?.rejected ? "reject" : "keep",
+    matchedRuleId: visaDecision?.matchedRuleId || "",
+    visaNoisePatterns,
+    strongVisaIntelligence,
+    hasVisaNoise,
+    hasStrongVisaIntelligence,
+    likelyTrueVisaIntelligence,
+    likelyVisaNoise,
+    mixedOrUncertainVisaCandidate,
+    visaNoiseRescuedByStrongIntelligence,
+    notes: [
+      "Visa noise diagnostics are diagnostics-only",
+      "Legacy filtering remains authoritative",
+    ],
+  };
+}
+
+function getVisaNoiseDiagnosticsSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+  const visaEvidenceCounts = new Map();
+  const visaNoisePatternCounts = new Map();
+  const trueVisaExamples = [];
+  const visaNoiseExamples = [];
+  const mixedVisaExamples = [];
+  const rescuedVisaExamples = [];
+  let evaluatedArticles = 0;
+  let visaEvidenceCount = 0;
+  let visaNoiseCount = 0;
+  let visaNoiseRescuedCount = 0;
+
+  const addExample = (bucket, example, limit = 10) => {
+    if (bucket.length < limit) {
+      bucket.push(example);
+    }
+  };
+
+  getHeavyDiagnosticsTraces(diagnostics).forEach((trace) => {
+    const visaNoiseDiagnostics = trace.visaNoiseDiagnostics;
+    if (!visaNoiseDiagnostics) {
+      return;
+    }
+    evaluatedArticles += 1;
+    if (visaNoiseDiagnostics.explicitVisaEvidencePresent) {
+      visaEvidenceCount += 1;
+    }
+    if (visaNoiseDiagnostics.hasVisaNoise) {
+      visaNoiseCount += 1;
+    }
+    if (visaNoiseDiagnostics.visaNoiseRescuedByStrongIntelligence) {
+      visaNoiseRescuedCount += 1;
+    }
+    getEvidenceEntriesForGroup(trace.evidenceDiagnostics, "documentTypes")
+      .filter((entry) => EXPLICIT_VISA_EVIDENCE_IDS.includes(entry.id))
+      .forEach((entry) => incrementEvidenceCount(visaEvidenceCounts, entry));
+    (visaNoiseDiagnostics.visaNoisePatterns || []).forEach((entry) => {
+      incrementReasonCount(visaNoisePatternCounts, entry.pattern);
+    });
+
+    const compactExample = {
+      title: visaNoiseDiagnostics.title,
+      source: visaNoiseDiagnostics.source,
+      explicitVisaEvidencePresent: visaNoiseDiagnostics.explicitVisaEvidencePresent,
+      explicitVisaEvidenceIds: visaNoiseDiagnostics.explicitVisaEvidenceIds,
+      visaDecision: visaNoiseDiagnostics.visaDecision,
+      matchedRuleId: visaNoiseDiagnostics.matchedRuleId,
+      includedByLegacy: String(trace.finalResult || "survived") !== "rejected",
+    };
+    if (visaNoiseDiagnostics.likelyTrueVisaIntelligence) {
+      addExample(trueVisaExamples, {
+        ...compactExample,
+        strongVisaIntelligence: visaNoiseDiagnostics.strongVisaIntelligence.map((entry) => entry.pattern),
+      });
+    }
+    if (visaNoiseDiagnostics.likelyVisaNoise) {
+      addExample(visaNoiseExamples, {
+        ...compactExample,
+        visaNoisePatterns: visaNoiseDiagnostics.visaNoisePatterns.map((entry) => entry.pattern),
+        matchedNoiseSignals: visaNoiseDiagnostics.visaNoisePatterns.flatMap((entry) => entry.matchedSignals || []).slice(0, 8),
+      });
+    }
+    if (visaNoiseDiagnostics.mixedOrUncertainVisaCandidate) {
+      addExample(mixedVisaExamples, {
+        ...compactExample,
+        visaNoisePatterns: visaNoiseDiagnostics.visaNoisePatterns.map((entry) => entry.pattern),
+        strongVisaIntelligence: visaNoiseDiagnostics.strongVisaIntelligence.map((entry) => entry.pattern),
+      });
+    }
+    if (visaNoiseDiagnostics.visaNoiseRescuedByStrongIntelligence) {
+      addExample(rescuedVisaExamples, {
+        ...compactExample,
+        visaNoisePatterns: visaNoiseDiagnostics.visaNoisePatterns.map((entry) => entry.pattern),
+        strongVisaIntelligence: visaNoiseDiagnostics.strongVisaIntelligence.map((entry) => entry.pattern),
+        matchedStrongSignals: visaNoiseDiagnostics.strongVisaIntelligence.flatMap((entry) => entry.matchedSignals || []).slice(0, 8),
+      });
+    }
+  });
+
+  return {
+    enabled: true,
+    evaluatedArticles,
+    visaEvidenceCount,
+    visaNoiseCount,
+    visaNoiseRescuedCount,
+    topVisaEvidenceTerms: getTopEvidenceCounts(visaEvidenceCounts),
+    topVisaNoisePatterns: getTopV3DecisionReasons(visaNoisePatternCounts, 20),
+    trueVisaIntelligenceExamples: trueVisaExamples,
+    visaNoiseExamples,
+    mixedVisaCandidateExamples: mixedVisaExamples,
+    visaNoiseRescuedByStrongEvidenceExamples: rescuedVisaExamples,
+    notes: [
+      "Visa noise diagnostics active",
+      "Visa diagnostics distinguish document/security/issuance intelligence from generic immigration and travel noise",
+      "Filtering behavior unchanged",
     ],
   };
 }
@@ -14208,6 +14515,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     idCardDecisionEngineSummary: diagnostics.idCardDecisionEngineSummary || null,
     residencePermitDecisionEngineSummary: diagnostics.residencePermitDecisionEngineSummary || null,
     visaDecisionEngineSummary: diagnostics.visaDecisionEngineSummary || null,
+    visaNoiseDiagnosticsSummary: diagnostics.visaNoiseDiagnosticsSummary || null,
     driverLicenseDecisionEngineSummary: diagnostics.driverLicenseDecisionEngineSummary || null,
     driverLicenseNoiseDiagnosticsSummary: diagnostics.driverLicenseNoiseDiagnosticsSummary || null,
     driverLicenseCandidateRetrievalDiagnostics: diagnostics.driverLicenseCandidateRetrievalDiagnostics || null,
@@ -14789,6 +15097,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.idCardDecisionEngineSummary = getIdCardDecisionEngineSummary(diagnostics);
   diagnostics.residencePermitDecisionEngineSummary = getResidencePermitDecisionEngineSummary(diagnostics);
   diagnostics.visaDecisionEngineSummary = getVisaDecisionEngineSummary(diagnostics);
+  diagnostics.visaNoiseDiagnosticsSummary = getVisaNoiseDiagnosticsSummary(diagnostics);
   diagnostics.driverLicenseDecisionEngineSummary = getDriverLicenseDecisionEngineSummary(diagnostics);
   diagnostics.driverLicenseNoiseDiagnosticsSummary = getDriverLicenseNoiseDiagnosticsSummary(diagnostics);
   diagnostics.polymerChildMatchDiagnosticsSummary = getPolymerChildMatchDiagnosticsSummary(diagnostics);
@@ -14865,6 +15174,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("idCardDecisionEngineSummary", diagnostics.idCardDecisionEngineSummary);
   console.log("residencePermitDecisionEngineSummary", diagnostics.residencePermitDecisionEngineSummary);
   console.log("visaDecisionEngineSummary", diagnostics.visaDecisionEngineSummary);
+  console.log("visaNoiseDiagnosticsSummary", diagnostics.visaNoiseDiagnosticsSummary);
   console.log("driverLicenseDecisionEngineSummary", diagnostics.driverLicenseDecisionEngineSummary);
   console.log("driverLicenseNoiseDiagnosticsSummary", diagnostics.driverLicenseNoiseDiagnosticsSummary);
   console.log("driverLicenseCandidateRetrievalDiagnostics", diagnostics.driverLicenseCandidateRetrievalDiagnostics);
@@ -16444,6 +16754,32 @@ const LEGACY_DRIVER_LICENSE_EXPLICIT_EVIDENCE_TERM_MAP = [
   { id: "department_of_motor_vehicles", terms: ["department of motor vehicles", "motor vehicle agency"], strength: "medium" },
 ];
 
+const LEGACY_VISA_EXPLICIT_EVIDENCE_TERM_MAP = [
+  { id: "visas", terms: ["visa", "visas"], strength: "medium" },
+  { id: "visa", terms: ["visa", "visas"], strength: "medium" },
+  { id: "visa_document", terms: ["visa document"], strength: "strong" },
+  { id: "visa_sticker", terms: ["visa sticker"], strength: "strong" },
+  { id: "evisa", terms: ["evisa"], strength: "strong" },
+  { id: "e_visa", terms: ["e-visa"], strength: "strong" },
+  { id: "electronic_visa", terms: ["electronic visa"], strength: "strong" },
+  { id: "digital_visa", terms: ["digital visa"], strength: "strong" },
+  { id: "visa_issuance", terms: ["visa issuance"], strength: "strong" },
+  { id: "visa_application", terms: ["visa application"], strength: "medium" },
+  { id: "visa_application_system", terms: ["visa application system"], strength: "strong" },
+  { id: "visa_processing", terms: ["visa processing"], strength: "medium" },
+  { id: "biometric_visa_processing", terms: ["biometric visa processing"], strength: "strong" },
+  { id: "visa_verification", terms: ["visa verification"], strength: "strong" },
+  { id: "visa_fraud", terms: ["visa fraud"], strength: "strong" },
+  { id: "visa_policy", terms: ["visa policy"], strength: "medium" },
+  { id: "visa_waiver", terms: ["visa waiver"], strength: "medium" },
+  { id: "visa_exemption", terms: ["visa exemption"], strength: "medium" },
+  { id: "travel_authorization", terms: ["travel authorization"], strength: "medium" },
+  { id: "entry_permit", terms: ["entry permit"], strength: "strong" },
+  { id: "consular_services", terms: ["consular services"], strength: "medium" },
+  { id: "consular_system", terms: ["consular system", "consular systems"], strength: "strong" },
+  { id: "digital_visa_platform", terms: ["digital visa platform"], strength: "strong" },
+];
+
 function getLegacyIdCardDerivedEvidenceEntries(article, context, existingEntries = []) {
   if (evidenceEntriesContainId({ evidence: { documentTypes: existingEntries } }, "documentTypes", EXPLICIT_ID_CARD_EVIDENCE_IDS)) {
     return [];
@@ -16632,6 +16968,72 @@ function getLegacyDriverLicenseDerivedEvidenceEntries(article, context, existing
   }];
 }
 
+function getLegacyVisaDerivedEvidenceEntries(article, context, existingEntries = []) {
+  if (evidenceEntriesContainId({ evidence: { documentTypes: existingEntries } }, "documentTypes", EXPLICIT_VISA_EVIDENCE_IDS)) {
+    return [];
+  }
+
+  const visaBoost = computePersonalInterestBoost(article, "visas");
+  if ((Number(visaBoost?.score) || 0) <= 0) {
+    return [];
+  }
+
+  const profile = calculateIdentityProfileScore(article, "visas");
+  const subinterestScore = getIdentityDocumentSubinterestScore(article, ["visas"]);
+  const signals = getIdentityDocumentInterestSignals(article);
+  const matchedLegacyTerms = Array.from(new Set([
+    ...(profile?.matchedStrong || []),
+    ...(profile?.matchedMedium || []),
+    ...(profile?.matchedWeak || []),
+  ]));
+  const entries = [];
+  const seen = new Set();
+
+  LEGACY_VISA_EXPLICIT_EVIDENCE_TERM_MAP.forEach((mapping) => {
+    const matchedTerms = mapping.terms.filter((term) =>
+      matchedLegacyTerms.some((matchedTerm) => normalizeDiagnosticsText(matchedTerm) === normalizeDiagnosticsText(term))
+      || getArticleEvidenceLocationsForTerm(context, term).length
+    );
+    matchedTerms.forEach((term) => {
+      const locations = getArticleEvidenceLocationsForTerm(context, term);
+      const key = `${mapping.id}:${term}:${locations.join("|")}`;
+      if (!locations.length || seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      entries.push({
+        id: mapping.id,
+        term,
+        matchedTerm: term,
+        locations,
+        strength: mapping.strength,
+        sourceHelper: "computePersonalInterestBoost:visas",
+      });
+    });
+  });
+
+  if (entries.length) {
+    return entries;
+  }
+
+  const visaSignalScore =
+    Number(signals?.visaHits || 0)
+    + Number(signals?.borderHits || 0)
+    + Math.max(0, Number(subinterestScore?.bestSelectedScore || 0));
+  if (visaSignalScore <= 0) {
+    return [];
+  }
+
+  return [{
+    id: "visas",
+    term: "legacy Visa score",
+    matchedTerm: "legacy Visa score",
+    locations: ["metadata"],
+    strength: "medium",
+    sourceHelper: "computePersonalInterestBoost:visas",
+  }];
+}
+
 function collectMappedArticleEvidenceEntries(context, mappings = [], options = {}) {
   const sections = getArticleEvidenceTextSections(context);
   const entries = [];
@@ -16807,6 +17209,25 @@ function getDriverLicenseEvidenceMappings() {
         driverLicenseInterest.strong,
         driverLicenseInterest.weak,
         ARTICLE_TOPIC_TYPE_DRIVER_LICENSE_KEYWORDS,
+      ]),
+      strength: "medium",
+    },
+  ];
+}
+
+function getVisaEvidenceMappings() {
+  const visaInterest = PERSONAL_DASHBOARD_INTEREST_MAP.get("visas") || {};
+  const profile = IDENTITY_INTELLIGENCE_PROFILES.visas || {};
+  return [
+    ...LEGACY_VISA_EXPLICIT_EVIDENCE_TERM_MAP,
+    {
+      id: "visa_profile",
+      terms: flattenEvidenceKeywordGroups([
+        visaInterest.strong,
+        visaInterest.weak,
+        profile.strongPositive,
+        profile.mediumPositive,
+        profile.weakPositive,
       ]),
       strength: "medium",
     },
@@ -17323,6 +17744,8 @@ function buildArticleEvidence(article) {
   const legacyResidencePermitDerivedEvidence = getLegacyResidencePermitDerivedEvidenceEntries(article, context, residencePermitEvidence);
   const driverLicenseEvidence = collectMappedArticleEvidenceEntries(context, getDriverLicenseEvidenceMappings());
   const legacyDriverLicenseDerivedEvidence = getLegacyDriverLicenseDerivedEvidenceEntries(article, context, driverLicenseEvidence);
+  const visaEvidence = collectMappedArticleEvidenceEntries(context, getVisaEvidenceMappings());
+  const legacyVisaDerivedEvidence = getLegacyVisaDerivedEvidenceEntries(article, context, visaEvidence);
   const passportGuardEvidence = getPassportGuardEvidenceMappings();
   const passportDocumentEvidence = collectMappedArticleEvidenceEntries(context, passportGuardEvidence.documentTypes);
   const passportProfessionalEvidence = collectMappedArticleEvidenceEntries(context, passportGuardEvidence.professionalSignals);
@@ -17381,8 +17804,8 @@ function buildArticleEvidence(article) {
     IDENTITY_INTENT_AUTHORITY_SOURCES,
   ]);
   const evidence = {
-    domainObjects: collectArticleEvidenceEntries(context, domainObjectTerms, { strength: "strong" }).concat(idCardsEvidence, legacyIdCardDerivedEvidence, residencePermitEvidence, legacyResidencePermitDerivedEvidence, driverLicenseEvidence, legacyDriverLicenseDerivedEvidence, passportDocumentEvidence),
-    documentTypes: collectArticleEvidenceEntries(context, documentTypeTerms, { strength: "strong" }).concat(idCardsEvidence, legacyIdCardDerivedEvidence, residencePermitEvidence, legacyResidencePermitDerivedEvidence, driverLicenseEvidence, legacyDriverLicenseDerivedEvidence, passportDocumentEvidence),
+    domainObjects: collectArticleEvidenceEntries(context, domainObjectTerms, { strength: "strong" }).concat(idCardsEvidence, legacyIdCardDerivedEvidence, residencePermitEvidence, legacyResidencePermitDerivedEvidence, driverLicenseEvidence, legacyDriverLicenseDerivedEvidence, visaEvidence, legacyVisaDerivedEvidence, passportDocumentEvidence),
+    documentTypes: collectArticleEvidenceEntries(context, documentTypeTerms, { strength: "strong" }).concat(idCardsEvidence, legacyIdCardDerivedEvidence, residencePermitEvidence, legacyResidencePermitDerivedEvidence, driverLicenseEvidence, legacyDriverLicenseDerivedEvidence, visaEvidence, legacyVisaDerivedEvidence, passportDocumentEvidence),
     vendors: collectArticleEvidenceEntries(context, vendorTerms, { strength: "medium" }),
     materials: collectArticleEvidenceEntries(context, materialTerms, { strength: "medium" }),
     technologies: collectArticleEvidenceEntries(context, technologyTerms, { strength: "medium" }),
@@ -26399,7 +26822,9 @@ const SecureIdDocumentBridgeKeepRule = {
       matched,
       reason: "",
       category: this.category,
-      scoreBreakdown: {},
+      scoreBreakdown: {
+        explicitVisaEvidenceCount: context.explicitVisaEvidenceIds?.length || 0,
+      },
       evidence: {
         idCardsHolographyBridgeMatched: context.idCardsHolographyBridgeMatched,
         identityTechniqueBridgeMatched: context.identityTechniqueBridgeMatched,
@@ -26669,6 +27094,12 @@ function buildVisaDecisionContext(article) {
   const visaBoost = computePersonalInterestBoost(article, "visas");
   const subinterestScore = getIdentityDocumentSubinterestScore(article, ["visas"]);
   const signals = getIdentityDocumentInterestSignals(article);
+  const articleEvidence = buildArticleEvidence(article);
+  const explicitVisaEvidenceIds = getMatchedEvidenceIds(
+    articleEvidence,
+    "documentTypes",
+    EXPLICIT_VISA_EVIDENCE_IDS
+  );
   const identityTechniqueBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, ["visas"]);
   const visaSpamNoise = hasIdentityTravelNoise(article, IDENTITY_VISA_SPAM_TERMS);
 
@@ -26681,6 +27112,7 @@ function buildVisaDecisionContext(article) {
     subinterestScore,
     bestSelectedScore: Number(subinterestScore?.bestSelectedScore || subinterestScore?.score) || 0,
     signals,
+    explicitVisaEvidenceIds,
     identityTechniqueBridgeMatched,
     visaSpamNoise,
   };
@@ -26727,6 +27159,7 @@ const NoVisaSignalRule = {
         bestSelectedScore: context.bestSelectedScore,
         visaHits: Number(context.signals?.visaHits || 0),
         borderHits: Number(context.signals?.borderHits || 0),
+        explicitVisaEvidenceCount: context.explicitVisaEvidenceIds?.length || 0,
       },
       evidence: {
         visaBoost: context.visaBoost,
@@ -26741,6 +27174,7 @@ const NoVisaSignalRule = {
         visaScore: context.visaScore,
         bestSelectedScore: context.bestSelectedScore,
         signals: context.signals,
+        explicitVisaEvidenceIds: context.explicitVisaEvidenceIds,
       },
     };
   },
@@ -26761,6 +27195,7 @@ const VisaApplicationNoiseRule = {
         visaScore: context.visaScore,
         threshold: 18,
         visaSpamNoise: Boolean(context.visaSpamNoise),
+        explicitVisaEvidenceCount: context.explicitVisaEvidenceIds?.length || 0,
       },
       evidence: {
         visaSpamNoise: Boolean(context.visaSpamNoise),
@@ -26775,6 +27210,7 @@ const VisaApplicationNoiseRule = {
         threshold: 18,
         visaSpamNoise: Boolean(context.visaSpamNoise),
         signals: context.signals,
+        explicitVisaEvidenceIds: context.explicitVisaEvidenceIds,
       },
     };
   },
@@ -26793,6 +27229,7 @@ const ProfessionalVisaKeepRule = {
       scoreBreakdown: {
         visaScore: context.visaScore,
         threshold: 18,
+        explicitVisaEvidenceCount: context.explicitVisaEvidenceIds?.length || 0,
       },
       evidence: context.visaBoost,
       terminal: matched,
@@ -26803,6 +27240,7 @@ const ProfessionalVisaKeepRule = {
         visaScore: context.visaScore,
         threshold: 18,
         visaBoost: context.visaBoost,
+        explicitVisaEvidenceIds: context.explicitVisaEvidenceIds,
       },
     };
   },
@@ -26818,7 +27256,9 @@ const VisaBridgeKeepRule = {
       matched,
       reason: "",
       category: this.category,
-      scoreBreakdown: {},
+      scoreBreakdown: {
+        explicitVisaEvidenceCount: context.explicitVisaEvidenceIds?.length || 0,
+      },
       evidence: {
         identityTechniqueBridgeMatched: context.identityTechniqueBridgeMatched,
       },
@@ -26828,6 +27268,7 @@ const VisaBridgeKeepRule = {
       rejectionCategory: this.category,
       metadata: {
         identityTechniqueBridgeMatched: context.identityTechniqueBridgeMatched,
+        explicitVisaEvidenceIds: context.explicitVisaEvidenceIds,
       },
     };
   },
@@ -26848,6 +27289,7 @@ const WeakVisaSignalRule = {
         visaScore: context.visaScore,
         threshold: 18,
         bestSelectedScore: context.bestSelectedScore,
+        explicitVisaEvidenceCount: context.explicitVisaEvidenceIds?.length || 0,
       },
       evidence: {
         visaBoost: context.visaBoost,
@@ -26863,6 +27305,7 @@ const WeakVisaSignalRule = {
         bestSelectedScore: context.bestSelectedScore,
         threshold: 18,
         signals: context.signals,
+        explicitVisaEvidenceIds: context.explicitVisaEvidenceIds,
       },
     };
   },
