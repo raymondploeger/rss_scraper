@@ -4619,6 +4619,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     identityFraudVerificationDiagnostics: null,
     identityBorderControlDiagnostics: null,
     sharedSecurityDiagnostics: null,
+    sharedSecurityDashboardMatcherDiagnostics: null,
     sharedSecurityBridgeDiagnostics: null,
     v3DecisionEngineDiagnosticsSummary: null,
     v3ConfidenceSummary: null,
@@ -4763,6 +4764,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Identity Fraud & Verification diagnostics active",
             "ICAO & Border Control diagnostics active",
             "Shared Security Printing diagnostics active",
+            "Shared Security dashboard matcher diagnostics active",
             "Shared Security bridge diagnostics active",
             "Shared Security bridge uses selected Identity OR Banknotes scope",
             "Visa noise diagnostics active",
@@ -6749,7 +6751,7 @@ function getSharedSecurityDiagnosticsSummary(diagnostics) {
   };
 }
 
-function getSharedSecurityBridgeDiagnosticsSummary(diagnostics) {
+function getSharedSecurityDashboardMatcherDiagnosticsSummary(diagnostics) {
   if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
     return null;
   }
@@ -6773,8 +6775,10 @@ function getSharedSecurityBridgeDiagnosticsSummary(diagnostics) {
       primaryDomain: bridgeDecision.primaryDomain || "",
       selectedMainDomains: bridgeDecision.selectedMainDomains || [],
       selectedSharedInterests: bridgeDecision.selectedSharedInterests || [],
+      selectedBridgeTechniqueInterests: bridgeDecision.selectedBridgeTechniqueInterests || [],
       matchedBaseDomains: bridgeDecision.matchedBaseDomains || [],
       sharedSecurityTechniqueMatched: Boolean(bridgeDecision.sharedSecurityTechniqueMatched),
+      matchedSharedSecurityInterests: bridgeDecision.matchedSharedSecurityInterests || [],
       directSharedSecurityTechniqueMatched: Boolean(bridgeDecision.directSharedSecurityTechniqueMatched),
       identityTechniqueBridgeMatched: Boolean(bridgeDecision.identityTechniqueBridgeMatched),
       banknoteTechniqueBridgeMatched: Boolean(bridgeDecision.banknoteTechniqueBridgeMatched),
@@ -6792,7 +6796,10 @@ function getSharedSecurityBridgeDiagnosticsSummary(diagnostics) {
     evaluated += 1;
     if (bridgeDecision.sharedSecurityTechniqueMatched) {
       sharedSecurityTechniqueMatched += 1;
-      (bridgeDecision.selectedSharedInterests || []).forEach((interestId) => incrementReasonCount(techniqueCounts, interestId));
+      (bridgeDecision.matchedSharedSecurityInterests?.length
+        ? bridgeDecision.matchedSharedSecurityInterests
+        : bridgeDecision.selectedSharedInterests || []
+      ).forEach((interestId) => incrementReasonCount(techniqueCounts, interestId));
     }
 
     const matchedBaseDomains = bridgeDecision.matchedBaseDomains?.length
@@ -6816,9 +6823,11 @@ function getSharedSecurityBridgeDiagnosticsSummary(diagnostics) {
     evaluated,
     passedBridgeCount,
     rejectedBridgeCount,
+    baseDomainMatchedCount: evaluated - (baseDomainCounts.get("none") || 0),
     baseDomainMatched: getTopV3DecisionReasons(baseDomainCounts, 10),
     sharedSecurityTechniqueMatched,
     sharedSecurityTechniqueBreakdown: getTopV3DecisionReasons(techniqueCounts, 10),
+    topBridgeMissReasons: getTopV3DecisionReasons(missReasonCounts, 10),
     bridgeMissReasons: getTopV3DecisionReasons(missReasonCounts, 10),
     examplePassedArticles,
     exampleRejectedArticles,
@@ -6829,6 +6838,10 @@ function getSharedSecurityBridgeDiagnosticsSummary(diagnostics) {
       "Standalone Identity and Banknote dashboard behavior is unchanged",
     ],
   };
+}
+
+function getSharedSecurityBridgeDiagnosticsSummary(diagnostics) {
+  return getSharedSecurityDashboardMatcherDiagnosticsSummary(diagnostics);
 }
 
 function getPassportProfessionalAlignmentPatternDefinitions() {
@@ -16360,6 +16373,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     identityFraudVerificationDiagnostics: diagnostics.identityFraudVerificationDiagnostics || null,
     identityBorderControlDiagnostics: diagnostics.identityBorderControlDiagnostics || null,
     sharedSecurityDiagnostics: diagnostics.sharedSecurityDiagnostics || null,
+    sharedSecurityDashboardMatcherDiagnostics: diagnostics.sharedSecurityDashboardMatcherDiagnostics || null,
     sharedSecurityBridgeDiagnostics: diagnostics.sharedSecurityBridgeDiagnostics || null,
     v3DecisionEngineDiagnosticsSummary: diagnostics.v3DecisionEngineDiagnosticsSummary || null,
     v3ConfidenceSummary: diagnostics.v3ConfidenceSummary || null,
@@ -16949,7 +16963,8 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.identityFraudVerificationDiagnostics = getIdentityFraudVerificationDiagnosticsSummary(diagnostics);
   diagnostics.identityBorderControlDiagnostics = getIdentityBorderControlDiagnosticsSummary(diagnostics);
   diagnostics.sharedSecurityDiagnostics = getSharedSecurityDiagnosticsSummary(diagnostics);
-  diagnostics.sharedSecurityBridgeDiagnostics = getSharedSecurityBridgeDiagnosticsSummary(diagnostics);
+  diagnostics.sharedSecurityDashboardMatcherDiagnostics = getSharedSecurityDashboardMatcherDiagnosticsSummary(diagnostics);
+  diagnostics.sharedSecurityBridgeDiagnostics = diagnostics.sharedSecurityDashboardMatcherDiagnostics;
   diagnostics.v3DecisionEngineDiagnosticsSummary = getV3DecisionEngineDiagnosticsSummary(diagnostics);
   diagnostics.v3ConfidenceSummary = getV3ConfidenceSummary(diagnostics);
   diagnostics.v3DecisionParitySummary = getV3DecisionParitySummary(diagnostics);
@@ -17033,6 +17048,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("identityFraudVerificationDiagnostics", diagnostics.identityFraudVerificationDiagnostics);
   console.log("identityBorderControlDiagnostics", diagnostics.identityBorderControlDiagnostics);
   console.log("sharedSecurityDiagnostics", diagnostics.sharedSecurityDiagnostics);
+  console.log("sharedSecurityDashboardMatcherDiagnostics", diagnostics.sharedSecurityDashboardMatcherDiagnostics);
   console.log("sharedSecurityBridgeDiagnostics", diagnostics.sharedSecurityBridgeDiagnostics);
   console.log("v3DecisionEngineDiagnosticsSummary", diagnostics.v3DecisionEngineDiagnosticsSummary);
   console.log("v3ConfidenceSummary", diagnostics.v3ConfidenceSummary);
@@ -17701,10 +17717,92 @@ function isSharedSecurityBridgePersonalSelection(selectedInterests = normalizePe
   );
 }
 
+const SHARED_SECURITY_BRIDGE_IDENTITY_TECHNIQUE_INTERESTS = new Set([
+  "polycarbonate",
+  "laminate",
+]);
+
+function getSelectedSharedSecurityBridgeTechniqueInterests(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  return Array.from(new Set(
+    normalizedInterests.filter((interestId) => {
+      const groupId = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId || "";
+      return groupId === PERSONAL_DASHBOARD_SHARED_GROUP_ID ||
+        SHARED_SECURITY_BRIDGE_IDENTITY_TECHNIQUE_INTERESTS.has(interestId);
+    })
+  ));
+}
+
+function getSharedSecurityDashboardTechniqueMatch(article, selectedTechniqueInterests = []) {
+  const context = getPersonalBoostContext(article);
+  const textBuckets = {
+    title: context.titleText,
+    tags: context.tagText,
+    metadata: context.metadataText,
+    body: context.bodyText,
+  };
+  const matchedInterests = [];
+  const matchDetails = [];
+
+  normalizePersonalDashboardInterests(selectedTechniqueInterests).forEach((interestId) => {
+    const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
+    if (!interest) {
+      return;
+    }
+
+    const isStandaloneSharedInterest = interest.groupId === PERSONAL_DASHBOARD_SHARED_GROUP_ID;
+    const standaloneAssessment = isStandaloneSharedInterest
+      ? getSharedSecurityStandaloneAssessment(article, interestId)
+      : { included: false, directMatch: false };
+    const tunedRule = SHARED_SECURITY_STANDALONE_RULES[interestId] || {};
+    const techniqueTerms = Array.from(new Set(
+      []
+        .concat(Array.isArray(tunedRule.strong) ? tunedRule.strong : [])
+        .concat(Array.isArray(tunedRule.weak) ? tunedRule.weak : [])
+        .concat(Array.isArray(interest.strong) ? interest.strong : [])
+        .concat(Array.isArray(interest.weak) ? interest.weak : [])
+        .concat(Array.isArray(IDENTITY_SHARED_SECURITY_COMBINATION_TECHNIQUE_TERMS[interestId])
+          ? IDENTITY_SHARED_SECURITY_COMBINATION_TECHNIQUE_TERMS[interestId]
+          : [])
+        .concat(Array.isArray(SHARED_SECURITY_BACKEND_RETRIEVAL_SEARCH_TERMS[interestId])
+          ? SHARED_SECURITY_BACKEND_RETRIEVAL_SEARCH_TERMS[interestId]
+          : [])
+        .map((term) => String(term || "").trim())
+        .filter(Boolean)
+    ));
+    const matchedTerms = techniqueTerms
+      .map((term) => ({
+        term,
+        locations: Object.entries(textBuckets)
+          .filter(([, text]) => textMatchesKeyword(text, term))
+          .map(([location]) => location),
+      }))
+      .filter((entry) => entry.locations.length);
+    const matched = Boolean(standaloneAssessment.included || matchedTerms.length);
+    if (matched) {
+      matchedInterests.push(interestId);
+    }
+    matchDetails.push({
+      interestId,
+      matched,
+      standaloneIncluded: Boolean(standaloneAssessment.included),
+      standaloneDirectMatch: Boolean(standaloneAssessment.directMatch),
+      matchedTerms: matchedTerms.slice(0, 8),
+    });
+  });
+
+  return {
+    matched: matchedInterests.length > 0,
+    matchedInterests,
+    matchDetails,
+  };
+}
+
 function getSharedSecurityBridgeDecision(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
   const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
   const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
   const selectedSharedInterests = getSelectedSharedSecuritySubinterests(normalizedInterests);
+  const selectedBridgeTechniqueInterests = getSelectedSharedSecurityBridgeTechniqueInterests(normalizedInterests);
   const applies = isSharedSecurityBridgePersonalSelection(normalizedInterests);
   const selectedIdentityInterests = normalizedInterests.filter(
     (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "identity_documents"
@@ -17721,6 +17819,7 @@ function getSharedSecurityBridgeDecision(article, selectedInterests = normalizeP
       passed: false,
       selectedMainDomains,
       selectedSharedInterests,
+      selectedBridgeTechniqueInterests,
       primaryDomain: "",
       matchedBaseDomains: [],
       baseDomainMatched: false,
@@ -17733,9 +17832,13 @@ function getSharedSecurityBridgeDecision(article, selectedInterests = normalizeP
   }
 
   const primaryDomain = getArticleDominantDomain(article);
+  const domainMatch = getPersonalDashboardDomainMatch(article);
+  const matchedDashboardDomains = Array.isArray(domainMatch?.matchedDomains) ? domainMatch.matchedDomains : [];
+  const sharedSecurityTechniqueMatch = getSharedSecurityDashboardTechniqueMatch(article, selectedBridgeTechniqueInterests);
   const identityTechniqueBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, normalizedInterests);
   const banknoteTechniqueBridgeMatched = articleMatchesSelectedBanknoteTechniqueBridge(article, normalizedInterests);
-  const directSharedSecurityTechniqueMatched = matchesSelectedSharedSecurityTechnique(article, normalizedInterests);
+  const directSharedSecurityTechniqueMatched = sharedSecurityTechniqueMatch.matched ||
+    matchesSelectedSharedSecurityTechnique(article, normalizedInterests);
   const sharedSecurityTechniqueMatched =
     directSharedSecurityTechniqueMatched ||
     identityTechniqueBridgeMatched ||
@@ -17752,6 +17855,7 @@ function getSharedSecurityBridgeDecision(article, selectedInterests = normalizeP
   const identityBaseMatched = selectedMainDomains.includes("identity_documents") &&
     !isIdentityNavigationPageArticle(article) &&
     (
+      matchedDashboardDomains.includes("identity_documents") ||
       primaryDomain === "identity_documents" ||
       identityTechniqueBridgeMatched ||
       idCardsHolographyOvdBridgeMatched ||
@@ -17768,6 +17872,7 @@ function getSharedSecurityBridgeDecision(article, selectedInterests = normalizeP
   const banknoteBaseMatched = selectedMainDomains.includes("banknotes") &&
     !isBanknoteContaminated(article) &&
     (
+      matchedDashboardDomains.includes("banknote_intelligence") ||
       primaryDomain === "banknotes" ||
       banknoteTechniqueBridgeMatched ||
       isBanknotePrimary(article) ||
@@ -17797,15 +17902,19 @@ function getSharedSecurityBridgeDecision(article, selectedInterests = normalizeP
     passed,
     selectedMainDomains,
     selectedSharedInterests,
+    selectedBridgeTechniqueInterests,
     selectedIdentityInterests,
     selectedBanknoteInterests,
     primaryDomain,
+    matchedDashboardDomains,
     matchedBaseDomains,
     baseDomainMatched,
     identityBaseMatched,
     banknoteBaseMatched,
     sharedSecurityTechniqueMatched,
     directSharedSecurityTechniqueMatched,
+    matchedSharedSecurityInterests: sharedSecurityTechniqueMatch.matchedInterests,
+    sharedSecurityTechniqueMatchDetails: sharedSecurityTechniqueMatch.matchDetails,
     identityTechniqueBridgeMatched,
     banknoteTechniqueBridgeMatched,
     idCardsHolographyOvdBridgeMatched,
