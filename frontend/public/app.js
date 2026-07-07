@@ -4617,6 +4617,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     identityIssuanceDiagnostics: null,
     identityIssuanceNoiseDiagnostics: null,
     identityFraudVerificationDiagnostics: null,
+    identityBorderControlDiagnostics: null,
     v3DecisionEngineDiagnosticsSummary: null,
     v3ConfidenceSummary: null,
     v3DecisionParitySummary: null,
@@ -4758,6 +4759,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
             "Identity lifecycle diagnostics are cross-document and diagnostics-only",
             "Identity issuance operational noise diagnostics active",
             "Identity Fraud & Verification diagnostics active",
+            "ICAO & Border Control diagnostics active",
             "Visa noise diagnostics active",
             "V3 Decision Engine diagnostics active",
             "V3 Decision Engine is diagnostics-only",
@@ -4980,6 +4982,9 @@ function getFilterDecisionTrace(diagnostics, article) {
     const identityFraudVerification = heavyDiagnosticsEnabled
       ? getIdentityFraudVerificationPatternMatches(article, articleEvidence)
       : null;
+    const identityBorderControl = heavyDiagnosticsEnabled
+      ? getIdentityBorderControlPatternMatches(article, articleEvidence)
+      : null;
     const professionalDecision = heavyDiagnosticsEnabled
       ? buildProfessionalDecisionDiagnostics(article, {
           articleEvidence,
@@ -5042,6 +5047,7 @@ function getFilterDecisionTrace(diagnostics, article) {
       evidenceParityDiagnostics: evidenceParity,
       identityIssuanceDiagnostics: identityIssuance,
       identityFraudVerificationDiagnostics: identityFraudVerification,
+      identityBorderControlDiagnostics: identityBorderControl,
       v3DecisionDiagnostics: v3Decision,
       professionalDecisionDiagnostics: professionalDecision,
       passportDecisionDiagnostics: passportDecision,
@@ -5141,6 +5147,7 @@ function freezeFilterDecisionTrace(trace) {
     evidenceParityDiagnostics: Object.freeze(trace.evidenceParityDiagnostics || {}),
     identityIssuanceDiagnostics: Object.freeze(trace.identityIssuanceDiagnostics || {}),
     identityFraudVerificationDiagnostics: Object.freeze(trace.identityFraudVerificationDiagnostics || {}),
+    identityBorderControlDiagnostics: Object.freeze(trace.identityBorderControlDiagnostics || {}),
     v3DecisionDiagnostics: Object.freeze(trace.v3DecisionDiagnostics || {}),
     decisionParityDiagnostics: Object.freeze(trace.decisionParityDiagnostics || {}),
     professionalDecisionDiagnostics: Object.freeze(trace.professionalDecisionDiagnostics || {}),
@@ -6078,6 +6085,356 @@ function getIdentityFraudVerificationDiagnosticsSummary(diagnostics) {
     notes: [
       "Identity Fraud & Verification diagnostics active",
       "Fraud and verification diagnostics are cross-document",
+      "Legacy filtering remains authoritative",
+      "Production filtering unchanged",
+    ],
+  };
+}
+
+function getIdentityBorderControlPatternDefinitions() {
+  return {
+    icao: [
+      {
+        category: "icao_standards",
+        terms: [
+          "icao",
+          "icao doc 9303",
+          "doc 9303",
+          "mrtd",
+          "machine readable travel document",
+          "travel document standards",
+        ],
+      },
+    ],
+    emrtd: [
+      {
+        category: "emrtd",
+        terms: ["emrtd", "electronic machine readable travel document", "e-passport", "epassport"],
+      },
+    ],
+    pkd: [
+      {
+        category: "pkd_trust_infrastructure",
+        terms: [
+          "public key directory",
+          "icao pkd",
+          "pkd",
+          "csca",
+          "document signer certificate",
+          "document signer certificates",
+        ],
+      },
+    ],
+    dtc: [
+      {
+        category: "digital_travel_credential",
+        terms: ["digital travel credential", "digital travel credentials", "dtc", "lds2", "lds 2", "lds"],
+      },
+    ],
+    borderTechnology: [
+      {
+        category: "border_control_technology",
+        terms: [
+          "border control",
+          "border inspection",
+          "automated border control",
+          "abc gates",
+          "abc gate",
+          "egate",
+          "e-gate",
+          "egates",
+          "e-gates",
+          "smart border",
+          "border management system",
+          "entry exit system",
+          "entry/exit system",
+          "ees",
+          "etias",
+          "traveler verification",
+          "traveller verification",
+          "passenger processing",
+          "biometric border control",
+          "biometric border checks",
+        ],
+      },
+    ],
+    technicalVerification: [
+      {
+        category: "technical_verification",
+        terms: [
+          "passive authentication",
+          "active authentication",
+          "chip authentication",
+          "nfc inspection",
+          "digital signature validation",
+          "certificate validation",
+          "document verification",
+          "passport verification",
+        ],
+      },
+    ],
+    professionalAnchor: [
+      {
+        category: "document_or_system_anchor",
+        terms: [
+          "passport",
+          "travel document",
+          "identity document",
+          "identity documents",
+          "biometric",
+          "biometrics",
+          "verification",
+          "chip",
+          "credential",
+          "government system",
+          "border agency",
+          "border authority",
+        ],
+      },
+    ],
+    noise: [
+      {
+        category: "airport_or_travel_noise",
+        terms: [
+          "airport delays",
+          "flight delays",
+          "airport disruption",
+          "border queue",
+          "border queues",
+          "tourism",
+          "tourist",
+          "generic travel rules",
+          "travel rules",
+        ],
+      },
+      {
+        category: "political_or_trade_border_noise",
+        terms: [
+          "border dispute",
+          "border disputes",
+          "border conflict",
+          "political border conflict",
+          "customs trade",
+          "trade news",
+          "migration politics",
+          "immigration politics",
+        ],
+      },
+    ],
+  };
+}
+
+function getIdentityBorderControlPatternMatches(article, articleEvidence = null) {
+  const context = buildArticleIntelligenceContext(article);
+  const sections = getArticleEvidenceTextSections(context);
+  const articleEvidenceInput = articleEvidence || buildArticleEvidence(article);
+  const documentTypeAssociation = getIdentityIssuanceDocumentAssociations(articleEvidenceInput, context);
+  const definitions = getIdentityBorderControlPatternDefinitions();
+  const collectMatches = (bucket, strength) => (definitions[bucket] || [])
+    .map((definition) => {
+      const matchedSignals = normalizeKeywordList(definition.terms || [])
+        .map((term) => ({
+          term,
+          locations: Object.entries(sections)
+            .filter(([, text]) => textMatchesKeyword(text, term))
+            .map(([location]) => location),
+        }))
+        .filter((entry) => entry.locations.length);
+      return {
+        category: definition.category,
+        strength,
+        matchedSignals,
+      };
+    })
+    .filter((entry) => entry.matchedSignals.length);
+
+  const icaoMatches = collectMatches("icao", "strong");
+  const borderTechnologyMatches = collectMatches("borderTechnology", "strong");
+  const emrtdMatches = collectMatches("emrtd", "strong");
+  const pkdMatches = collectMatches("pkd", "strong");
+  const dtcMatches = collectMatches("dtc", "strong");
+  const technicalVerificationMatches = collectMatches("technicalVerification", "strong");
+  const professionalAnchorMatches = collectMatches("professionalAnchor", "medium");
+  const noiseMatches = collectMatches("noise", "noise");
+  const evidenceMatches = []
+    .concat(icaoMatches, borderTechnologyMatches, emrtdMatches, pkdMatches, dtcMatches, technicalVerificationMatches);
+  const hasIcaoOrBorderSignal = evidenceMatches.length > 0;
+  const hasProfessionalAnchor = documentTypeAssociation.length > 0 || professionalAnchorMatches.length > 0;
+  const professionalStrength = hasIcaoOrBorderSignal && hasProfessionalAnchor;
+  const noiseOnly = noiseMatches.length > 0 && !professionalStrength;
+
+  return {
+    articleId: getFilterDecisionTraceArticleId(article),
+    title: article?.title || "Untitled article",
+    documentTypeAssociation,
+    icaoMatches,
+    borderTechnologyMatches,
+    emrtdMatches,
+    pkdMatches,
+    dtcMatches,
+    technicalVerificationMatches,
+    professionalAnchorMatches,
+    noiseMatches,
+    professionalStrength,
+    noiseOnly,
+    rescuedByProfessionalAnchor: noiseMatches.length > 0 && professionalStrength,
+    rejectedByDiagnostics: noiseOnly,
+    reason: professionalStrength
+      ? "ICAO or border-control evidence with document, biometric, verification, chip, credential, or government-system context"
+      : noiseOnly
+        ? "border or travel noise without professional document technology context"
+        : hasIcaoOrBorderSignal
+          ? "ICAO or border-control evidence without professional anchor"
+          : "",
+    notes: [
+      "ICAO & Border Control diagnostics are diagnostics-only",
+      "Professional strength requires ICAO/border evidence plus identity-document or system context",
+      "Production filtering unchanged",
+    ],
+  };
+}
+
+function getIdentityBorderControlDiagnosticsSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+
+  const evidenceTermCounts = new Map();
+  const documentTypeCounts = new Map();
+  const professionalExamples = [];
+  const rejectedExamples = [];
+  const rescuedExamples = [];
+  let evaluated = 0;
+  let icaoEvidenceCount = 0;
+  let borderTechnologyCount = 0;
+  let emrtdEvidenceCount = 0;
+  let pkdEvidenceCount = 0;
+  let dtcEvidenceCount = 0;
+  let noiseCount = 0;
+  let rescuedArticles = 0;
+  let rejectedArticles = 0;
+
+  const addExample = (bucket, example, limit = 10) => {
+    if (bucket.length < limit) {
+      bucket.push(example);
+    }
+  };
+  const countMatchedSignals = (counts, matches = []) => {
+    matches.forEach((match) => {
+      (match.matchedSignals || []).forEach((signal) => {
+        incrementEvidenceCount(counts, {
+          id: normalizeEvidenceId(signal.term),
+          term: signal.term,
+        });
+      });
+    });
+  };
+  const summarizeMatches = (matches = []) => matches.map((entry) => ({
+    category: entry.category,
+    terms: (entry.matchedSignals || []).map((signal) => signal.term).slice(0, 6),
+  }));
+
+  getHeavyDiagnosticsTraces(diagnostics).forEach((trace) => {
+    const borderDiagnostics = trace.identityBorderControlDiagnostics;
+    if (!borderDiagnostics) {
+      return;
+    }
+    const allEvidenceMatches = []
+      .concat(
+        borderDiagnostics.icaoMatches || [],
+        borderDiagnostics.borderTechnologyMatches || [],
+        borderDiagnostics.emrtdMatches || [],
+        borderDiagnostics.pkdMatches || [],
+        borderDiagnostics.dtcMatches || [],
+        borderDiagnostics.technicalVerificationMatches || [],
+        borderDiagnostics.noiseMatches || []
+      );
+    if (!allEvidenceMatches.length) {
+      return;
+    }
+    evaluated += 1;
+    if (borderDiagnostics.icaoMatches?.length) {
+      icaoEvidenceCount += 1;
+    }
+    if (borderDiagnostics.borderTechnologyMatches?.length) {
+      borderTechnologyCount += 1;
+    }
+    if (borderDiagnostics.emrtdMatches?.length) {
+      emrtdEvidenceCount += 1;
+    }
+    if (borderDiagnostics.pkdMatches?.length) {
+      pkdEvidenceCount += 1;
+    }
+    if (borderDiagnostics.dtcMatches?.length) {
+      dtcEvidenceCount += 1;
+    }
+    if (borderDiagnostics.noiseMatches?.length) {
+      noiseCount += 1;
+    }
+    if (borderDiagnostics.rescuedByProfessionalAnchor) {
+      rescuedArticles += 1;
+    }
+    if (borderDiagnostics.rejectedByDiagnostics) {
+      rejectedArticles += 1;
+    }
+    (borderDiagnostics.documentTypeAssociation || []).forEach((documentType) => {
+      incrementReasonCount(documentTypeCounts, documentType);
+    });
+    countMatchedSignals(evidenceTermCounts, allEvidenceMatches);
+
+    const compactExample = {
+      title: borderDiagnostics.title,
+      documentTypeAssociation: borderDiagnostics.documentTypeAssociation || [],
+      reason: borderDiagnostics.reason || "",
+      includedByLegacy: String(trace.finalResult || "survived") !== "rejected",
+    };
+    if (borderDiagnostics.professionalStrength) {
+      addExample(professionalExamples, {
+        ...compactExample,
+        icao: summarizeMatches(borderDiagnostics.icaoMatches || []),
+        borderTechnology: summarizeMatches(borderDiagnostics.borderTechnologyMatches || []),
+        emrtd: summarizeMatches(borderDiagnostics.emrtdMatches || []),
+        pkd: summarizeMatches(borderDiagnostics.pkdMatches || []),
+        dtc: summarizeMatches(borderDiagnostics.dtcMatches || []),
+        technicalVerification: summarizeMatches(borderDiagnostics.technicalVerificationMatches || []),
+      });
+    }
+    if (borderDiagnostics.rejectedByDiagnostics) {
+      addExample(rejectedExamples, {
+        ...compactExample,
+        noise: summarizeMatches(borderDiagnostics.noiseMatches || []),
+      });
+    }
+    if (borderDiagnostics.rescuedByProfessionalAnchor) {
+      addExample(rescuedExamples, {
+        ...compactExample,
+        noise: summarizeMatches(borderDiagnostics.noiseMatches || []),
+        anchors: summarizeMatches(borderDiagnostics.professionalAnchorMatches || []),
+      });
+    }
+  });
+
+  return {
+    enabled: true,
+    evaluated,
+    icaoEvidenceCount,
+    borderTechnologyCount,
+    emrtdEvidenceCount,
+    pkdEvidenceCount,
+    dtcEvidenceCount,
+    noiseCount,
+    rescuedArticles,
+    rejectedArticles,
+    documentAssociation: getTopV3DecisionReasons(documentTypeCounts, 10),
+    topEvidenceTerms: getTopEvidenceCounts(evidenceTermCounts, 20),
+    exampleArticles: {
+      professionalIcaoBorderEvidence: professionalExamples,
+      rescuedArticles: rescuedExamples,
+      rejectedArticles: rejectedExamples,
+    },
+    notes: [
+      "ICAO & Border Control diagnostics active",
+      "PKD/eMRTD/DTC and border-control evidence are diagnostics-only",
       "Legacy filtering remains authoritative",
       "Production filtering unchanged",
     ],
@@ -15597,6 +15954,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     identityIssuanceDiagnostics: diagnostics.identityIssuanceDiagnostics || null,
     identityIssuanceNoiseDiagnostics: diagnostics.identityIssuanceNoiseDiagnostics || null,
     identityFraudVerificationDiagnostics: diagnostics.identityFraudVerificationDiagnostics || null,
+    identityBorderControlDiagnostics: diagnostics.identityBorderControlDiagnostics || null,
     v3DecisionEngineDiagnosticsSummary: diagnostics.v3DecisionEngineDiagnosticsSummary || null,
     v3ConfidenceSummary: diagnostics.v3ConfidenceSummary || null,
     v3DecisionParitySummary: diagnostics.v3DecisionParitySummary || null,
@@ -16183,6 +16541,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.identityIssuanceDiagnostics = getIdentityIssuanceDiagnosticsSummary(diagnostics);
   diagnostics.identityIssuanceNoiseDiagnostics = getIdentityIssuanceNoiseDiagnosticsSummary(diagnostics);
   diagnostics.identityFraudVerificationDiagnostics = getIdentityFraudVerificationDiagnosticsSummary(diagnostics);
+  diagnostics.identityBorderControlDiagnostics = getIdentityBorderControlDiagnosticsSummary(diagnostics);
   diagnostics.v3DecisionEngineDiagnosticsSummary = getV3DecisionEngineDiagnosticsSummary(diagnostics);
   diagnostics.v3ConfidenceSummary = getV3ConfidenceSummary(diagnostics);
   diagnostics.v3DecisionParitySummary = getV3DecisionParitySummary(diagnostics);
@@ -16264,6 +16623,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("identityIssuanceDiagnostics", diagnostics.identityIssuanceDiagnostics);
   console.log("identityIssuanceNoiseDiagnostics", diagnostics.identityIssuanceNoiseDiagnostics);
   console.log("identityFraudVerificationDiagnostics", diagnostics.identityFraudVerificationDiagnostics);
+  console.log("identityBorderControlDiagnostics", diagnostics.identityBorderControlDiagnostics);
   console.log("v3DecisionEngineDiagnosticsSummary", diagnostics.v3DecisionEngineDiagnosticsSummary);
   console.log("v3ConfidenceSummary", diagnostics.v3ConfidenceSummary);
   console.log("v3DecisionParitySummary", diagnostics.v3DecisionParitySummary);
