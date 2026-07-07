@@ -6231,6 +6231,8 @@ function buildV3Confidence(article, options = {}) {
     weakProfessionalEvidence: professionalEntries.length === 0,
     driverLicenseOperationalNoise: (v3DecisionDiagnostics?.reasons || []).includes("driver_license_operational_noise"),
     driverLicenseOperationalNoiseRescued: (v3DecisionDiagnostics?.reasons || []).includes("driver_license_operational_noise_rescued_by_strong_intelligence"),
+    visaConsumerNoise: (v3DecisionDiagnostics?.reasons || []).includes("visa_consumer_travel_noise"),
+    visaConsumerNoiseRescued: (v3DecisionDiagnostics?.reasons || []).includes("visa_consumer_noise_rescued_by_strong_intelligence"),
   };
   let confidenceScore = 35;
 
@@ -6248,6 +6250,9 @@ function buildV3Confidence(article, options = {}) {
     confidenceScore -= 10;
   }
   if (negativeEvidence.driverLicenseOperationalNoise && !negativeEvidence.driverLicenseOperationalNoiseRescued) {
+    confidenceScore -= 18;
+  }
+  if (negativeEvidence.visaConsumerNoise && !negativeEvidence.visaConsumerNoiseRescued) {
     confidenceScore -= 18;
   }
   confidenceScore = Math.max(0, Math.min(100, Math.round(confidenceScore)));
@@ -6268,6 +6273,11 @@ function buildV3Confidence(article, options = {}) {
       ? negativeEvidence.driverLicenseOperationalNoiseRescued
         ? "Driver License operational noise rescued by strong intelligence"
         : "Driver License operational noise detected"
+      : "",
+    negativeEvidence.visaConsumerNoise
+      ? negativeEvidence.visaConsumerNoiseRescued
+        ? "Visa consumer travel noise rescued by strong intelligence"
+        : "Visa consumer travel noise detected"
       : "",
   ].filter(Boolean).join("; ");
 
@@ -6298,14 +6308,23 @@ function buildV3DecisionDiagnostics(article, options = {}) {
   const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests();
   const driverLicenseDashboardActive =
     selectedIdentityInterests.length === 1 && selectedIdentityInterests[0] === "drivers_licenses";
+  const visaDashboardActive = selectedIdentityInterests.includes("visas");
   const driverLicenseOperationalNoise = driverLicenseDashboardActive
     ? getDriverLicensePatternMatches(article, getDriverLicenseOperationalNoisePatternDefinitions())
     : [];
   const driverLicenseStrongIntelligence = driverLicenseDashboardActive
     ? getDriverLicensePatternMatches(article, getDriverLicenseStrongIntelligencePatternDefinitions())
     : [];
+  const visaConsumerNoise = visaDashboardActive
+    ? getVisaPatternMatches(article, getVisaNoisePatternDefinitions())
+    : [];
+  const visaStrongIntelligence = visaDashboardActive
+    ? getVisaPatternMatches(article, getVisaStrongIntelligencePatternDefinitions())
+    : [];
   const hasDriverLicenseOperationalNoise = driverLicenseOperationalNoise.length > 0;
   const hasDriverLicenseStrongIntelligence = driverLicenseStrongIntelligence.length > 0;
+  const hasVisaConsumerNoise = visaConsumerNoise.length > 0;
+  const hasVisaStrongIntelligence = visaStrongIntelligence.length > 0;
   const reasons = [];
 
   if (hasDriverLicenseOperationalNoise) {
@@ -6313,6 +6332,12 @@ function buildV3DecisionDiagnostics(article, options = {}) {
   }
   if (hasDriverLicenseOperationalNoise && hasDriverLicenseStrongIntelligence) {
     reasons.push("driver_license_operational_noise_rescued_by_strong_intelligence");
+  }
+  if (hasVisaConsumerNoise) {
+    reasons.push("visa_consumer_travel_noise");
+  }
+  if (hasVisaConsumerNoise && hasVisaStrongIntelligence) {
+    reasons.push("visa_consumer_noise_rescued_by_strong_intelligence");
   }
 
   if (strongProfessionalCount > 0) {
@@ -6348,6 +6373,9 @@ function buildV3DecisionDiagnostics(article, options = {}) {
   if (hasDriverLicenseOperationalNoise && !hasDriverLicenseStrongIntelligence) {
     suggestedDecision = "reject_candidate";
     confidence = 0.82;
+  } else if (hasVisaConsumerNoise && !hasVisaStrongIntelligence) {
+    suggestedDecision = "reject_candidate";
+    confidence = 0.84;
   } else if (strongProfessionalCount > 0 && strongDocumentCount > 0 && strongNoiseCount === 0) {
     suggestedDecision = "include_candidate";
     confidence = Math.min(0.95, 0.68 + (strongProfessionalCount * 0.05) + (strongDocumentCount * 0.04) + (eventCount ? 0.05 : 0));
@@ -6367,6 +6395,8 @@ function buildV3DecisionDiagnostics(article, options = {}) {
     reasons,
     driverLicenseOperationalNoise,
     driverLicenseStrongIntelligence,
+    visaConsumerNoise,
+    visaStrongIntelligence,
   };
   const confidenceDiagnostics = buildV3Confidence(article, {
     articleEvidence,
@@ -6401,6 +6431,16 @@ function buildV3DecisionDiagnostics(article, options = {}) {
       rescuePatterns: driverLicenseStrongIntelligence.map((entry) => entry.pattern),
       rescueReason: hasDriverLicenseOperationalNoise && hasDriverLicenseStrongIntelligence
         ? "strong Driver License intelligence overrides operational service noise in shadow diagnostics"
+        : "",
+    },
+    visaConsumerNoise: {
+      detected: hasVisaConsumerNoise,
+      patterns: visaConsumerNoise.map((entry) => entry.pattern),
+      matchedSignals: visaConsumerNoise.flatMap((entry) => entry.matchedSignals || []).slice(0, 12),
+      rescuedByStrongIntelligence: hasVisaConsumerNoise && hasVisaStrongIntelligence,
+      rescuePatterns: visaStrongIntelligence.map((entry) => entry.pattern),
+      rescueReason: hasVisaConsumerNoise && hasVisaStrongIntelligence
+        ? "strong Visa document/security/issuance intelligence overrides consumer travel noise in shadow diagnostics"
         : "",
     },
     legacyComparison: {
@@ -8268,10 +8308,16 @@ function getVisaNoisePatternDefinitions() {
       terms: flattenEvidenceKeywordGroups([
         "travel advice",
         "travel tips",
+        "travel guidance",
+        "travel smart",
+        "travel fast",
         "entry requirements",
         "visa requirements",
         "visa advice",
+        "consumer visa advice",
         "travel advisory",
+        "visitor advice",
+        "visitor information",
         "holiday travel",
         "vacation",
         IDENTITY_VISA_SPAM_TERMS,
@@ -8279,7 +8325,45 @@ function getVisaNoisePatternDefinitions() {
     },
     {
       pattern: "tourism_promotion",
-      terms: ["tourism promotion", "tourist attractions", "tourist visa", "tourism campaign", "travel destination", "destination ranking", "tour package"],
+      terms: [
+        "tourism promotion",
+        "tourist attractions",
+        "tourist visa",
+        "tourism campaign",
+        "travel destination",
+        "destination ranking",
+        "destination guide",
+        "destination guides",
+        "vacation planning",
+        "tour package",
+      ],
+    },
+    {
+      pattern: "consumer_travel_authorization_explanation",
+      terms: [
+        "travel authorization guide",
+        "travel authorization explanation",
+        "digital travel authorization guidance",
+        "digital travel authorizations",
+        "digital travel authorization",
+        "electronic travel authorization guide",
+        "routine border requirement",
+        "border requirement",
+        "become routine border requirement",
+      ],
+    },
+    {
+      pattern: "consumer_application_guide",
+      terms: [
+        "how to apply for a visa",
+        "how to apply for visa",
+        "visa application guide",
+        "tourist visa guide",
+        "visa guide",
+        "visa guides",
+        "how-to visa",
+        "how to get a visa",
+      ],
     },
     {
       pattern: "student_or_work_migration_without_document_focus",
@@ -8320,11 +8404,20 @@ function getVisaStrongIntelligencePatternDefinitions() {
     },
     {
       pattern: "visa_issuance_or_processing_system",
-      terms: ["visa issuance", "visa application system", "visa processing system", "consular system", "consular systems"],
+      terms: [
+        "visa issuance",
+        "visa issuance system",
+        "visa application system",
+        "visa processing system",
+        "consular system",
+        "consular systems",
+        "government modernization program",
+        "visa modernization program",
+      ],
     },
     {
       pattern: "visa_verification",
-      terms: ["visa verification", "document verification", "credential verification", "verification system"],
+      terms: ["visa verification", "identity verification", "document verification", "credential verification", "verification system"],
     },
     {
       pattern: "visa_fraud",
@@ -8340,7 +8433,17 @@ function getVisaStrongIntelligencePatternDefinitions() {
     },
     {
       pattern: "visa_policy_with_document_impact",
-      terms: ["visa policy rollout", "visa regulation", "visa issuance policy", "visa waiver program", "travel authorization"],
+      terms: ["visa policy rollout", "visa regulation", "visa issuance policy", "visa waiver program"],
+    },
+    {
+      pattern: "border_or_vendor_implementation",
+      terms: [
+        "border management system",
+        "vendor implementation",
+        "visa platform implementation",
+        "document security implementation",
+        "credential technology",
+      ],
     },
   ];
 }
@@ -8399,6 +8502,7 @@ function getVisaNoiseDiagnostics(article, options = {}) {
     visaNoisePatterns,
     strongVisaIntelligence,
     hasVisaNoise,
+    visaConsumerNoiseDetected: hasVisaNoise,
     hasStrongVisaIntelligence,
     likelyTrueVisaIntelligence,
     likelyVisaNoise,
@@ -8498,13 +8602,17 @@ function getVisaNoiseDiagnosticsSummary(diagnostics) {
     evaluatedArticles,
     visaEvidenceCount,
     visaNoiseCount,
+    visaConsumerNoiseCount: visaNoiseCount,
     visaNoiseRescuedCount,
+    visaConsumerNoiseRescuedCount: visaNoiseRescuedCount,
     topVisaEvidenceTerms: getTopEvidenceCounts(visaEvidenceCounts),
     topVisaNoisePatterns: getTopV3DecisionReasons(visaNoisePatternCounts, 20),
     trueVisaIntelligenceExamples: trueVisaExamples,
     visaNoiseExamples,
+    visaConsumerNoiseExamples: visaNoiseExamples,
     mixedVisaCandidateExamples: mixedVisaExamples,
     visaNoiseRescuedByStrongEvidenceExamples: rescuedVisaExamples,
+    visaConsumerNoiseRescuedExamples: rescuedVisaExamples,
     notes: [
       "Visa noise diagnostics active",
       "Visa diagnostics distinguish document/security/issuance intelligence from generic immigration and travel noise",
