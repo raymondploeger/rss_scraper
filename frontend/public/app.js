@@ -2218,8 +2218,8 @@ const PERSONAL_DASHBOARD_GROUPS = [
       { id: "micro_optics", label: "Micro optics", strong: ["micro optics", "micro-optics", "micro optical"], weak: ["optical security"] },
       { id: "holography", label: "Holography", strong: ["holography", "holographic", "hologram"], weak: ["diffractive"] },
       { id: "ovd", label: "Optically variable features", strong: ["optically variable device", "optically variable feature"], weak: ["diffractive feature", "optical security feature"] },
-      { id: "polycarbonate", label: "Polycarbonate", strong: ["polycarbonate", "pc datapage", "polycarbonate card"], weak: ["datapage", "card substrate"] },
-      { id: "laminate", label: "Laminate", strong: ["laminate", "laminated document", "security laminate"], weak: ["laminated"] },
+      { id: "polycarbonate", label: "Polycarbonate", strong: ["polycarbonate", "polycarbonate card", "polycarbonate cards", "polycarbonate id", "polycarbonate id card", "polycarbonate identity card", "polycarbonate data page", "polycarbonate datapage", "pc data page", "pc datapage", "laser engraved polycarbonate", "laser-engraved polycarbonate", "laser engraving", "laser engraved data page", "multilayer polycarbonate", "multi-layer polycarbonate", "fused polycarbonate", "polycarbonate substrate", "polycarbonate passport", "polycarbonate document"], weak: ["datapage", "card substrate"] },
+      { id: "laminate", label: "Laminate", strong: ["laminate", "laminated", "lamination", "security laminate", "secure laminate", "passport laminate", "id card laminate", "identity card laminate", "protective laminate", "protective overlay", "security overlay", "secure overlay", "holographic laminate", "holographic overlay", "transparent overlay", "overlay film", "laminated data page", "laminated passport", "laminated identity document"], weak: ["laminated"] },
       { id: "intaglio", label: "Intaglio", strong: ["intaglio", "engraved printing"], weak: ["engraved"] },
       { id: "anti_counterfeit", label: "Anti-counterfeit", strong: ["anti-counterfeit", "anti counterfeit", "counterfeit prevention"], weak: ["authentication feature"] },
       { id: "personalization", label: "Personalization", strong: ["personalization", "secure personalization", "card personalization"], weak: ["document personalization"] },
@@ -6528,6 +6528,24 @@ function getSharedSecurityPatternDefinitions() {
     ],
     materials: [
       "polycarbonate",
+      "polycarbonate card",
+      "polycarbonate cards",
+      "polycarbonate id",
+      "polycarbonate id card",
+      "polycarbonate identity card",
+      "polycarbonate data page",
+      "polycarbonate datapage",
+      "pc data page",
+      "pc datapage",
+      "laser engraved polycarbonate",
+      "laser-engraved polycarbonate",
+      "laser engraved data page",
+      "multilayer polycarbonate",
+      "multi-layer polycarbonate",
+      "fused polycarbonate",
+      "polycarbonate substrate",
+      "polycarbonate passport",
+      "polycarbonate document",
       "secure substrate",
       "document substrate",
       "laser engraving",
@@ -6535,10 +6553,26 @@ function getSharedSecurityPatternDefinitions() {
       "laser personalisation",
     ],
     laminates: [
+      "laminate",
+      "laminated",
+      "lamination",
       "security laminate",
+      "secure laminate",
+      "passport laminate",
+      "id card laminate",
+      "identity card laminate",
       "protective laminate",
+      "protective overlay",
       "overlay",
       "security overlay",
+      "secure overlay",
+      "holographic laminate",
+      "holographic overlay",
+      "transparent overlay",
+      "overlay film",
+      "laminated data page",
+      "laminated passport",
+      "laminated identity document",
       "patch",
     ],
     threadsFoils: [
@@ -6586,6 +6620,15 @@ function getSharedSecurityPatternDefinitions() {
       "medical micro optics",
       "electronics microstructures",
       "semiconductor microstructure",
+      "computer pc",
+      "pc gaming",
+      "pc hardware",
+      "it security",
+      "cybersecurity",
+      "window film",
+      "flooring laminate",
+      "kitchen laminate",
+      "furniture laminate",
     ],
   };
 }
@@ -17869,6 +17912,66 @@ const SHARED_SECURITY_FEATURE_BRIDGE_NOISE_TERMS = [
   "brandweer",
 ];
 
+const SHARED_SECURITY_MATERIAL_BRIDGE_INTERESTS = new Set([
+  "polycarbonate",
+  "laminate",
+]);
+
+const SHARED_SECURITY_MATERIAL_BRIDGE_CONTEXT_TERMS = [
+  "banknote",
+  "banknotes",
+  "passport",
+  "passports",
+  "id card",
+  "id cards",
+  "identity card",
+  "identity cards",
+  "identity document",
+  "identity documents",
+  "polycarbonate card",
+  "polycarbonate cards",
+  "polycarbonate id",
+  "polycarbonate id card",
+  "polycarbonate identity card",
+  "polycarbonate data page",
+  "polycarbonate datapage",
+  "pc data page",
+  "pc datapage",
+  "polycarbonate passport",
+  "polycarbonate document",
+  "laminated document",
+  "laminated data page",
+  "laminated passport",
+  "laminated identity document",
+  "passport laminate",
+  "id card laminate",
+  "identity card laminate",
+  "secure document",
+  "secure documents",
+  "travel document",
+  "credential",
+  "credentials",
+  "security feature",
+  "security features",
+  "document security",
+  "security printing",
+  "secure printing",
+  "secure substrate",
+  "document substrate",
+];
+
+const SHARED_SECURITY_MATERIAL_BRIDGE_NOISE_TERMS = [
+  "computer pc",
+  "pc gaming",
+  "pc hardware",
+  "it security",
+  "cybersecurity",
+  "window film",
+  "flooring laminate",
+  "kitchen laminate",
+  "furniture laminate",
+];
+
 function getSelectedSharedSecurityBridgeTechniqueInterests(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
   const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
   return Array.from(new Set(
@@ -17906,6 +18009,24 @@ function getSharedSecurityFeatureBridgeEvidence(article) {
     matchedTerms,
     matchedContext,
     matchedNoise,
+  };
+}
+
+function getSharedSecurityMaterialBridgeEvidence(textBuckets = {}, matchedTerms = []) {
+  const haystack = Object.values(textBuckets).filter(Boolean).join(" ");
+  const matchedContext = SHARED_SECURITY_MATERIAL_BRIDGE_CONTEXT_TERMS
+    .filter((term) => textMatchesKeyword(haystack, term));
+  const matchedNoise = SHARED_SECURITY_MATERIAL_BRIDGE_NOISE_TERMS
+    .filter((term) => textMatchesKeyword(haystack, term));
+  const hasContextualTerm = matchedTerms.some((entry) =>
+    SHARED_SECURITY_MATERIAL_BRIDGE_CONTEXT_TERMS.some((term) => textMatchesKeyword(entry.term || "", term))
+  );
+
+  return {
+    matched: matchedTerms.length > 0 && (matchedContext.length > 0 || hasContextualTerm) && matchedNoise.length === 0,
+    matchedContext,
+    matchedNoise,
+    hasContextualTerm,
   };
 }
 
@@ -17955,7 +18076,12 @@ function getSharedSecurityDashboardTechniqueMatch(article, selectedTechniqueInte
           .map(([location]) => location),
       }))
       .filter((entry) => entry.locations.length);
-    const matched = Boolean(standaloneAssessment.included || matchedTerms.length);
+    const materialBridgeEvidence = SHARED_SECURITY_MATERIAL_BRIDGE_INTERESTS.has(interestId)
+      ? getSharedSecurityMaterialBridgeEvidence(textBuckets, matchedTerms)
+      : { matched: false, matchedContext: [], matchedNoise: [], hasContextualTerm: false };
+    const matched = SHARED_SECURITY_MATERIAL_BRIDGE_INTERESTS.has(interestId)
+      ? Boolean(materialBridgeEvidence.matched)
+      : Boolean(standaloneAssessment.included || matchedTerms.length);
     if (matched) {
       matchedInterests.push(interestId);
     }
@@ -17965,6 +18091,9 @@ function getSharedSecurityDashboardTechniqueMatch(article, selectedTechniqueInte
       standaloneIncluded: Boolean(standaloneAssessment.included),
       standaloneDirectMatch: Boolean(standaloneAssessment.directMatch),
       matchedTerms: matchedTerms.slice(0, 8),
+      matchedContext: materialBridgeEvidence.matchedContext.slice(0, 8),
+      matchedNoise: materialBridgeEvidence.matchedNoise.slice(0, 8),
+      contextualMaterialTerm: Boolean(materialBridgeEvidence.hasContextualTerm),
     });
   });
 
@@ -20240,6 +20369,10 @@ function buildArticleEvidence(article) {
     BANKNOTE_POLYMER_CHILD_MATCH_POLYMER_TERMS,
     BANKNOTE_POLYMER_CHILD_MATCH_SUBSTRATE_TERMS,
     SHARED_SECURITY_STANDALONE_RULES.security_inks?.strong || [],
+    PERSONAL_DASHBOARD_INTEREST_MAP.get("polycarbonate")?.strong || [],
+    PERSONAL_DASHBOARD_INTEREST_MAP.get("polycarbonate")?.weak || [],
+    PERSONAL_DASHBOARD_INTEREST_MAP.get("laminate")?.strong || [],
+    PERSONAL_DASHBOARD_INTEREST_MAP.get("laminate")?.weak || [],
   ]);
   const technologyTerms = flattenEvidenceKeywordGroups([
     ID_SIGNAL_TECHNOLOGY_STRONG_KEYWORDS,
@@ -21998,8 +22131,24 @@ function getIdentityDocumentInterestSignals(article) {
     const polycarbonateTerms = [
       "polycarbonate",
       "pc datapage",
+      "pc data page",
       "polycarbonate card",
+      "polycarbonate cards",
+      "polycarbonate id",
+      "polycarbonate id card",
+      "polycarbonate identity card",
+      "polycarbonate data page",
+      "polycarbonate datapage",
       "passport datapage",
+      "laser engraved polycarbonate",
+      "laser-engraved polycarbonate",
+      "laser engraved data page",
+      "multilayer polycarbonate",
+      "multi-layer polycarbonate",
+      "fused polycarbonate",
+      "polycarbonate substrate",
+      "polycarbonate passport",
+      "polycarbonate document",
       "secure document material",
     ];
     const fraudTerms = [
@@ -22047,10 +22196,26 @@ function getIdentityDocumentInterestSignals(article) {
     ];
     const laminateTerms = [
       "laminate",
+      "laminated",
+      "lamination",
       "laminated document",
       "security laminate",
+      "secure laminate",
       "passport laminate",
+      "id card laminate",
       "id laminate",
+      "identity card laminate",
+      "protective laminate",
+      "protective overlay",
+      "security overlay",
+      "secure overlay",
+      "holographic laminate",
+      "holographic overlay",
+      "transparent overlay",
+      "overlay film",
+      "laminated data page",
+      "laminated passport",
+      "laminated identity document",
     ];
     const personalizationTerms = [
       "personalization",
