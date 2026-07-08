@@ -6783,6 +6783,7 @@ function getSharedSecurityDashboardMatcherDiagnosticsSummary(diagnostics) {
       sharedSecurityTechniqueMatched: Boolean(bridgeDecision.sharedSecurityTechniqueMatched),
       matchedSharedSecurityInterests: bridgeDecision.matchedSharedSecurityInterests || [],
       positiveScoreCandidate: Boolean(bridgeDecision.positiveScoreCandidate),
+      sharedSecurityBridgeScorePass: Boolean(bridgeDecision.sharedSecurityBridgeScorePass),
       legacyReturnFixRescued: Boolean(bridgeDecision.legacyReturnFixRescued),
       rescueScore: Number(bridgeDecision.rescueScore) || 0,
       directSharedSecurityTechniqueMatched: Boolean(bridgeDecision.directSharedSecurityTechniqueMatched),
@@ -17824,6 +17825,10 @@ function getSharedSecurityBridgeScoreRescueAssessment(article, options = {}) {
   const selectedMainDomains = Array.isArray(options.selectedMainDomains) ? options.selectedMainDomains : [];
   const selectedIdentityInterests = Array.isArray(options.selectedIdentityInterests) ? options.selectedIdentityInterests : [];
   const selectedBanknoteInterests = Array.isArray(options.selectedBanknoteInterests) ? options.selectedBanknoteInterests : [];
+  const sharedSecurityTechniqueMatch = options.sharedSecurityTechniqueMatch || { matched: false, matchedInterests: [] };
+  const selectedBridgeTechniqueInterests = Array.isArray(options.selectedBridgeTechniqueInterests)
+    ? options.selectedBridgeTechniqueInterests
+    : [];
   const selectedIdentityBaseInterests = selectedIdentityInterests.filter(
     (interestId) => !SHARED_SECURITY_BRIDGE_IDENTITY_TECHNIQUE_INTERESTS.has(interestId)
   );
@@ -17867,18 +17872,35 @@ function getSharedSecurityBridgeScoreRescueAssessment(article, options = {}) {
     Number(banknoteSignals.contextHits || 0) > 0 ||
     banknoteInterestScores.some((entry) => entry.score > 0 || entry.matched)
   );
+  const selectedMaterialTechniqueMatched = selectedBridgeTechniqueInterests.some((interestId) => {
+    if (interestId === "polycarbonate") {
+      return Number(identitySignals.polycarbonateHits || 0) > 0;
+    }
+    if (interestId === "laminate") {
+      return Number(identitySignals.laminateHits || 0) > 0;
+    }
+    return false;
+  });
+  const techniqueEvidenceMatched = Boolean(sharedSecurityTechniqueMatch.matched || selectedMaterialTechniqueMatched);
+  const techniqueScore = techniqueEvidenceMatched
+    ? 25 + ((sharedSecurityTechniqueMatch.matchedInterests || []).length * 5)
+    : 0;
   const totalScore =
     Number(identityDomainContext.score || 0) +
     Number(banknoteDomainContext.score || 0) +
     identityInterestScores.reduce((sum, entry) => sum + (Number(entry.score) || 0), 0) +
-    banknoteInterestScores.reduce((sum, entry) => sum + (Number(entry.score) || 0), 0);
+    banknoteInterestScores.reduce((sum, entry) => sum + (Number(entry.score) || 0), 0) +
+    techniqueScore;
 
   return {
-    positiveScoreCandidate: totalScore > 0,
+    positiveScoreCandidate: totalScore > 0 && techniqueEvidenceMatched,
     totalScore,
     identityBaseEvidenceMatched,
     banknoteBaseEvidenceMatched,
     baseEvidenceMatched: identityBaseEvidenceMatched || banknoteBaseEvidenceMatched,
+    techniqueEvidenceMatched,
+    selectedMaterialTechniqueMatched,
+    techniqueScore,
     matchedBaseDomainsFromScore: [
       identityBaseEvidenceMatched ? "identity_documents" : "",
       banknoteBaseEvidenceMatched ? "banknotes" : "",
@@ -18012,6 +18034,8 @@ function getSharedSecurityBridgeDecision(article, selectedInterests = normalizeP
     selectedMainDomains,
     selectedIdentityInterests,
     selectedBanknoteInterests,
+    selectedBridgeTechniqueInterests,
+    sharedSecurityTechniqueMatch,
   });
   const rescuedBaseDomains = scoreRescueAssessment.matchedBaseDomainsFromScore.filter(
     (domain) => !matchedBaseDomains.includes(domain)
@@ -18020,12 +18044,14 @@ function getSharedSecurityBridgeDecision(article, selectedInterests = normalizeP
   const baseDomainMatched = effectiveMatchedBaseDomains.length > 0;
   const obviousSharedSecurityNoise = hasObviousSharedSecurityBridgeNoise(article) &&
     !scoreRescueAssessment.baseEvidenceMatched;
-  const legacyReturnFixRescued = !strictBaseDomainMatched &&
+  const sharedSecurityBridgeScorePass =
     scoreRescueAssessment.positiveScoreCandidate &&
     scoreRescueAssessment.baseEvidenceMatched &&
-    sharedSecurityTechniqueMatched &&
+    scoreRescueAssessment.techniqueEvidenceMatched &&
     !obviousSharedSecurityNoise;
-  const passed = (strictBaseDomainMatched && sharedSecurityTechniqueMatched) || legacyReturnFixRescued;
+  const legacyReturnFixRescued = !strictBaseDomainMatched && sharedSecurityBridgeScorePass;
+  const passed = (strictBaseDomainMatched && sharedSecurityTechniqueMatched && !obviousSharedSecurityNoise) ||
+    sharedSecurityBridgeScorePass;
   let bridgeMissReason = "";
   if (!baseDomainMatched && !sharedSecurityTechniqueMatched) {
     bridgeMissReason = "base_domain_and_shared_security_technique_mismatch";
@@ -18063,6 +18089,7 @@ function getSharedSecurityBridgeDecision(article, selectedInterests = normalizeP
     positiveScoreCandidate: scoreRescueAssessment.positiveScoreCandidate,
     rescueScore: scoreRescueAssessment.totalScore,
     scoreRescueAssessment,
+    sharedSecurityBridgeScorePass,
     legacyReturnFixRescued,
     obviousSharedSecurityNoise,
     bridgeMissReason,
@@ -35994,8 +36021,8 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
       const personalDashboardScore = buildPersonalDashboardScore(article, {
         passed: true,
         branch: diagnostics?.branch || "",
-        decisionSource: sharedSecurityBridgeDiagnostics?.legacyReturnFixRescued
-          ? "legacy-pass-fail+shared-security-bridge-rescue"
+        decisionSource: sharedSecurityBridgeDiagnostics?.sharedSecurityBridgeScorePass
+          ? "legacy-pass-fail+shared-security-bridge-pass"
           : "legacy-pass-fail",
       });
       recordPersonalDashboardScore(diagnostics, article, personalDashboardScore);
