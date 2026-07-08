@@ -17829,6 +17829,52 @@ const SHARED_SECURITY_BRIDGE_IDENTITY_TECHNIQUE_INTERESTS = new Set([
   "laminate",
 ]);
 
+const SHARED_SECURITY_FEATURE_BRIDGE_TERMS = [
+  "security feature",
+  "security features",
+  "new security feature",
+  "new security features",
+  "document security feature",
+  "document security features",
+];
+
+const SHARED_SECURITY_FEATURE_BRIDGE_CONTEXT_TERMS = [
+  "banknote",
+  "banknotes",
+  "passport",
+  "passports",
+  "id card",
+  "id cards",
+  "identity card",
+  "identity cards",
+  "identity document",
+  "identity documents",
+  "polycarbonate card",
+  "laminate",
+  "secure document",
+  "secure documents",
+];
+
+const SHARED_SECURITY_FEATURE_BRIDGE_NOISE_TERMS = [
+  "cybersecurity",
+  "cloud security",
+  "it security",
+  "phone theft",
+  "app security",
+  "software security",
+  "car security",
+  "home security",
+  "general security",
+  "emergency services",
+  "police incident",
+  "fire brigade",
+  "ambulance",
+  "112",
+  "ongeval",
+  "hulpdiensten",
+  "brandweer",
+];
+
 function getSelectedSharedSecurityBridgeTechniqueInterests(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
   const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
   return Array.from(new Set(
@@ -17838,6 +17884,36 @@ function getSelectedSharedSecurityBridgeTechniqueInterests(selectedInterests = n
         SHARED_SECURITY_BRIDGE_IDENTITY_TECHNIQUE_INTERESTS.has(interestId);
     })
   ));
+}
+
+function getSharedSecurityFeatureBridgeEvidence(article) {
+  const context = getPersonalBoostContext(article);
+  const textBuckets = {
+    title: context.titleText,
+    tags: context.tagText,
+    metadata: context.metadataText,
+    body: context.bodyText,
+  };
+  const haystack = Object.values(textBuckets).filter(Boolean).join(" ");
+  const matchedTerms = SHARED_SECURITY_FEATURE_BRIDGE_TERMS
+    .map((term) => ({
+      term,
+      locations: Object.entries(textBuckets)
+        .filter(([, text]) => textMatchesKeyword(text, term))
+        .map(([location]) => location),
+    }))
+    .filter((entry) => entry.locations.length);
+  const matchedContext = SHARED_SECURITY_FEATURE_BRIDGE_CONTEXT_TERMS
+    .filter((term) => textMatchesKeyword(haystack, term));
+  const matchedNoise = SHARED_SECURITY_FEATURE_BRIDGE_NOISE_TERMS
+    .filter((term) => textMatchesKeyword(haystack, term));
+
+  return {
+    matched: matchedTerms.length > 0 && matchedContext.length > 0 && matchedNoise.length === 0,
+    matchedTerms,
+    matchedContext,
+    matchedNoise,
+  };
 }
 
 function getSharedSecurityDashboardTechniqueMatch(article, selectedTechniqueInterests = []) {
@@ -17850,8 +17926,9 @@ function getSharedSecurityDashboardTechniqueMatch(article, selectedTechniqueInte
   };
   const matchedInterests = [];
   const matchDetails = [];
+  const normalizedTechniqueInterests = normalizePersonalDashboardInterests(selectedTechniqueInterests);
 
-  normalizePersonalDashboardInterests(selectedTechniqueInterests).forEach((interestId) => {
+  normalizedTechniqueInterests.forEach((interestId) => {
     const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
     if (!interest) {
       return;
@@ -17896,6 +17973,22 @@ function getSharedSecurityDashboardTechniqueMatch(article, selectedTechniqueInte
       standaloneDirectMatch: Boolean(standaloneAssessment.directMatch),
       matchedTerms: matchedTerms.slice(0, 8),
     });
+  });
+
+  const securityFeatureBridgeEvidence = normalizedTechniqueInterests.length
+    ? getSharedSecurityFeatureBridgeEvidence(article)
+    : { matched: false, matchedTerms: [], matchedContext: [], matchedNoise: [] };
+  if (securityFeatureBridgeEvidence.matched) {
+    matchedInterests.push("security_features_bridge_evidence");
+  }
+  matchDetails.push({
+    interestId: "security_features_bridge_evidence",
+    matched: Boolean(securityFeatureBridgeEvidence.matched),
+    standaloneIncluded: false,
+    standaloneDirectMatch: false,
+    matchedTerms: securityFeatureBridgeEvidence.matchedTerms.slice(0, 8),
+    matchedContext: securityFeatureBridgeEvidence.matchedContext.slice(0, 8),
+    matchedNoise: securityFeatureBridgeEvidence.matchedNoise.slice(0, 8),
   });
 
   return {
