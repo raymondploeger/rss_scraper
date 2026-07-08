@@ -13436,6 +13436,47 @@ function getIdentityProfessionalRelevanceGuardSummary(diagnostics) {
   };
 }
 
+function getTraceDigitalIdentityProfessionalGuardStage(trace) {
+  return (Array.isArray(trace?.stages) ? trace.stages : []).find(
+    (stage) => stage.stage === "digital_identity_professional_guard"
+  ) || null;
+}
+
+function getDigitalIdentityProfessionalGuardSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+
+  const guardTraceEntries = Array.from(diagnostics.filterDecisionTraceMap.values())
+    .map((trace) => ({
+      trace,
+      stage: getTraceDigitalIdentityProfessionalGuardStage(trace),
+    }))
+    .filter((entry) => entry.stage?.metadata?.enabled);
+  const rejectionReasonCounts = new Map();
+  const exampleRejectedTitles = [];
+
+  guardTraceEntries.forEach(({ trace, stage }) => {
+    if (stage.result !== "rejected") {
+      return;
+    }
+    const reason = stage.metadata?.rejectionReason || stage.reason || "unknown";
+    incrementReasonCount(rejectionReasonCounts, reason);
+    if (exampleRejectedTitles.length < 25) {
+      exampleRejectedTitles.push(trace?.title || stage.metadata?.title || "Untitled article");
+    }
+  });
+
+  return {
+    enabled: guardTraceEntries.length > 0,
+    evaluated: guardTraceEntries.length,
+    passed: guardTraceEntries.filter((entry) => entry.stage.result === "passed").length,
+    rejected: guardTraceEntries.filter((entry) => entry.stage.result === "rejected").length,
+    topRejectionReasons: getTopV3DecisionReasons(rejectionReasonCounts, 10),
+    exampleRejectedTitles,
+  };
+}
+
 function getDominantDomainDiagnosticsSummary(diagnostics) {
   if (!diagnostics?.enabled || !diagnostics.personalDashboardScoreMap) {
     return null;
@@ -17365,6 +17406,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.identityDiagnosticsSummary = getIdentityDiagnosticsSummary(diagnostics);
   diagnostics.identityNoiseGuardDiagnosticsSummary = getIdentityNoiseGuardDiagnosticsSummary(diagnostics);
   diagnostics.identityProfessionalRelevanceGuardSummary = getIdentityProfessionalRelevanceGuardSummary(diagnostics);
+  diagnostics.digitalIdentityProfessionalGuard = getDigitalIdentityProfessionalGuardSummary(diagnostics);
   diagnostics.evidenceBuilderDiagnosticsSummary = getEvidenceBuilderDiagnosticsSummary(diagnostics);
   diagnostics.evidenceBuilderParitySummary = getEvidenceBuilderParitySummary(diagnostics);
   diagnostics.evidenceBuilderIdCardsParitySummary = getEvidenceBuilderIdCardsParitySummary(diagnostics);
@@ -21588,6 +21630,174 @@ function getDigitalSubgroupHybridAssessment(article, interestId) {
       domainScore: domainContext.score,
     };
   });
+}
+
+const DIGITAL_IDENTITY_PROFESSIONAL_STRONG_TERMS = [
+  "digital identity",
+  "digital id",
+  "national digital identity",
+  "government digital id",
+  "government digital identity",
+  "citizen identity",
+  "citizen identity platform",
+  "digital identity infrastructure",
+  "digital identity wallet",
+  "identity wallet",
+  "eudi wallet",
+  "eid",
+  "e-id",
+  "electronic id",
+  "electronic identity",
+  "mobile id",
+  "mobile driving licence",
+  "mobile driver license",
+  "digital credential",
+  "digital credentials",
+  "verifiable credential",
+  "verifiable credentials",
+  "decentralized identity",
+  "decentralised identity",
+  "self sovereign identity",
+  "self-sovereign identity",
+  "identity platform",
+  "identity infrastructure",
+  "government identity",
+  "public sector identity",
+  "biometric identity",
+];
+
+const DIGITAL_IDENTITY_PROFESSIONAL_SUPPORT_TERMS = [
+  "government",
+  "ministry",
+  "border",
+  "immigration",
+  "passport",
+  "id card",
+  "identity card",
+  "credential issuance",
+  "enrollment",
+  "enrolment",
+  "identity verification provider",
+  "kyc provider",
+  "public sector",
+  "citizen",
+  "national id",
+];
+
+const DIGITAL_IDENTITY_PROFESSIONAL_VENDOR_TERMS = [
+  "idemia",
+  "thales",
+  "entrust",
+  "regula",
+  "veriff",
+  "onfido",
+  "jumio",
+  "mitek",
+  "facephi",
+  "sicpa",
+];
+
+const DIGITAL_IDENTITY_PROFESSIONAL_NOISE_TERMS = [
+  "machine identity",
+  "workload identity",
+  "cloud identity",
+  "enterprise identity",
+  "workforce identity",
+  "iam",
+  "access management",
+  "active directory",
+  "password",
+  "password security",
+  "login security",
+  "account protection",
+  "account security",
+  "cybersecurity",
+  "cyber security",
+  "ransomware",
+  "malware",
+  "vulnerability",
+  "llm",
+  "ai agent",
+  "ai agents",
+  "agentic",
+  "zero trust identity",
+  "enterprise access management",
+];
+
+function shouldApplyDigitalIdentityProfessionalGuard(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
+  return selectedMainDomains.length === 1 &&
+    selectedMainDomains[0] === "digital_identity_biometrics" &&
+    normalizedInterests.includes("digital_identity");
+}
+
+function getDigitalIdentityProfessionalGuardAssessment(article, options = {}) {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const enabled = shouldApplyDigitalIdentityProfessionalGuard(selectedInterests);
+  const context = getPersonalBoostContext(article);
+  const haystack = [
+    context.titleText,
+    context.tagText,
+    context.metadataText,
+    context.bodyText,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const matchedStrongTerms = normalizeKeywordList(DIGITAL_IDENTITY_PROFESSIONAL_STRONG_TERMS)
+    .filter((term) => textMatchesKeyword(haystack, term));
+  const matchedSupportTerms = normalizeKeywordList(DIGITAL_IDENTITY_PROFESSIONAL_SUPPORT_TERMS)
+    .filter((term) => textMatchesKeyword(haystack, term));
+  const matchedVendorTerms = normalizeKeywordList(DIGITAL_IDENTITY_PROFESSIONAL_VENDOR_TERMS)
+    .filter((term) => textMatchesKeyword(haystack, term));
+  const matchedNoiseTerms = normalizeKeywordList(DIGITAL_IDENTITY_PROFESSIONAL_NOISE_TERMS)
+    .filter((term) => textMatchesKeyword(haystack, term));
+  const domainScore = getPersonalDomainContextProfile(context, "digital_identity_biometrics").score;
+  const interestBoost = Number(computePersonalInterestBoost(article, "digital_identity")?.score) || 0;
+  const hasStrongProfessionalEvidence = matchedStrongTerms.length > 0;
+  const hasSupportedProfessionalEvidence = (matchedVendorTerms.length > 0 || matchedSupportTerms.length > 0) &&
+    (hasStrongProfessionalEvidence || interestBoost >= 24 || domainScore >= 14);
+  const noiseDominates = matchedNoiseTerms.length > 0 &&
+    !hasStrongProfessionalEvidence &&
+    matchedVendorTerms.length === 0;
+  let rejectionReason = "";
+  if (enabled) {
+    if (noiseDominates) {
+      rejectionReason = "generic cyber/enterprise identity noise without professional digital identity evidence";
+    } else if (!hasStrongProfessionalEvidence && !hasSupportedProfessionalEvidence) {
+      rejectionReason = "missing professional digital identity evidence";
+    }
+  }
+  const passed = !enabled || (!noiseDominates && (hasStrongProfessionalEvidence || hasSupportedProfessionalEvidence));
+
+  return Object.freeze({
+    enabled,
+    branch: options.branch || "",
+    selectedInterests: Object.freeze(selectedInterests.slice()),
+    selectedDigitalIdentityInterests: Object.freeze(selectedInterests.filter(
+      (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "digital_identity_biometrics"
+    )),
+    title: article?.title || "Untitled article",
+    source: getIdentityNoiseGuardSource(article),
+    passed,
+    rejected: enabled && !passed,
+    rejectionReason,
+    rejectionCategory: rejectionReason ? "digital_identity_professional_relevance" : "",
+    hasStrongProfessionalEvidence,
+    hasSupportedProfessionalEvidence,
+    noiseDominates,
+    matchedStrongTerms: Object.freeze(matchedStrongTerms.slice(0, 12)),
+    matchedSupportTerms: Object.freeze(matchedSupportTerms.slice(0, 12)),
+    matchedVendorTerms: Object.freeze(matchedVendorTerms.slice(0, 12)),
+    matchedNoiseTerms: Object.freeze(matchedNoiseTerms.slice(0, 12)),
+    domainScore,
+    interestBoost,
+    dominantDomain: getArticleDominantDomain(article),
+  });
+}
+
+function articlePassesDigitalIdentityProfessionalRelevance(article, options = {}) {
+  return getDigitalIdentityProfessionalGuardAssessment(article, options).passed;
 }
 
 const SHARED_SECURITY_STANDALONE_RULES = {
@@ -36919,6 +37129,70 @@ function applyIdentityProfessionalRelevanceGuardStage({ articles, branch, diagno
   };
 }
 
+function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnostics } = {}) {
+  const inputArticles = Array.isArray(articles) ? articles : [];
+  if (!shouldApplyDigitalIdentityProfessionalGuard()) {
+    return {
+      articles: inputArticles,
+      stage: createFilterPipelineStageResult(
+        "digital_identity_professional_guard",
+        inputArticles.length,
+        inputArticles.length,
+        ["Digital Identity professional guard not active for this selection"]
+      ),
+    };
+  }
+
+  const outputArticles = [];
+  inputArticles.forEach((article) => {
+    const assessment = getDigitalIdentityProfessionalGuardAssessment(article, { branch });
+    if (assessment.passed) {
+      recordFilterDecisionStage(diagnostics, article, {
+        stage: "digital_identity_professional_guard",
+        result: "passed",
+        reason: "article passed Digital Identity professional relevance guard",
+        notes: [
+          "Digital Identity professional relevance guard active",
+          "Digital Identity guard is scoped to Digital Identity interest only",
+        ],
+        metadata: assessment,
+      });
+      outputArticles.push(article);
+      return;
+    }
+
+    recordFilterDecisionStage(diagnostics, article, {
+      stage: "digital_identity_professional_guard",
+      result: "rejected",
+      reason: assessment.rejectionReason || "Digital Identity professional relevance guard rejected article",
+      notes: [
+        "Digital Identity professional relevance guard active",
+        "Generic cyber/enterprise identity noise is filtered for Digital Identity only",
+      ],
+      metadata: assessment,
+    });
+    finalizeFilterDecisionTrace(
+      diagnostics,
+      article,
+      "rejected",
+      assessment.rejectionReason || "Digital Identity professional relevance guard rejected article"
+    );
+  });
+
+  return {
+    articles: outputArticles,
+    stage: createFilterPipelineStageResult(
+      "digital_identity_professional_guard",
+      inputArticles.length,
+      outputArticles.length,
+      [
+        "Digital Identity professional relevance guard active",
+        "Digital Identity guard is scoped to Digital Identity interest only",
+      ]
+    ),
+  };
+}
+
 function applySortingStage({ inputArticles, sortedArticles, diagnostics } = {}) {
   const inputCount = Array.isArray(inputArticles) ? inputArticles.length : 0;
   const outputArticles = Array.isArray(sortedArticles) ? sortedArticles : [];
@@ -37069,8 +37343,15 @@ function replayFilterDiagnosticsStage({ result, diagnostics, activeFeedId, useBa
   });
   stageResults.push(identityProfessionalRelevanceGuardStage.stage);
 
+  const digitalIdentityProfessionalGuardStage = applyDigitalIdentityProfessionalGuardStage({
+    articles: identityProfessionalRelevanceGuardStage.articles,
+    branch: result.branch || diagnostics?.branch || "",
+    diagnostics,
+  });
+  stageResults.push(digitalIdentityProfessionalGuardStage.stage);
+
   const sortingStage = applySortingStage({
-    inputArticles: identityProfessionalRelevanceGuardStage.articles,
+    inputArticles: digitalIdentityProfessionalGuardStage.articles,
     sortedArticles: result.filteredRawArticles,
     diagnostics,
   });
@@ -37088,6 +37369,7 @@ function replayFilterDiagnosticsStage({ result, diagnostics, activeFeedId, useBa
   recordPipelineCount(diagnostics, "afterFeedScope", feedScopeStage.articles.length);
   recordPipelineCount(diagnostics, "afterPersonalDashboard", personalDashboardStage.articles.length);
   recordPipelineCount(diagnostics, "afterAdvancedFilters", advancedFiltersStage.articles.length);
+  recordPipelineCount(diagnostics, "afterDigitalIdentityProfessionalGuard", digitalIdentityProfessionalGuardStage.articles.length);
   recordPipelineCount(diagnostics, "afterSorting", filteredRawArticles.length);
   recordPipelineCount(diagnostics, "afterGrouping", result.groupedArticlesCount);
   recordFilterPipelineStages(diagnostics, stageResults);
@@ -37932,7 +38214,10 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
     .filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }));
   const filteredBackendArticles = advancedFilteredBackendArticles
     .filter((article) => articlePassesLegacyIdentityProfessionalRelevance(article, { branch: "backend-query" }));
+  const digitalIdentityFilteredBackendArticles = filteredBackendArticles
+    .filter((article) => articlePassesDigitalIdentityProfessionalRelevance(article, { branch: "backend-query" }));
   const guardRejectedCount = advancedFilteredBackendArticles.length - filteredBackendArticles.length;
+  const digitalIdentityGuardRejectedCount = filteredBackendArticles.length - digitalIdentityFilteredBackendArticles.length;
   if (diagnostics?.enabled && shouldApplyIdentityProfessionalRelevanceGuard({ branch: "backend-query" })) {
     addFilterPipelineNote(diagnostics, "Identity professional relevance guard reapplied");
     addFilterPipelineNote(diagnostics, "Backend-query Personal Dashboard path now uses legacy Identity relevance guard");
@@ -37944,7 +38229,14 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
       addFilterPipelineNote(diagnostics, `Identity professional relevance guard rejected ${guardRejectedCount} backend-query article(s)`);
     }
   }
-  const filteredRawArticles = sortArticlesForCurrentDashboardMode(filteredBackendArticles);
+  if (diagnostics?.enabled && shouldApplyDigitalIdentityProfessionalGuard()) {
+    addFilterPipelineNote(diagnostics, "Digital Identity professional relevance guard active");
+    addFilterPipelineNote(diagnostics, "Digital Identity guard is scoped to Digital Identity interest only");
+    if (digitalIdentityGuardRejectedCount > 0) {
+      addFilterPipelineNote(diagnostics, `Digital Identity professional relevance guard rejected ${digitalIdentityGuardRejectedCount} backend-query article(s)`);
+    }
+  }
+  const filteredRawArticles = sortArticlesForCurrentDashboardMode(digitalIdentityFilteredBackendArticles);
   const groupedArticles = prepareDateFirstGroupedArticles(filteredRawArticles);
   if (diagnostics?.enabled) {
     diagnostics.driverLicenseCandidateRetrievalDiagnostics = getDriverLicenseCandidateRetrievalDiagnostics({
