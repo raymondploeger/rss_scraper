@@ -6844,6 +6844,7 @@ function getSharedSecurityDashboardMatcherDiagnosticsSummary(diagnostics) {
   let passedBridgeCount = 0;
   let rejectedBridgeCount = 0;
   let sharedSecurityTechniqueMatched = 0;
+  let sharedSecurityBridgeNoiseBlocked = 0;
 
   const addExample = (bucket, bridgeDecision, trace, limit = 10) => {
     if (bucket.length >= limit) {
@@ -6865,6 +6866,8 @@ function getSharedSecurityDashboardMatcherDiagnosticsSummary(diagnostics) {
       directSharedSecurityTechniqueMatched: Boolean(bridgeDecision.directSharedSecurityTechniqueMatched),
       identityTechniqueBridgeMatched: Boolean(bridgeDecision.identityTechniqueBridgeMatched),
       banknoteTechniqueBridgeMatched: Boolean(bridgeDecision.banknoteTechniqueBridgeMatched),
+      sharedSecurityBridgeNoiseBlocked: Boolean(bridgeDecision.sharedSecurityBridgeNoiseBlocked),
+      sharedSecurityBridgeNoiseGuard: bridgeDecision.sharedSecurityBridgeNoiseGuard || {},
       bridgeMissReason: bridgeDecision.bridgeMissReason || "",
       includedByLegacy: String(trace.finalResult || "survived") !== "rejected",
     });
@@ -6892,6 +6895,9 @@ function getSharedSecurityDashboardMatcherDiagnosticsSummary(diagnostics) {
         ? bridgeDecision.matchedSharedSecurityInterests
         : bridgeDecision.selectedSharedInterests || []
       ).forEach((interestId) => incrementReasonCount(techniqueCounts, interestId));
+    }
+    if (bridgeDecision.sharedSecurityBridgeNoiseBlocked) {
+      sharedSecurityBridgeNoiseBlocked += 1;
     }
 
     const matchedBaseDomains = bridgeDecision.matchedBaseDomains?.length
@@ -6921,6 +6927,7 @@ function getSharedSecurityDashboardMatcherDiagnosticsSummary(diagnostics) {
     baseDomainMatchedCount: evaluated - (baseDomainCounts.get("none") || 0),
     baseDomainMatched: getTopV3DecisionReasons(baseDomainCounts, 10),
     sharedSecurityTechniqueMatched,
+    sharedSecurityBridgeNoiseBlocked,
     sharedSecurityTechniqueBreakdown: getTopV3DecisionReasons(techniqueCounts, 10),
     topBridgeMissReasons: getTopV3DecisionReasons(missReasonCounts, 10),
     bridgeMissReasons: getTopV3DecisionReasons(missReasonCounts, 10),
@@ -12206,6 +12213,8 @@ const EVIDENCE_BUILDER_RESCUE_STRONG_NOISE_TERMS = [
   "ovd-b",
   "ovd-g",
   "officier van dienst",
+  "melding met hoge urgentie",
+  "melding met normale urgentie",
   "cybersecurity",
   "cyber security",
   "cve",
@@ -12263,6 +12272,7 @@ const EVIDENCE_BUILDER_RESCUE_EXPLICIT_PHYSICAL_CONTEXT_TERMS = [
   "hologram",
   "security ink",
   "security inks",
+  "central bank",
 ];
 
 function getEvidenceBuilderEntryText(entry = {}) {
@@ -18644,18 +18654,28 @@ function getSharedSecurityBridgeDecision(article, selectedInterests = normalizeP
   );
   const effectiveMatchedBaseDomains = matchedBaseDomains.concat(rescuedBaseDomains);
   const baseDomainMatched = effectiveMatchedBaseDomains.length > 0;
+  const bridgeNoiseGuard = getEvidenceBuilderRescueNoiseGuard([
+    context.titleText,
+    context.tagText,
+    context.metadataText,
+    context.bodyText,
+  ].filter(Boolean).join(" "));
   const obviousSharedSecurityNoise = hasObviousSharedSecurityBridgeNoise(article) &&
     !scoreRescueAssessment.baseEvidenceMatched;
+  const sharedSecurityBridgeNoiseBlocked = Boolean(bridgeNoiseGuard.blocked);
   const sharedSecurityBridgeScorePass =
     scoreRescueAssessment.positiveScoreCandidate &&
     scoreRescueAssessment.baseEvidenceMatched &&
     scoreRescueAssessment.techniqueEvidenceMatched &&
-    !obviousSharedSecurityNoise;
+    !obviousSharedSecurityNoise &&
+    !sharedSecurityBridgeNoiseBlocked;
   const legacyReturnFixRescued = !strictBaseDomainMatched && sharedSecurityBridgeScorePass;
-  const passed = (strictBaseDomainMatched && sharedSecurityTechniqueMatched && !obviousSharedSecurityNoise) ||
+  const passed = (strictBaseDomainMatched && sharedSecurityTechniqueMatched && !obviousSharedSecurityNoise && !sharedSecurityBridgeNoiseBlocked) ||
     sharedSecurityBridgeScorePass;
   let bridgeMissReason = "";
-  if (!baseDomainMatched && !sharedSecurityTechniqueMatched) {
+  if (sharedSecurityBridgeNoiseBlocked) {
+    bridgeMissReason = "shared_security_bridge_noise_blocked";
+  } else if (!baseDomainMatched && !sharedSecurityTechniqueMatched) {
     bridgeMissReason = "base_domain_and_shared_security_technique_mismatch";
   } else if (!baseDomainMatched) {
     bridgeMissReason = "base_domain_mismatch";
@@ -18694,6 +18714,13 @@ function getSharedSecurityBridgeDecision(article, selectedInterests = normalizeP
     sharedSecurityBridgeScorePass,
     legacyReturnFixRescued,
     obviousSharedSecurityNoise,
+    sharedSecurityBridgeNoiseBlocked,
+    shared_security_bridge_noise_blocked: sharedSecurityBridgeNoiseBlocked,
+    sharedSecurityBridgeNoiseGuard: {
+      blocked: Boolean(bridgeNoiseGuard.blocked),
+      strongNoiseTerms: bridgeNoiseGuard.strongNoiseTerms.slice(0, 10),
+      explicitPhysicalContextTerms: bridgeNoiseGuard.explicitPhysicalContextTerms.slice(0, 10),
+    },
     bridgeMissReason,
     logic: "(identity_documents OR banknotes) AND shared_security_technique",
   };
