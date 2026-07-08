@@ -2170,8 +2170,6 @@ const PERSONAL_DASHBOARD_GROUPS = [
       { id: "residence_permits", label: "Residence permits", strong: ["residence permit", "residence permits"], weak: ["permit card"] },
       { id: "drivers_licenses", label: "Driver's licenses", strong: ["driver license", "driver's license", "driving licence"], weak: ["license card"] },
       { id: "visas", label: "Visas", strong: ["visa", "visas", "visa policy"], weak: ["travel authorization"], eventTypes: ["visa_policy", "etias_event"] },
-      { id: "laminate", label: "Laminate", strong: ["laminate", "laminated document", "security laminate"], weak: ["laminated"] },
-      { id: "polycarbonate", label: "Polycarbonate", strong: ["polycarbonate", "pc datapage", "polycarbonate card"], weak: ["datapage", "card substrate"] },
       { id: "issuance", label: "Issuance", strong: ["issuance", "passport issuance", "passport renewal", "document issuance"], weak: ["issued", "renewal"], signalIds: ["regulations", "delay"] },
       { id: "fraud", label: "Fraud", strong: ["fraud", "fake passport", "forged passport", "forged document", "document fraud"], weak: ["counterfeit document"], signalIds: ["fraud", "criminal-misuse", "identity-theft"] },
       { id: "icao", label: "ICAO", strong: ["icao", "doc 9303", "mrz", "passport verification"], weak: ["travel document security"], signalIds: ["technology"] },
@@ -2221,6 +2219,8 @@ const PERSONAL_DASHBOARD_GROUPS = [
       { id: "micro_optics", label: "Micro optics", strong: ["micro optics", "micro-optics", "micro optical"], weak: ["optical security"] },
       { id: "holography", label: "Holography", strong: ["holography", "holographic", "hologram"], weak: ["diffractive"] },
       { id: "ovd", label: "Optically variable features", strong: ["optically variable device", "optically variable feature"], weak: ["diffractive feature", "optical security feature"] },
+      { id: "polycarbonate", label: "Polycarbonate", strong: ["polycarbonate", "pc datapage", "polycarbonate card"], weak: ["datapage", "card substrate"] },
+      { id: "laminate", label: "Laminate", strong: ["laminate", "laminated document", "security laminate"], weak: ["laminated"] },
       { id: "intaglio", label: "Intaglio", strong: ["intaglio", "engraved printing"], weak: ["engraved"] },
       { id: "anti_counterfeit", label: "Anti-counterfeit", strong: ["anti-counterfeit", "anti counterfeit", "counterfeit prevention"], weak: ["authentication feature"] },
       { id: "personalization", label: "Personalization", strong: ["personalization", "secure personalization", "card personalization"], weak: ["document personalization"] },
@@ -17824,11 +17824,6 @@ function isSharedSecurityBridgePersonalSelection(selectedInterests = normalizePe
   );
 }
 
-const SHARED_SECURITY_BRIDGE_IDENTITY_TECHNIQUE_INTERESTS = new Set([
-  "polycarbonate",
-  "laminate",
-]);
-
 const SHARED_SECURITY_FEATURE_BRIDGE_TERMS = [
   "security feature",
   "security features",
@@ -17880,8 +17875,7 @@ function getSelectedSharedSecurityBridgeTechniqueInterests(selectedInterests = n
   return Array.from(new Set(
     normalizedInterests.filter((interestId) => {
       const groupId = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId || "";
-      return groupId === PERSONAL_DASHBOARD_SHARED_GROUP_ID ||
-        SHARED_SECURITY_BRIDGE_IDENTITY_TECHNIQUE_INTERESTS.has(interestId);
+      return groupId === PERSONAL_DASHBOARD_SHARED_GROUP_ID;
     })
   ));
 }
@@ -18006,9 +18000,7 @@ function getSharedSecurityBridgeScoreRescueAssessment(article, options = {}) {
   const selectedBridgeTechniqueInterests = Array.isArray(options.selectedBridgeTechniqueInterests)
     ? options.selectedBridgeTechniqueInterests
     : [];
-  const selectedIdentityBaseInterests = selectedIdentityInterests.filter(
-    (interestId) => !SHARED_SECURITY_BRIDGE_IDENTITY_TECHNIQUE_INTERESTS.has(interestId)
-  );
+  const selectedIdentityBaseInterests = selectedIdentityInterests;
   const context = getPersonalBoostContext(article);
   const identitySignals = getIdentityDocumentInterestSignals(article);
   const banknoteSignals = getBanknoteInterestSignals(article);
@@ -18159,7 +18151,6 @@ function getSharedSecurityBridgeDecision(article, selectedInterests = normalizeP
   const identityDomainContext = getPersonalDomainContextProfile(context, "identity_documents");
   const banknoteDomainContext = getPersonalDomainContextProfile(context, "banknote_intelligence");
   const identityInterestMatched = selectedIdentityInterests
-    .filter((interestId) => !SHARED_SECURITY_BRIDGE_IDENTITY_TECHNIQUE_INTERESTS.has(interestId))
     .some((interestId) => {
       if (interestId === "passports") return Number(identitySignals.passportHits || 0) > 0;
       if (interestId === "id_cards") return Number(identitySignals.idCardHits || 0) > 0;
