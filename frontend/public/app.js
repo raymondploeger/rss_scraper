@@ -12115,6 +12115,192 @@ function shouldRescueProfessionalIdentityArticle(article) {
   );
 }
 
+const EVIDENCE_BUILDER_RESCUE_DOCUMENT_TERMS = [
+  "passport",
+  "passports",
+  "id card",
+  "id cards",
+  "identity card",
+  "identity cards",
+  "identity document",
+  "identity documents",
+  "secure document",
+  "secure documents",
+];
+
+const EVIDENCE_BUILDER_RESCUE_PROFESSIONAL_TERMS = [
+  "security feature",
+  "security features",
+  "security printing",
+  "issuance",
+  "rollout",
+  "redesign",
+  "polycarbonate",
+  "laminate",
+  "holography",
+  "hologram",
+  "holographic",
+  "security ink",
+  "security inks",
+  "passport printing",
+  "printing system",
+];
+
+const EVIDENCE_BUILDER_RESCUE_SHARED_SECURITY_TERMS = [
+  "security feature",
+  "security features",
+  "security printing",
+  "holography",
+  "hologram",
+  "holographic",
+  "micro optics",
+  "micro-optics",
+  "micro optical",
+  "security ink",
+  "security inks",
+  "polycarbonate",
+  "laminate",
+];
+
+const EVIDENCE_BUILDER_RESCUE_SHARED_SECURITY_DOMAIN_TERMS = [
+  "banknote",
+  "banknotes",
+  "passport",
+  "passports",
+  "id card",
+  "id cards",
+  "identity card",
+  "identity cards",
+];
+
+const EVIDENCE_BUILDER_RESCUE_NOISE_TERMS = [
+  "passport appointment",
+  "travel tips",
+  "travel advice",
+  "tourism",
+  "tourist",
+  "airport queue",
+  "airport queues",
+  "holiday advice",
+  "phone security",
+  "cybersecurity",
+  "car security",
+  "software security",
+  "cloud security",
+  "it security",
+  "app security",
+  "password security",
+  "account security",
+];
+
+function getEvidenceBuilderEntryText(entry = {}) {
+  return [
+    entry.id,
+    entry.term,
+    entry.matchedTerm,
+    entry.category,
+    entry.sourceHelper,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function findEvidenceBuilderRescueMatches(entries = [], terms = []) {
+  return (Array.isArray(entries) ? entries : [])
+    .filter((entry) => {
+      const entryText = getEvidenceBuilderEntryText(entry);
+      return normalizeKeywordList(terms).some((term) => textMatchesKeyword(entryText, term));
+    })
+    .map((entry) => ({
+      id: entry.id || "",
+      term: entry.term || entry.matchedTerm || "",
+      category: entry.category || "",
+      locations: Array.isArray(entry.locations) ? entry.locations.slice(0, 5) : [],
+      strength: entry.strength || "",
+      sourceHelper: entry.sourceHelper || "",
+    }));
+}
+
+function getEvidenceBuilderProfessionalRelevanceRescue(article) {
+  return getCachedArticleValue(article, "evidenceBuilderProfessionalRelevanceRescue", () => {
+    const articleEvidence = buildArticleEvidence(article);
+    const evidence = articleEvidence?.evidence || {};
+    const documentEntries = []
+      .concat(Array.isArray(evidence.domainObjects) ? evidence.domainObjects : [])
+      .concat(Array.isArray(evidence.documentTypes) ? evidence.documentTypes : []);
+    const professionalEntries = []
+      .concat(Array.isArray(evidence.professionalSignals) ? evidence.professionalSignals : [])
+      .concat(Array.isArray(evidence.eventSignals) ? evidence.eventSignals : [])
+      .concat(Array.isArray(evidence.materials) ? evidence.materials : [])
+      .concat(Array.isArray(evidence.technologies) ? evidence.technologies : []);
+    const noiseEntries = Array.isArray(evidence.noiseSignals) ? evidence.noiseSignals : [];
+    const documentEvidence = findEvidenceBuilderRescueMatches(documentEntries, EVIDENCE_BUILDER_RESCUE_DOCUMENT_TERMS);
+    const sharedSecurityDomainEvidence = findEvidenceBuilderRescueMatches(documentEntries, EVIDENCE_BUILDER_RESCUE_SHARED_SECURITY_DOMAIN_TERMS);
+    const professionalEvidence = findEvidenceBuilderRescueMatches(professionalEntries, EVIDENCE_BUILDER_RESCUE_PROFESSIONAL_TERMS);
+    const sharedSecurityEvidence = findEvidenceBuilderRescueMatches(professionalEntries, EVIDENCE_BUILDER_RESCUE_SHARED_SECURITY_TERMS);
+    const noiseEvidence = findEvidenceBuilderRescueMatches(noiseEntries, EVIDENCE_BUILDER_RESCUE_NOISE_TERMS);
+    const context = buildArticleIntelligenceContext(article);
+    const haystack = [
+      context.titleText,
+      context.tagText,
+      context.metadataText,
+      context.bodyText,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const directNoiseTerms = normalizeKeywordList(EVIDENCE_BUILDER_RESCUE_NOISE_TERMS)
+      .filter((term) => textMatchesKeyword(haystack, term));
+    const directDocumentTerms = normalizeKeywordList(EVIDENCE_BUILDER_RESCUE_DOCUMENT_TERMS)
+      .filter((term) => textMatchesKeyword(haystack, term));
+    const directSharedSecurityDomainTerms = normalizeKeywordList(EVIDENCE_BUILDER_RESCUE_SHARED_SECURITY_DOMAIN_TERMS)
+      .filter((term) => textMatchesKeyword(haystack, term));
+    const directProfessionalTerms = normalizeKeywordList(EVIDENCE_BUILDER_RESCUE_PROFESSIONAL_TERMS)
+      .filter((term) => textMatchesKeyword(haystack, term));
+    const directSharedSecurityTerms = normalizeKeywordList(EVIDENCE_BUILDER_RESCUE_SHARED_SECURITY_TERMS)
+      .filter((term) => textMatchesKeyword(haystack, term));
+    const documentMatched = documentEvidence.length > 0 || directDocumentTerms.length > 0;
+    const sharedSecurityDomainMatched = sharedSecurityDomainEvidence.length > 0 || directSharedSecurityDomainTerms.length > 0;
+    const professionalMatched = professionalEvidence.length > 0 || directProfessionalTerms.length > 0;
+    const sharedSecurityMatched = sharedSecurityEvidence.length > 0 || directSharedSecurityTerms.length > 0;
+    const noiseMatched = noiseEvidence.length > 0 || directNoiseTerms.length > 0;
+    const case1Matched = documentMatched && professionalMatched;
+    const case2Matched = sharedSecurityDomainMatched && sharedSecurityMatched;
+    const matched = (case1Matched || case2Matched) &&
+      !noiseMatched &&
+      !isHardPassportNoise(article) &&
+      !isIdentityTravelNoiseArticle(article) &&
+      !isLowRelevancePassportArticle(article);
+
+    return Object.freeze({
+      matched,
+      evidence_builder_rescue: matched,
+      case1Matched,
+      case2Matched,
+      documentMatched,
+      sharedSecurityDomainMatched,
+      professionalMatched,
+      sharedSecurityMatched,
+      noiseMatched,
+      documentEvidence: Object.freeze(documentEvidence.slice(0, 10)),
+      sharedSecurityDomainEvidence: Object.freeze(sharedSecurityDomainEvidence.slice(0, 10)),
+      professionalEvidence: Object.freeze(professionalEvidence.slice(0, 10)),
+      sharedSecurityEvidence: Object.freeze(sharedSecurityEvidence.slice(0, 10)),
+      noiseEvidence: Object.freeze(noiseEvidence.slice(0, 10)),
+      directDocumentTerms: Object.freeze(directDocumentTerms.slice(0, 10)),
+      directSharedSecurityDomainTerms: Object.freeze(directSharedSecurityDomainTerms.slice(0, 10)),
+      directProfessionalTerms: Object.freeze(directProfessionalTerms.slice(0, 10)),
+      directSharedSecurityTerms: Object.freeze(directSharedSecurityTerms.slice(0, 10)),
+      directNoiseTerms: Object.freeze(directNoiseTerms.slice(0, 10)),
+      rescueReason: matched
+        ? case2Matched
+          ? "Evidence Builder found secure document/banknote context plus Shared Security evidence"
+          : "Evidence Builder found secure document object plus professional security/document lifecycle evidence"
+        : "",
+    });
+  });
+}
+
 function getIdentityProfessionalRelevanceGuardAssessment(article, options = {}) {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
@@ -12128,6 +12314,7 @@ function getIdentityProfessionalRelevanceGuardAssessment(article, options = {}) 
   const highConfidencePassportAssessment = getHighConfidencePassportAssessment(article);
   const identityDocumentRelevance = getIdentityDocumentRelevance(article);
   const uiRelevantIntelligenceArticle = isUiRelevantIntelligenceArticle(article);
+  const evidenceBuilderRescue = getEvidenceBuilderProfessionalRelevanceRescue(article);
   const professionalIdentityRescueMatched = Boolean(
     enabled &&
     !hardPassportNoise &&
@@ -12166,7 +12353,8 @@ function getIdentityProfessionalRelevanceGuardAssessment(article, options = {}) 
     uiRelevantIntelligenceArticle;
   const bridgeAssessment = getIdentitySharedSecurityGuardBridgeAssessment(article, selectedInterests);
   const bridgeRescued = Boolean(enabled && !legacyGuardPassed && bridgeAssessment.bridgeMatched);
-  const passed = !enabled || legacyGuardPassed || professionalIdentityRescueMatched || bridgeRescued;
+  const evidenceBuilderRescued = Boolean(enabled && !legacyGuardPassed && evidenceBuilderRescue.matched);
+  const passed = !enabled || legacyGuardPassed || professionalIdentityRescueMatched || bridgeRescued || evidenceBuilderRescued;
   const bridgeRejected = Boolean(
     enabled &&
     bridgeAssessment.combinationMode &&
@@ -12182,7 +12370,7 @@ function getIdentityProfessionalRelevanceGuardAssessment(article, options = {}) 
       rejectionReason = "legacy passport professional relevance guard rejected article";
     } else if (lowRelevancePassportArticle) {
       rejectionReason = "legacy low-relevance passport guard rejected article";
-    } else if (!uiRelevantIntelligenceArticle && !professionalIdentityRescueMatched) {
+    } else if (!uiRelevantIntelligenceArticle && !professionalIdentityRescueMatched && !evidenceBuilderRescued) {
       rejectionReason = "legacy UI intelligence relevance guard rejected article";
     } else {
       rejectionReason = "legacy Identity professional relevance guard rejected article";
@@ -12212,13 +12400,17 @@ function getIdentityProfessionalRelevanceGuardAssessment(article, options = {}) 
     rejectionReason,
     firstFailingGate,
     professionalIdentityRescued: professionalIdentityRescueMatched,
+    evidence_builder_rescue: evidenceBuilderRescued,
+    evidenceBuilderRescued,
+    evidenceBuilderRescue,
     professionalIdentityRescueRejected: Boolean(
       enabled &&
       !hardPassportNoise &&
       !passportRejected &&
       !lowRelevancePassportArticle &&
       !uiRelevantIntelligenceArticle &&
-      !professionalIdentityRescueMatched
+      !professionalIdentityRescueMatched &&
+      !evidenceBuilderRescued
     ),
     legacyGuardPassed,
     combinationMode: bridgeAssessment.combinationMode,
@@ -13047,7 +13239,9 @@ function getIdentityProfessionalRelevanceGuardSummary(diagnostics) {
   const guardStages = guardTraceEntries.map((entry) => entry.stage);
   const triggeredGuardCounts = new Map();
   const professionalIdentityRescuedTitles = [];
+  const evidenceBuilderRescuedTitles = [];
   let professionalIdentityRescued = 0;
+  let evidenceBuilderRescued = 0;
   let professionalIdentityRescueRejected = 0;
   const firstFailingGateCounts = {
     hard_passport_noise: 0,
@@ -13075,6 +13269,12 @@ function getIdentityProfessionalRelevanceGuardSummary(diagnostics) {
       professionalIdentityRescued += 1;
       if (professionalIdentityRescuedTitles.length < 25) {
         professionalIdentityRescuedTitles.push(trace?.title || stage.metadata?.title || "Untitled article");
+      }
+    }
+    if (stage.metadata?.evidence_builder_rescue) {
+      evidenceBuilderRescued += 1;
+      if (evidenceBuilderRescuedTitles.length < 25) {
+        evidenceBuilderRescuedTitles.push(trace?.title || stage.metadata?.title || "Untitled article");
       }
     }
     if (stage.metadata?.professionalIdentityRescueRejected) {
@@ -13105,8 +13305,10 @@ function getIdentityProfessionalRelevanceGuardSummary(diagnostics) {
     bridgeRescued: guardStages.filter((stage) => Boolean(stage.metadata?.bridgeRescued)).length,
     bridgeRejected: guardStages.filter((stage) => Boolean(stage.metadata?.bridgeRejected)).length,
     professionalIdentityRescued,
+    evidenceBuilderRescued,
     professionalIdentityRescueRejected,
     professionalIdentityRescuedTitles,
+    evidenceBuilderRescuedTitles,
     identityOnlyMode: guardStages.some((stage) => !stage.metadata?.combinationMode),
     sharedSecurityInterests: Array.from(sharedSecurityInterestSet),
     triggeredGuards: Array.from(triggeredGuardCounts.entries())
