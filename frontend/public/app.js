@@ -2151,8 +2151,6 @@ const PERSONAL_DASHBOARD_GROUPS = [
       { id: "banknotes", label: "Banknotes", strong: ["banknote", "banknotes", "currency note", "commemorative note", "note issuance"], weak: ["cash", "payment"], topicSignals: ["banknotes"], tagSignals: ["banknotes"], eventTypes: ["banknote_withdrawal", "new_banknote_series", "banknote_redesign", "commemorative_issue"] },
       { id: "polymer", label: "Polymer", strong: ["polymer note", "polymer banknote", "polymer banknotes", "polymer substrate"], weak: ["polymer"], eventTypes: ["polymer_migration", "banknote_redesign"] },
       { id: "substrate", label: "Substrate", strong: ["substrate", "polymer substrate", "paper substrate"], weak: ["substrate migration"], eventTypes: ["polymer_migration", "security_feature_update"] },
-      { id: "security_features", label: "Security features", strong: ["security feature", "security features", "security thread", "watermark", "hologram"], weak: ["uv feature"], signalIds: ["security-features", "counterfeit"] },
-      { id: "security_printing", label: "Security printing", strong: ["security printing", "security printer", "banknote printing"], weak: ["secure print"], eventTypes: ["banknote_production", "security_feature_update"] },
       { id: "redesign", label: "Redesign", strong: ["redesign", "new design", "new family", "new portrait", "new artwork"], weak: ["design refresh"], signalIds: ["redesign"] },
       { id: "rollout", label: "Rollout", strong: ["new banknote launch", "banknote rollout", "circulation rollout", "new series launch"], weak: ["rollout", "launch", "introduction"], signalIds: ["rollout", "new-releases"] },
       { id: "release", label: "Release", strong: ["release", "issued", "issue", "commemorative note issue", "new banknote released"], weak: ["launch"], signalIds: ["new-releases", "commemorative"] },
@@ -2214,7 +2212,8 @@ const PERSONAL_DASHBOARD_GROUPS = [
     id: "security_printing",
     label: "Shared Security Printing",
     interests: [
-      { id: "security_printing_core", label: "Security printing", strong: ["security printing", "secure printing", "security printer"], weak: ["document printing"] },
+      { id: "security_features", label: "Security features", strong: ["security feature", "security features", "security thread", "watermark", "hologram"], weak: ["uv feature"], signalIds: ["security-features", "counterfeit"] },
+      { id: "security_printing", label: "Security printing", strong: ["security printing", "security printer", "banknote printing"], weak: ["secure print"], eventTypes: ["banknote_production", "security_feature_update"] },
       { id: "security_inks", label: "Security inks", strong: ["security ink", "security inks", "optically variable ink"], weak: ["specialty ink"] },
       { id: "micro_optics", label: "Micro optics", strong: ["micro optics", "micro-optics", "micro optical"], weak: ["optical security"] },
       { id: "holography", label: "Holography", strong: ["holography", "holographic", "hologram"], weak: ["diffractive"] },
@@ -17681,7 +17680,7 @@ const IDENTITY_SHARED_SECURITY_COMBINATION_TECHNIQUE_TERMS = {
     "nanoswitch",
     "nanovista",
   ],
-  security_printing_core: [
+  security_printing: [
     "security printing",
     "secure printing",
     "anti-counterfeit printing",
@@ -21126,7 +21125,7 @@ function getDigitalSubgroupHybridAssessment(article, interestId) {
 }
 
 const SHARED_SECURITY_STANDALONE_RULES = {
-  security_printing_core: {
+  security_printing: {
     strong: [
       "security printing",
       "secure printing",
@@ -21658,7 +21657,7 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
     }
 
     const context = getPersonalBoostContext(article);
-    const metadataTextForMatching = interestId === "security_printing_core"
+    const metadataTextForMatching = interestId === "security_printing"
       ? String(context.metadataText || "").replace(/\bshared security printing\b/gi, " ").replace(/\s+/g, " ").trim()
       : context.metadataText;
     const tunedRule = SHARED_SECURITY_STANDALONE_RULES[interestId] || null;
@@ -21691,20 +21690,20 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       countBoostKeywordMatches(context.tagText, supportKeywords) +
       countBoostKeywordMatches(metadataTextForMatching, supportKeywords) +
       countBoostKeywordMatches(context.bodyText, supportKeywords);
-    const bridgeDocumentContextHits = interestId === "security_printing_core"
+    const bridgeDocumentContextHits = interestId === "security_printing"
       ? (
         countBoostKeywordMatches(context.titleText, SECURITY_PRINTING_TECHNIQUE_BRIDGE_DOCUMENT_CONTEXT) +
         countBoostKeywordMatches(context.tagText, SECURITY_PRINTING_TECHNIQUE_BRIDGE_DOCUMENT_CONTEXT) +
         countBoostKeywordMatches(context.bodyText, SECURITY_PRINTING_TECHNIQUE_BRIDGE_DOCUMENT_CONTEXT)
       )
       : 0;
-    const bridgeTitleHits = interestId === "security_printing_core"
+    const bridgeTitleHits = interestId === "security_printing"
       ? countBoostKeywordMatches(context.titleText, SECURITY_PRINTING_TECHNIQUE_BRIDGE_KEYWORDS)
       : 0;
-    const bridgeTagHits = interestId === "security_printing_core"
+    const bridgeTagHits = interestId === "security_printing"
       ? countBoostKeywordMatches(context.tagText, SECURITY_PRINTING_TECHNIQUE_BRIDGE_KEYWORDS)
       : 0;
-    const bridgeBodyHits = interestId === "security_printing_core"
+    const bridgeBodyHits = interestId === "security_printing"
       ? countBoostKeywordMatches(context.bodyText, SECURITY_PRINTING_TECHNIQUE_BRIDGE_KEYWORDS)
       : 0;
 
@@ -21713,7 +21712,7 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
     const directStrongHits = foregroundStrongHits + bodyStrongHits;
     const directWeakHits = foregroundWeakHits + bodyWeakHits;
     const bridgeForegroundHits = bridgeTitleHits + bridgeTagHits;
-    const hasTechniqueBridgeContext = interestId === "security_printing_core" && (bridgeDocumentContextHits > 0 || supportHits > 0);
+    const hasTechniqueBridgeContext = interestId === "security_printing" && (bridgeDocumentContextHits > 0 || supportHits > 0);
     const bridgeEvidenceHits = hasTechniqueBridgeContext ? bridgeForegroundHits + bridgeBodyHits : 0;
     const bridgeScore = hasTechniqueBridgeContext
       ? (
@@ -21734,7 +21733,7 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       (negativeHits * 8);
     const effectiveContentScore = contentOnlyScore + bridgeScore;
 
-    const requiresSupportContext = interestId === "security_printing_core" || Boolean(tunedRule?.requiresSupportContext);
+    const requiresSupportContext = interestId === "security_printing" || Boolean(tunedRule?.requiresSupportContext);
     const allowForegroundStrongWithoutSupport = Boolean(tunedRule?.allowForegroundStrongWithoutSupport);
     const hasSupportContext = !requiresSupportContext || supportHits > 0;
     const hasBridgeDrivenSupportContext = hasSupportContext || hasTechniqueBridgeContext;
