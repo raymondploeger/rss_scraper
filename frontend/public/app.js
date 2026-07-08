@@ -12193,6 +12193,78 @@ const EVIDENCE_BUILDER_RESCUE_NOISE_TERMS = [
   "account security",
 ];
 
+const EVIDENCE_BUILDER_RESCUE_STRONG_NOISE_TERMS = [
+  "hulpdiensten",
+  "brandweer",
+  "ambulance",
+  "politie",
+  "ongeval",
+  "gaslekkage",
+  "112",
+  "alarmeringen",
+  "drimble",
+  "ovd-b",
+  "ovd-g",
+  "officier van dienst",
+  "cybersecurity",
+  "cyber security",
+  "cve",
+  "vulnerability",
+  "exploit",
+  "exploitation",
+  "backdoor",
+  "malware",
+  "ransomware",
+  "router",
+  "cloud security",
+  "software security",
+  "it security",
+  "security cloud",
+  "phone theft",
+  "mobile app",
+  "banking app",
+  "app security",
+  "account security",
+  "login security",
+  "online shopping",
+  "digital banking",
+  "car security",
+  "vehicle security",
+  "car thieves",
+  "carmaker",
+  "automotive",
+  "vehicle operation",
+  "engine immobilizer",
+];
+
+const EVIDENCE_BUILDER_RESCUE_EXPLICIT_PHYSICAL_CONTEXT_TERMS = [
+  "passport",
+  "passports",
+  "id card",
+  "id cards",
+  "identity card",
+  "identity cards",
+  "identity document",
+  "identity documents",
+  "driving licence",
+  "driver license",
+  "driver's license",
+  "residence permit",
+  "visa",
+  "banknote",
+  "banknotes",
+  "currency note",
+  "security printing",
+  "document security",
+  "secure document",
+  "secure documents",
+  "polycarbonate",
+  "laminate",
+  "hologram",
+  "security ink",
+  "security inks",
+];
+
 function getEvidenceBuilderEntryText(entry = {}) {
   return [
     entry.id,
@@ -12220,6 +12292,19 @@ function findEvidenceBuilderRescueMatches(entries = [], terms = []) {
       strength: entry.strength || "",
       sourceHelper: entry.sourceHelper || "",
     }));
+}
+
+function getEvidenceBuilderRescueNoiseGuard(haystack = "") {
+  const strongNoiseTerms = normalizeKeywordList(EVIDENCE_BUILDER_RESCUE_STRONG_NOISE_TERMS)
+    .filter((term) => textMatchesKeyword(haystack, term));
+  const explicitPhysicalContextTerms = normalizeKeywordList(EVIDENCE_BUILDER_RESCUE_EXPLICIT_PHYSICAL_CONTEXT_TERMS)
+    .filter((term) => textMatchesKeyword(haystack, term));
+
+  return {
+    blocked: strongNoiseTerms.length > 0 && explicitPhysicalContextTerms.length === 0,
+    strongNoiseTerms,
+    explicitPhysicalContextTerms,
+  };
 }
 
 function getEvidenceBuilderProfessionalRelevanceRescue(article) {
@@ -12259,6 +12344,7 @@ function getEvidenceBuilderProfessionalRelevanceRescue(article) {
       .filter((term) => textMatchesKeyword(haystack, term));
     const directSharedSecurityTerms = normalizeKeywordList(EVIDENCE_BUILDER_RESCUE_SHARED_SECURITY_TERMS)
       .filter((term) => textMatchesKeyword(haystack, term));
+    const noiseGuard = getEvidenceBuilderRescueNoiseGuard(haystack);
     const documentMatched = documentEvidence.length > 0 || directDocumentTerms.length > 0;
     const sharedSecurityDomainMatched = sharedSecurityDomainEvidence.length > 0 || directSharedSecurityDomainTerms.length > 0;
     const professionalMatched = professionalEvidence.length > 0 || directProfessionalTerms.length > 0;
@@ -12268,6 +12354,7 @@ function getEvidenceBuilderProfessionalRelevanceRescue(article) {
     const case2Matched = sharedSecurityDomainMatched && sharedSecurityMatched;
     const matched = (case1Matched || case2Matched) &&
       !noiseMatched &&
+      !noiseGuard.blocked &&
       !isHardPassportNoise(article) &&
       !isIdentityTravelNoiseArticle(article) &&
       !isLowRelevancePassportArticle(article);
@@ -12282,6 +12369,13 @@ function getEvidenceBuilderProfessionalRelevanceRescue(article) {
       professionalMatched,
       sharedSecurityMatched,
       noiseMatched,
+      evidence_builder_rescue_blocked_noise: Boolean(noiseGuard.blocked),
+      evidenceBuilderNoiseGuardBlocked: Boolean(noiseGuard.blocked),
+      noiseGuard: Object.freeze({
+        blocked: Boolean(noiseGuard.blocked),
+        strongNoiseTerms: Object.freeze(noiseGuard.strongNoiseTerms.slice(0, 10)),
+        explicitPhysicalContextTerms: Object.freeze(noiseGuard.explicitPhysicalContextTerms.slice(0, 10)),
+      }),
       documentEvidence: Object.freeze(documentEvidence.slice(0, 10)),
       sharedSecurityDomainEvidence: Object.freeze(sharedSecurityDomainEvidence.slice(0, 10)),
       professionalEvidence: Object.freeze(professionalEvidence.slice(0, 10)),
@@ -13240,8 +13334,10 @@ function getIdentityProfessionalRelevanceGuardSummary(diagnostics) {
   const triggeredGuardCounts = new Map();
   const professionalIdentityRescuedTitles = [];
   const evidenceBuilderRescuedTitles = [];
+  const evidenceBuilderNoiseBlockedTitles = [];
   let professionalIdentityRescued = 0;
   let evidenceBuilderRescued = 0;
+  let evidenceBuilderNoiseGuardBlocked = 0;
   let professionalIdentityRescueRejected = 0;
   const firstFailingGateCounts = {
     hard_passport_noise: 0,
@@ -13277,6 +13373,12 @@ function getIdentityProfessionalRelevanceGuardSummary(diagnostics) {
         evidenceBuilderRescuedTitles.push(trace?.title || stage.metadata?.title || "Untitled article");
       }
     }
+    if (stage.metadata?.evidenceBuilderRescue?.evidenceBuilderNoiseGuardBlocked) {
+      evidenceBuilderNoiseGuardBlocked += 1;
+      if (evidenceBuilderNoiseBlockedTitles.length < 25) {
+        evidenceBuilderNoiseBlockedTitles.push(trace?.title || stage.metadata?.title || "Untitled article");
+      }
+    }
     if (stage.metadata?.professionalIdentityRescueRejected) {
       professionalIdentityRescueRejected += 1;
     }
@@ -13306,9 +13408,11 @@ function getIdentityProfessionalRelevanceGuardSummary(diagnostics) {
     bridgeRejected: guardStages.filter((stage) => Boolean(stage.metadata?.bridgeRejected)).length,
     professionalIdentityRescued,
     evidenceBuilderRescued,
+    evidenceBuilderNoiseGuardBlocked,
     professionalIdentityRescueRejected,
     professionalIdentityRescuedTitles,
     evidenceBuilderRescuedTitles,
+    evidenceBuilderNoiseBlockedTitles,
     identityOnlyMode: guardStages.some((stage) => !stage.metadata?.combinationMode),
     sharedSecurityInterests: Array.from(sharedSecurityInterestSet),
     triggeredGuards: Array.from(triggeredGuardCounts.entries())
