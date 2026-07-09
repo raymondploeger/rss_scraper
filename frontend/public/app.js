@@ -37358,17 +37358,33 @@ function replayFilterDiagnosticsStage({ result, diagnostics, activeFeedId, useBa
   });
   stageResults.push(digitalIdentityProfessionalGuardStage.stage);
 
+  const digitalIdentityProfessionalGuardArticleIds = new Set(
+    digitalIdentityProfessionalGuardStage.articles.map((article) => getFilterDecisionTraceArticleId(article))
+  );
+  const sortedArticlesAfterDigitalIdentityGuard = filteredRawArticles
+    .filter((article) => digitalIdentityProfessionalGuardArticleIds.has(getFilterDecisionTraceArticleId(article)));
+  const sortedArticleIdsAfterDigitalIdentityGuard = new Set(
+    sortedArticlesAfterDigitalIdentityGuard.map((article) => getFilterDecisionTraceArticleId(article))
+  );
+  digitalIdentityProfessionalGuardStage.articles.forEach((article) => {
+    const articleId = getFilterDecisionTraceArticleId(article);
+    if (!sortedArticleIdsAfterDigitalIdentityGuard.has(articleId)) {
+      sortedArticlesAfterDigitalIdentityGuard.push(article);
+    }
+  });
+  const groupedArticlesAfterDigitalIdentityGuard = prepareDateFirstGroupedArticles(sortedArticlesAfterDigitalIdentityGuard);
+
   const sortingStage = applySortingStage({
     inputArticles: digitalIdentityProfessionalGuardStage.articles,
-    sortedArticles: result.filteredRawArticles,
+    sortedArticles: sortedArticlesAfterDigitalIdentityGuard,
     diagnostics,
   });
   stageResults.push(sortingStage.stage);
 
   const groupingStage = applyGroupingStage({
     inputArticles: sortingStage.articles,
-    groupedArticles: result.groupedArticles,
-    groupedCount: result.groupedArticlesCount,
+    groupedArticles: groupedArticlesAfterDigitalIdentityGuard,
+    groupedCount: groupedArticlesAfterDigitalIdentityGuard.length,
     diagnostics,
   });
   stageResults.push(groupingStage.stage);
@@ -37378,8 +37394,8 @@ function replayFilterDiagnosticsStage({ result, diagnostics, activeFeedId, useBa
   recordPipelineCount(diagnostics, "afterPersonalDashboard", personalDashboardStage.articles.length);
   recordPipelineCount(diagnostics, "afterAdvancedFilters", advancedFiltersStage.articles.length);
   recordPipelineCount(diagnostics, "afterDigitalIdentityProfessionalGuard", digitalIdentityProfessionalGuardStage.articles.length);
-  recordPipelineCount(diagnostics, "afterSorting", filteredRawArticles.length);
-  recordPipelineCount(diagnostics, "afterGrouping", result.groupedArticlesCount);
+  recordPipelineCount(diagnostics, "afterSorting", sortingStage.articles.length);
+  recordPipelineCount(diagnostics, "afterGrouping", groupingStage.groupedCount);
   recordFilterPipelineStages(diagnostics, stageResults);
   recordDiagnosticsReplayMetadata(diagnostics, {
     status: "completed",
