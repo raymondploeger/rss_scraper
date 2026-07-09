@@ -38238,8 +38238,12 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
     .filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }));
   const filteredBackendArticles = advancedFilteredBackendArticles
     .filter((article) => articlePassesLegacyIdentityProfessionalRelevance(article, { branch: "backend-query" }));
-  const digitalIdentityFilteredBackendArticles = filteredBackendArticles
-    .filter((article) => articlePassesDigitalIdentityProfessionalRelevance(article, { branch: "backend-query" }));
+  const digitalIdentityProfessionalGuardStage = applyDigitalIdentityProfessionalGuardStage({
+    articles: filteredBackendArticles,
+    branch: "backend-query",
+    diagnostics,
+  });
+  const digitalIdentityFilteredBackendArticles = digitalIdentityProfessionalGuardStage.articles;
   const guardRejectedCount = advancedFilteredBackendArticles.length - filteredBackendArticles.length;
   const digitalIdentityGuardRejectedCount = filteredBackendArticles.length - digitalIdentityFilteredBackendArticles.length;
   if (diagnostics?.enabled && shouldApplyIdentityProfessionalRelevanceGuard({ branch: "backend-query" })) {
