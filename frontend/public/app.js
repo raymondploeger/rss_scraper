@@ -21695,6 +21695,7 @@ const DIGITAL_IDENTITY_PROFESSIONAL_CORE_TERMS = [
   "mobile driver license",
   "mobile driver's license",
   "mdl",
+  "digital wallet",
   "identity wallet",
   "eudi wallet",
   "digital wallet for identity",
@@ -21739,15 +21740,10 @@ const DIGITAL_IDENTITY_PROFESSIONAL_VENDOR_TERMS = [
   "veriff",
   "onfido",
   "jumio",
-  "mitek",
-  "facephi",
-  "sicpa",
   "iproov",
-  "innovatrics",
   "hid",
   "veridos",
   "in groupe",
-  "laxton",
 ];
 
 const DIGITAL_IDENTITY_PROFESSIONAL_NOISE_TERMS = [
@@ -21803,9 +21799,10 @@ const DIGITAL_IDENTITY_PROFESSIONAL_VERIFICATION_TERMS = [
 const DIGITAL_IDENTITY_PROFESSIONAL_CONTEXT_TERMS = [
   "identity platform",
   "credential",
+  "wallet",
   "government identity",
   "citizen identity",
-  "national id",
+  "national identity",
   "id document verification",
   "passport verification",
 ];
@@ -21871,22 +21868,28 @@ function getDigitalIdentityProfessionalGuardAssessment(article, options = {}) {
   ]
     .filter(Boolean)
     .join(" ");
+  const contentHaystack = [
+    context.titleText,
+    context.bodyText,
+  ]
+    .filter(Boolean)
+    .join(" ");
   const matchedStrongTerms = normalizeKeywordList(DIGITAL_IDENTITY_PROFESSIONAL_STRONG_TERMS)
     .filter((term) => textMatchesKeyword(haystack, term));
   const matchedCoreTerms = normalizeKeywordList(DIGITAL_IDENTITY_PROFESSIONAL_CORE_TERMS)
-    .filter((term) => textMatchesKeyword(haystack, term));
+    .filter((term) => textMatchesKeyword(contentHaystack, term));
   const matchedSupportTerms = normalizeKeywordList(DIGITAL_IDENTITY_PROFESSIONAL_SUPPORT_TERMS)
     .filter((term) => textMatchesKeyword(haystack, term));
   const matchedVendorTerms = normalizeKeywordList(DIGITAL_IDENTITY_PROFESSIONAL_VENDOR_TERMS)
-    .filter((term) => textMatchesKeyword(haystack, term));
+    .filter((term) => textMatchesKeyword(contentHaystack, term));
   const matchedNoiseTerms = normalizeKeywordList(DIGITAL_IDENTITY_PROFESSIONAL_NOISE_TERMS)
     .filter((term) => textMatchesKeyword(haystack, term));
   const matchedVerificationTerms = normalizeKeywordList(DIGITAL_IDENTITY_PROFESSIONAL_VERIFICATION_TERMS)
-    .filter((term) => textMatchesKeyword(haystack, term));
+    .filter((term) => textMatchesKeyword(contentHaystack, term));
   const matchedProfessionalContextTerms = normalizeKeywordList(DIGITAL_IDENTITY_PROFESSIONAL_CONTEXT_TERMS)
-    .filter((term) => textMatchesKeyword(haystack, term));
+    .filter((term) => textMatchesKeyword(contentHaystack, term));
   const matchedVendorContextTerms = normalizeKeywordList(DIGITAL_IDENTITY_PROFESSIONAL_VENDOR_CONTEXT_TERMS)
-    .filter((term) => textMatchesKeyword(haystack, term));
+    .filter((term) => textMatchesKeyword(contentHaystack, term));
   const domainScore = getPersonalDomainContextProfile(context, "digital_identity_biometrics").score;
   const interestBoost = Number(computePersonalInterestBoost(article, "digital_identity")?.score) || 0;
   const hasStrongProfessionalEvidence = matchedStrongTerms.length > 0;
