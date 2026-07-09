@@ -37168,7 +37168,9 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
         }
       }
     }
-    const dashboardPassed = articleMatchesPersonalDashboardSelection(article);
+    const legacyDashboardPassed = articleMatchesPersonalDashboardSelection(article);
+    const dashboardPassed = legacyDashboardPassed &&
+      (!digitalIdentityGuardBooleanAssessment || digitalIdentityGuardBooleanAssessment.passed);
     const sharedSecurityBridgeDiagnostics = diagnostics?.enabled
       ? getSharedSecurityBridgeDecision(article)
       : null;
@@ -37176,7 +37178,9 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
       const personalDashboardScore = buildPersonalDashboardScore(article, {
         passed: true,
         branch: diagnostics?.branch || "",
-        decisionSource: sharedSecurityBridgeDiagnostics?.sharedSecurityBridgeScorePass
+        decisionSource: digitalIdentityGuardBooleanAssessment
+          ? "legacy-pass-fail+digital-identity-professional-guard"
+          : sharedSecurityBridgeDiagnostics?.sharedSecurityBridgeScorePass
           ? "legacy-pass-fail+shared-security-bridge-pass"
           : "legacy-pass-fail",
       });
@@ -37194,11 +37198,19 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
       outputArticles.push(article);
       return;
     }
-    const rejection = classifyPersonalDashboardRejection(article);
+    const rejection = legacyDashboardPassed && digitalIdentityGuardBooleanAssessment && !digitalIdentityGuardBooleanAssessment.passed
+      ? {
+          category: "digital_identity_professional_guard",
+          reason: digitalIdentityGuardBooleanAssessment.rejectionReason || "digital_identity_professional_guard_rejected",
+        }
+      : classifyPersonalDashboardRejection(article);
     const personalDashboardScore = buildPersonalDashboardScore(article, {
       passed: false,
       rejection,
       branch: diagnostics?.branch || "",
+      decisionSource: legacyDashboardPassed && digitalIdentityGuardBooleanAssessment && !digitalIdentityGuardBooleanAssessment.passed
+        ? "legacy-pass-fail+digital-identity-professional-guard"
+        : "legacy-pass-fail",
     });
     recordPersonalDashboardScore(diagnostics, article, personalDashboardScore);
     recordFilterDecisionStage(diagnostics, article, {
