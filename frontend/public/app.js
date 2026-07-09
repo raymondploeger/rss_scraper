@@ -4620,6 +4620,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     sharedSecurityDiagnostics: null,
     sharedSecurityDashboardMatcherDiagnostics: null,
     sharedSecurityBridgeDiagnostics: null,
+    digitalIdentityGuard: null,
     digitalIdentityGuardBooleanApplied: null,
     v3DecisionEngineDiagnosticsSummary: null,
     v3ConfidenceSummary: null,
@@ -17408,6 +17409,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.identityNoiseGuardDiagnosticsSummary = getIdentityNoiseGuardDiagnosticsSummary(diagnostics);
   diagnostics.identityProfessionalRelevanceGuardSummary = getIdentityProfessionalRelevanceGuardSummary(diagnostics);
   diagnostics.digitalIdentityProfessionalGuard = getDigitalIdentityProfessionalGuardSummary(diagnostics);
+  diagnostics.digitalIdentityGuard = diagnostics.digitalIdentityProfessionalGuard;
   diagnostics.evidenceBuilderDiagnosticsSummary = getEvidenceBuilderDiagnosticsSummary(diagnostics);
   diagnostics.evidenceBuilderParitySummary = getEvidenceBuilderParitySummary(diagnostics);
   diagnostics.evidenceBuilderIdCardsParitySummary = getEvidenceBuilderIdCardsParitySummary(diagnostics);
@@ -21725,6 +21727,37 @@ const DIGITAL_IDENTITY_PROFESSIONAL_NOISE_TERMS = [
   "enterprise access management",
 ];
 
+const DIGITAL_IDENTITY_PROFESSIONAL_VERIFICATION_TERMS = [
+  "verification",
+  "identity verification",
+  "authentication",
+  "biometric verification",
+];
+
+const DIGITAL_IDENTITY_PROFESSIONAL_CONTEXT_TERMS = [
+  "government",
+  "citizen",
+  "passport",
+  "id card",
+  "identity document",
+  "credential",
+  "issuance",
+  "enrollment",
+  "enrolment",
+  "border",
+  "immigration",
+  "kyc provider",
+];
+
+const DIGITAL_IDENTITY_PROFESSIONAL_VENDOR_CONTEXT_TERMS = [
+  "identity",
+  "credential",
+  "document",
+  "biometric identity",
+  "digital id",
+  "digital identity",
+];
+
 function shouldApplyDigitalIdentityProfessionalGuard(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
   const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
   const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
@@ -21783,17 +21816,28 @@ function getDigitalIdentityProfessionalGuardAssessment(article, options = {}) {
     .filter((term) => textMatchesKeyword(haystack, term));
   const matchedNoiseTerms = normalizeKeywordList(DIGITAL_IDENTITY_PROFESSIONAL_NOISE_TERMS)
     .filter((term) => textMatchesKeyword(haystack, term));
+  const matchedVerificationTerms = normalizeKeywordList(DIGITAL_IDENTITY_PROFESSIONAL_VERIFICATION_TERMS)
+    .filter((term) => textMatchesKeyword(haystack, term));
+  const matchedProfessionalContextTerms = normalizeKeywordList(DIGITAL_IDENTITY_PROFESSIONAL_CONTEXT_TERMS)
+    .filter((term) => textMatchesKeyword(haystack, term));
+  const matchedVendorContextTerms = normalizeKeywordList(DIGITAL_IDENTITY_PROFESSIONAL_VENDOR_CONTEXT_TERMS)
+    .filter((term) => textMatchesKeyword(haystack, term));
   const domainScore = getPersonalDomainContextProfile(context, "digital_identity_biometrics").score;
   const interestBoost = Number(computePersonalInterestBoost(article, "digital_identity")?.score) || 0;
   const hasStrongProfessionalEvidence = matchedStrongTerms.length > 0;
-  const hasVendorProfessionalEvidence = matchedVendorTerms.length > 0;
+  const hasContextualVerificationEvidence = matchedVerificationTerms.length > 0 &&
+    matchedProfessionalContextTerms.length > 0;
+  const hasVendorProfessionalEvidence = matchedVendorTerms.length > 0 &&
+    matchedVendorContextTerms.length > 0;
   const scoreOnlySupport = !hasStrongProfessionalEvidence &&
+    !hasContextualVerificationEvidence &&
     !hasVendorProfessionalEvidence &&
-    matchedSupportTerms.length > 0 &&
+    (matchedSupportTerms.length > 0 || matchedVerificationTerms.length > 0) &&
     (interestBoost >= 24 || domainScore >= 14);
-  const hasSupportedProfessionalEvidence = hasVendorProfessionalEvidence;
+  const hasSupportedProfessionalEvidence = hasContextualVerificationEvidence || hasVendorProfessionalEvidence;
   const noiseDominates = matchedNoiseTerms.length > 0 &&
     !hasStrongProfessionalEvidence &&
+    !hasContextualVerificationEvidence &&
     matchedVendorTerms.length === 0;
   let rejectionReason = "";
   if (enabled) {
@@ -21822,6 +21866,7 @@ function getDigitalIdentityProfessionalGuardAssessment(article, options = {}) {
     rejectionCategory: rejectionReason ? "digital_identity_professional_relevance" : "",
     hasStrongProfessionalEvidence,
     hasSupportedProfessionalEvidence,
+    hasContextualVerificationEvidence,
     hasVendorProfessionalEvidence,
     scoreOnlySupport,
     noiseDominates,
@@ -21829,6 +21874,9 @@ function getDigitalIdentityProfessionalGuardAssessment(article, options = {}) {
     matchedSupportTerms: Object.freeze(matchedSupportTerms.slice(0, 12)),
     matchedVendorTerms: Object.freeze(matchedVendorTerms.slice(0, 12)),
     matchedNoiseTerms: Object.freeze(matchedNoiseTerms.slice(0, 12)),
+    matchedVerificationTerms: Object.freeze(matchedVerificationTerms.slice(0, 12)),
+    matchedProfessionalContextTerms: Object.freeze(matchedProfessionalContextTerms.slice(0, 12)),
+    matchedVendorContextTerms: Object.freeze(matchedVendorContextTerms.slice(0, 12)),
     domainScore,
     interestBoost,
     dominantDomain: getArticleDominantDomain(article),
