@@ -4626,6 +4626,9 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     digitalIdentitySpecificEvidence: null,
     digitalIdentityGuardBooleanApplied: null,
     biometricsProfessionalGuard: null,
+    eidDiagnosticsEntries: enabled ? [] : null,
+    eidDiagnosticsSummary: null,
+    eidProfessionalGuard: null,
     v3DecisionEngineDiagnosticsSummary: null,
     v3ConfidenceSummary: null,
     v3DecisionParitySummary: null,
@@ -5269,6 +5272,8 @@ function getFilterDecisionDebugToolsSummary(diagnostics) {
       "window.listRejectionReasons()",
       "window.explainPersonalDashboardScore(articleId)",
       "window.explainPersonalDashboardScoreByTitle(titlePart)",
+      "window.listEidDiagnostics(limit)",
+      "window.explainEidDecisionByTitle(titlePart)",
       "window.listHighestPersonalDashboardScores(limit)",
       "window.explainIdentityMatchByTitle(titlePart)",
       "window.listIdentityScoreTooLow(limit)",
@@ -13483,6 +13488,101 @@ function getDigitalIdentityProfessionalGuardSummary(diagnostics) {
   };
 }
 
+function getEidDiagnosticsSummary(diagnostics) {
+  if (!diagnostics?.enabled || !shouldCollectEidDiagnostics()) {
+    return null;
+  }
+
+  const entries = Array.isArray(diagnostics.eidDiagnosticsEntries)
+    ? diagnostics.eidDiagnosticsEntries
+    : [];
+  const matchedSignalCounts = new Map();
+  const professionalSignalCounts = new Map();
+  const noiseSignalCounts = new Map();
+  const exampleSurvivorTitles = [];
+  const exampleRejectedTitles = [];
+  const likelyFalsePositiveTitles = [];
+  const likelyFalseNegativeTitles = [];
+  let genericIdentityEvidenceOnlyCount = 0;
+  let identityDocumentOverlapCount = 0;
+
+  entries.forEach((entry) => {
+    [
+      ...(entry.matchedStrongSignals || []),
+      ...(entry.matchedRelatedSignals || []),
+      ...(entry.matchedGenericSignals || []),
+    ].forEach((term) => incrementEvidenceCount(matchedSignalCounts, { id: normalizeEvidenceId(term), term }));
+    [
+      ...(entry.matchedStrongSignals || []),
+      ...(entry.matchedRelatedSignals || []),
+    ].forEach((term) => incrementEvidenceCount(professionalSignalCounts, { id: normalizeEvidenceId(term), term }));
+    (entry.matchedNoiseSignals || []).forEach((term) =>
+      incrementEvidenceCount(noiseSignalCounts, { id: normalizeEvidenceId(term), term })
+    );
+    if (entry.reliesOnGenericIdentityEvidence) {
+      genericIdentityEvidenceOnlyCount += 1;
+    }
+    if (entry.identityDocumentOverlap) {
+      identityDocumentOverlapCount += 1;
+    }
+    if (entry.passed && exampleSurvivorTitles.length < 25) {
+      exampleSurvivorTitles.push(entry.title);
+    }
+    if (entry.rejected && exampleRejectedTitles.length < 25) {
+      exampleRejectedTitles.push(entry.title);
+    }
+    if (entry.likelyFalsePositive && likelyFalsePositiveTitles.length < 25) {
+      likelyFalsePositiveTitles.push(entry.title);
+    }
+    if (entry.likelyFalseNegative && likelyFalseNegativeTitles.length < 25) {
+      likelyFalseNegativeTitles.push(entry.title);
+    }
+  });
+
+  return {
+    enabled: true,
+    candidateCount: diagnostics.counts?.candidatePool || 0,
+    evaluated: entries.length,
+    passed: entries.filter((entry) => entry.passed).length,
+    rejected: entries.filter((entry) => entry.rejected).length,
+    genericIdentityEvidenceOnlyCount,
+    identityDocumentOverlapCount,
+    topMatchedSignals: getTopEvidenceCounts(matchedSignalCounts, 20),
+    topProfessionalSignals: getTopEvidenceCounts(professionalSignalCounts, 20),
+    topNoiseSignals: getTopEvidenceCounts(noiseSignalCounts, 20),
+    exampleSurvivorTitles,
+    exampleRejectedTitles,
+    likelyFalsePositiveTitles,
+    likelyFalseNegativeTitles,
+    notes: [
+      "eID diagnostics active",
+      "eID Professional Guard active when eID is selected",
+      "eID Professional Guard runs in the Personal Dashboard decision path",
+    ],
+  };
+}
+
+function getEidProfessionalGuardSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.eidProfessionalGuard) {
+    return null;
+  }
+
+  const guard = diagnostics.eidProfessionalGuard;
+  return {
+    enabled: Boolean(guard.enabled),
+    evaluated: Number(guard.evaluated) || 0,
+    passed: Number(guard.passed) || 0,
+    rejected: Number(guard.rejected) || 0,
+    topRejectionReasons: Object.entries(guard.rejectionReasons || {})
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((left, right) => right.count - left.count || left.reason.localeCompare(right.reason))
+      .slice(0, 10),
+    exampleRejectedTitles: Array.isArray(guard.rejectedExampleTitles)
+      ? guard.rejectedExampleTitles.slice(0, 25)
+      : [],
+  };
+}
+
 function getDominantDomainDiagnosticsSummary(diagnostics) {
   if (!diagnostics?.enabled || !diagnostics.personalDashboardScoreMap) {
     return null;
@@ -13594,6 +13694,54 @@ function explainPersonalDashboardScoreByTitle(titlePart) {
     String(trace?.title || "").toLowerCase().includes(needle)
   );
   return match ? explainPersonalDashboardScore(match.articleId) : null;
+}
+
+function getActiveEidDiagnosticsEntries() {
+  const activeDiagnostic = getActiveFilterPipelineDiagnostic();
+  return Array.isArray(activeDiagnostic?.eidDiagnosticsEntries)
+    ? activeDiagnostic.eidDiagnosticsEntries
+    : [];
+}
+
+function listEidDiagnostics(limit = 25) {
+  const normalizedLimit = Math.max(1, Number(limit) || 25);
+  return getActiveEidDiagnosticsEntries()
+    .slice(0, normalizedLimit)
+    .map((entry) => ({
+      articleId: entry.articleId,
+      title: entry.title,
+      passed: Boolean(entry.passed),
+      rejected: Boolean(entry.rejected),
+      rejectionReason: entry.rejectionReason || "",
+      matchedStrongSignals: entry.matchedStrongSignals || [],
+      matchedRelatedSignals: entry.matchedRelatedSignals || [],
+      matchedNoiseSignals: entry.matchedNoiseSignals || [],
+      reliesOnGenericIdentityEvidence: Boolean(entry.reliesOnGenericIdentityEvidence),
+      identityDocumentOverlap: Boolean(entry.identityDocumentOverlap),
+      likelyFalsePositive: Boolean(entry.likelyFalsePositive),
+      likelyFalseNegative: Boolean(entry.likelyFalseNegative),
+      scores: entry.scores || {},
+    }));
+}
+
+function explainEidDecisionByTitle(titlePart) {
+  const needle = String(titlePart || "").trim().toLowerCase();
+  if (!needle) {
+    return null;
+  }
+
+  const entry = getActiveEidDiagnosticsEntries().find((candidate) =>
+    String(candidate?.title || "").toLowerCase().includes(needle)
+  );
+  if (!entry) {
+    return null;
+  }
+
+  return {
+    ...entry,
+    personalDashboardScore: explainPersonalDashboardScore(entry.articleId),
+    filterDecisionTrace: explainArticleDecision(entry.articleId),
+  };
 }
 
 function explainPolymerMatchByTitle(titlePart) {
@@ -16837,6 +16985,9 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     sharedSecurityDiagnostics: diagnostics.sharedSecurityDiagnostics || null,
     sharedSecurityDashboardMatcherDiagnostics: diagnostics.sharedSecurityDashboardMatcherDiagnostics || null,
     sharedSecurityBridgeDiagnostics: diagnostics.sharedSecurityBridgeDiagnostics || null,
+    eidDiagnosticsSummary: diagnostics.eidDiagnosticsSummary || null,
+    eidDiagnosticsEntries: diagnostics.eidDiagnosticsEntries || [],
+    eidProfessionalGuard: diagnostics.eidProfessionalGuard || null,
     v3DecisionEngineDiagnosticsSummary: diagnostics.v3DecisionEngineDiagnosticsSummary || null,
     v3ConfidenceSummary: diagnostics.v3ConfidenceSummary || null,
     v3DecisionParitySummary: diagnostics.v3DecisionParitySummary || null,
@@ -17241,6 +17392,14 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.explainPersonalDashboardScoreByTitle = (titlePart) => explainPersonalDashboardScoreByTitle(titlePart);
   }
 
+  if (typeof window.listEidDiagnostics !== "function") {
+    window.listEidDiagnostics = (limit) => listEidDiagnostics(limit);
+  }
+
+  if (typeof window.explainEidDecisionByTitle !== "function") {
+    window.explainEidDecisionByTitle = (titlePart) => explainEidDecisionByTitle(titlePart);
+  }
+
   if (typeof window.listHighestPersonalDashboardScores !== "function") {
     window.listHighestPersonalDashboardScores = (limit) => listHighestPersonalDashboardScores(limit);
   }
@@ -17355,6 +17514,8 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.listRejectionReasons()",
         "window.explainPersonalDashboardScore(articleId)",
         "window.explainPersonalDashboardScoreByTitle(titlePart)",
+        "window.listEidDiagnostics(limit)",
+        "window.explainEidDecisionByTitle(titlePart)",
         "window.listHighestPersonalDashboardScores(limit)",
         "window.explainIdentityMatchByTitle(titlePart)",
         "window.listIdentityScoreTooLow(limit)",
@@ -17417,6 +17578,12 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.digitalIdentityGuardFinalGate = diagnostics.digitalIdentityGuardBooleanApplied;
   diagnostics.digitalIdentityGuardCriteria = diagnostics.digitalIdentityGuardBooleanApplied;
   diagnostics.digitalIdentitySpecificEvidence = diagnostics.digitalIdentityGuardBooleanApplied;
+  diagnostics.eidDiagnosticsSummary = getEidDiagnosticsSummary(diagnostics);
+  diagnostics.eidProfessionalGuard = getEidProfessionalGuardSummary(diagnostics);
+  if (diagnostics.eidDiagnosticsSummary?.enabled) {
+    addFilterPipelineNote(diagnostics, "eID diagnostics active");
+    addFilterPipelineNote(diagnostics, "eID Professional Guard active for eID selection");
+  }
   diagnostics.evidenceBuilderDiagnosticsSummary = getEvidenceBuilderDiagnosticsSummary(diagnostics);
   diagnostics.evidenceBuilderParitySummary = getEvidenceBuilderParitySummary(diagnostics);
   diagnostics.evidenceBuilderIdCardsParitySummary = getEvidenceBuilderIdCardsParitySummary(diagnostics);
@@ -17517,6 +17684,8 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("sharedSecurityDiagnostics", diagnostics.sharedSecurityDiagnostics);
   console.log("sharedSecurityDashboardMatcherDiagnostics", diagnostics.sharedSecurityDashboardMatcherDiagnostics);
   console.log("sharedSecurityBridgeDiagnostics", diagnostics.sharedSecurityBridgeDiagnostics);
+  console.log("eidDiagnosticsSummary", diagnostics.eidDiagnosticsSummary);
+  console.log("eidProfessionalGuard", diagnostics.eidProfessionalGuard);
   console.log("v3DecisionEngineDiagnosticsSummary", diagnostics.v3DecisionEngineDiagnosticsSummary);
   console.log("v3ConfidenceSummary", diagnostics.v3ConfidenceSummary);
   console.log("v3DecisionParitySummary", diagnostics.v3DecisionParitySummary);
@@ -21818,6 +21987,322 @@ const DIGITAL_IDENTITY_PROFESSIONAL_VENDOR_CONTEXT_TERMS = [
   "kyc",
   "onboarding",
 ];
+
+const EID_DIAGNOSTIC_STRONG_SIGNALS = [
+  "eid",
+  "e-id",
+  "electronic identity",
+  "electronic id",
+  "electronic identification",
+  "national eid",
+  "national e-id",
+  "national electronic id",
+  "eid card",
+  "e-id card",
+  "electronic identity card",
+  "eidas",
+  "eu digital identity",
+  "eudi wallet",
+  "european digital identity wallet",
+  "digital identity wallet",
+  "mobile eid",
+  "mobile e-id",
+  "government eid",
+  "citizen eid",
+  "electronic identification scheme",
+  "notified eid scheme",
+  "eid interoperability",
+];
+
+const EID_DIAGNOSTIC_RELATED_SIGNALS = [
+  "digital id",
+  "government digital id",
+  "national digital id",
+  "digital id law",
+  "national id",
+  "national identity",
+  "identity card",
+  "identity document",
+  "citizen identity",
+  "citizen identity platform",
+  "government identity",
+  "identity wallet",
+  "identity credential",
+  "identity platform",
+  "public sector digital identity",
+];
+
+const EID_DIAGNOSTIC_NOISE_SIGNALS = [
+  "article id",
+  "user id",
+  "session id",
+  "device id",
+  "login id",
+  "account id",
+  "id number",
+  "authentication",
+  "cybersecurity identity",
+  "machine identity",
+  "cloud identity",
+  "iam",
+  "access management",
+  "bank id",
+  "finance id",
+  "security features",
+  "ovd",
+  "ovd-b",
+  "ovd-g",
+  "brandweer",
+  "drimble",
+  "hulpdiensten",
+  "112",
+];
+
+const EID_DIAGNOSTIC_GENERIC_SIGNALS = [
+  "identity",
+  "generic identity",
+  "digital identity",
+  "id",
+  "identification",
+  "authentication",
+];
+
+const EID_PROFESSIONAL_RELATED_PASS_SIGNALS = [
+  "government digital id",
+  "national digital id",
+  "digital id law",
+  "citizen identity platform",
+  "identity wallet",
+  "identity credential",
+  "public sector digital identity",
+];
+
+const EID_PROFESSIONAL_EMERGENCY_NOISE_TERMS = [
+  "hulpdiensten",
+  "brandweer",
+  "ambulance",
+  "politie",
+  "ongeval",
+  "gaslekkage",
+  "112",
+  "alarmeringen",
+  "drimble",
+  "ovd",
+  "ovd-b",
+  "ovd-g",
+  "officier van dienst",
+  "melding met hoge urgentie",
+  "melding met normale urgentie",
+  "brandlucht",
+];
+
+const EID_PROFESSIONAL_SECURITY_FEATURE_NOISE_TERMS = [
+  "security feature",
+  "security features",
+  "security printing",
+  "hologram",
+  "holographic",
+  "ovd",
+  "optically variable",
+];
+
+const EID_PROFESSIONAL_FINANCE_ACCOUNT_NOISE_TERMS = [
+  "bank id",
+  "finance id",
+  "account id",
+  "login id",
+  "user id",
+  "session id",
+  "device id",
+  "bank account",
+  "digital banking",
+];
+
+const EID_PROFESSIONAL_GENERIC_ID_NOISE_TERMS = [
+  "article id",
+  "id number",
+  "generic id",
+  "generic identity",
+  "authentication",
+  "cybersecurity identity",
+  "machine identity",
+  "cloud identity",
+];
+
+function shouldCollectEidDiagnostics(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
+  return selectedMainDomains.includes("digital_identity_biometrics") &&
+    normalizedInterests.includes("eid");
+}
+
+function getEidDiagnosticMatchedTerms(context, terms) {
+  const haystack = [
+    context.titleText,
+    context.tagText,
+    context.metadataText,
+    context.bodyText,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return normalizeKeywordList(terms)
+    .filter((term) => textMatchesKeyword(haystack, term));
+}
+
+function buildEidDiagnosticEntry(article, options = {}) {
+  const context = getPersonalBoostContext(article);
+  const matchedStrongSignals = getEidDiagnosticMatchedTerms(context, EID_DIAGNOSTIC_STRONG_SIGNALS);
+  const matchedRelatedSignals = getEidDiagnosticMatchedTerms(context, EID_DIAGNOSTIC_RELATED_SIGNALS);
+  const matchedNoiseSignals = getEidDiagnosticMatchedTerms(context, EID_DIAGNOSTIC_NOISE_SIGNALS);
+  const matchedGenericSignals = getEidDiagnosticMatchedTerms(context, EID_DIAGNOSTIC_GENERIC_SIGNALS)
+    .filter((term) => !matchedStrongSignals.includes(term));
+  const eidHybridAssessment = getDigitalSubgroupHybridAssessment(article, "eid");
+  const digitalDomainScore = getPersonalDomainContextProfile(context, "digital_identity_biometrics").score;
+  const identityDocumentScore = getPersonalDomainContextProfile(context, "identity_documents").score;
+  const passed = Boolean(options.passed);
+  const reliesOnGenericIdentityEvidence = matchedStrongSignals.length === 0 &&
+    (matchedGenericSignals.length > 0 || matchedRelatedSignals.length > 0 || Number(eidHybridAssessment.relatedHits) > 0);
+  const identityDocumentOverlap = identityDocumentScore >= 10 ||
+    matchedRelatedSignals.some((term) => [
+      "national id",
+      "national identity",
+      "identity card",
+      "identity document",
+    ].includes(term));
+  const likelyFalsePositive = passed &&
+    matchedStrongSignals.length === 0 &&
+    (matchedNoiseSignals.length > 0 || reliesOnGenericIdentityEvidence || identityDocumentOverlap);
+  const likelyFalseNegative = !passed &&
+    matchedStrongSignals.length > 0 &&
+    Number(eidHybridAssessment.interestScore) >= DIGITAL_SUBGROUP_BASELINE_MINIMUM_SCORE;
+
+  return {
+    articleId: getFilterDecisionTraceArticleId(article),
+    title: article?.title || "Untitled article",
+    passed,
+    rejected: !passed,
+    rejectionReason: options.rejection?.reason || "",
+    matchedStrongSignals,
+    matchedRelatedSignals,
+    matchedNoiseSignals,
+    matchedGenericSignals,
+    reliesOnGenericIdentityEvidence,
+    identityDocumentOverlap,
+    likelyFalsePositive,
+    likelyFalseNegative,
+    eidHybridAssessment,
+    scores: {
+      eidInterestScore: Number(eidHybridAssessment.interestScore) || 0,
+      digitalDomainScore: Number(digitalDomainScore) || 0,
+      identityDocumentScore: Number(identityDocumentScore) || 0,
+    },
+  };
+}
+
+function recordEidDiagnostics(diagnostics, article, options = {}) {
+  if (!diagnostics?.enabled || !shouldCollectEidDiagnostics()) {
+    return;
+  }
+  if (!Array.isArray(diagnostics.eidDiagnosticsEntries)) {
+    diagnostics.eidDiagnosticsEntries = [];
+  }
+  diagnostics.eidDiagnosticsEntries.push(buildEidDiagnosticEntry(article, options));
+}
+
+function shouldApplyEidProfessionalGuardBooleanGate(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  return shouldCollectEidDiagnostics(selectedInterests);
+}
+
+function getEidProfessionalGuardAssessment(article, options = {}) {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const enabled = Boolean(options.forceEnabled) || shouldApplyEidProfessionalGuardBooleanGate(selectedInterests);
+  const diagnosticsEntry = buildEidDiagnosticEntry(article, { passed: true });
+  const context = getPersonalBoostContext(article);
+  const relatedPassSignals = getEidDiagnosticMatchedTerms(context, EID_PROFESSIONAL_RELATED_PASS_SIGNALS);
+  const emergencyNoiseTerms = getEidDiagnosticMatchedTerms(context, EID_PROFESSIONAL_EMERGENCY_NOISE_TERMS);
+  const securityFeatureNoiseTerms = getEidDiagnosticMatchedTerms(context, EID_PROFESSIONAL_SECURITY_FEATURE_NOISE_TERMS);
+  const financeAccountNoiseTerms = getEidDiagnosticMatchedTerms(context, EID_PROFESSIONAL_FINANCE_ACCOUNT_NOISE_TERMS);
+  const genericIdNoiseTerms = getEidDiagnosticMatchedTerms(context, EID_PROFESSIONAL_GENERIC_ID_NOISE_TERMS);
+  const strongEidMatched = diagnosticsEntry.matchedStrongSignals.length > 0;
+  const relatedProfessionalContextMatched = relatedPassSignals.length > 0;
+  const passed = !enabled || strongEidMatched || relatedProfessionalContextMatched;
+  let rejectionReason = "";
+  if (enabled && !passed) {
+    if (emergencyNoiseTerms.length > 0) {
+      rejectionReason = "emergency_service_noise";
+    } else if (securityFeatureNoiseTerms.length > 0) {
+      rejectionReason = "security_features_without_eid_context";
+    } else if (financeAccountNoiseTerms.length > 0) {
+      rejectionReason = "finance_or_account_id_noise";
+    } else if (genericIdNoiseTerms.length > 0 || diagnosticsEntry.matchedGenericSignals.length > 0) {
+      rejectionReason = "generic_id_without_eid_context";
+    } else {
+      rejectionReason = "generic_identity_without_eid_context";
+    }
+  }
+
+  return Object.freeze({
+    enabled,
+    branch: options.branch || "",
+    selectedInterests: Object.freeze(selectedInterests.slice()),
+    title: article?.title || "Untitled article",
+    source: getIdentityNoiseGuardSource(article),
+    passed,
+    rejected: enabled && !passed,
+    rejectionReason,
+    rejectionCategory: rejectionReason ? "eid_professional_relevance" : "",
+    strongEidMatched,
+    relatedProfessionalContextMatched,
+    matchedStrongSignals: Object.freeze(diagnosticsEntry.matchedStrongSignals.slice(0, 12)),
+    matchedRelatedSignals: Object.freeze(diagnosticsEntry.matchedRelatedSignals.slice(0, 12)),
+    matchedGenericSignals: Object.freeze(diagnosticsEntry.matchedGenericSignals.slice(0, 12)),
+    matchedNoiseSignals: Object.freeze(diagnosticsEntry.matchedNoiseSignals.slice(0, 12)),
+    matchedRelatedPassSignals: Object.freeze(relatedPassSignals.slice(0, 12)),
+    matchedEmergencyNoiseTerms: Object.freeze(emergencyNoiseTerms.slice(0, 12)),
+    matchedSecurityFeatureNoiseTerms: Object.freeze(securityFeatureNoiseTerms.slice(0, 12)),
+    matchedFinanceAccountNoiseTerms: Object.freeze(financeAccountNoiseTerms.slice(0, 12)),
+    matchedGenericIdNoiseTerms: Object.freeze(genericIdNoiseTerms.slice(0, 12)),
+    eidHybridAssessment: diagnosticsEntry.eidHybridAssessment,
+    scores: diagnosticsEntry.scores,
+  });
+}
+
+function getEidProfessionalGuardBooleanGateAssessment(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  if (!shouldApplyEidProfessionalGuardBooleanGate(normalizedInterests)) {
+    return null;
+  }
+
+  const legacyEidMatched =
+    getArticleDominantDomain(article) === "digital_identity_biometrics" ||
+    getDigitalSubgroupHybridAssessment(article, "eid").included;
+
+  if (!legacyEidMatched) {
+    return null;
+  }
+
+  return getEidProfessionalGuardAssessment(article, {
+    branch: "personal_dashboard_boolean",
+    forceEnabled: true,
+  });
+}
+
+function getEidProfessionalGuardRejectionCategory(assessment = {}) {
+  const reason = String(assessment?.rejectionReason || "");
+  if (reason === "emergency_service_noise") {
+    return "emergency_service_noise";
+  }
+  if (reason === "security_features_without_eid_context") {
+    return "security_features_without_eid_context";
+  }
+  if (reason === "finance_or_account_id_noise") {
+    return "finance_or_account_id_noise";
+  }
+  if (reason === "generic_identity_without_eid_context") {
+    return "generic_identity_without_eid_context";
+  }
+  return "generic_id_without_eid_context";
+}
 
 function shouldApplyDigitalIdentityProfessionalGuard(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
   const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
@@ -37417,6 +37902,7 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
   inputArticles.forEach((article) => {
     const digitalIdentityGuardBooleanAssessment = getDigitalIdentityProfessionalGuardBooleanGateAssessment(article);
     const biometricsGuardBooleanAssessment = getBiometricsProfessionalGuardBooleanGateAssessment(article);
+    const eidGuardBooleanAssessment = getEidProfessionalGuardBooleanGateAssessment(article);
     if (diagnostics?.enabled && digitalIdentityGuardBooleanAssessment) {
       if (!diagnostics.digitalIdentityGuardBooleanApplied) {
         diagnostics.digitalIdentityGuardBooleanApplied = {
@@ -37487,9 +37973,36 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
         }
       }
     }
+    if (diagnostics?.enabled && eidGuardBooleanAssessment) {
+      if (!diagnostics.eidProfessionalGuard) {
+        diagnostics.eidProfessionalGuard = {
+          enabled: true,
+          evaluated: 0,
+          passed: 0,
+          rejected: 0,
+          rejectionReasons: {},
+          rejectedExampleTitles: [],
+        };
+      }
+      diagnostics.eidProfessionalGuard.evaluated += 1;
+      if (eidGuardBooleanAssessment.passed) {
+        diagnostics.eidProfessionalGuard.passed += 1;
+      } else {
+        diagnostics.eidProfessionalGuard.rejected += 1;
+        const rejectionReason = eidGuardBooleanAssessment.rejectionReason || "unknown";
+        diagnostics.eidProfessionalGuard.rejectionReasons[rejectionReason] =
+          (diagnostics.eidProfessionalGuard.rejectionReasons[rejectionReason] || 0) + 1;
+        if (diagnostics.eidProfessionalGuard.rejectedExampleTitles.length < 25) {
+          diagnostics.eidProfessionalGuard.rejectedExampleTitles.push(
+            article?.title || "Untitled article"
+          );
+        }
+      }
+    }
     const legacyDashboardPassed = articleMatchesPersonalDashboardSelection(article);
     const dashboardPassed = legacyDashboardPassed &&
-      (!digitalIdentityGuardBooleanAssessment || digitalIdentityGuardBooleanAssessment.passed);
+      (!digitalIdentityGuardBooleanAssessment || digitalIdentityGuardBooleanAssessment.passed) &&
+      (!eidGuardBooleanAssessment || eidGuardBooleanAssessment.passed);
     const sharedSecurityBridgeDiagnostics = diagnostics?.enabled
       ? getSharedSecurityBridgeDecision(article)
       : null;
@@ -37499,12 +38012,15 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
         branch: diagnostics?.branch || "",
         decisionSource: digitalIdentityGuardBooleanAssessment
           ? "legacy-pass-fail+digital-identity-professional-guard"
+          : eidGuardBooleanAssessment
+            ? "legacy-pass-fail+eid-professional-guard"
           : biometricsGuardBooleanAssessment
             ? "legacy-pass-fail+biometrics-professional-guard"
           : sharedSecurityBridgeDiagnostics?.sharedSecurityBridgeScorePass
           ? "legacy-pass-fail+shared-security-bridge-pass"
           : "legacy-pass-fail",
       });
+      recordEidDiagnostics(diagnostics, article, { passed: true });
       recordPersonalDashboardScore(diagnostics, article, personalDashboardScore);
       recordFilterDecisionStage(diagnostics, article, {
         stage: "personal_dashboard",
@@ -37516,17 +38032,24 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
           sharedSecurityBridgeDiagnostics,
           digitalIdentityProfessionalGuard: digitalIdentityGuardBooleanAssessment,
           biometricsProfessionalGuard: biometricsGuardBooleanAssessment,
+          eidProfessionalGuard: eidGuardBooleanAssessment,
         },
       });
       outputArticles.push(article);
       return;
     }
     const digitalIdentityGuardRejected = Boolean(digitalIdentityGuardBooleanAssessment && !digitalIdentityGuardBooleanAssessment.passed);
+    const eidGuardRejected = Boolean(eidGuardBooleanAssessment && !eidGuardBooleanAssessment.passed);
     const rejection = digitalIdentityGuardRejected
       ? {
           category: getDigitalIdentityProfessionalGuardRejectionCategory(digitalIdentityGuardBooleanAssessment),
           reason: "digital_identity_professional_guard_rejected",
         }
+      : eidGuardRejected
+        ? {
+            category: getEidProfessionalGuardRejectionCategory(eidGuardBooleanAssessment),
+            reason: "eid_professional_guard_rejected",
+          }
       : classifyPersonalDashboardRejection(article);
     const personalDashboardScore = buildPersonalDashboardScore(article, {
       passed: false,
@@ -37534,8 +38057,11 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
       branch: diagnostics?.branch || "",
       decisionSource: digitalIdentityGuardRejected
         ? "legacy-pass-fail+digital-identity-professional-guard"
+        : eidGuardRejected
+          ? "legacy-pass-fail+eid-professional-guard"
         : "legacy-pass-fail",
     });
+    recordEidDiagnostics(diagnostics, article, { passed: false, rejection });
     recordPersonalDashboardScore(diagnostics, article, personalDashboardScore);
     recordFilterDecisionStage(diagnostics, article, {
       stage: "personal_dashboard",
@@ -37547,10 +38073,13 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
         sharedSecurityBridgeDiagnostics,
         digitalIdentityProfessionalGuard: digitalIdentityGuardBooleanAssessment,
         biometricsProfessionalGuard: biometricsGuardBooleanAssessment,
+        eidProfessionalGuard: eidGuardBooleanAssessment,
         category: rejection.category,
         rejectedStage: "personal_dashboard",
         rejectedCategory: digitalIdentityGuardRejected
           ? "digitalIdentityProfessionalGuard"
+          : eidGuardRejected
+            ? "eidProfessionalGuard"
           : rejection.category,
         finalReason: rejection.reason,
       },
@@ -37737,6 +38266,7 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
           "Biometrics guard is scoped to Biometrics interest only",
         ],
         metadata: {
+          enabled: true,
           digitalIdentityProfessionalGuard: digitalIdentityAssessment,
           biometricsProfessionalGuard: biometricsAssessment,
         },
@@ -37756,8 +38286,10 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
           : "Generic cyber/enterprise identity noise is filtered for Digital Identity only",
       ],
       metadata: {
+        enabled: true,
         digitalIdentityProfessionalGuard: digitalIdentityAssessment,
         biometricsProfessionalGuard: biometricsAssessment,
+        rejectionReason: rejectedAssessment.reason,
         rejectedCategory: rejectedAssessment.type === "biometrics"
           ? "biometricsProfessionalGuard"
           : "digitalIdentityProfessionalGuard",
@@ -40557,6 +41089,7 @@ async function init() {
   loadKeywordFilters();
   loadPersonalDashboardPreferences();
   ensurePersonalDashboardElements();
+  ensureFilterPipelineDiagnosticsExportTools();
   runtime.activityLog = SHOW_ACTIVITY_LOG ? loadStoredActivityLog() : [];
   runtime.activityLogId = SHOW_ACTIVITY_LOG
     ? runtime.activityLog.reduce((maxId, entry) => Math.max(maxId, Number(entry.id) || 0), 0)
