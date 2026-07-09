@@ -22000,6 +22000,20 @@ function articlePassesDigitalIdentityProfessionalRelevance(article, options = {}
   return getDigitalIdentityProfessionalGuardAssessment(article, options).passed;
 }
 
+function getDigitalIdentityProfessionalGuardRejectionCategory(assessment = {}) {
+  const reason = String(assessment?.rejectionReason || "");
+  if (reason === "generic_identity_document_signal_only") {
+    return "generic_identity_document_signal_only";
+  }
+  if (reason === "biometric_without_identity_platform") {
+    return "biometric_without_digital_identity_context";
+  }
+  if (reason === "professional_source_only") {
+    return "professional_source_only";
+  }
+  return "weak_digital_identity_signal";
+}
+
 const SHARED_SECURITY_STANDALONE_RULES = {
   security_printing: {
     strong: [
@@ -37236,9 +37250,10 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
       outputArticles.push(article);
       return;
     }
-    const rejection = legacyDashboardPassed && digitalIdentityGuardBooleanAssessment && !digitalIdentityGuardBooleanAssessment.passed
+    const digitalIdentityGuardRejected = Boolean(digitalIdentityGuardBooleanAssessment && !digitalIdentityGuardBooleanAssessment.passed);
+    const rejection = digitalIdentityGuardRejected
       ? {
-          category: digitalIdentityGuardBooleanAssessment.rejectionReason || "weak_digital_identity_signal",
+          category: getDigitalIdentityProfessionalGuardRejectionCategory(digitalIdentityGuardBooleanAssessment),
           reason: "digital_identity_professional_guard_rejected",
         }
       : classifyPersonalDashboardRejection(article);
@@ -37246,7 +37261,7 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
       passed: false,
       rejection,
       branch: diagnostics?.branch || "",
-      decisionSource: legacyDashboardPassed && digitalIdentityGuardBooleanAssessment && !digitalIdentityGuardBooleanAssessment.passed
+      decisionSource: digitalIdentityGuardRejected
         ? "legacy-pass-fail+digital-identity-professional-guard"
         : "legacy-pass-fail",
     });
@@ -37261,6 +37276,11 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
         sharedSecurityBridgeDiagnostics,
         digitalIdentityProfessionalGuard: digitalIdentityGuardBooleanAssessment,
         category: rejection.category,
+        rejectedStage: "personal_dashboard",
+        rejectedCategory: digitalIdentityGuardRejected
+          ? "digitalIdentityProfessionalGuard"
+          : rejection.category,
+        finalReason: rejection.reason,
       },
     });
     finalizeFilterDecisionTrace(diagnostics, article, "rejected", rejection.reason);
