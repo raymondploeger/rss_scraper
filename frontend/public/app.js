@@ -4625,6 +4625,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     digitalIdentityGuardCriteria: null,
     digitalIdentitySpecificEvidence: null,
     digitalIdentityGuardBooleanApplied: null,
+    biometricsProfessionalGuard: null,
     v3DecisionEngineDiagnosticsSummary: null,
     v3ConfidenceSummary: null,
     v3DecisionParitySummary: null,
@@ -22014,6 +22015,246 @@ function getDigitalIdentityProfessionalGuardRejectionCategory(assessment = {}) {
   return "weak_digital_identity_signal";
 }
 
+const BIOMETRICS_PROFESSIONAL_SIGNAL_TERMS = [
+  "biometric",
+  "biometrics",
+  "facial recognition",
+  "face recognition",
+  "face match",
+  "face matching",
+  "fingerprint",
+  "iris",
+  "liveness",
+  "abis",
+  "afis",
+];
+
+const BIOMETRICS_PROFESSIONAL_CONTEXT_TERMS = [
+  "passport",
+  "id card",
+  "identity document",
+  "national id",
+  "digital id",
+  "credential",
+  "identity verification",
+  "document verification",
+  "government",
+  "border",
+  "immigration",
+  "airport",
+  "e-gate",
+  "egate",
+  "enrollment",
+  "enrolment",
+  "issuance",
+  "visa",
+  "residence permit",
+  "aadhaar",
+  "identity platform",
+];
+
+const BIOMETRICS_PROFESSIONAL_VENDOR_TERMS = [
+  "idemia",
+  "thales",
+  "entrust",
+  "regula",
+  "veriff",
+  "onfido",
+  "jumio",
+  "mitek",
+  "facephi",
+  "iproov",
+  "innovatrics",
+  "hid",
+  "veridos",
+  "in groupe",
+  "laxton",
+  "nec",
+];
+
+const BIOMETRICS_PROFESSIONAL_VENDOR_CONTEXT_TERMS = [
+  "biometric identity",
+  "biometric verification",
+  "identity verification",
+  "document verification",
+  "credential",
+  "passport",
+  "id card",
+  "identity document",
+  "liveness",
+  "aadhaar",
+];
+
+const BIOMETRICS_PROFESSIONAL_SURVEILLANCE_NOISE_TERMS = [
+  "biometric surveillance",
+  "workplace biometric surveillance",
+  "workplace surveillance",
+  "employee monitoring",
+  "ai surveillance",
+  "camera surveillance",
+];
+
+const BIOMETRICS_PROFESSIONAL_CONSUMER_NOISE_TERMS = [
+  "phone face unlock",
+  "face unlock",
+  "smartphone",
+  "consumer phone",
+  "social media age verification",
+  "app store age verification",
+];
+
+const BIOMETRICS_PROFESSIONAL_MEDICAL_FITNESS_NOISE_TERMS = [
+  "medical biometrics",
+  "health biometrics",
+  "fitness biometrics",
+  "sports biometrics",
+  "wearable",
+];
+
+const BIOMETRICS_PROFESSIONAL_TOURISM_QUEUE_NOISE_TERMS = [
+  "tourism",
+  "holiday",
+  "queue",
+  "queues",
+  "travel advice",
+];
+
+function shouldApplyBiometricsProfessionalGuardBooleanGate(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
+  return selectedMainDomains.includes("digital_identity_biometrics") &&
+    normalizedInterests.includes("biometrics");
+}
+
+function getBiometricsProfessionalGuardAssessment(article, options = {}) {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const enabled = Boolean(options.forceEnabled) || shouldApplyBiometricsProfessionalGuardBooleanGate(selectedInterests);
+  const context = getPersonalBoostContext(article);
+  const haystack = [
+    context.titleText,
+    context.tagText,
+    context.metadataText,
+    context.bodyText,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const contentHaystack = [
+    context.titleText,
+    context.bodyText,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const matchedBiometricSignals = normalizeKeywordList(BIOMETRICS_PROFESSIONAL_SIGNAL_TERMS)
+    .filter((term) => textMatchesKeyword(contentHaystack, term));
+  const matchedProfessionalContextTerms = normalizeKeywordList(BIOMETRICS_PROFESSIONAL_CONTEXT_TERMS)
+    .filter((term) => textMatchesKeyword(contentHaystack, term));
+  const matchedVendorTerms = normalizeKeywordList(BIOMETRICS_PROFESSIONAL_VENDOR_TERMS)
+    .filter((term) => textMatchesKeyword(contentHaystack, term));
+  const matchedVendorContextTerms = normalizeKeywordList(BIOMETRICS_PROFESSIONAL_VENDOR_CONTEXT_TERMS)
+    .filter((term) => textMatchesKeyword(contentHaystack, term));
+  const matchedSurveillanceNoiseTerms = normalizeKeywordList(BIOMETRICS_PROFESSIONAL_SURVEILLANCE_NOISE_TERMS)
+    .filter((term) => textMatchesKeyword(haystack, term));
+  const matchedConsumerNoiseTerms = normalizeKeywordList(BIOMETRICS_PROFESSIONAL_CONSUMER_NOISE_TERMS)
+    .filter((term) => textMatchesKeyword(haystack, term));
+  const matchedMedicalFitnessNoiseTerms = normalizeKeywordList(BIOMETRICS_PROFESSIONAL_MEDICAL_FITNESS_NOISE_TERMS)
+    .filter((term) => textMatchesKeyword(haystack, term));
+  const matchedTourismQueueNoiseTerms = normalizeKeywordList(BIOMETRICS_PROFESSIONAL_TOURISM_QUEUE_NOISE_TERMS)
+    .filter((term) => textMatchesKeyword(haystack, term));
+  const biometricSignalMatched = matchedBiometricSignals.length > 0;
+  const professionalContextMatched = matchedProfessionalContextTerms.length > 0;
+  const vendorContextMatched = matchedVendorTerms.length > 0 &&
+    biometricSignalMatched &&
+    matchedVendorContextTerms.length > 0;
+  const professionalBiometricsMatched = biometricSignalMatched &&
+    (professionalContextMatched || vendorContextMatched);
+  const surveillanceNoise = matchedSurveillanceNoiseTerms.length > 0 && !professionalBiometricsMatched;
+  const consumerNoise = matchedConsumerNoiseTerms.length > 0 && !professionalBiometricsMatched;
+  const medicalFitnessNoise = matchedMedicalFitnessNoiseTerms.length > 0 && !professionalBiometricsMatched;
+  const tourismQueueNoise = matchedTourismQueueNoiseTerms.length > 0 && !professionalBiometricsMatched;
+  let rejectionReason = "";
+  if (enabled && !professionalBiometricsMatched) {
+    if (surveillanceNoise) {
+      rejectionReason = "biometric_surveillance_without_id_context";
+    } else if (consumerNoise) {
+      rejectionReason = "consumer_biometric_signal_only";
+    } else if (medicalFitnessNoise) {
+      rejectionReason = "medical_or_fitness_biometric_signal_only";
+    } else if (tourismQueueNoise) {
+      rejectionReason = "tourism_or_queue_without_biometric_border_context";
+    } else {
+      rejectionReason = "biometric_without_identity_context";
+    }
+  }
+
+  return Object.freeze({
+    enabled,
+    branch: options.branch || "",
+    selectedInterests: Object.freeze(selectedInterests.slice()),
+    title: article?.title || "Untitled article",
+    source: getIdentityNoiseGuardSource(article),
+    passed: !enabled || professionalBiometricsMatched,
+    rejected: enabled && !professionalBiometricsMatched,
+    rejectionReason,
+    rejectionCategory: rejectionReason ? "biometrics_professional_relevance" : "",
+    biometricSignalMatched,
+    professionalContextMatched,
+    vendorContextMatched,
+    professionalBiometricsMatched,
+    surveillanceNoise,
+    consumerNoise,
+    medicalFitnessNoise,
+    tourismQueueNoise,
+    matchedBiometricSignals: Object.freeze(matchedBiometricSignals.slice(0, 12)),
+    matchedProfessionalContextTerms: Object.freeze(matchedProfessionalContextTerms.slice(0, 12)),
+    matchedVendorTerms: Object.freeze(matchedVendorTerms.slice(0, 12)),
+    matchedVendorContextTerms: Object.freeze(matchedVendorContextTerms.slice(0, 12)),
+    matchedSurveillanceNoiseTerms: Object.freeze(matchedSurveillanceNoiseTerms.slice(0, 12)),
+    matchedConsumerNoiseTerms: Object.freeze(matchedConsumerNoiseTerms.slice(0, 12)),
+    matchedMedicalFitnessNoiseTerms: Object.freeze(matchedMedicalFitnessNoiseTerms.slice(0, 12)),
+    matchedTourismQueueNoiseTerms: Object.freeze(matchedTourismQueueNoiseTerms.slice(0, 12)),
+  });
+}
+
+function getBiometricsProfessionalGuardBooleanGateAssessment(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  if (!shouldApplyBiometricsProfessionalGuardBooleanGate(normalizedInterests)) {
+    return null;
+  }
+
+  const selectedDigitalInterests = normalizedInterests.filter(
+    (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "digital_identity_biometrics"
+  );
+  const legacyBiometricsMatched =
+    getArticleDominantDomain(article) === "digital_identity_biometrics" ||
+    selectedDigitalInterests.some((interestId) => getDigitalSubgroupHybridAssessment(article, interestId).included);
+
+  if (!legacyBiometricsMatched) {
+    return null;
+  }
+
+  return getBiometricsProfessionalGuardAssessment(article, {
+    branch: "personal_dashboard_boolean",
+    forceEnabled: true,
+  });
+}
+
+function getBiometricsProfessionalGuardRejectionCategory(assessment = {}) {
+  const reason = String(assessment?.rejectionReason || "");
+  if (reason === "biometric_surveillance_without_id_context") {
+    return "biometric_surveillance_without_id_context";
+  }
+  if (reason === "consumer_biometric_signal_only") {
+    return "consumer_biometric_signal_only";
+  }
+  if (reason === "medical_or_fitness_biometric_signal_only") {
+    return "medical_or_fitness_biometric_signal_only";
+  }
+  if (reason === "tourism_or_queue_without_biometric_border_context") {
+    return "tourism_or_queue_without_biometric_border_context";
+  }
+  return "biometric_without_identity_context";
+}
+
 const SHARED_SECURITY_STANDALONE_RULES = {
   security_printing: {
     strong: [
@@ -37175,6 +37416,7 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
   const outputArticles = [];
   inputArticles.forEach((article) => {
     const digitalIdentityGuardBooleanAssessment = getDigitalIdentityProfessionalGuardBooleanGateAssessment(article);
+    const biometricsGuardBooleanAssessment = getBiometricsProfessionalGuardBooleanGateAssessment(article);
     if (diagnostics?.enabled && digitalIdentityGuardBooleanAssessment) {
       if (!diagnostics.digitalIdentityGuardBooleanApplied) {
         diagnostics.digitalIdentityGuardBooleanApplied = {
@@ -37219,9 +37461,36 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
         }
       }
     }
+    if (diagnostics?.enabled && biometricsGuardBooleanAssessment) {
+      if (!diagnostics.biometricsProfessionalGuard) {
+        diagnostics.biometricsProfessionalGuard = {
+          enabled: true,
+          evaluated: 0,
+          passed: 0,
+          rejected: 0,
+          rejectionReasons: {},
+          rejectedExampleTitles: [],
+        };
+      }
+      diagnostics.biometricsProfessionalGuard.evaluated += 1;
+      if (biometricsGuardBooleanAssessment.passed) {
+        diagnostics.biometricsProfessionalGuard.passed += 1;
+      } else {
+        diagnostics.biometricsProfessionalGuard.rejected += 1;
+        const rejectionReason = biometricsGuardBooleanAssessment.rejectionReason || "unknown";
+        diagnostics.biometricsProfessionalGuard.rejectionReasons[rejectionReason] =
+          (diagnostics.biometricsProfessionalGuard.rejectionReasons[rejectionReason] || 0) + 1;
+        if (diagnostics.biometricsProfessionalGuard.rejectedExampleTitles.length < 25) {
+          diagnostics.biometricsProfessionalGuard.rejectedExampleTitles.push(
+            article?.title || "Untitled article"
+          );
+        }
+      }
+    }
     const legacyDashboardPassed = articleMatchesPersonalDashboardSelection(article);
     const dashboardPassed = legacyDashboardPassed &&
-      (!digitalIdentityGuardBooleanAssessment || digitalIdentityGuardBooleanAssessment.passed);
+      (!digitalIdentityGuardBooleanAssessment || digitalIdentityGuardBooleanAssessment.passed) &&
+      (!biometricsGuardBooleanAssessment || biometricsGuardBooleanAssessment.passed);
     const sharedSecurityBridgeDiagnostics = diagnostics?.enabled
       ? getSharedSecurityBridgeDecision(article)
       : null;
@@ -37231,6 +37500,8 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
         branch: diagnostics?.branch || "",
         decisionSource: digitalIdentityGuardBooleanAssessment
           ? "legacy-pass-fail+digital-identity-professional-guard"
+          : biometricsGuardBooleanAssessment
+            ? "legacy-pass-fail+biometrics-professional-guard"
           : sharedSecurityBridgeDiagnostics?.sharedSecurityBridgeScorePass
           ? "legacy-pass-fail+shared-security-bridge-pass"
           : "legacy-pass-fail",
@@ -37245,25 +37516,34 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
           ...getPersonalDashboardTraceMetadata(article, null, personalDashboardScore),
           sharedSecurityBridgeDiagnostics,
           digitalIdentityProfessionalGuard: digitalIdentityGuardBooleanAssessment,
+          biometricsProfessionalGuard: biometricsGuardBooleanAssessment,
         },
       });
       outputArticles.push(article);
       return;
     }
     const digitalIdentityGuardRejected = Boolean(digitalIdentityGuardBooleanAssessment && !digitalIdentityGuardBooleanAssessment.passed);
+    const biometricsGuardRejected = Boolean(biometricsGuardBooleanAssessment && !biometricsGuardBooleanAssessment.passed);
     const rejection = digitalIdentityGuardRejected
       ? {
           category: getDigitalIdentityProfessionalGuardRejectionCategory(digitalIdentityGuardBooleanAssessment),
           reason: "digital_identity_professional_guard_rejected",
         }
-      : classifyPersonalDashboardRejection(article);
+      : biometricsGuardRejected
+        ? {
+            category: getBiometricsProfessionalGuardRejectionCategory(biometricsGuardBooleanAssessment),
+            reason: "biometrics_professional_guard_rejected",
+          }
+        : classifyPersonalDashboardRejection(article);
     const personalDashboardScore = buildPersonalDashboardScore(article, {
       passed: false,
       rejection,
       branch: diagnostics?.branch || "",
       decisionSource: digitalIdentityGuardRejected
         ? "legacy-pass-fail+digital-identity-professional-guard"
-        : "legacy-pass-fail",
+        : biometricsGuardRejected
+          ? "legacy-pass-fail+biometrics-professional-guard"
+          : "legacy-pass-fail",
     });
     recordPersonalDashboardScore(diagnostics, article, personalDashboardScore);
     recordFilterDecisionStage(diagnostics, article, {
@@ -37275,10 +37555,13 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
         ...getPersonalDashboardTraceMetadata(article, rejection, personalDashboardScore),
         sharedSecurityBridgeDiagnostics,
         digitalIdentityProfessionalGuard: digitalIdentityGuardBooleanAssessment,
+        biometricsProfessionalGuard: biometricsGuardBooleanAssessment,
         category: rejection.category,
         rejectedStage: "personal_dashboard",
         rejectedCategory: digitalIdentityGuardRejected
           ? "digitalIdentityProfessionalGuard"
+          : biometricsGuardRejected
+            ? "biometricsProfessionalGuard"
           : rejection.category,
         finalReason: rejection.reason,
       },
