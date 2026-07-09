@@ -4623,6 +4623,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     digitalIdentityGuard: null,
     digitalIdentityGuardFinalGate: null,
     digitalIdentityGuardCriteria: null,
+    digitalIdentitySpecificEvidence: null,
     digitalIdentityGuardBooleanApplied: null,
     v3DecisionEngineDiagnosticsSummary: null,
     v3ConfidenceSummary: null,
@@ -17414,6 +17415,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.digitalIdentityGuard = diagnostics.digitalIdentityProfessionalGuard;
   diagnostics.digitalIdentityGuardFinalGate = diagnostics.digitalIdentityGuardBooleanApplied;
   diagnostics.digitalIdentityGuardCriteria = diagnostics.digitalIdentityGuardBooleanApplied;
+  diagnostics.digitalIdentitySpecificEvidence = diagnostics.digitalIdentityGuardBooleanApplied;
   diagnostics.evidenceBuilderDiagnosticsSummary = getEvidenceBuilderDiagnosticsSummary(diagnostics);
   diagnostics.evidenceBuilderParitySummary = getEvidenceBuilderParitySummary(diagnostics);
   diagnostics.evidenceBuilderIdCardsParitySummary = getEvidenceBuilderIdCardsParitySummary(diagnostics);
@@ -21789,7 +21791,6 @@ const DIGITAL_IDENTITY_PROFESSIONAL_VERIFICATION_TERMS = [
   "verification",
   "identity verification",
   "document verification",
-  "authentication",
   "biometric verification",
   "kyc",
   "remote onboarding",
@@ -21800,37 +21801,22 @@ const DIGITAL_IDENTITY_PROFESSIONAL_VERIFICATION_TERMS = [
 ];
 
 const DIGITAL_IDENTITY_PROFESSIONAL_CONTEXT_TERMS = [
-  "government",
-  "citizen",
-  "passport",
-  "id card",
-  "identity document",
-  "credential",
-  "issuance",
-  "enrollment",
-  "enrolment",
-  "border",
-  "immigration",
-  "kyc provider",
-  "national id",
   "identity platform",
-  "identity provider",
-  "regulated identity",
-  "compliance for identity verification",
+  "credential",
+  "government identity",
+  "citizen identity",
+  "national id",
+  "id document verification",
+  "passport verification",
 ];
 
 const DIGITAL_IDENTITY_PROFESSIONAL_VENDOR_CONTEXT_TERMS = [
-  "identity",
-  "credential",
-  "document",
-  "biometric identity",
-  "digital id",
   "digital identity",
+  "digital id",
   "identity verification",
-  "document verification",
-  "passport",
+  "credential",
+  "wallet",
   "identity wallet",
-  "eid",
   "kyc",
   "onboarding",
 ];
@@ -21912,6 +21898,26 @@ function getDigitalIdentityProfessionalGuardAssessment(article, options = {}) {
   const finalGatePassed = hasCoreDigitalIdentitySignal ||
     hasContextualVerificationEvidence ||
     hasVendorProfessionalEvidence;
+  const hasGenericIdentityDocumentSignalOnly = !finalGatePassed && (
+    matchedSupportTerms.some((term) => [
+      "passport",
+      "id card",
+      "identity card",
+      "national id",
+    ].includes(term)) ||
+    matchedStrongTerms.some((term) => [
+      "government identity",
+      "public sector identity",
+    ].includes(term))
+  );
+  const hasBiometricWeakSignal = !finalGatePassed &&
+    (textMatchesKeyword(haystack, "biometric") || textMatchesKeyword(haystack, "biometrics"));
+  const hasProfessionalSourceOnlySignal = !finalGatePassed &&
+    domainScore >= 14 &&
+    matchedStrongTerms.length === 0 &&
+    matchedSupportTerms.length === 0 &&
+    matchedVerificationTerms.length === 0 &&
+    matchedVendorTerms.length === 0;
   const scoreOnlySupport = !finalGatePassed &&
     !hasContextualVerificationEvidence &&
     !hasVendorProfessionalEvidence &&
@@ -21932,6 +21938,12 @@ function getDigitalIdentityProfessionalGuardAssessment(article, options = {}) {
   if (enabled) {
     if (noiseDominates) {
       rejectionReason = "generic cyber/enterprise identity noise without professional digital identity evidence";
+    } else if (hasGenericIdentityDocumentSignalOnly) {
+      rejectionReason = "generic_identity_document_signal_only";
+    } else if (hasBiometricWeakSignal) {
+      rejectionReason = "biometric_without_identity_platform";
+    } else if (hasProfessionalSourceOnlySignal) {
+      rejectionReason = "professional_source_only";
     } else if (scoreOnlySupport) {
       rejectionReason = "generic digital identity score without professional evidence";
     } else if (weakOnlyRejected) {
@@ -21961,6 +21973,9 @@ function getDigitalIdentityProfessionalGuardAssessment(article, options = {}) {
     hasContextualVerificationEvidence,
     hasVendorProfessionalEvidence,
     finalGatePassed,
+    hasGenericIdentityDocumentSignalOnly,
+    hasBiometricWeakSignal,
+    hasProfessionalSourceOnlySignal,
     scoreOnlySupport,
     weakOnlyRejected,
     noiseDominates,
@@ -37158,6 +37173,7 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
           verificationContextPassed: 0,
           verificationMarketPassed: 0,
           vendorContextPassed: 0,
+          rejectionReasons: {},
           rejectedExampleTitles: [],
         };
       }
@@ -37175,6 +37191,9 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
         }
       } else {
         diagnostics.digitalIdentityGuardBooleanApplied.rejected += 1;
+        const rejectionReason = digitalIdentityGuardBooleanAssessment.rejectionReason || "unknown";
+        diagnostics.digitalIdentityGuardBooleanApplied.rejectionReasons[rejectionReason] =
+          (diagnostics.digitalIdentityGuardBooleanApplied.rejectionReasons[rejectionReason] || 0) + 1;
         if (digitalIdentityGuardBooleanAssessment.weakOnlyRejected) {
           diagnostics.digitalIdentityGuardBooleanApplied.weakOnlyRejected += 1;
         }
