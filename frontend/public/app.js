@@ -4620,6 +4620,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     sharedSecurityDiagnostics: null,
     sharedSecurityDashboardMatcherDiagnostics: null,
     sharedSecurityBridgeDiagnostics: null,
+    digitalIdentityGuardBooleanApplied: null,
     v3DecisionEngineDiagnosticsSummary: null,
     v3ConfidenceSummary: null,
     v3DecisionParitySummary: null,
@@ -21732,6 +21733,36 @@ function shouldApplyDigitalIdentityProfessionalGuard(selectedInterests = normali
     normalizedInterests.includes("digital_identity");
 }
 
+function shouldApplyDigitalIdentityProfessionalGuardBooleanGate(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
+  return selectedMainDomains.includes("digital_identity_biometrics") &&
+    normalizedInterests.includes("digital_identity");
+}
+
+function getDigitalIdentityProfessionalGuardBooleanGateAssessment(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  if (!shouldApplyDigitalIdentityProfessionalGuardBooleanGate(normalizedInterests)) {
+    return null;
+  }
+
+  const selectedDigitalInterests = normalizedInterests.filter(
+    (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "digital_identity_biometrics"
+  );
+  const legacyDigitalIdentityMatched =
+    getArticleDominantDomain(article) === "digital_identity_biometrics" ||
+    selectedDigitalInterests.some((interestId) => getDigitalSubgroupHybridAssessment(article, interestId).included);
+
+  if (!legacyDigitalIdentityMatched) {
+    return null;
+  }
+
+  return getDigitalIdentityProfessionalGuardAssessment(article, {
+    branch: "personal_dashboard_boolean",
+    forceEnabled: true,
+  });
+}
+
 function getDigitalIdentityProfessionalGuardAssessment(article, options = {}) {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const enabled = Boolean(options.forceEnabled) || shouldApplyDigitalIdentityProfessionalGuard(selectedInterests);
@@ -25065,6 +25096,11 @@ function articleMatchesPersonalDashboardSelection(article) {
 
   const selectedMainDomains = getSelectedMainDomains(selectedInterests);
   const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
+  const digitalIdentityProfessionalGuardAssessment = getDigitalIdentityProfessionalGuardBooleanGateAssessment(article, selectedInterests);
+  if (digitalIdentityProfessionalGuardAssessment && !digitalIdentityProfessionalGuardAssessment.passed) {
+    return false;
+  }
+
   const identityTechniqueBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, selectedInterests);
   const banknoteTechniqueBridgeMatched = articleMatchesSelectedBanknoteTechniqueBridge(article, selectedInterests);
   const sharedSecurityBridgeDecision = getSharedSecurityBridgeDecision(article, selectedInterests);
@@ -25144,15 +25180,7 @@ function articleMatchesPersonalDashboardSelection(article) {
     );
     const digitalScopeMatched = !selectedDigitalInterests.length
       || selectedDigitalInterests.some((interestId) => getDigitalSubgroupHybridAssessment(article, interestId).included);
-    const requiresDigitalIdentityProfessionalGuard =
-      selectedMainDomains.includes("digital_identity_biometrics") &&
-      selectedDigitalInterests.includes("digital_identity");
-    const digitalIdentityProfessionalGuardPassed = !requiresDigitalIdentityProfessionalGuard ||
-      getDigitalIdentityProfessionalGuardAssessment(article, {
-        branch: "personal_dashboard",
-        forceEnabled: true,
-      }).passed;
-    return digitalScopeMatched && digitalIdentityProfessionalGuardPassed && sharedSecurityTechniqueMatched;
+    return digitalScopeMatched && sharedSecurityTechniqueMatched;
   }
 
   return sharedSecurityTechniqueMatched;
@@ -36971,6 +36999,31 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
   const inputArticles = Array.isArray(articles) ? articles : [];
   const outputArticles = [];
   inputArticles.forEach((article) => {
+    const digitalIdentityGuardBooleanAssessment = diagnostics?.enabled
+      ? getDigitalIdentityProfessionalGuardBooleanGateAssessment(article)
+      : null;
+    if (digitalIdentityGuardBooleanAssessment) {
+      if (!diagnostics.digitalIdentityGuardBooleanApplied) {
+        diagnostics.digitalIdentityGuardBooleanApplied = {
+          enabled: true,
+          evaluated: 0,
+          passed: 0,
+          rejected: 0,
+          rejectedExampleTitles: [],
+        };
+      }
+      diagnostics.digitalIdentityGuardBooleanApplied.evaluated += 1;
+      if (digitalIdentityGuardBooleanAssessment.passed) {
+        diagnostics.digitalIdentityGuardBooleanApplied.passed += 1;
+      } else {
+        diagnostics.digitalIdentityGuardBooleanApplied.rejected += 1;
+        if (diagnostics.digitalIdentityGuardBooleanApplied.rejectedExampleTitles.length < 25) {
+          diagnostics.digitalIdentityGuardBooleanApplied.rejectedExampleTitles.push(
+            article?.title || "Untitled article"
+          );
+        }
+      }
+    }
     const dashboardPassed = articleMatchesPersonalDashboardSelection(article);
     const sharedSecurityBridgeDiagnostics = diagnostics?.enabled
       ? getSharedSecurityBridgeDecision(article)
