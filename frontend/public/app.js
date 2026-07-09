@@ -4622,6 +4622,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     sharedSecurityBridgeDiagnostics: null,
     digitalIdentityGuard: null,
     digitalIdentityGuardFinalGate: null,
+    digitalIdentityGuardCriteria: null,
     digitalIdentityGuardBooleanApplied: null,
     v3DecisionEngineDiagnosticsSummary: null,
     v3ConfidenceSummary: null,
@@ -17412,6 +17413,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.digitalIdentityProfessionalGuard = getDigitalIdentityProfessionalGuardSummary(diagnostics);
   diagnostics.digitalIdentityGuard = diagnostics.digitalIdentityProfessionalGuard;
   diagnostics.digitalIdentityGuardFinalGate = diagnostics.digitalIdentityGuardBooleanApplied;
+  diagnostics.digitalIdentityGuardCriteria = diagnostics.digitalIdentityGuardBooleanApplied;
   diagnostics.evidenceBuilderDiagnosticsSummary = getEvidenceBuilderDiagnosticsSummary(diagnostics);
   diagnostics.evidenceBuilderParitySummary = getEvidenceBuilderParitySummary(diagnostics);
   diagnostics.evidenceBuilderIdCardsParitySummary = getEvidenceBuilderIdCardsParitySummary(diagnostics);
@@ -21703,8 +21705,10 @@ const DIGITAL_IDENTITY_PROFESSIONAL_CORE_TERMS = [
   "self sovereign identity",
   "self-sovereign identity",
   "identity infrastructure",
-  "identity platform",
+  "digital identity platform",
+  "government identity platform",
   "national identity platform",
+  "mosip",
 ];
 
 const DIGITAL_IDENTITY_PROFESSIONAL_SUPPORT_TERMS = [
@@ -21739,6 +21743,9 @@ const DIGITAL_IDENTITY_PROFESSIONAL_VENDOR_TERMS = [
   "iproov",
   "innovatrics",
   "hid",
+  "veridos",
+  "in groupe",
+  "laxton",
 ];
 
 const DIGITAL_IDENTITY_PROFESSIONAL_NOISE_TERMS = [
@@ -21785,8 +21792,11 @@ const DIGITAL_IDENTITY_PROFESSIONAL_VERIFICATION_TERMS = [
   "authentication",
   "biometric verification",
   "kyc",
+  "remote onboarding",
+  "digital onboarding",
   "onboarding",
   "liveness",
+  "face verification",
 ];
 
 const DIGITAL_IDENTITY_PROFESSIONAL_CONTEXT_TERMS = [
@@ -21805,6 +21815,8 @@ const DIGITAL_IDENTITY_PROFESSIONAL_CONTEXT_TERMS = [
   "national id",
   "identity platform",
   "identity provider",
+  "regulated identity",
+  "compliance for identity verification",
 ];
 
 const DIGITAL_IDENTITY_PROFESSIONAL_VENDOR_CONTEXT_TERMS = [
@@ -21818,6 +21830,7 @@ const DIGITAL_IDENTITY_PROFESSIONAL_VENDOR_CONTEXT_TERMS = [
   "document verification",
   "passport",
   "identity wallet",
+  "eid",
   "kyc",
   "onboarding",
 ];
@@ -37141,7 +37154,9 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
           rejected: 0,
           weakOnlyRejected: 0,
           strongCorePassed: 0,
+          coreDigitalIdentityPassed: 0,
           verificationContextPassed: 0,
+          verificationMarketPassed: 0,
           vendorContextPassed: 0,
           rejectedExampleTitles: [],
         };
@@ -37151,8 +37166,10 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
         diagnostics.digitalIdentityGuardBooleanApplied.passed += 1;
         if (digitalIdentityGuardBooleanAssessment.hasCoreDigitalIdentitySignal) {
           diagnostics.digitalIdentityGuardBooleanApplied.strongCorePassed += 1;
+          diagnostics.digitalIdentityGuardBooleanApplied.coreDigitalIdentityPassed += 1;
         } else if (digitalIdentityGuardBooleanAssessment.hasContextualVerificationEvidence) {
           diagnostics.digitalIdentityGuardBooleanApplied.verificationContextPassed += 1;
+          diagnostics.digitalIdentityGuardBooleanApplied.verificationMarketPassed += 1;
         } else if (digitalIdentityGuardBooleanAssessment.hasVendorProfessionalEvidence) {
           diagnostics.digitalIdentityGuardBooleanApplied.vendorContextPassed += 1;
         }
