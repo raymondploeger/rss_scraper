@@ -21734,7 +21734,7 @@ function shouldApplyDigitalIdentityProfessionalGuard(selectedInterests = normali
 
 function getDigitalIdentityProfessionalGuardAssessment(article, options = {}) {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
-  const enabled = shouldApplyDigitalIdentityProfessionalGuard(selectedInterests);
+  const enabled = Boolean(options.forceEnabled) || shouldApplyDigitalIdentityProfessionalGuard(selectedInterests);
   const context = getPersonalBoostContext(article);
   const haystack = [
     context.titleText,
@@ -25144,7 +25144,15 @@ function articleMatchesPersonalDashboardSelection(article) {
     );
     const digitalScopeMatched = !selectedDigitalInterests.length
       || selectedDigitalInterests.some((interestId) => getDigitalSubgroupHybridAssessment(article, interestId).included);
-    return digitalScopeMatched && sharedSecurityTechniqueMatched;
+    const requiresDigitalIdentityProfessionalGuard =
+      selectedMainDomains.includes("digital_identity_biometrics") &&
+      selectedDigitalInterests.includes("digital_identity");
+    const digitalIdentityProfessionalGuardPassed = !requiresDigitalIdentityProfessionalGuard ||
+      getDigitalIdentityProfessionalGuardAssessment(article, {
+        branch: "personal_dashboard",
+        forceEnabled: true,
+      }).passed;
+    return digitalScopeMatched && digitalIdentityProfessionalGuardPassed && sharedSecurityTechniqueMatched;
   }
 
   return sharedSecurityTechniqueMatched;
