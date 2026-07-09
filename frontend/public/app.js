@@ -37489,8 +37489,7 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
     }
     const legacyDashboardPassed = articleMatchesPersonalDashboardSelection(article);
     const dashboardPassed = legacyDashboardPassed &&
-      (!digitalIdentityGuardBooleanAssessment || digitalIdentityGuardBooleanAssessment.passed) &&
-      (!biometricsGuardBooleanAssessment || biometricsGuardBooleanAssessment.passed);
+      (!digitalIdentityGuardBooleanAssessment || digitalIdentityGuardBooleanAssessment.passed);
     const sharedSecurityBridgeDiagnostics = diagnostics?.enabled
       ? getSharedSecurityBridgeDecision(article)
       : null;
@@ -37523,27 +37522,19 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
       return;
     }
     const digitalIdentityGuardRejected = Boolean(digitalIdentityGuardBooleanAssessment && !digitalIdentityGuardBooleanAssessment.passed);
-    const biometricsGuardRejected = Boolean(biometricsGuardBooleanAssessment && !biometricsGuardBooleanAssessment.passed);
     const rejection = digitalIdentityGuardRejected
       ? {
           category: getDigitalIdentityProfessionalGuardRejectionCategory(digitalIdentityGuardBooleanAssessment),
           reason: "digital_identity_professional_guard_rejected",
         }
-      : biometricsGuardRejected
-        ? {
-            category: getBiometricsProfessionalGuardRejectionCategory(biometricsGuardBooleanAssessment),
-            reason: "biometrics_professional_guard_rejected",
-          }
-        : classifyPersonalDashboardRejection(article);
+      : classifyPersonalDashboardRejection(article);
     const personalDashboardScore = buildPersonalDashboardScore(article, {
       passed: false,
       rejection,
       branch: diagnostics?.branch || "",
       decisionSource: digitalIdentityGuardRejected
         ? "legacy-pass-fail+digital-identity-professional-guard"
-        : biometricsGuardRejected
-          ? "legacy-pass-fail+biometrics-professional-guard"
-          : "legacy-pass-fail",
+        : "legacy-pass-fail",
     });
     recordPersonalDashboardScore(diagnostics, article, personalDashboardScore);
     recordFilterDecisionStage(diagnostics, article, {
@@ -37560,8 +37551,6 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
         rejectedStage: "personal_dashboard",
         rejectedCategory: digitalIdentityGuardRejected
           ? "digitalIdentityProfessionalGuard"
-          : biometricsGuardRejected
-            ? "biometricsProfessionalGuard"
           : rejection.category,
         finalReason: rejection.reason,
       },
@@ -37698,31 +37687,59 @@ function applyIdentityProfessionalRelevanceGuardStage({ articles, branch, diagno
 
 function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnostics } = {}) {
   const inputArticles = Array.isArray(articles) ? articles : [];
-  if (!shouldApplyDigitalIdentityProfessionalGuard()) {
+  const digitalIdentityGuardActive = shouldApplyDigitalIdentityProfessionalGuard();
+  const biometricsGuardActive = shouldApplyBiometricsProfessionalGuardBooleanGate();
+  if (!digitalIdentityGuardActive && !biometricsGuardActive) {
     return {
       articles: inputArticles,
       stage: createFilterPipelineStageResult(
         "digital_identity_professional_guard",
         inputArticles.length,
         inputArticles.length,
-        ["Digital Identity professional guard not active for this selection"]
+        ["Digital Identity/Biometrics professional guard not active for this selection"]
       ),
     };
   }
 
   const outputArticles = [];
   inputArticles.forEach((article) => {
-    const assessment = getDigitalIdentityProfessionalGuardAssessment(article, { branch });
-    if (assessment.passed) {
+    const digitalIdentityAssessment = digitalIdentityGuardActive
+      ? getDigitalIdentityProfessionalGuardAssessment(article, { branch })
+      : null;
+    const biometricsAssessment = biometricsGuardActive
+      ? getBiometricsProfessionalGuardAssessment(article, { branch, forceEnabled: true })
+      : null;
+    const rejectedAssessment = digitalIdentityAssessment && !digitalIdentityAssessment.passed
+      ? {
+          type: "digital_identity",
+          assessment: digitalIdentityAssessment,
+          reason: "digital_identity_professional_guard_rejected",
+          fallbackReason: "Digital Identity professional relevance guard rejected article",
+        }
+      : biometricsAssessment && !biometricsAssessment.passed
+        ? {
+            type: "biometrics",
+            assessment: biometricsAssessment,
+            reason: "biometrics_professional_guard_rejected",
+            fallbackReason: "Biometrics professional relevance guard rejected article",
+          }
+        : null;
+
+    if (!rejectedAssessment) {
       recordFilterDecisionStage(diagnostics, article, {
         stage: "digital_identity_professional_guard",
         result: "passed",
-        reason: "article passed Digital Identity professional relevance guard",
+        reason: biometricsGuardActive && !digitalIdentityGuardActive
+          ? "article passed Biometrics professional relevance guard"
+          : "article passed Digital Identity/Biometrics professional relevance guard",
         notes: [
-          "Digital Identity professional relevance guard active",
-          "Digital Identity guard is scoped to Digital Identity interest only",
+          "Digital Identity/Biometrics professional relevance guard active",
+          "Biometrics guard is scoped to Biometrics interest only",
         ],
-        metadata: assessment,
+        metadata: {
+          digitalIdentityProfessionalGuard: digitalIdentityAssessment,
+          biometricsProfessionalGuard: biometricsAssessment,
+        },
       });
       outputArticles.push(article);
       return;
@@ -37731,18 +37748,28 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
     recordFilterDecisionStage(diagnostics, article, {
       stage: "digital_identity_professional_guard",
       result: "rejected",
-      reason: assessment.rejectionReason || "Digital Identity professional relevance guard rejected article",
+      reason: rejectedAssessment.reason,
       notes: [
-        "Digital Identity professional relevance guard active",
-        "Generic cyber/enterprise identity noise is filtered for Digital Identity only",
+        "Digital Identity/Biometrics professional relevance guard active",
+        rejectedAssessment.type === "biometrics"
+          ? "Weak biometrics noise is filtered for Biometrics only"
+          : "Generic cyber/enterprise identity noise is filtered for Digital Identity only",
       ],
-      metadata: assessment,
+      metadata: {
+        digitalIdentityProfessionalGuard: digitalIdentityAssessment,
+        biometricsProfessionalGuard: biometricsAssessment,
+        rejectedCategory: rejectedAssessment.type === "biometrics"
+          ? "biometricsProfessionalGuard"
+          : "digitalIdentityProfessionalGuard",
+        finalReason: rejectedAssessment.reason,
+        detailedReason: rejectedAssessment.assessment.rejectionReason || rejectedAssessment.fallbackReason,
+      },
     });
     finalizeFilterDecisionTrace(
       diagnostics,
       article,
       "rejected",
-      assessment.rejectionReason || "Digital Identity professional relevance guard rejected article"
+      rejectedAssessment.reason
     );
   });
 
@@ -37753,8 +37780,9 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
       inputArticles.length,
       outputArticles.length,
       [
-        "Digital Identity professional relevance guard active",
+        "Digital Identity/Biometrics professional relevance guard active",
         "Digital Identity guard is scoped to Digital Identity interest only",
+        "Biometrics guard is scoped to Biometrics interest only",
       ]
     ),
   };
@@ -38816,11 +38844,18 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
       addFilterPipelineNote(diagnostics, `Identity professional relevance guard rejected ${guardRejectedCount} backend-query article(s)`);
     }
   }
-  if (diagnostics?.enabled && shouldApplyDigitalIdentityProfessionalGuard()) {
-    addFilterPipelineNote(diagnostics, "Digital Identity professional relevance guard active");
-    addFilterPipelineNote(diagnostics, "Digital Identity guard is scoped to Digital Identity interest only");
+  const digitalIdentityProfessionalGuardActive = shouldApplyDigitalIdentityProfessionalGuard();
+  const biometricsProfessionalGuardActive = shouldApplyBiometricsProfessionalGuardBooleanGate();
+  if (diagnostics?.enabled && (digitalIdentityProfessionalGuardActive || biometricsProfessionalGuardActive)) {
+    addFilterPipelineNote(diagnostics, "Digital Identity/Biometrics professional relevance guard active");
+    if (digitalIdentityProfessionalGuardActive) {
+      addFilterPipelineNote(diagnostics, "Digital Identity guard is scoped to Digital Identity interest only");
+    }
+    if (biometricsProfessionalGuardActive) {
+      addFilterPipelineNote(diagnostics, "Biometrics guard is scoped to Biometrics interest only");
+    }
     if (digitalIdentityGuardRejectedCount > 0) {
-      addFilterPipelineNote(diagnostics, `Digital Identity professional relevance guard rejected ${digitalIdentityGuardRejectedCount} backend-query article(s)`);
+      addFilterPipelineNote(diagnostics, `Digital Identity/Biometrics professional relevance guard rejected ${digitalIdentityGuardRejectedCount} backend-query article(s)`);
     }
   }
   const filteredRawArticles = sortArticlesForCurrentDashboardMode(digitalIdentityFilteredBackendArticles);
