@@ -21755,8 +21755,12 @@ function getDigitalIdentityProfessionalGuardAssessment(article, options = {}) {
   const domainScore = getPersonalDomainContextProfile(context, "digital_identity_biometrics").score;
   const interestBoost = Number(computePersonalInterestBoost(article, "digital_identity")?.score) || 0;
   const hasStrongProfessionalEvidence = matchedStrongTerms.length > 0;
-  const hasSupportedProfessionalEvidence = (matchedVendorTerms.length > 0 || matchedSupportTerms.length > 0) &&
-    (hasStrongProfessionalEvidence || interestBoost >= 24 || domainScore >= 14);
+  const hasVendorProfessionalEvidence = matchedVendorTerms.length > 0;
+  const scoreOnlySupport = !hasStrongProfessionalEvidence &&
+    !hasVendorProfessionalEvidence &&
+    matchedSupportTerms.length > 0 &&
+    (interestBoost >= 24 || domainScore >= 14);
+  const hasSupportedProfessionalEvidence = hasVendorProfessionalEvidence;
   const noiseDominates = matchedNoiseTerms.length > 0 &&
     !hasStrongProfessionalEvidence &&
     matchedVendorTerms.length === 0;
@@ -21764,6 +21768,8 @@ function getDigitalIdentityProfessionalGuardAssessment(article, options = {}) {
   if (enabled) {
     if (noiseDominates) {
       rejectionReason = "generic cyber/enterprise identity noise without professional digital identity evidence";
+    } else if (scoreOnlySupport) {
+      rejectionReason = "generic digital identity score without professional evidence";
     } else if (!hasStrongProfessionalEvidence && !hasSupportedProfessionalEvidence) {
       rejectionReason = "missing professional digital identity evidence";
     }
@@ -21785,6 +21791,8 @@ function getDigitalIdentityProfessionalGuardAssessment(article, options = {}) {
     rejectionCategory: rejectionReason ? "digital_identity_professional_relevance" : "",
     hasStrongProfessionalEvidence,
     hasSupportedProfessionalEvidence,
+    hasVendorProfessionalEvidence,
+    scoreOnlySupport,
     noiseDominates,
     matchedStrongTerms: Object.freeze(matchedStrongTerms.slice(0, 12)),
     matchedSupportTerms: Object.freeze(matchedSupportTerms.slice(0, 12)),
