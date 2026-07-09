@@ -37157,10 +37157,8 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
   const inputArticles = Array.isArray(articles) ? articles : [];
   const outputArticles = [];
   inputArticles.forEach((article) => {
-    const digitalIdentityGuardBooleanAssessment = diagnostics?.enabled
-      ? getDigitalIdentityProfessionalGuardBooleanGateAssessment(article)
-      : null;
-    if (digitalIdentityGuardBooleanAssessment) {
+    const digitalIdentityGuardBooleanAssessment = getDigitalIdentityProfessionalGuardBooleanGateAssessment(article);
+    if (diagnostics?.enabled && digitalIdentityGuardBooleanAssessment) {
       if (!diagnostics.digitalIdentityGuardBooleanApplied) {
         diagnostics.digitalIdentityGuardBooleanApplied = {
           enabled: true,
@@ -37229,6 +37227,7 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
         metadata: {
           ...getPersonalDashboardTraceMetadata(article, null, personalDashboardScore),
           sharedSecurityBridgeDiagnostics,
+          digitalIdentityProfessionalGuard: digitalIdentityGuardBooleanAssessment,
         },
       });
       outputArticles.push(article);
@@ -37236,8 +37235,8 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
     }
     const rejection = legacyDashboardPassed && digitalIdentityGuardBooleanAssessment && !digitalIdentityGuardBooleanAssessment.passed
       ? {
-          category: "digital_identity_professional_guard",
-          reason: digitalIdentityGuardBooleanAssessment.rejectionReason || "digital_identity_professional_guard_rejected",
+          category: digitalIdentityGuardBooleanAssessment.rejectionReason || "weak_digital_identity_signal",
+          reason: "digital_identity_professional_guard_rejected",
         }
       : classifyPersonalDashboardRejection(article);
     const personalDashboardScore = buildPersonalDashboardScore(article, {
@@ -37257,6 +37256,7 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
       metadata: {
         ...getPersonalDashboardTraceMetadata(article, rejection, personalDashboardScore),
         sharedSecurityBridgeDiagnostics,
+        digitalIdentityProfessionalGuard: digitalIdentityGuardBooleanAssessment,
         category: rejection.category,
       },
     });
