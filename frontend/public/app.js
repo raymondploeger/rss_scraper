@@ -4633,6 +4633,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     kycProfessionalGuard: null,
     onboardingProfessionalGuard: null,
     livenessProfessionalGuard: null,
+    aiProfessionalGuard: null,
     v3DecisionEngineDiagnosticsSummary: null,
     v3ConfidenceSummary: null,
     v3DecisionParitySummary: null,
@@ -5286,6 +5287,8 @@ function getFilterDecisionDebugToolsSummary(diagnostics) {
       "window.explainOnboardingDecisionByTitle(titlePart)",
       "window.listLivenessDiagnostics(limit)",
       "window.explainLivenessDecisionByTitle(titlePart)",
+      "window.listAiDiagnostics(limit)",
+      "window.explainAiDecisionByTitle(titlePart)",
       "window.listHighestPersonalDashboardScores(limit)",
       "window.explainIdentityMatchByTitle(titlePart)",
       "window.listIdentityScoreTooLow(limit)",
@@ -13755,6 +13758,46 @@ function getLivenessProfessionalGuardSummary(diagnostics) {
   };
 }
 
+function getAiProfessionalGuardSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+
+  const guardTraceEntries = Array.from(diagnostics.filterDecisionTraceMap.values())
+    .map((trace) => ({
+      trace,
+      stage: getTraceDigitalIdentityProfessionalGuardStage(trace),
+    }))
+    .filter((entry) => entry.stage?.metadata?.aiProfessionalGuard?.enabled);
+  const rejectionReasonCounts = new Map();
+  const exampleRejectedTitles = [];
+
+  guardTraceEntries.forEach(({ trace, stage }) => {
+    const assessment = stage.metadata?.aiProfessionalGuard || {};
+    if (stage.result !== "rejected" || !assessment.rejected) {
+      return;
+    }
+    const reason = assessment.rejectionReason || stage.reason || "unknown";
+    incrementReasonCount(rejectionReasonCounts, reason);
+    if (exampleRejectedTitles.length < 25) {
+      exampleRejectedTitles.push(trace?.title || assessment.title || "Untitled article");
+    }
+  });
+
+  return {
+    enabled: guardTraceEntries.length > 0,
+    evaluated: guardTraceEntries.length,
+    passed: guardTraceEntries.filter((entry) =>
+      entry.stage.metadata?.aiProfessionalGuard?.passed
+    ).length,
+    rejected: guardTraceEntries.filter((entry) =>
+      entry.stage.metadata?.aiProfessionalGuard?.rejected
+    ).length,
+    topRejectionReasons: getTopV3DecisionReasons(rejectionReasonCounts, 10),
+    exampleRejectedTitles,
+  };
+}
+
 function getDominantDomainDiagnosticsSummary(diagnostics) {
   if (!diagnostics?.enabled || !diagnostics.personalDashboardScoreMap) {
     return null;
@@ -14160,6 +14203,72 @@ function explainLivenessDecisionByTitle(titlePart) {
     return null;
   }
   const diagnostics = getLivenessDiagnosticsFromTrace(match);
+  if (!diagnostics) {
+    return null;
+  }
+
+  return {
+    ...diagnostics,
+    personalDashboardScore: explainPersonalDashboardScore(match.articleId),
+    filterDecisionTrace: explainArticleDecision(match.articleId),
+  };
+}
+
+function getAiDiagnosticsFromTrace(trace) {
+  const guardStage = getTraceDigitalIdentityProfessionalGuardStage(trace);
+  const assessment = guardStage?.metadata?.aiProfessionalGuard || null;
+  if (!assessment?.enabled) {
+    return null;
+  }
+  return {
+    articleId: trace.articleId,
+    title: trace.title,
+    stageResult: guardStage.result,
+    rejected: Boolean(assessment.rejected),
+    passed: Boolean(assessment.passed),
+    rejectionReason: assessment.rejectionReason || "",
+    matchedAiSignals: assessment.matchedAiSignals || [],
+    matchedIdentityUseCaseTerms: assessment.matchedIdentityUseCaseTerms || [],
+    matchedProfessionalContextTerms: assessment.matchedProfessionalContextTerms || [],
+    matchedVendorSignals: assessment.matchedVendorSignals || [],
+    matchedVendorContextTerms: assessment.matchedVendorContextTerms || [],
+    matchedAgentNoiseTerms: assessment.matchedAgentNoiseTerms || [],
+    matchedGenerativeNoiseTerms: assessment.matchedGenerativeNoiseTerms || [],
+    matchedHardwareNoiseTerms: assessment.matchedHardwareNoiseTerms || [],
+    matchedFinanceNoiseTerms: assessment.matchedFinanceNoiseTerms || [],
+    matchedEnterpriseNoiseTerms: assessment.matchedEnterpriseNoiseTerms || [],
+    matchedCybersecurityNoiseTerms: assessment.matchedCybersecurityNoiseTerms || [],
+    matchedHealthcareNoiseTerms: assessment.matchedHealthcareNoiseTerms || [],
+    aiHybridAssessment: assessment.aiHybridAssessment || null,
+  };
+}
+
+function listAiDiagnostics(limit = 25) {
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!traceMap) {
+    return [];
+  }
+  const normalizedLimit = Math.max(1, Number(limit) || 25);
+  return Array.from(traceMap.values())
+    .map((trace) => getAiDiagnosticsFromTrace(trace))
+    .filter(Boolean)
+    .slice(0, normalizedLimit);
+}
+
+function explainAiDecisionByTitle(titlePart) {
+  const needle = String(titlePart || "").trim().toLowerCase();
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!needle || !traceMap) {
+    return null;
+  }
+
+  const match = Array.from(traceMap.values()).find((trace) =>
+    String(trace?.title || "").toLowerCase().includes(needle)
+  );
+  if (!match) {
+    return null;
+  }
+  const diagnostics = getAiDiagnosticsFromTrace(match);
   if (!diagnostics) {
     return null;
   }
@@ -17419,6 +17528,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     kycProfessionalGuard: diagnostics.kycProfessionalGuard || null,
     onboardingProfessionalGuard: diagnostics.onboardingProfessionalGuard || null,
     livenessProfessionalGuard: diagnostics.livenessProfessionalGuard || null,
+    aiProfessionalGuard: diagnostics.aiProfessionalGuard || null,
     v3DecisionEngineDiagnosticsSummary: diagnostics.v3DecisionEngineDiagnosticsSummary || null,
     v3ConfidenceSummary: diagnostics.v3ConfidenceSummary || null,
     v3DecisionParitySummary: diagnostics.v3DecisionParitySummary || null,
@@ -17863,6 +17973,14 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.explainLivenessDecisionByTitle = (titlePart) => explainLivenessDecisionByTitle(titlePart);
   }
 
+  if (typeof window.listAiDiagnostics !== "function") {
+    window.listAiDiagnostics = (limit) => listAiDiagnostics(limit);
+  }
+
+  if (typeof window.explainAiDecisionByTitle !== "function") {
+    window.explainAiDecisionByTitle = (titlePart) => explainAiDecisionByTitle(titlePart);
+  }
+
   if (typeof window.listHighestPersonalDashboardScores !== "function") {
     window.listHighestPersonalDashboardScores = (limit) => listHighestPersonalDashboardScores(limit);
   }
@@ -17987,6 +18105,8 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.explainOnboardingDecisionByTitle(titlePart)",
         "window.listLivenessDiagnostics(limit)",
         "window.explainLivenessDecisionByTitle(titlePart)",
+        "window.listAiDiagnostics(limit)",
+        "window.explainAiDecisionByTitle(titlePart)",
         "window.listHighestPersonalDashboardScores(limit)",
         "window.explainIdentityMatchByTitle(titlePart)",
         "window.listIdentityScoreTooLow(limit)",
@@ -18055,6 +18175,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.kycProfessionalGuard = getKycProfessionalGuardSummary(diagnostics);
   diagnostics.onboardingProfessionalGuard = getOnboardingProfessionalGuardSummary(diagnostics);
   diagnostics.livenessProfessionalGuard = getLivenessProfessionalGuardSummary(diagnostics);
+  diagnostics.aiProfessionalGuard = getAiProfessionalGuardSummary(diagnostics);
   if (diagnostics.eidDiagnosticsSummary?.enabled) {
     addFilterPipelineNote(diagnostics, "eID diagnostics active");
     addFilterPipelineNote(diagnostics, "eID Professional Guard active for eID selection");
@@ -18165,6 +18286,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("kycProfessionalGuard", diagnostics.kycProfessionalGuard);
   console.log("onboardingProfessionalGuard", diagnostics.onboardingProfessionalGuard);
   console.log("livenessProfessionalGuard", diagnostics.livenessProfessionalGuard);
+  console.log("aiProfessionalGuard", diagnostics.aiProfessionalGuard);
   console.log("v3DecisionEngineDiagnosticsSummary", diagnostics.v3DecisionEngineDiagnosticsSummary);
   console.log("v3ConfidenceSummary", diagnostics.v3ConfidenceSummary);
   console.log("v3DecisionParitySummary", diagnostics.v3DecisionParitySummary);
@@ -23691,6 +23813,305 @@ function getLivenessProfessionalGuardAssessment(article, options = {}) {
     matchedGenericBiometricsNoiseTerms: Object.freeze(matchedGenericBiometricsNoiseTerms.slice(0, 12)),
     matchedGenericIdentityNoiseTerms: Object.freeze(matchedGenericIdentityNoiseTerms.slice(0, 12)),
     livenessHybridAssessment: selectedLivenessAssessment,
+  });
+}
+
+const AI_PROFESSIONAL_AI_SIGNALS = [
+  "artificial intelligence",
+  "machine learning",
+  "ai",
+  "ai-assisted",
+  "ai powered",
+  "ai-powered",
+  "ai driven",
+  "ai-driven",
+  "computer vision",
+  "neural network",
+  "deepfake",
+  "deepfakes",
+];
+
+const AI_PROFESSIONAL_IDENTITY_USE_CASE_TERMS = [
+  "identity verification",
+  "digital identity",
+  "biometric verification",
+  "facial recognition",
+  "face recognition",
+  "face matching",
+  "fingerprint recognition",
+  "iris recognition",
+  "document verification",
+  "document fraud detection",
+  "id fraud detection",
+  "identity fraud prevention",
+  "synthetic identity detection",
+  "deepfake detection for identity verification",
+  "injection attack prevention",
+  "presentation attack detection",
+  "liveness detection",
+  "biometric pad",
+  "kyc automation",
+  "onboarding automation",
+  "age verification",
+  "border control",
+  "passenger processing",
+  "eid systems",
+  "mobile id",
+  "mobile ids",
+  "digital wallets",
+  "digital wallet",
+  "masked facial recognition",
+  "identity proofing",
+];
+
+const AI_PROFESSIONAL_CONTEXT_TERMS = [
+  "vendor launch",
+  "product release",
+  "deployment",
+  "deployed",
+  "implementation",
+  "implemented",
+  "certification",
+  "certified",
+  "partnership",
+  "partners",
+  "acquisition",
+  "acquires",
+  "government identity program",
+  "regulation",
+  "regulatory",
+  "standard",
+  "standards",
+  "platform",
+  "solution",
+  "patent",
+  "digital government",
+  "mobile id",
+  "mobile ids",
+];
+
+const AI_PROFESSIONAL_VENDOR_SIGNALS = [
+  "idemia",
+  "thales",
+  "entrust",
+  "regula",
+  "iproov",
+  "facephi",
+  "jumio",
+  "onfido",
+  "veriff",
+  "sumsub",
+  "idnow",
+  "persona",
+  "trulioo",
+  "socure",
+  "mitek",
+  "innovatrics",
+  "nec",
+  "cognitec",
+  "aware",
+  "incode",
+  "shufti",
+];
+
+const AI_PROFESSIONAL_VENDOR_CONTEXT_TERMS = [
+  "identity",
+  "identity verification",
+  "digital identity",
+  "biometric",
+  "biometrics",
+  "facial recognition",
+  "face recognition",
+  "document verification",
+  "fraud detection",
+  "liveness",
+  "presentation attack",
+  "kyc",
+  "onboarding",
+  "border",
+  "government",
+  "digital government",
+];
+
+const AI_AGENT_NOISE_TERMS = [
+  "ai agent",
+  "ai agents",
+  "agentic",
+  "agentic ai",
+  "ai assistant",
+  "ai assistants",
+  "permissions",
+];
+
+const AI_GENERATIVE_NOISE_TERMS = [
+  "chatgpt",
+  "generative ai",
+  "genai",
+  "llm",
+  "large language model",
+  "ai writing",
+  "ai search",
+  "ai coding",
+  "productivity tools",
+];
+
+const AI_HARDWARE_NOISE_TERMS = [
+  "ai chips",
+  "gpu",
+  "gpus",
+  "semiconductor",
+  "semiconductors",
+  "hardware",
+  "enterprise ssd",
+  "pcie",
+  "mass production",
+];
+
+const AI_FINANCE_NOISE_TERMS = [
+  "fin-ai",
+  "finance ai",
+  "financial ai",
+  "stock market",
+  "investment news",
+  "wallets",
+  "trading",
+  "banking ai",
+  "shopping ai",
+];
+
+const AI_ENTERPRISE_NOISE_TERMS = [
+  "enterprise ai",
+  "ai governance",
+  "ai ethics",
+  "enterprise software",
+  "workforce ai",
+  "business automation",
+];
+
+const AI_CYBERSECURITY_NOISE_TERMS = [
+  "cybersecurity ai",
+  "cyber security ai",
+  "general cybersecurity ai",
+  "ransomware",
+  "malware",
+  "vulnerability",
+  "threat detection",
+  "security operations",
+];
+
+const AI_HEALTHCARE_NOISE_TERMS = [
+  "healthcare ai",
+  "medical ai",
+  "clinical ai",
+  "patient",
+  "diagnosis",
+];
+
+function shouldApplyAiProfessionalGuard(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
+  return selectedMainDomains.includes("digital_identity_biometrics") &&
+    normalizedInterests.includes("artificial_intelligence");
+}
+
+function getAiProfessionalGuardAssessment(article, options = {}) {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const enabled = Boolean(options.forceEnabled) || shouldApplyAiProfessionalGuard(selectedInterests);
+  const context = getPersonalBoostContext(article);
+  const matchedAiSignals = getEidDiagnosticMatchedTerms(context, AI_PROFESSIONAL_AI_SIGNALS);
+  const matchedIdentityUseCaseTerms = getEidDiagnosticMatchedTerms(context, AI_PROFESSIONAL_IDENTITY_USE_CASE_TERMS);
+  const matchedProfessionalContextTerms = getEidDiagnosticMatchedTerms(context, AI_PROFESSIONAL_CONTEXT_TERMS);
+  const matchedVendorSignals = getEidDiagnosticMatchedTerms(context, AI_PROFESSIONAL_VENDOR_SIGNALS);
+  const matchedVendorContextTerms = getEidDiagnosticMatchedTerms(context, AI_PROFESSIONAL_VENDOR_CONTEXT_TERMS);
+  const matchedAgentNoiseTerms = getEidDiagnosticMatchedTerms(context, AI_AGENT_NOISE_TERMS);
+  const matchedGenerativeNoiseTerms = getEidDiagnosticMatchedTerms(context, AI_GENERATIVE_NOISE_TERMS);
+  const matchedHardwareNoiseTerms = getEidDiagnosticMatchedTerms(context, AI_HARDWARE_NOISE_TERMS);
+  const matchedFinanceNoiseTerms = getEidDiagnosticMatchedTerms(context, AI_FINANCE_NOISE_TERMS);
+  const matchedEnterpriseNoiseTerms = getEidDiagnosticMatchedTerms(context, AI_ENTERPRISE_NOISE_TERMS);
+  const matchedCybersecurityNoiseTerms = getEidDiagnosticMatchedTerms(context, AI_CYBERSECURITY_NOISE_TERMS);
+  const matchedHealthcareNoiseTerms = getEidDiagnosticMatchedTerms(context, AI_HEALTHCARE_NOISE_TERMS);
+  const selectedAiAssessment = getDigitalSubgroupHybridAssessment(article, "artificial_intelligence");
+  const hasAiContext = matchedAiSignals.length > 0 || selectedAiAssessment.included;
+  const hasIdentityUseCase = matchedIdentityUseCaseTerms.length > 0;
+  const hasProfessionalContext = matchedProfessionalContextTerms.length > 0;
+  const hasVendorIdentityContext = matchedVendorSignals.length > 0 && matchedVendorContextTerms.length > 0;
+  const aiIdentityProfessionalMatched = hasAiContext && hasIdentityUseCase;
+  const aiProfessionalEventMatched = aiIdentityProfessionalMatched && hasProfessionalContext;
+  const vendorIdentityAiMatched = hasAiContext && hasVendorIdentityContext;
+  const genericAiNoiseWithoutIdentity = hasAiContext && !hasIdentityUseCase && !hasVendorIdentityContext;
+  const aiAgentNoise = matchedAgentNoiseTerms.length > 0 && !hasIdentityUseCase && !hasVendorIdentityContext;
+  const generativeAiNoise = matchedGenerativeNoiseTerms.length > 0 && !hasIdentityUseCase && !hasVendorIdentityContext;
+  const aiHardwareNoise = matchedHardwareNoiseTerms.length > 0 && !hasIdentityUseCase && !hasVendorIdentityContext;
+  const aiFinanceNoise = matchedFinanceNoiseTerms.length > 0 && !hasIdentityUseCase && !hasVendorIdentityContext;
+  const aiEnterpriseNoise = matchedEnterpriseNoiseTerms.length > 0 && !hasIdentityUseCase && !hasVendorIdentityContext;
+  const aiCybersecurityNoise = matchedCybersecurityNoiseTerms.length > 0 && !hasIdentityUseCase && !hasVendorIdentityContext;
+  const healthcareNoise = matchedHealthcareNoiseTerms.length > 0 && !hasIdentityUseCase && !hasVendorIdentityContext;
+  const passed = !enabled ||
+    (
+      hasAiContext &&
+      (aiIdentityProfessionalMatched || aiProfessionalEventMatched || vendorIdentityAiMatched) &&
+      !aiAgentNoise &&
+      !generativeAiNoise &&
+      !aiHardwareNoise &&
+      !aiFinanceNoise &&
+      !aiEnterpriseNoise &&
+      !aiCybersecurityNoise &&
+      !healthcareNoise
+    );
+  let rejectionReason = "";
+  if (enabled && !passed) {
+    if (aiAgentNoise) {
+      rejectionReason = "ai_agent_noise";
+    } else if (generativeAiNoise) {
+      rejectionReason = "generative_ai_noise";
+    } else if (aiHardwareNoise) {
+      rejectionReason = "ai_hardware_noise";
+    } else if (aiFinanceNoise) {
+      rejectionReason = "ai_finance_noise";
+    } else if (aiEnterpriseNoise) {
+      rejectionReason = "ai_enterprise_without_identity";
+    } else if (aiCybersecurityNoise) {
+      rejectionReason = "ai_cybersecurity_without_identity";
+    } else if (healthcareNoise) {
+      rejectionReason = "generic_ai_without_identity";
+    } else if (genericAiNoiseWithoutIdentity) {
+      rejectionReason = "generic_ai_without_identity";
+    } else {
+      rejectionReason = "generic_ai_without_identity";
+    }
+  }
+
+  return Object.freeze({
+    enabled,
+    branch: options.branch || "",
+    selectedInterests: Object.freeze(selectedInterests.slice()),
+    title: article?.title || "Untitled article",
+    source: getIdentityNoiseGuardSource(article),
+    passed,
+    rejected: enabled && !passed,
+    rejectionReason,
+    rejectionCategory: rejectionReason ? "artificial_intelligence_professional_relevance" : "",
+    hasAiContext,
+    hasIdentityUseCase,
+    hasProfessionalContext,
+    hasVendorIdentityContext,
+    aiIdentityProfessionalMatched,
+    aiProfessionalEventMatched,
+    vendorIdentityAiMatched,
+    genericAiNoiseWithoutIdentity,
+    matchedAiSignals: Object.freeze(matchedAiSignals.slice(0, 12)),
+    matchedIdentityUseCaseTerms: Object.freeze(matchedIdentityUseCaseTerms.slice(0, 12)),
+    matchedProfessionalContextTerms: Object.freeze(matchedProfessionalContextTerms.slice(0, 12)),
+    matchedVendorSignals: Object.freeze(matchedVendorSignals.slice(0, 12)),
+    matchedVendorContextTerms: Object.freeze(matchedVendorContextTerms.slice(0, 12)),
+    matchedAgentNoiseTerms: Object.freeze(matchedAgentNoiseTerms.slice(0, 12)),
+    matchedGenerativeNoiseTerms: Object.freeze(matchedGenerativeNoiseTerms.slice(0, 12)),
+    matchedHardwareNoiseTerms: Object.freeze(matchedHardwareNoiseTerms.slice(0, 12)),
+    matchedFinanceNoiseTerms: Object.freeze(matchedFinanceNoiseTerms.slice(0, 12)),
+    matchedEnterpriseNoiseTerms: Object.freeze(matchedEnterpriseNoiseTerms.slice(0, 12)),
+    matchedCybersecurityNoiseTerms: Object.freeze(matchedCybersecurityNoiseTerms.slice(0, 12)),
+    matchedHealthcareNoiseTerms: Object.freeze(matchedHealthcareNoiseTerms.slice(0, 12)),
+    aiHybridAssessment: selectedAiAssessment,
   });
 }
 
@@ -39612,14 +40033,15 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
   const kycGuardActive = shouldApplyKycProfessionalGuard();
   const onboardingGuardActive = shouldApplyOnboardingProfessionalGuard();
   const livenessGuardActive = shouldApplyLivenessProfessionalGuard();
-  if (!digitalIdentityGuardActive && !biometricsGuardActive && !digitalWalletGuardActive && !kycGuardActive && !onboardingGuardActive && !livenessGuardActive) {
+  const aiGuardActive = shouldApplyAiProfessionalGuard();
+  if (!digitalIdentityGuardActive && !biometricsGuardActive && !digitalWalletGuardActive && !kycGuardActive && !onboardingGuardActive && !livenessGuardActive && !aiGuardActive) {
     return {
       articles: inputArticles,
       stage: createFilterPipelineStageResult(
         "digital_identity_professional_guard",
         inputArticles.length,
         inputArticles.length,
-        ["Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness professional guard not active for this selection"]
+        ["Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness/AI professional guard not active for this selection"]
       ),
     };
   }
@@ -39643,6 +40065,9 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
       : null;
     const livenessAssessment = livenessGuardActive
       ? getLivenessProfessionalGuardAssessment(article, { branch, forceEnabled: true })
+      : null;
+    const aiAssessment = aiGuardActive
+      ? getAiProfessionalGuardAssessment(article, { branch, forceEnabled: true })
       : null;
     const rejectedAssessment = digitalIdentityAssessment && !digitalIdentityAssessment.passed
       ? {
@@ -39686,13 +40111,22 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
                     reason: "liveness_professional_guard_rejected",
                     fallbackReason: "Liveness professional relevance guard rejected article",
                   }
+                : aiAssessment && !aiAssessment.passed
+                  ? {
+                      type: "artificial_intelligence",
+                      assessment: aiAssessment,
+                      reason: "ai_professional_guard_rejected",
+                      fallbackReason: "Artificial Intelligence professional relevance guard rejected article",
+                    }
         : null;
 
     if (!rejectedAssessment) {
       recordFilterDecisionStage(diagnostics, article, {
         stage: "digital_identity_professional_guard",
         result: "passed",
-        reason: livenessGuardActive && !digitalIdentityGuardActive && !biometricsGuardActive && !digitalWalletGuardActive && !kycGuardActive && !onboardingGuardActive
+        reason: aiGuardActive && !digitalIdentityGuardActive && !biometricsGuardActive && !digitalWalletGuardActive && !kycGuardActive && !onboardingGuardActive && !livenessGuardActive
+          ? "ai_professional_guard_passed"
+          : livenessGuardActive && !digitalIdentityGuardActive && !biometricsGuardActive && !digitalWalletGuardActive && !kycGuardActive && !onboardingGuardActive
           ? "liveness_professional_guard_passed"
           : onboardingGuardActive && !digitalIdentityGuardActive && !biometricsGuardActive && !digitalWalletGuardActive && !kycGuardActive
           ? "onboarding_professional_guard_passed"
@@ -39702,14 +40136,15 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
           ? "article passed Digital Wallet professional relevance guard"
           : biometricsGuardActive && !digitalIdentityGuardActive
           ? "article passed Biometrics professional relevance guard"
-          : "article passed Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness professional relevance guard",
+          : "article passed Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness/AI professional relevance guard",
         notes: [
-          "Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness professional relevance guard active",
+          "Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness/AI professional relevance guard active",
           "Biometrics guard is scoped to Biometrics interest only",
           "Digital Wallet guard is scoped to Digital Wallet interest only",
           "KYC guard is scoped to KYC interest only",
           "Onboarding guard is scoped to Onboarding interest only",
           "Liveness guard is scoped to Liveness interest only",
+          "Artificial Intelligence guard is scoped to Artificial Intelligence interest only",
         ],
         metadata: {
           enabled: true,
@@ -39719,6 +40154,7 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
           kycProfessionalGuard: kycAssessment,
           onboardingProfessionalGuard: onboardingAssessment,
           livenessProfessionalGuard: livenessAssessment,
+          aiProfessionalGuard: aiAssessment,
         },
       });
       outputArticles.push(article);
@@ -39730,7 +40166,7 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
       result: "rejected",
       reason: rejectedAssessment.reason,
       notes: [
-        "Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness professional relevance guard active",
+        "Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness/AI professional relevance guard active",
         rejectedAssessment.type === "biometrics"
           ? "Weak biometrics noise is filtered for Biometrics only"
           : rejectedAssessment.type === "digital_wallet"
@@ -39741,6 +40177,8 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
                 ? "Generic HR/software/tutorial onboarding noise is filtered for Onboarding only"
                 : rejectedAssessment.type === "liveness"
                   ? "Generic deepfake/audio/security noise is filtered for Liveness only"
+                  : rejectedAssessment.type === "artificial_intelligence"
+                    ? "Generic AI noise is filtered for Artificial Intelligence only"
             : "Generic cyber/enterprise identity noise is filtered for Digital Identity only",
       ],
       metadata: {
@@ -39751,6 +40189,7 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
         kycProfessionalGuard: kycAssessment,
         onboardingProfessionalGuard: onboardingAssessment,
         livenessProfessionalGuard: livenessAssessment,
+        aiProfessionalGuard: aiAssessment,
         rejectionReason: rejectedAssessment.reason,
         rejectedCategory: rejectedAssessment.type === "biometrics"
           ? "biometricsProfessionalGuard"
@@ -39762,6 +40201,8 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
                 ? "onboarding_professional_guard"
                 : rejectedAssessment.type === "liveness"
                   ? "liveness_professional_guard"
+                  : rejectedAssessment.type === "artificial_intelligence"
+                    ? "artificial_intelligence_professional_guard"
           : "digitalIdentityProfessionalGuard",
         finalReason: rejectedAssessment.reason,
         detailedReason: rejectedAssessment.assessment.rejectionReason || rejectedAssessment.fallbackReason,
@@ -39782,13 +40223,14 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
       inputArticles.length,
       outputArticles.length,
       [
-        "Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness professional relevance guard active",
+        "Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness/AI professional relevance guard active",
         "Digital Identity guard is scoped to Digital Identity interest only",
         "Biometrics guard is scoped to Biometrics interest only",
         "Digital Wallet guard is scoped to Digital Wallet interest only",
         "KYC guard is scoped to KYC interest only",
         "Onboarding guard is scoped to Onboarding interest only",
         "Liveness guard is scoped to Liveness interest only",
+        "Artificial Intelligence guard is scoped to Artificial Intelligence interest only",
       ]
     ),
   };
@@ -40856,8 +41298,9 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
   const kycProfessionalGuardActive = shouldApplyKycProfessionalGuard();
   const onboardingProfessionalGuardActive = shouldApplyOnboardingProfessionalGuard();
   const livenessProfessionalGuardActive = shouldApplyLivenessProfessionalGuard();
-  if (diagnostics?.enabled && (digitalIdentityProfessionalGuardActive || biometricsProfessionalGuardActive || digitalWalletProfessionalGuardActive || kycProfessionalGuardActive || onboardingProfessionalGuardActive || livenessProfessionalGuardActive)) {
-    addFilterPipelineNote(diagnostics, "Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness professional relevance guard active");
+  const aiProfessionalGuardActive = shouldApplyAiProfessionalGuard();
+  if (diagnostics?.enabled && (digitalIdentityProfessionalGuardActive || biometricsProfessionalGuardActive || digitalWalletProfessionalGuardActive || kycProfessionalGuardActive || onboardingProfessionalGuardActive || livenessProfessionalGuardActive || aiProfessionalGuardActive)) {
+    addFilterPipelineNote(diagnostics, "Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness/AI professional relevance guard active");
     if (digitalIdentityProfessionalGuardActive) {
       addFilterPipelineNote(diagnostics, "Digital Identity guard is scoped to Digital Identity interest only");
     }
@@ -40876,8 +41319,11 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
     if (livenessProfessionalGuardActive) {
       addFilterPipelineNote(diagnostics, "Liveness guard is scoped to Liveness interest only");
     }
+    if (aiProfessionalGuardActive) {
+      addFilterPipelineNote(diagnostics, "Artificial Intelligence guard is scoped to Artificial Intelligence interest only");
+    }
     if (digitalIdentityGuardRejectedCount > 0) {
-      addFilterPipelineNote(diagnostics, `Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness professional relevance guard rejected ${digitalIdentityGuardRejectedCount} backend-query article(s)`);
+      addFilterPipelineNote(diagnostics, `Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness/AI professional relevance guard rejected ${digitalIdentityGuardRejectedCount} backend-query article(s)`);
     }
   }
   const filteredRawArticles = sortArticlesForCurrentDashboardMode(digitalIdentityFilteredBackendArticles);
