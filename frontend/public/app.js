@@ -13909,6 +13909,7 @@ function getKycDiagnosticsFromTrace(trace) {
     matchedVendorContextTerms: assessment.matchedVendorContextTerms || [],
     matchedIndustryContextTerms: assessment.matchedIndustryContextTerms || [],
     matchedBusinessEventTerms: assessment.matchedBusinessEventTerms || [],
+    matchedVendorDeploymentEventTerms: assessment.matchedVendorDeploymentEventTerms || [],
     matchedTutorialNoiseTerms: assessment.matchedTutorialNoiseTerms || [],
     matchedGenericAuthNoiseTerms: assessment.matchedGenericAuthNoiseTerms || [],
     matchedDigitalIdentityNoiseTerms: assessment.matchedDigitalIdentityNoiseTerms || [],
@@ -13917,6 +13918,8 @@ function getKycDiagnosticsFromTrace(trace) {
     matchedBankingNoiseTerms: assessment.matchedBankingNoiseTerms || [],
     matchedCryptoNoiseTerms: assessment.matchedCryptoNoiseTerms || [],
     matchedWrongDomainNoiseTerms: assessment.matchedWrongDomainNoiseTerms || [],
+    kycVendorDeploymentRescue: Boolean(assessment.kycVendorDeploymentRescue),
+    rescueReason: assessment.rescueReason || "",
     kycHybridAssessment: assessment.kycHybridAssessment || null,
   };
 }
@@ -22734,6 +22737,8 @@ const KYC_PROFESSIONAL_STRONG_SIGNALS = [
 ];
 
 const KYC_PROFESSIONAL_VENDOR_SIGNALS = [
+  "shufti",
+  "shufti pro",
   "jumio",
   "onfido",
   "entrust",
@@ -22745,6 +22750,8 @@ const KYC_PROFESSIONAL_VENDOR_SIGNALS = [
   "trulioo",
   "socure",
   "mitek",
+  "iproov",
+  "facephi",
 ];
 
 const KYC_PROFESSIONAL_VENDOR_CONTEXT_TERMS = [
@@ -22829,6 +22836,27 @@ const KYC_PROFESSIONAL_BUSINESS_EVENT_TERMS = [
   "onboarding platform",
 ];
 
+const KYC_VENDOR_DEPLOYMENT_EVENT_TERMS = [
+  "deploys",
+  "deployed",
+  "implements",
+  "implemented",
+  "selects",
+  "selected",
+  "partners",
+  "partnered",
+  "integrates",
+  "integrated",
+  "launches",
+  "launched",
+  "rolls out",
+  "rollout",
+  "adopts",
+  "adopted",
+  "contract",
+  "agreement",
+];
+
 const KYC_TUTORIAL_NOISE_TERMS = [
   "tutorial",
   "how to",
@@ -22854,6 +22882,13 @@ const KYC_TUTORIAL_NOISE_TERMS = [
   "sample app",
   "sample code",
   "igaming production setup",
+  "api example",
+  "developer",
+  "integration tutorial",
+  "minutes",
+  "[2026]",
+  "tech insider",
+  "igaming setup",
 ];
 
 const KYC_GENERIC_AUTH_NOISE_TERMS = [
@@ -22940,6 +22975,7 @@ function getKycProfessionalGuardAssessment(article, options = {}) {
   const matchedVendorContextTerms = getEidDiagnosticMatchedTerms(context, KYC_PROFESSIONAL_VENDOR_CONTEXT_TERMS);
   const matchedIndustryContextTerms = getEidDiagnosticMatchedTerms(context, KYC_PROFESSIONAL_INDUSTRY_CONTEXT_TERMS);
   const matchedBusinessEventTerms = getEidDiagnosticMatchedTerms(context, KYC_PROFESSIONAL_BUSINESS_EVENT_TERMS);
+  const matchedVendorDeploymentEventTerms = getEidDiagnosticMatchedTerms(context, KYC_VENDOR_DEPLOYMENT_EVENT_TERMS);
   const matchedTutorialNoiseTerms = getEidDiagnosticMatchedTerms(context, KYC_TUTORIAL_NOISE_TERMS);
   const matchedGenericAuthNoiseTerms = getEidDiagnosticMatchedTerms(context, KYC_GENERIC_AUTH_NOISE_TERMS);
   const matchedDigitalIdentityNoiseTerms = getEidDiagnosticMatchedTerms(context, KYC_DIGITAL_IDENTITY_NOISE_TERMS);
@@ -22952,12 +22988,18 @@ function getKycProfessionalGuardAssessment(article, options = {}) {
   const vendorProfessionalContextMatched = matchedVendorSignals.length > 0 &&
     matchedVendorContextTerms.length > 0;
   const hasKycContext = matchedStrongSignals.length > 0 || matchedVendorContextTerms.length > 0;
-  const hasProfessionalBusinessSignal = matchedBusinessEventTerms.length > 0 || vendorProfessionalContextMatched;
+  const tutorialNoiseWithoutIndustryContext = matchedTutorialNoiseTerms.length > 0;
+  const kycVendorDeploymentRescue = hasKycContext &&
+    matchedVendorSignals.length > 0 &&
+    matchedVendorDeploymentEventTerms.length > 0 &&
+    !tutorialNoiseWithoutIndustryContext;
+  const hasProfessionalBusinessSignal = matchedBusinessEventTerms.length > 0 ||
+    vendorProfessionalContextMatched ||
+    kycVendorDeploymentRescue;
   const hasCustomerVerificationContext = hasKycContext && hasProfessionalBusinessSignal;
   const hasKycProfessionalSignal = hasKycContext && hasProfessionalBusinessSignal;
-  const tutorialNoiseWithoutIndustryContext = matchedTutorialNoiseTerms.length > 0;
   const cryptoNoiseWithoutKycContext = matchedCryptoNoiseTerms.length > 0 &&
-    (!hasCustomerVerificationContext || matchedBusinessEventTerms.length === 0);
+    (!hasCustomerVerificationContext || (matchedBusinessEventTerms.length === 0 && !kycVendorDeploymentRescue));
   const passed = !enabled ||
     (
       hasKycProfessionalSignal &&
@@ -23001,6 +23043,8 @@ function getKycProfessionalGuardAssessment(article, options = {}) {
     hasCustomerVerificationContext,
     hasProfessionalBusinessSignal,
     vendorProfessionalContextMatched,
+    kycVendorDeploymentRescue,
+    rescueReason: kycVendorDeploymentRescue ? "kyc_vendor_deployment_rescue" : "",
     tutorialNoiseWithoutIndustryContext,
     cryptoNoiseWithoutKycContext,
     matchedStrongSignals: Object.freeze(matchedStrongSignals.slice(0, 12)),
@@ -23008,6 +23052,7 @@ function getKycProfessionalGuardAssessment(article, options = {}) {
     matchedVendorContextTerms: Object.freeze(matchedVendorContextTerms.slice(0, 12)),
     matchedIndustryContextTerms: Object.freeze(matchedIndustryContextTerms.slice(0, 12)),
     matchedBusinessEventTerms: Object.freeze(matchedBusinessEventTerms.slice(0, 12)),
+    matchedVendorDeploymentEventTerms: Object.freeze(matchedVendorDeploymentEventTerms.slice(0, 12)),
     matchedTutorialNoiseTerms: Object.freeze(matchedTutorialNoiseTerms.slice(0, 12)),
     matchedGenericAuthNoiseTerms: Object.freeze(matchedGenericAuthNoiseTerms.slice(0, 12)),
     matchedDigitalIdentityNoiseTerms: Object.freeze(matchedDigitalIdentityNoiseTerms.slice(0, 12)),
