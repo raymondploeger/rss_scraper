@@ -14014,16 +14014,7 @@ function getDigitalWalletDiagnosticsFromTrace(trace) {
     stageResult: guardStage.result,
     rejected: Boolean(assessment.rejected),
     passed: Boolean(assessment.passed),
-    passReason: assessment.passReason || "",
     rejectionReason: assessment.rejectionReason || "",
-    verificationFlowMatched: Boolean(assessment.verificationFlowMatched),
-    vendorRescueApproved: Boolean(assessment.vendorRescueApproved),
-    genericRescueBlockedWithoutVerificationFlow: Boolean(assessment.genericRescueBlockedWithoutVerificationFlow),
-    verificationFlowSignals: assessment.verificationFlowSignals || [],
-    genericContextSignals: assessment.genericContextSignals || [],
-    vendorSignals: assessment.vendorSignals || assessment.matchedVendorSignals || [],
-    professionalEventSignals: assessment.professionalEventSignals || [],
-    hardNegativeSignals: assessment.hardNegativeSignals || [],
     matchedStrongSignals: assessment.matchedStrongSignals || [],
     matchedMediumSignals: assessment.matchedMediumSignals || [],
     matchedIdentityContextTerms: assessment.matchedIdentityContextTerms || [],
@@ -14344,7 +14335,20 @@ function getIdentityVerificationDiagnosticsFromTrace(trace) {
     stageResult: guardStage.result,
     rejected: Boolean(assessment.rejected),
     passed: Boolean(assessment.passed),
+    decisionAuthority: assessment.decisionAuthority || "",
+    authoritativeDecision: assessment.authoritativeDecision || null,
+    assessmentStageResult: assessment.stageResult || "",
+    passReason: assessment.passReason || "",
     rejectionReason: assessment.rejectionReason || "",
+    verificationFlowMatched: Boolean(assessment.verificationFlowMatched),
+    verificationFlowSignals: assessment.verificationFlowSignals || [],
+    genericContextSignals: assessment.genericContextSignals || [],
+    vendorSignals: assessment.vendorSignals || assessment.matchedVendorSignals || [],
+    professionalEventSignals: assessment.professionalEventSignals || [],
+    hardNegativeSignals: assessment.hardNegativeSignals || [],
+    genericRescueAttempted: Boolean(assessment.genericRescueAttempted),
+    genericRescueBlocked: Boolean(assessment.genericRescueBlocked),
+    genericRescueBlockedWithoutVerificationFlow: Boolean(assessment.genericRescueBlockedWithoutVerificationFlow),
     matchedStrongSignals: assessment.matchedStrongSignals || [],
     matchedUseCaseTerms: assessment.matchedUseCaseTerms || [],
     matchedEventContextTerms: assessment.matchedEventContextTerms || [],
@@ -24641,6 +24645,7 @@ function getIdentityVerificationProfessionalGuardAssessment(article, options = {
     hasVendorIdentityContext ||
     matchedContextOnlyTerms.length > 0 ||
     selectedIdentityVerificationAssessment.included;
+  const genericRescueAttempted = Boolean(genericRescueCandidate);
   const genericRescueBlockedWithoutVerificationFlow = genericRescueCandidate &&
     !verificationFlowMatched &&
     !vendorRescueApproved;
@@ -24675,32 +24680,8 @@ function getIdentityVerificationProfessionalGuardAssessment(article, options = {
     ...(contextOnlyNoise ? matchedContextOnlyTerms : []),
     ...(wrongDomainNoise ? [...matchedWrongDomainNoiseTerms, ...matchedVoiceThreatNoiseTerms] : []),
   ];
-  const passed = !enabled ||
-    (
-      professionalIdentityVerificationMatched &&
-      hardNegativeSignals.length === 0 &&
-      !tutorialNoise &&
-      !agePolicyNoise &&
-      !softwareDeviceNoise &&
-      !authenticationNoise &&
-      !genericVerificationNoise &&
-      !governmentIdentityNoise &&
-      !credentialIssuanceNoise &&
-      !aiAgentVerificationNoise &&
-      !contextOnlyNoise &&
-      !wrongDomainNoise
-    );
-  const passReason = !passed
-    ? ""
-    : verificationFlowMatched
-      ? hasAgeVerificationTechnology && !hasStrongIdentityVerification
-        ? "age_verification_technology_context"
-        : "explicit_identity_verification_flow"
-      : vendorRescueApproved
-        ? "vendor_professional_verification_use_case"
-        : "identity_verification_guard_not_enabled";
   let rejectionReason = "";
-  if (enabled && !passed) {
+  if (enabled && hardNegativeSignals.length > 0) {
     if (tutorialNoise) {
       rejectionReason = "tutorial_or_guide_noise";
     } else if (voiceThreatNoise) {
@@ -24731,12 +24712,50 @@ function getIdentityVerificationProfessionalGuardAssessment(article, options = {
       rejectionReason = "generic_identity_platform_only";
     } else if (wrongDomainNoise) {
       rejectionReason = "wrong_domain_verification_signal";
-    } else if (genericRescueBlockedWithoutVerificationFlow) {
-      rejectionReason = "generic_rescue_blocked_without_verification_flow";
     } else {
       rejectionReason = "missing_identity_verification_flow";
     }
+  } else if (enabled && genericRescueBlockedWithoutVerificationFlow) {
+    rejectionReason = "generic_rescue_blocked_without_verification_flow";
+  } else if (enabled && !verificationFlowMatched && !vendorRescueApproved) {
+    rejectionReason = "missing_identity_verification_flow";
   }
+  const passed = !enabled || !rejectionReason;
+  const passReason = !passed
+    ? ""
+    : verificationFlowMatched
+      ? hasAgeVerificationTechnology && !hasStrongIdentityVerification
+        ? "age_verification_technology_context"
+        : "explicit_identity_verification_flow"
+      : vendorRescueApproved
+        ? "vendor_professional_verification_use_case"
+        : "identity_verification_guard_not_enabled";
+  const stageResult = passed ? "passed" : "rejected";
+  const verificationFlowSignals = Object.freeze([
+    ...matchedStrongSignals,
+    ...(hasAgeVerificationTechnology ? matchedAgeTechnologyTerms : []),
+  ].slice(0, 12));
+  const genericContextSignals = Object.freeze(matchedContextOnlyTerms.slice(0, 12));
+  const vendorSignals = Object.freeze(matchedVendorSignals.slice(0, 12));
+  const professionalEventSignals = Object.freeze(matchedEventContextTerms.slice(0, 12));
+  const frozenHardNegativeSignals = Object.freeze(hardNegativeSignals.slice(0, 12));
+  const authoritativeDecision = Object.freeze({
+    passed,
+    rejected: enabled && !passed,
+    stageResult,
+    passReason,
+    rejectionReason,
+    verificationFlowMatched,
+    verificationFlowSignals,
+    genericContextSignals,
+    vendorSignals,
+    professionalEventSignals,
+    hardNegativeSignals: frozenHardNegativeSignals,
+    genericRescueAttempted,
+    genericRescueBlocked: genericRescueBlockedWithoutVerificationFlow,
+    genericRescueBlockedWithoutVerificationFlow,
+    decisionAuthority: "identity_verification_professional_guard",
+  });
 
   return Object.freeze({
     enabled,
@@ -24744,8 +24763,11 @@ function getIdentityVerificationProfessionalGuardAssessment(article, options = {
     selectedInterests: Object.freeze(selectedInterests.slice()),
     title: article?.title || "Untitled article",
     source: getIdentityNoiseGuardSource(article),
-    passed,
-    rejected: enabled && !passed,
+    passed: authoritativeDecision.passed,
+    rejected: authoritativeDecision.rejected,
+    stageResult: authoritativeDecision.stageResult,
+    decisionAuthority: authoritativeDecision.decisionAuthority,
+    authoritativeDecision,
     rejectionReason,
     rejectionCategory: rejectionReason ? "identity_verification_professional_relevance" : "",
     hasStrongIdentityVerification,
@@ -24756,9 +24778,11 @@ function getIdentityVerificationProfessionalGuardAssessment(article, options = {
     hasAgeVerificationTechnology,
     verificationFlowMatched,
     vendorRescueApproved,
+    genericRescueAttempted,
+    genericRescueBlocked: authoritativeDecision.genericRescueBlocked,
     genericRescueBlockedWithoutVerificationFlow,
     professionalIdentityVerificationMatched,
-    passReason,
+    passReason: authoritativeDecision.passReason,
     tutorialNoise,
     agePolicyNoise,
     softwareDeviceNoise,
@@ -24792,14 +24816,11 @@ function getIdentityVerificationProfessionalGuardAssessment(article, options = {
     matchedSoftwareDeviceNoiseTerms: Object.freeze(matchedSoftwareDeviceNoiseTerms.slice(0, 12)),
     matchedTutorialNoiseTerms: Object.freeze(matchedTutorialNoiseTerms.slice(0, 12)),
     matchedWrongDomainNoiseTerms: Object.freeze(matchedWrongDomainNoiseTerms.slice(0, 12)),
-    verificationFlowSignals: Object.freeze([
-      ...matchedStrongSignals,
-      ...(hasAgeVerificationTechnology ? matchedAgeTechnologyTerms : []),
-    ].slice(0, 12)),
-    genericContextSignals: Object.freeze(matchedContextOnlyTerms.slice(0, 12)),
-    vendorSignals: Object.freeze(matchedVendorSignals.slice(0, 12)),
-    professionalEventSignals: Object.freeze(matchedEventContextTerms.slice(0, 12)),
-    hardNegativeSignals: Object.freeze(hardNegativeSignals.slice(0, 12)),
+    verificationFlowSignals,
+    genericContextSignals,
+    vendorSignals,
+    professionalEventSignals,
+    hardNegativeSignals: frozenHardNegativeSignals,
     identityVerificationHybridAssessment: selectedIdentityVerificationAssessment,
   });
 }
