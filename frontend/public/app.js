@@ -4629,6 +4629,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     eidDiagnosticsEntries: enabled ? [] : null,
     eidDiagnosticsSummary: null,
     eidProfessionalGuard: null,
+    digitalWalletProfessionalGuard: null,
     v3DecisionEngineDiagnosticsSummary: null,
     v3ConfidenceSummary: null,
     v3DecisionParitySummary: null,
@@ -5274,6 +5275,8 @@ function getFilterDecisionDebugToolsSummary(diagnostics) {
       "window.explainPersonalDashboardScoreByTitle(titlePart)",
       "window.listEidDiagnostics(limit)",
       "window.explainEidDecisionByTitle(titlePart)",
+      "window.listDigitalWalletDiagnostics(limit)",
+      "window.explainDigitalWalletDecisionByTitle(titlePart)",
       "window.listHighestPersonalDashboardScores(limit)",
       "window.explainIdentityMatchByTitle(titlePart)",
       "window.listIdentityScoreTooLow(limit)",
@@ -13583,6 +13586,46 @@ function getEidProfessionalGuardSummary(diagnostics) {
   };
 }
 
+function getDigitalWalletProfessionalGuardSummary(diagnostics) {
+  if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
+    return null;
+  }
+
+  const guardTraceEntries = Array.from(diagnostics.filterDecisionTraceMap.values())
+    .map((trace) => ({
+      trace,
+      stage: getTraceDigitalIdentityProfessionalGuardStage(trace),
+    }))
+    .filter((entry) => entry.stage?.metadata?.digitalWalletProfessionalGuard?.enabled);
+  const rejectionReasonCounts = new Map();
+  const exampleRejectedTitles = [];
+
+  guardTraceEntries.forEach(({ trace, stage }) => {
+    const assessment = stage.metadata?.digitalWalletProfessionalGuard || {};
+    if (stage.result !== "rejected" || !assessment.rejected) {
+      return;
+    }
+    const reason = assessment.rejectionReason || stage.reason || "unknown";
+    incrementReasonCount(rejectionReasonCounts, reason);
+    if (exampleRejectedTitles.length < 25) {
+      exampleRejectedTitles.push(trace?.title || assessment.title || "Untitled article");
+    }
+  });
+
+  return {
+    enabled: guardTraceEntries.length > 0,
+    evaluated: guardTraceEntries.length,
+    passed: guardTraceEntries.filter((entry) =>
+      entry.stage.metadata?.digitalWalletProfessionalGuard?.passed
+    ).length,
+    rejected: guardTraceEntries.filter((entry) =>
+      entry.stage.metadata?.digitalWalletProfessionalGuard?.rejected
+    ).length,
+    topRejectionReasons: getTopV3DecisionReasons(rejectionReasonCounts, 10),
+    exampleRejectedTitles,
+  };
+}
+
 function getDominantDomainDiagnosticsSummary(diagnostics) {
   if (!diagnostics?.enabled || !diagnostics.personalDashboardScoreMap) {
     return null;
@@ -13741,6 +13784,67 @@ function explainEidDecisionByTitle(titlePart) {
     ...entry,
     personalDashboardScore: explainPersonalDashboardScore(entry.articleId),
     filterDecisionTrace: explainArticleDecision(entry.articleId),
+  };
+}
+
+function getDigitalWalletDiagnosticsFromTrace(trace) {
+  const guardStage = getTraceDigitalIdentityProfessionalGuardStage(trace);
+  const assessment = guardStage?.metadata?.digitalWalletProfessionalGuard || null;
+  if (!assessment?.enabled) {
+    return null;
+  }
+  return {
+    articleId: trace.articleId,
+    title: trace.title,
+    stageResult: guardStage.result,
+    rejected: Boolean(assessment.rejected),
+    passed: Boolean(assessment.passed),
+    rejectionReason: assessment.rejectionReason || "",
+    matchedStrongSignals: assessment.matchedStrongSignals || [],
+    matchedMediumSignals: assessment.matchedMediumSignals || [],
+    matchedIdentityContextTerms: assessment.matchedIdentityContextTerms || [],
+    matchedPaymentNoiseTerms: assessment.matchedPaymentNoiseTerms || [],
+    matchedCryptoNoiseTerms: assessment.matchedCryptoNoiseTerms || [],
+    matchedGenericNoiseTerms: assessment.matchedGenericNoiseTerms || [],
+    matchedWrongDomainNoiseTerms: assessment.matchedWrongDomainNoiseTerms || [],
+    digitalWalletHybridAssessment: assessment.digitalWalletHybridAssessment || null,
+  };
+}
+
+function listDigitalWalletDiagnostics(limit = 25) {
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!traceMap) {
+    return [];
+  }
+  const normalizedLimit = Math.max(1, Number(limit) || 25);
+  return Array.from(traceMap.values())
+    .map((trace) => getDigitalWalletDiagnosticsFromTrace(trace))
+    .filter(Boolean)
+    .slice(0, normalizedLimit);
+}
+
+function explainDigitalWalletDecisionByTitle(titlePart) {
+  const needle = String(titlePart || "").trim().toLowerCase();
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!needle || !traceMap) {
+    return null;
+  }
+
+  const match = Array.from(traceMap.values()).find((trace) =>
+    String(trace?.title || "").toLowerCase().includes(needle)
+  );
+  if (!match) {
+    return null;
+  }
+  const diagnostics = getDigitalWalletDiagnosticsFromTrace(match);
+  if (!diagnostics) {
+    return null;
+  }
+
+  return {
+    ...diagnostics,
+    personalDashboardScore: explainPersonalDashboardScore(match.articleId),
+    filterDecisionTrace: explainArticleDecision(match.articleId),
   };
 }
 
@@ -16988,6 +17092,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     eidDiagnosticsSummary: diagnostics.eidDiagnosticsSummary || null,
     eidDiagnosticsEntries: diagnostics.eidDiagnosticsEntries || [],
     eidProfessionalGuard: diagnostics.eidProfessionalGuard || null,
+    digitalWalletProfessionalGuard: diagnostics.digitalWalletProfessionalGuard || null,
     v3DecisionEngineDiagnosticsSummary: diagnostics.v3DecisionEngineDiagnosticsSummary || null,
     v3ConfidenceSummary: diagnostics.v3ConfidenceSummary || null,
     v3DecisionParitySummary: diagnostics.v3DecisionParitySummary || null,
@@ -17400,6 +17505,14 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.explainEidDecisionByTitle = (titlePart) => explainEidDecisionByTitle(titlePart);
   }
 
+  if (typeof window.listDigitalWalletDiagnostics !== "function") {
+    window.listDigitalWalletDiagnostics = (limit) => listDigitalWalletDiagnostics(limit);
+  }
+
+  if (typeof window.explainDigitalWalletDecisionByTitle !== "function") {
+    window.explainDigitalWalletDecisionByTitle = (titlePart) => explainDigitalWalletDecisionByTitle(titlePart);
+  }
+
   if (typeof window.listHighestPersonalDashboardScores !== "function") {
     window.listHighestPersonalDashboardScores = (limit) => listHighestPersonalDashboardScores(limit);
   }
@@ -17516,6 +17629,8 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.explainPersonalDashboardScoreByTitle(titlePart)",
         "window.listEidDiagnostics(limit)",
         "window.explainEidDecisionByTitle(titlePart)",
+        "window.listDigitalWalletDiagnostics(limit)",
+        "window.explainDigitalWalletDecisionByTitle(titlePart)",
         "window.listHighestPersonalDashboardScores(limit)",
         "window.explainIdentityMatchByTitle(titlePart)",
         "window.listIdentityScoreTooLow(limit)",
@@ -17580,6 +17695,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.digitalIdentitySpecificEvidence = diagnostics.digitalIdentityGuardBooleanApplied;
   diagnostics.eidDiagnosticsSummary = getEidDiagnosticsSummary(diagnostics);
   diagnostics.eidProfessionalGuard = getEidProfessionalGuardSummary(diagnostics);
+  diagnostics.digitalWalletProfessionalGuard = getDigitalWalletProfessionalGuardSummary(diagnostics);
   if (diagnostics.eidDiagnosticsSummary?.enabled) {
     addFilterPipelineNote(diagnostics, "eID diagnostics active");
     addFilterPipelineNote(diagnostics, "eID Professional Guard active for eID selection");
@@ -17686,6 +17802,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("sharedSecurityBridgeDiagnostics", diagnostics.sharedSecurityBridgeDiagnostics);
   console.log("eidDiagnosticsSummary", diagnostics.eidDiagnosticsSummary);
   console.log("eidProfessionalGuard", diagnostics.eidProfessionalGuard);
+  console.log("digitalWalletProfessionalGuard", diagnostics.digitalWalletProfessionalGuard);
   console.log("v3DecisionEngineDiagnosticsSummary", diagnostics.v3DecisionEngineDiagnosticsSummary);
   console.log("v3ConfidenceSummary", diagnostics.v3ConfidenceSummary);
   console.log("v3DecisionParitySummary", diagnostics.v3DecisionParitySummary);
@@ -22302,6 +22419,166 @@ function getEidProfessionalGuardRejectionCategory(assessment = {}) {
     return "generic_identity_without_eid_context";
   }
   return "generic_id_without_eid_context";
+}
+
+const DIGITAL_WALLET_PROFESSIONAL_STRONG_SIGNALS = [
+  "eudi wallet",
+  "eu digital identity wallet",
+  "european digital identity wallet",
+  "digital identity wallet",
+  "identity wallet",
+  "mobile identity wallet",
+  "digital id wallet",
+  "national wallet",
+  "government wallet",
+  "citizen wallet",
+  "mdl wallet",
+  "mobile driving licence",
+  "mobile driver's license",
+  "mobile driver license",
+  "verifiable credentials",
+  "verifiable credential",
+  "digital credentials",
+  "digital credential",
+  "identity credentials",
+  "identity credential",
+  "wallet interoperability",
+  "eidas wallet",
+];
+
+const DIGITAL_WALLET_PROFESSIONAL_MEDIUM_SIGNALS = [
+  "decentralized identity",
+  "decentralised identity",
+  "self sovereign identity",
+  "self-sovereign identity",
+  "ssi",
+  "digital identity ecosystem",
+  "identity infrastructure",
+  "credential issuance",
+  "trust framework",
+];
+
+const DIGITAL_WALLET_PROFESSIONAL_IDENTITY_CONTEXT_TERMS = [
+  "identity",
+  "digital identity",
+  "digital id",
+  "credential",
+  "credentials",
+  "verifiable credential",
+  "government",
+  "citizen",
+  "eudi",
+  "eidas",
+  "mdl",
+  "mobile driving licence",
+  "mobile driver's license",
+  "mobile driver license",
+  "public sector",
+  "trust framework",
+];
+
+const DIGITAL_WALLET_PAYMENT_NOISE_TERMS = [
+  "payment wallet",
+  "apple pay",
+  "google pay",
+  "bank wallet",
+  "loyalty wallet",
+  "mobile payment",
+  "payments wallet",
+];
+
+const DIGITAL_WALLET_CRYPTO_NOISE_TERMS = [
+  "crypto wallet",
+  "cryptocurrency wallet",
+  "blockchain wallet",
+  "web3 wallet",
+  "bitcoin wallet",
+  "ethereum wallet",
+];
+
+const DIGITAL_WALLET_GENERIC_NOISE_TERMS = [
+  "generic wallet",
+  "account wallet",
+  "generic authentication",
+  "generic id",
+  "security printing",
+];
+
+const DIGITAL_WALLET_WRONG_DOMAIN_NOISE_TERMS = [
+  "banknote",
+  "banknotes",
+  "currency",
+  "cash",
+  "security printing",
+  "printing press",
+];
+
+function shouldApplyDigitalWalletProfessionalGuard(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
+  return selectedMainDomains.includes("digital_identity_biometrics") &&
+    normalizedInterests.includes("digital_wallet");
+}
+
+function getDigitalWalletProfessionalGuardAssessment(article, options = {}) {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const enabled = Boolean(options.forceEnabled) || shouldApplyDigitalWalletProfessionalGuard(selectedInterests);
+  const context = getPersonalBoostContext(article);
+  const matchedStrongSignals = getEidDiagnosticMatchedTerms(context, DIGITAL_WALLET_PROFESSIONAL_STRONG_SIGNALS);
+  const matchedMediumSignals = getEidDiagnosticMatchedTerms(context, DIGITAL_WALLET_PROFESSIONAL_MEDIUM_SIGNALS);
+  const matchedIdentityContextTerms = getEidDiagnosticMatchedTerms(context, DIGITAL_WALLET_PROFESSIONAL_IDENTITY_CONTEXT_TERMS);
+  const matchedPaymentNoiseTerms = getEidDiagnosticMatchedTerms(context, DIGITAL_WALLET_PAYMENT_NOISE_TERMS);
+  const matchedCryptoNoiseTerms = getEidDiagnosticMatchedTerms(context, DIGITAL_WALLET_CRYPTO_NOISE_TERMS);
+  const matchedGenericNoiseTerms = getEidDiagnosticMatchedTerms(context, DIGITAL_WALLET_GENERIC_NOISE_TERMS);
+  const matchedWrongDomainNoiseTerms = getEidDiagnosticMatchedTerms(context, DIGITAL_WALLET_WRONG_DOMAIN_NOISE_TERMS);
+  const selectedWalletAssessment = getDigitalSubgroupHybridAssessment(article, "digital_wallet");
+  const genericWalletOnly = (
+    textMatchesKeyword(context.titleText, "digital wallet") ||
+    textMatchesKeyword(context.bodyText, "digital wallet") ||
+    textMatchesKeyword(context.titleText, "mobile wallet") ||
+    textMatchesKeyword(context.bodyText, "mobile wallet")
+  ) && matchedIdentityContextTerms.length === 0;
+  const strongProfessionalWalletMatched = matchedStrongSignals.length > 0 &&
+    (!genericWalletOnly || matchedIdentityContextTerms.length > 0);
+  const mediumProfessionalWalletMatched = matchedMediumSignals.length > 0;
+  const passed = !enabled || strongProfessionalWalletMatched || mediumProfessionalWalletMatched;
+  let rejectionReason = "";
+  if (enabled && !passed) {
+    if (matchedPaymentNoiseTerms.length > 0) {
+      rejectionReason = "payment_wallet_without_identity_context";
+    } else if (matchedCryptoNoiseTerms.length > 0) {
+      rejectionReason = "crypto_wallet_without_identity_context";
+    } else if (matchedWrongDomainNoiseTerms.length > 0) {
+      rejectionReason = "wrong_domain_wallet_signal";
+    } else if (matchedGenericNoiseTerms.length > 0 || genericWalletOnly) {
+      rejectionReason = "generic_wallet_without_identity_context";
+    } else {
+      rejectionReason = "generic_identity_without_wallet_context";
+    }
+  }
+
+  return Object.freeze({
+    enabled,
+    branch: options.branch || "",
+    selectedInterests: Object.freeze(selectedInterests.slice()),
+    title: article?.title || "Untitled article",
+    source: getIdentityNoiseGuardSource(article),
+    passed,
+    rejected: enabled && !passed,
+    rejectionReason,
+    rejectionCategory: rejectionReason ? "digital_wallet_professional_relevance" : "",
+    strongProfessionalWalletMatched,
+    mediumProfessionalWalletMatched,
+    genericWalletOnly,
+    matchedStrongSignals: Object.freeze(matchedStrongSignals.slice(0, 12)),
+    matchedMediumSignals: Object.freeze(matchedMediumSignals.slice(0, 12)),
+    matchedIdentityContextTerms: Object.freeze(matchedIdentityContextTerms.slice(0, 12)),
+    matchedPaymentNoiseTerms: Object.freeze(matchedPaymentNoiseTerms.slice(0, 12)),
+    matchedCryptoNoiseTerms: Object.freeze(matchedCryptoNoiseTerms.slice(0, 12)),
+    matchedGenericNoiseTerms: Object.freeze(matchedGenericNoiseTerms.slice(0, 12)),
+    matchedWrongDomainNoiseTerms: Object.freeze(matchedWrongDomainNoiseTerms.slice(0, 12)),
+    digitalWalletHybridAssessment: selectedWalletAssessment,
+  });
 }
 
 function shouldApplyDigitalIdentityProfessionalGuard(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
@@ -38218,14 +38495,15 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
   const inputArticles = Array.isArray(articles) ? articles : [];
   const digitalIdentityGuardActive = shouldApplyDigitalIdentityProfessionalGuard();
   const biometricsGuardActive = shouldApplyBiometricsProfessionalGuardBooleanGate();
-  if (!digitalIdentityGuardActive && !biometricsGuardActive) {
+  const digitalWalletGuardActive = shouldApplyDigitalWalletProfessionalGuard();
+  if (!digitalIdentityGuardActive && !biometricsGuardActive && !digitalWalletGuardActive) {
     return {
       articles: inputArticles,
       stage: createFilterPipelineStageResult(
         "digital_identity_professional_guard",
         inputArticles.length,
         inputArticles.length,
-        ["Digital Identity/Biometrics professional guard not active for this selection"]
+        ["Digital Identity/Biometrics/Wallet professional guard not active for this selection"]
       ),
     };
   }
@@ -38237,6 +38515,9 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
       : null;
     const biometricsAssessment = biometricsGuardActive
       ? getBiometricsProfessionalGuardAssessment(article, { branch, forceEnabled: true })
+      : null;
+    const digitalWalletAssessment = digitalWalletGuardActive
+      ? getDigitalWalletProfessionalGuardAssessment(article, { branch, forceEnabled: true })
       : null;
     const rejectedAssessment = digitalIdentityAssessment && !digitalIdentityAssessment.passed
       ? {
@@ -38252,23 +38533,34 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
             reason: "biometrics_professional_guard_rejected",
             fallbackReason: "Biometrics professional relevance guard rejected article",
           }
+        : digitalWalletAssessment && !digitalWalletAssessment.passed
+          ? {
+              type: "digital_wallet",
+              assessment: digitalWalletAssessment,
+              reason: "digital_wallet_professional_guard_rejected",
+              fallbackReason: "Digital Wallet professional relevance guard rejected article",
+            }
         : null;
 
     if (!rejectedAssessment) {
       recordFilterDecisionStage(diagnostics, article, {
         stage: "digital_identity_professional_guard",
         result: "passed",
-        reason: biometricsGuardActive && !digitalIdentityGuardActive
+        reason: digitalWalletGuardActive && !digitalIdentityGuardActive && !biometricsGuardActive
+          ? "article passed Digital Wallet professional relevance guard"
+          : biometricsGuardActive && !digitalIdentityGuardActive
           ? "article passed Biometrics professional relevance guard"
-          : "article passed Digital Identity/Biometrics professional relevance guard",
+          : "article passed Digital Identity/Biometrics/Wallet professional relevance guard",
         notes: [
-          "Digital Identity/Biometrics professional relevance guard active",
+          "Digital Identity/Biometrics/Wallet professional relevance guard active",
           "Biometrics guard is scoped to Biometrics interest only",
+          "Digital Wallet guard is scoped to Digital Wallet interest only",
         ],
         metadata: {
           enabled: true,
           digitalIdentityProfessionalGuard: digitalIdentityAssessment,
           biometricsProfessionalGuard: biometricsAssessment,
+          digitalWalletProfessionalGuard: digitalWalletAssessment,
         },
       });
       outputArticles.push(article);
@@ -38280,18 +38572,23 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
       result: "rejected",
       reason: rejectedAssessment.reason,
       notes: [
-        "Digital Identity/Biometrics professional relevance guard active",
+        "Digital Identity/Biometrics/Wallet professional relevance guard active",
         rejectedAssessment.type === "biometrics"
           ? "Weak biometrics noise is filtered for Biometrics only"
-          : "Generic cyber/enterprise identity noise is filtered for Digital Identity only",
+          : rejectedAssessment.type === "digital_wallet"
+            ? "Payment/crypto/generic wallet noise is filtered for Digital Wallet only"
+            : "Generic cyber/enterprise identity noise is filtered for Digital Identity only",
       ],
       metadata: {
         enabled: true,
         digitalIdentityProfessionalGuard: digitalIdentityAssessment,
         biometricsProfessionalGuard: biometricsAssessment,
+        digitalWalletProfessionalGuard: digitalWalletAssessment,
         rejectionReason: rejectedAssessment.reason,
         rejectedCategory: rejectedAssessment.type === "biometrics"
           ? "biometricsProfessionalGuard"
+          : rejectedAssessment.type === "digital_wallet"
+            ? "digital_wallet_professional_guard"
           : "digitalIdentityProfessionalGuard",
         finalReason: rejectedAssessment.reason,
         detailedReason: rejectedAssessment.assessment.rejectionReason || rejectedAssessment.fallbackReason,
@@ -38312,9 +38609,10 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
       inputArticles.length,
       outputArticles.length,
       [
-        "Digital Identity/Biometrics professional relevance guard active",
+        "Digital Identity/Biometrics/Wallet professional relevance guard active",
         "Digital Identity guard is scoped to Digital Identity interest only",
         "Biometrics guard is scoped to Biometrics interest only",
+        "Digital Wallet guard is scoped to Digital Wallet interest only",
       ]
     ),
   };
@@ -39378,16 +39676,20 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
   }
   const digitalIdentityProfessionalGuardActive = shouldApplyDigitalIdentityProfessionalGuard();
   const biometricsProfessionalGuardActive = shouldApplyBiometricsProfessionalGuardBooleanGate();
-  if (diagnostics?.enabled && (digitalIdentityProfessionalGuardActive || biometricsProfessionalGuardActive)) {
-    addFilterPipelineNote(diagnostics, "Digital Identity/Biometrics professional relevance guard active");
+  const digitalWalletProfessionalGuardActive = shouldApplyDigitalWalletProfessionalGuard();
+  if (diagnostics?.enabled && (digitalIdentityProfessionalGuardActive || biometricsProfessionalGuardActive || digitalWalletProfessionalGuardActive)) {
+    addFilterPipelineNote(diagnostics, "Digital Identity/Biometrics/Wallet professional relevance guard active");
     if (digitalIdentityProfessionalGuardActive) {
       addFilterPipelineNote(diagnostics, "Digital Identity guard is scoped to Digital Identity interest only");
     }
     if (biometricsProfessionalGuardActive) {
       addFilterPipelineNote(diagnostics, "Biometrics guard is scoped to Biometrics interest only");
     }
+    if (digitalWalletProfessionalGuardActive) {
+      addFilterPipelineNote(diagnostics, "Digital Wallet guard is scoped to Digital Wallet interest only");
+    }
     if (digitalIdentityGuardRejectedCount > 0) {
-      addFilterPipelineNote(diagnostics, `Digital Identity/Biometrics professional relevance guard rejected ${digitalIdentityGuardRejectedCount} backend-query article(s)`);
+      addFilterPipelineNote(diagnostics, `Digital Identity/Biometrics/Wallet professional relevance guard rejected ${digitalIdentityGuardRejectedCount} backend-query article(s)`);
     }
   }
   const filteredRawArticles = sortArticlesForCurrentDashboardMode(digitalIdentityFilteredBackendArticles);
