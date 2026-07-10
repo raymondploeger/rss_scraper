@@ -13907,6 +13907,8 @@ function getKycDiagnosticsFromTrace(trace) {
     matchedStrongSignals: assessment.matchedStrongSignals || [],
     matchedVendorSignals: assessment.matchedVendorSignals || [],
     matchedVendorContextTerms: assessment.matchedVendorContextTerms || [],
+    matchedIndustryContextTerms: assessment.matchedIndustryContextTerms || [],
+    matchedTutorialNoiseTerms: assessment.matchedTutorialNoiseTerms || [],
     matchedGenericAuthNoiseTerms: assessment.matchedGenericAuthNoiseTerms || [],
     matchedDigitalIdentityNoiseTerms: assessment.matchedDigitalIdentityNoiseTerms || [],
     matchedWalletNoiseTerms: assessment.matchedWalletNoiseTerms || [],
@@ -22758,6 +22760,49 @@ const KYC_PROFESSIONAL_VENDOR_CONTEXT_TERMS = [
   "fraud prevention",
 ];
 
+const KYC_PROFESSIONAL_INDUSTRY_CONTEXT_TERMS = [
+  "solution",
+  "solutions",
+  "platform",
+  "deployment",
+  "deploys",
+  "deployed",
+  "implementation",
+  "implements",
+  "launches",
+  "partnership",
+  "partners",
+  "contract",
+  "regulation",
+  "regulatory",
+  "compliance",
+  "aml",
+  "anti-money laundering",
+  "enterprise",
+  "banking identity verification",
+  "customer verification deployment",
+  "identity verification provider",
+  "onboarding platform",
+];
+
+const KYC_TUTORIAL_NOISE_TERMS = [
+  "tutorial",
+  "how to",
+  "step-by-step",
+  "step by step",
+  "setup",
+  "api setup",
+  "production setup",
+  "developer example",
+  "developer examples",
+  "react",
+  "sdk",
+  "api integration",
+  "implementation guide",
+  "guide",
+  "seo",
+];
+
 const KYC_GENERIC_AUTH_NOISE_TERMS = [
   "generic authentication",
   "authentication",
@@ -22812,6 +22857,9 @@ const KYC_CRYPTO_NOISE_TERMS = [
   "token",
   "tokens",
   "exchange listing",
+  "trading",
+  "trader",
+  "traders",
 ];
 
 const KYC_WRONG_DOMAIN_NOISE_TERMS = [
@@ -22837,6 +22885,8 @@ function getKycProfessionalGuardAssessment(article, options = {}) {
   const matchedStrongSignals = getEidDiagnosticMatchedTerms(context, KYC_PROFESSIONAL_STRONG_SIGNALS);
   const matchedVendorSignals = getEidDiagnosticMatchedTerms(context, KYC_PROFESSIONAL_VENDOR_SIGNALS);
   const matchedVendorContextTerms = getEidDiagnosticMatchedTerms(context, KYC_PROFESSIONAL_VENDOR_CONTEXT_TERMS);
+  const matchedIndustryContextTerms = getEidDiagnosticMatchedTerms(context, KYC_PROFESSIONAL_INDUSTRY_CONTEXT_TERMS);
+  const matchedTutorialNoiseTerms = getEidDiagnosticMatchedTerms(context, KYC_TUTORIAL_NOISE_TERMS);
   const matchedGenericAuthNoiseTerms = getEidDiagnosticMatchedTerms(context, KYC_GENERIC_AUTH_NOISE_TERMS);
   const matchedDigitalIdentityNoiseTerms = getEidDiagnosticMatchedTerms(context, KYC_DIGITAL_IDENTITY_NOISE_TERMS);
   const matchedWalletNoiseTerms = getEidDiagnosticMatchedTerms(context, KYC_WALLET_NOISE_TERMS);
@@ -22845,8 +22895,9 @@ function getKycProfessionalGuardAssessment(article, options = {}) {
   const matchedCryptoNoiseTerms = getEidDiagnosticMatchedTerms(context, KYC_CRYPTO_NOISE_TERMS);
   const matchedWrongDomainNoiseTerms = getEidDiagnosticMatchedTerms(context, KYC_WRONG_DOMAIN_NOISE_TERMS);
   const selectedKycAssessment = getDigitalSubgroupHybridAssessment(article, "kyc");
-  const hasKycProfessionalSignal = matchedStrongSignals.length > 0 ||
-    (matchedVendorSignals.length > 0 && matchedVendorContextTerms.length > 0);
+  const vendorProfessionalContextMatched = matchedVendorSignals.length > 0 &&
+    matchedVendorContextTerms.length > 0 &&
+    matchedIndustryContextTerms.length > 0;
   const hasCustomerVerificationContext = matchedStrongSignals.some((term) => [
     "customer identity verification",
     "customer verification",
@@ -22870,12 +22921,23 @@ function getKycProfessionalGuardAssessment(article, options = {}) {
     "liveness check",
     "liveness detection",
     "biometric verification for onboarding",
-  ].includes(term)) || matchedVendorContextTerms.length > 0;
-  const cryptoNoiseWithoutKycContext = matchedCryptoNoiseTerms.length > 0 && !hasCustomerVerificationContext;
-  const passed = !enabled || (hasKycProfessionalSignal && !cryptoNoiseWithoutKycContext);
+  ].includes(term)) || vendorProfessionalContextMatched;
+  const hasKycProfessionalSignal = matchedStrongSignals.length > 0 || vendorProfessionalContextMatched;
+  const tutorialNoiseWithoutIndustryContext = matchedTutorialNoiseTerms.length > 0 &&
+    matchedIndustryContextTerms.length === 0;
+  const cryptoNoiseWithoutKycContext = matchedCryptoNoiseTerms.length > 0 &&
+    (!hasCustomerVerificationContext || matchedStrongSignals.length <= 1);
+  const passed = !enabled ||
+    (
+      hasKycProfessionalSignal &&
+      !tutorialNoiseWithoutIndustryContext &&
+      !cryptoNoiseWithoutKycContext
+    );
   let rejectionReason = "";
   if (enabled && !passed) {
-    if (cryptoNoiseWithoutKycContext) {
+    if (tutorialNoiseWithoutIndustryContext) {
+      rejectionReason = "kyc_tutorial_or_setup_noise";
+    } else if (cryptoNoiseWithoutKycContext) {
       rejectionReason = "crypto_kyc_noise";
     } else if (matchedWalletNoiseTerms.length > 0) {
       rejectionReason = "wallet_without_kyc_context";
@@ -22904,10 +22966,14 @@ function getKycProfessionalGuardAssessment(article, options = {}) {
     rejectionCategory: rejectionReason ? "kyc_professional_relevance" : "",
     hasKycProfessionalSignal,
     hasCustomerVerificationContext,
+    vendorProfessionalContextMatched,
+    tutorialNoiseWithoutIndustryContext,
     cryptoNoiseWithoutKycContext,
     matchedStrongSignals: Object.freeze(matchedStrongSignals.slice(0, 12)),
     matchedVendorSignals: Object.freeze(matchedVendorSignals.slice(0, 12)),
     matchedVendorContextTerms: Object.freeze(matchedVendorContextTerms.slice(0, 12)),
+    matchedIndustryContextTerms: Object.freeze(matchedIndustryContextTerms.slice(0, 12)),
+    matchedTutorialNoiseTerms: Object.freeze(matchedTutorialNoiseTerms.slice(0, 12)),
     matchedGenericAuthNoiseTerms: Object.freeze(matchedGenericAuthNoiseTerms.slice(0, 12)),
     matchedDigitalIdentityNoiseTerms: Object.freeze(matchedDigitalIdentityNoiseTerms.slice(0, 12)),
     matchedWalletNoiseTerms: Object.freeze(matchedWalletNoiseTerms.slice(0, 12)),
@@ -38896,7 +38962,7 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
         stage: "digital_identity_professional_guard",
         result: "passed",
         reason: kycGuardActive && !digitalIdentityGuardActive && !biometricsGuardActive && !digitalWalletGuardActive
-          ? "article passed KYC professional relevance guard"
+          ? "kyc_professional_guard_passed"
           : digitalWalletGuardActive && !digitalIdentityGuardActive && !biometricsGuardActive
           ? "article passed Digital Wallet professional relevance guard"
           : biometricsGuardActive && !digitalIdentityGuardActive
