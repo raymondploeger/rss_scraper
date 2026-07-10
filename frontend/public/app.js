@@ -14351,6 +14351,7 @@ function getIdentityVerificationDiagnosticsFromTrace(trace) {
     matchedGovernmentIdentityNoiseTerms: assessment.matchedGovernmentIdentityNoiseTerms || [],
     matchedCredentialIssuanceNoiseTerms: assessment.matchedCredentialIssuanceNoiseTerms || [],
     matchedAiAgentNoiseTerms: assessment.matchedAiAgentNoiseTerms || [],
+    matchedContextOnlyTerms: assessment.matchedContextOnlyTerms || [],
     matchedAgePolicyNoiseTerms: assessment.matchedAgePolicyNoiseTerms || [],
     matchedSoftwareDeviceNoiseTerms: assessment.matchedSoftwareDeviceNoiseTerms || [],
     matchedTutorialNoiseTerms: assessment.matchedTutorialNoiseTerms || [],
@@ -24268,11 +24269,25 @@ const IDENTITY_VERIFICATION_PROFESSIONAL_STRONG_SIGNALS = [
   "liveness verification",
   "document authenticity check",
   "identity fraud detection",
+  "fraud detection tied to identity verification",
   "age assurance",
   "age verification using identity documents",
   "biometric age estimation",
   "verification of wallet credentials",
   "verification of mobile id credentials",
+  "kyc check",
+  "kyc verification",
+  "onboarding verification",
+  "verify identity",
+  "verifies identity",
+  "verify documents",
+  "passport verification",
+  "id card verification",
+  "driver license verification",
+  "wallet credential verification",
+  "remote identity proofing",
+  "selfie-to-id matching",
+  "selfie to id matching",
 ];
 
 const IDENTITY_VERIFICATION_PROFESSIONAL_USE_CASE_TERMS = [
@@ -24375,6 +24390,10 @@ const IDENTITY_VERIFICATION_VENDOR_CONTEXT_TERMS = [
   "onboarding",
   "age verification",
   "age assurance",
+  "verification product",
+  "verification deployment",
+  "customer implementation",
+  "identity proofing service",
   "digital wallet credentials",
   "wallet credentials",
   "credentials",
@@ -24487,6 +24506,23 @@ const IDENTITY_VERIFICATION_AI_AGENT_NOISE_TERMS = [
   "ai voice threat",
   "voice fraud",
   "voice detection",
+  "own digital identities",
+];
+
+const IDENTITY_VERIFICATION_CONTEXT_ONLY_TERMS = [
+  "digital identity",
+  "biometrics",
+  "biometric",
+  "authentication",
+  "credentials",
+  "platform",
+  "solution",
+  "solutions",
+  "identity platform",
+  "digital identity platform",
+  "digital identity platforms",
+  "end-to-end platform",
+  "end to end platform",
 ];
 
 const IDENTITY_VERIFICATION_AGE_POLICY_NOISE_TERMS = [
@@ -24568,6 +24604,7 @@ function getIdentityVerificationProfessionalGuardAssessment(article, options = {
   const matchedGovernmentIdentityNoiseTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_GOVERNMENT_IDENTITY_NOISE_TERMS);
   const matchedCredentialIssuanceNoiseTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_CREDENTIAL_ISSUANCE_NOISE_TERMS);
   const matchedAiAgentNoiseTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_AI_AGENT_NOISE_TERMS);
+  const matchedContextOnlyTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_CONTEXT_ONLY_TERMS);
   const matchedAgePolicyNoiseTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_AGE_POLICY_NOISE_TERMS);
   const matchedSoftwareDeviceNoiseTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_SOFTWARE_DEVICE_NOISE_TERMS);
   const matchedTutorialNoiseTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_TUTORIAL_NOISE_TERMS);
@@ -24579,7 +24616,9 @@ function getIdentityVerificationProfessionalGuardAssessment(article, options = {
   const hasVendorIdentityContext = matchedVendorSignals.length > 0 && matchedVendorContextTerms.length > 0;
   const hasAgeVerificationTechnology = matchedAgeVerificationTerms.length > 0 &&
     (matchedAgeTechnologyTerms.length > 0 || hasVendorIdentityContext);
-  const hasVendorProfessionalEvent = hasVendorIdentityContext && hasEventContext;
+  const hasVendorProfessionalEvent = hasVendorIdentityContext &&
+    hasEventContext &&
+    (hasUseCaseContext || matchedVendorContextTerms.length > 0);
   const professionalIdentityVerificationMatched = hasStrongIdentityVerification ||
     hasVendorProfessionalEvent ||
     hasAgeVerificationTechnology;
@@ -24592,6 +24631,10 @@ function getIdentityVerificationProfessionalGuardAssessment(article, options = {
   const governmentIdentityNoise = matchedGovernmentIdentityNoiseTerms.length > 0 && !hasStrongIdentityVerification && !hasVendorProfessionalEvent && !hasAgeVerificationTechnology;
   const credentialIssuanceNoise = matchedCredentialIssuanceNoiseTerms.length > 0 && !hasStrongIdentityVerification && !hasVendorProfessionalEvent;
   const aiAgentVerificationNoise = matchedAiAgentNoiseTerms.length > 0 && !hasStrongIdentityVerification && !hasVendorProfessionalEvent;
+  const contextOnlyNoise = matchedContextOnlyTerms.length > 0 &&
+    !hasStrongIdentityVerification &&
+    !hasVendorProfessionalEvent &&
+    !hasAgeVerificationTechnology;
   const genericVerificationNoise = matchedGenericVerificationNoiseTerms.length > 0 && !hasStrongIdentityVerification && !hasAgeVerificationTechnology && !hasVendorIdentityContext;
   const wrongDomainNoise = matchedWrongDomainNoiseTerms.length > 0 && !hasStrongIdentityVerification && !hasVendorIdentityContext;
   const passed = !enabled ||
@@ -24605,6 +24648,7 @@ function getIdentityVerificationProfessionalGuardAssessment(article, options = {
       !governmentIdentityNoise &&
       !credentialIssuanceNoise &&
       !aiAgentVerificationNoise &&
+      !contextOnlyNoise &&
       !wrongDomainNoise
     );
   const passReason = !passed
@@ -24636,10 +24680,18 @@ function getIdentityVerificationProfessionalGuardAssessment(article, options = {
       rejectionReason = "government_identity_without_verification_flow";
     } else if (credentialIssuanceNoise) {
       rejectionReason = "credential_issuance_without_verification";
+    } else if (contextOnlyNoise && matchedGenericBiometricsNoiseTerms.length > 0) {
+      rejectionReason = "generic_biometrics_only";
+    } else if (contextOnlyNoise && matchedAuthenticationNoiseTerms.length > 0) {
+      rejectionReason = "authentication_only";
+    } else if (contextOnlyNoise && matchedVendorSignals.length > 0) {
+      rejectionReason = "vendor_without_verification_use_case";
+    } else if (contextOnlyNoise) {
+      rejectionReason = "generic_identity_platform_only";
     } else if (wrongDomainNoise) {
       rejectionReason = "wrong_domain_verification_signal";
     } else {
-      rejectionReason = "generic_verification_without_identity";
+      rejectionReason = "missing_identity_verification_flow";
     }
   }
 
@@ -24670,6 +24722,7 @@ function getIdentityVerificationProfessionalGuardAssessment(article, options = {
     governmentIdentityNoise,
     credentialIssuanceNoise,
     aiAgentVerificationNoise,
+    contextOnlyNoise,
     genericVerificationNoise,
     wrongDomainNoise,
     matchedStrongSignals: Object.freeze(matchedStrongSignals.slice(0, 12)),
@@ -24686,6 +24739,7 @@ function getIdentityVerificationProfessionalGuardAssessment(article, options = {
     matchedGovernmentIdentityNoiseTerms: Object.freeze(matchedGovernmentIdentityNoiseTerms.slice(0, 12)),
     matchedCredentialIssuanceNoiseTerms: Object.freeze(matchedCredentialIssuanceNoiseTerms.slice(0, 12)),
     matchedAiAgentNoiseTerms: Object.freeze(matchedAiAgentNoiseTerms.slice(0, 12)),
+    matchedContextOnlyTerms: Object.freeze(matchedContextOnlyTerms.slice(0, 12)),
     matchedAgePolicyNoiseTerms: Object.freeze(matchedAgePolicyNoiseTerms.slice(0, 12)),
     matchedSoftwareDeviceNoiseTerms: Object.freeze(matchedSoftwareDeviceNoiseTerms.slice(0, 12)),
     matchedTutorialNoiseTerms: Object.freeze(matchedTutorialNoiseTerms.slice(0, 12)),
