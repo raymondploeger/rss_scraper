@@ -13908,6 +13908,7 @@ function getKycDiagnosticsFromTrace(trace) {
     matchedVendorSignals: assessment.matchedVendorSignals || [],
     matchedVendorContextTerms: assessment.matchedVendorContextTerms || [],
     matchedIndustryContextTerms: assessment.matchedIndustryContextTerms || [],
+    matchedBusinessEventTerms: assessment.matchedBusinessEventTerms || [],
     matchedTutorialNoiseTerms: assessment.matchedTutorialNoiseTerms || [],
     matchedGenericAuthNoiseTerms: assessment.matchedGenericAuthNoiseTerms || [],
     matchedDigitalIdentityNoiseTerms: assessment.matchedDigitalIdentityNoiseTerms || [],
@@ -22785,6 +22786,49 @@ const KYC_PROFESSIONAL_INDUSTRY_CONTEXT_TERMS = [
   "onboarding platform",
 ];
 
+const KYC_PROFESSIONAL_BUSINESS_EVENT_TERMS = [
+  "vendor",
+  "company",
+  "provider",
+  "platform",
+  "solution",
+  "solutions",
+  "deployment",
+  "deploys",
+  "deployed",
+  "implementation",
+  "implements",
+  "rollout",
+  "rolls out",
+  "launch",
+  "launches",
+  "launched",
+  "product launch",
+  "partnership",
+  "partners",
+  "partnered",
+  "contract",
+  "customer win",
+  "selected",
+  "acquisition",
+  "acquires",
+  "acquired",
+  "certification",
+  "certified",
+  "regulation",
+  "regulatory",
+  "compliance",
+  "aml compliance",
+  "bank implementation",
+  "fintech implementation",
+  "banking identity verification",
+  "enterprise",
+  "enterprise fraud prevention",
+  "customer onboarding deployment",
+  "identity verification provider",
+  "onboarding platform",
+];
+
 const KYC_TUTORIAL_NOISE_TERMS = [
   "tutorial",
   "how to",
@@ -22801,6 +22845,15 @@ const KYC_TUTORIAL_NOISE_TERMS = [
   "implementation guide",
   "guide",
   "seo",
+  "what is kyc",
+  "what is know your customer",
+  "explainer",
+  "explained",
+  "coding guide",
+  "code example",
+  "sample app",
+  "sample code",
+  "igaming production setup",
 ];
 
 const KYC_GENERIC_AUTH_NOISE_TERMS = [
@@ -22886,6 +22939,7 @@ function getKycProfessionalGuardAssessment(article, options = {}) {
   const matchedVendorSignals = getEidDiagnosticMatchedTerms(context, KYC_PROFESSIONAL_VENDOR_SIGNALS);
   const matchedVendorContextTerms = getEidDiagnosticMatchedTerms(context, KYC_PROFESSIONAL_VENDOR_CONTEXT_TERMS);
   const matchedIndustryContextTerms = getEidDiagnosticMatchedTerms(context, KYC_PROFESSIONAL_INDUSTRY_CONTEXT_TERMS);
+  const matchedBusinessEventTerms = getEidDiagnosticMatchedTerms(context, KYC_PROFESSIONAL_BUSINESS_EVENT_TERMS);
   const matchedTutorialNoiseTerms = getEidDiagnosticMatchedTerms(context, KYC_TUTORIAL_NOISE_TERMS);
   const matchedGenericAuthNoiseTerms = getEidDiagnosticMatchedTerms(context, KYC_GENERIC_AUTH_NOISE_TERMS);
   const matchedDigitalIdentityNoiseTerms = getEidDiagnosticMatchedTerms(context, KYC_DIGITAL_IDENTITY_NOISE_TERMS);
@@ -22896,37 +22950,14 @@ function getKycProfessionalGuardAssessment(article, options = {}) {
   const matchedWrongDomainNoiseTerms = getEidDiagnosticMatchedTerms(context, KYC_WRONG_DOMAIN_NOISE_TERMS);
   const selectedKycAssessment = getDigitalSubgroupHybridAssessment(article, "kyc");
   const vendorProfessionalContextMatched = matchedVendorSignals.length > 0 &&
-    matchedVendorContextTerms.length > 0 &&
-    matchedIndustryContextTerms.length > 0;
-  const hasCustomerVerificationContext = matchedStrongSignals.some((term) => [
-    "customer identity verification",
-    "customer verification",
-    "identity verification",
-    "id verification",
-    "document verification",
-    "customer onboarding",
-    "remote onboarding",
-    "digital onboarding",
-    "identity proofing",
-    "proof of identity",
-    "customer due diligence",
-    "cdd",
-    "enhanced due diligence",
-    "edd",
-    "aml onboarding",
-    "account opening verification",
-    "age verification",
-    "fraud prevention",
-    "synthetic identity fraud",
-    "liveness check",
-    "liveness detection",
-    "biometric verification for onboarding",
-  ].includes(term)) || vendorProfessionalContextMatched;
-  const hasKycProfessionalSignal = matchedStrongSignals.length > 0 || vendorProfessionalContextMatched;
-  const tutorialNoiseWithoutIndustryContext = matchedTutorialNoiseTerms.length > 0 &&
-    matchedIndustryContextTerms.length === 0;
+    matchedVendorContextTerms.length > 0;
+  const hasKycContext = matchedStrongSignals.length > 0 || matchedVendorContextTerms.length > 0;
+  const hasProfessionalBusinessSignal = matchedBusinessEventTerms.length > 0 || vendorProfessionalContextMatched;
+  const hasCustomerVerificationContext = hasKycContext && hasProfessionalBusinessSignal;
+  const hasKycProfessionalSignal = hasKycContext && hasProfessionalBusinessSignal;
+  const tutorialNoiseWithoutIndustryContext = matchedTutorialNoiseTerms.length > 0;
   const cryptoNoiseWithoutKycContext = matchedCryptoNoiseTerms.length > 0 &&
-    (!hasCustomerVerificationContext || matchedStrongSignals.length <= 1);
+    (!hasCustomerVerificationContext || matchedBusinessEventTerms.length === 0);
   const passed = !enabled ||
     (
       hasKycProfessionalSignal &&
@@ -22939,6 +22970,8 @@ function getKycProfessionalGuardAssessment(article, options = {}) {
       rejectionReason = "kyc_tutorial_or_setup_noise";
     } else if (cryptoNoiseWithoutKycContext) {
       rejectionReason = "crypto_kyc_noise";
+    } else if (hasKycContext && !hasProfessionalBusinessSignal) {
+      rejectionReason = "kyc_without_professional_business_signal";
     } else if (matchedWalletNoiseTerms.length > 0) {
       rejectionReason = "wallet_without_kyc_context";
     } else if (matchedBiometricsNoiseTerms.length > 0) {
@@ -22966,6 +22999,7 @@ function getKycProfessionalGuardAssessment(article, options = {}) {
     rejectionCategory: rejectionReason ? "kyc_professional_relevance" : "",
     hasKycProfessionalSignal,
     hasCustomerVerificationContext,
+    hasProfessionalBusinessSignal,
     vendorProfessionalContextMatched,
     tutorialNoiseWithoutIndustryContext,
     cryptoNoiseWithoutKycContext,
@@ -22973,6 +23007,7 @@ function getKycProfessionalGuardAssessment(article, options = {}) {
     matchedVendorSignals: Object.freeze(matchedVendorSignals.slice(0, 12)),
     matchedVendorContextTerms: Object.freeze(matchedVendorContextTerms.slice(0, 12)),
     matchedIndustryContextTerms: Object.freeze(matchedIndustryContextTerms.slice(0, 12)),
+    matchedBusinessEventTerms: Object.freeze(matchedBusinessEventTerms.slice(0, 12)),
     matchedTutorialNoiseTerms: Object.freeze(matchedTutorialNoiseTerms.slice(0, 12)),
     matchedGenericAuthNoiseTerms: Object.freeze(matchedGenericAuthNoiseTerms.slice(0, 12)),
     matchedDigitalIdentityNoiseTerms: Object.freeze(matchedDigitalIdentityNoiseTerms.slice(0, 12)),
