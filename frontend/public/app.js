@@ -5419,6 +5419,8 @@ function getFilterDecisionDebugToolsSummary(diagnostics) {
       "window.explainAiDecisionByTitle(titlePart)",
       "window.listIdentityVerificationDiagnostics(limit)",
       "window.explainIdentityVerificationDecisionByTitle(titlePart)",
+      "window.listIdentityVerificationAuthoritativePhrases(limit)",
+      "window.listIdentityVerificationEvidenceExport(limit)",
       "window.listHighestPersonalDashboardScores(limit)",
       "window.explainIdentityMatchByTitle(titlePart)",
       "window.listIdentityScoreTooLow(limit)",
@@ -14061,6 +14063,366 @@ function getIdentityVerificationProfessionalGuardSummary(diagnostics) {
   };
 }
 
+const IDENTITY_VERIFICATION_EVIDENCE_EXPORT_LIMIT = 500;
+const IDENTITY_VERIFICATION_NESTED_PHRASE_PAIRS = Object.freeze([
+  ["identity verification", "digital identity verification"],
+  ["document verification", "identity document verification"],
+  ["document verification", "id document verification"],
+  ["credential verification", "wallet credential verification"],
+]);
+
+function compactIdentityVerificationSignalSources(signalSources = []) {
+  return (Array.isArray(signalSources) ? signalSources : [])
+    .map((entry) => ({
+      signal: entry?.signal || "",
+      sources: Array.isArray(entry?.sources) ? entry.sources.slice(0, 8) : [],
+      ...(Array.isArray(entry?.sourceExcerpts)
+        ? {
+            sourceExcerpts: entry.sourceExcerpts.slice(0, 8).map((excerpt) => ({
+              source: excerpt?.source || "",
+              textLength: Number(excerpt?.textLength) || 0,
+              excerpt: String(excerpt?.excerpt || "").replace(/\s+/g, " ").trim().slice(0, 240),
+            })),
+          }
+        : {}),
+    }))
+    .filter((entry) => entry.signal);
+}
+
+function compactIdentityVerificationTrustedSources(sources = []) {
+  return (Array.isArray(sources) ? sources : [])
+    .map((entry) => ({
+      source: entry?.source || "",
+      textLength: Number(entry?.textLength) || String(entry?.excerpt || entry?.text || "").length,
+      excerpt: String(entry?.excerpt || entry?.text || "").replace(/\s+/g, " ").trim().slice(0, 240),
+    }))
+    .filter((entry) => entry.source);
+}
+
+function compactIdentityVerificationRemovedSources(sources = []) {
+  return (Array.isArray(sources) ? sources : [])
+    .map((entry) => ({
+      source: entry?.source || "",
+      duplicateOf: entry?.duplicateOf || "",
+      reason: entry?.reason || "",
+    }))
+    .filter((entry) => entry.source);
+}
+
+function compactIdentityVerificationContextMatches(matches = []) {
+  return (Array.isArray(matches) ? matches : [])
+    .map((entry) => ({
+      signal: entry?.signal || "",
+      sources: Array.isArray(entry?.sources) ? entry.sources.slice(0, 8) : [],
+      matchedContextSignals: Array.isArray(entry?.matchedContextSignals)
+        ? entry.matchedContextSignals.slice(0, 12)
+        : [],
+      contextSignalSources: compactIdentityVerificationSignalSources(entry?.contextSignalSources || []),
+    }))
+    .filter((entry) => entry.signal);
+}
+
+function compactIdentityVerificationContextFailures(failures = []) {
+  return (Array.isArray(failures) ? failures : [])
+    .map((entry) => ({
+      signal: entry?.signal || "",
+      sources: Array.isArray(entry?.sources) ? entry.sources.slice(0, 8) : [],
+      requiredContextSignals: Array.isArray(entry?.requiredContextSignals)
+        ? entry.requiredContextSignals.slice(0, 12)
+        : [],
+      rejectionReason: entry?.rejectionReason || "",
+    }))
+    .filter((entry) => entry.signal);
+}
+
+function getIdentityVerificationSharedEvidenceFromScore(scoreObject) {
+  const alignment = scoreObject?.identityVerificationScoringAlignment ||
+    scoreObject?.metadata?.identityVerificationScoringAlignment ||
+    null;
+  return alignment?.identityVerificationSharedEvidence || null;
+}
+
+function getIdentityVerificationSharedEvidenceFromTrace(trace) {
+  const guardStage = getTraceDigitalIdentityProfessionalGuardStage(trace);
+  const assessment = guardStage?.metadata?.identityVerificationProfessionalGuard || null;
+  return assessment?.sharedEvidence ||
+    assessment?.authoritativeDecision?.sharedEvidence ||
+    null;
+}
+
+function getIdentityVerificationTraceStage(trace, stageName) {
+  return (Array.isArray(trace?.stages) ? trace.stages : []).find((stage) => stage.stage === stageName) || null;
+}
+
+function getIdentityVerificationArticleExportSortRank(entry) {
+  if (!entry.passedPersonalDashboard) {
+    return 0;
+  }
+  if (entry.reachedProfessionalGuard && !entry.passedProfessionalGuard) {
+    return 1;
+  }
+  if (entry.finalPipelineResult === "rejected") {
+    return 2;
+  }
+  return 3;
+}
+
+function buildIdentityVerificationArticleEvidenceEntry(trace, scoreObject) {
+  const sharedEvidence = getIdentityVerificationSharedEvidenceFromTrace(trace) ||
+    getIdentityVerificationSharedEvidenceFromScore(scoreObject);
+  const personalDashboardStage = getIdentityVerificationTraceStage(trace, "personal_dashboard");
+  const professionalGuardStage = getTraceDigitalIdentityProfessionalGuardStage(trace);
+  const groupingStage = getIdentityVerificationTraceStage(trace, "grouping");
+  const assessment = professionalGuardStage?.metadata?.identityVerificationProfessionalGuard || null;
+
+  return {
+    articleId: trace?.articleId || scoreObject?.articleId || "",
+    title: trace?.title || "",
+    source: assessment?.source || "",
+    evidenceAvailable: Boolean(sharedEvidence),
+    passedPersonalDashboard: personalDashboardStage?.result === "passed",
+    reachedProfessionalGuard: Boolean(assessment?.enabled),
+    passedProfessionalGuard: Boolean(assessment?.passed || professionalGuardStage?.result === "passed"),
+    survivedGrouping: groupingStage?.result === "passed",
+    finalPipelineResult: trace?.finalResult || "",
+    independentlyAuthoritativeSignals: Array.isArray(sharedEvidence?.independentlyAuthoritativeSignals)
+      ? sharedEvidence.independentlyAuthoritativeSignals.slice(0, 16)
+      : [],
+    independentAuthoritativeSignalSources: compactIdentityVerificationSignalSources(
+      sharedEvidence?.independentAuthoritativeSignalSources || []
+    ),
+    authoritativeVerificationSignals: Array.isArray(sharedEvidence?.authoritativeVerificationSignals)
+      ? sharedEvidence.authoritativeVerificationSignals.slice(0, 16)
+      : [],
+    authoritativeVerificationSignalSources: compactIdentityVerificationSignalSources(
+      sharedEvidence?.authoritativeVerificationSignalSources || []
+    ),
+    contextDependentSignals: Array.isArray(sharedEvidence?.contextDependentSignals)
+      ? sharedEvidence.contextDependentSignals.slice(0, 16)
+      : [],
+    contextDependentSignalMatches: compactIdentityVerificationContextMatches(sharedEvidence?.contextDependentSignalMatches || []),
+    contextDependentSignalFailures: compactIdentityVerificationContextFailures(sharedEvidence?.contextDependentSignalFailures || []),
+    supportingIdentitySignals: Array.isArray(sharedEvidence?.supportingIdentitySignals)
+      ? sharedEvidence.supportingIdentitySignals.slice(0, 16)
+      : [],
+    supportingSignalSources: compactIdentityVerificationSignalSources(sharedEvidence?.supportingSignalSources || []),
+    professionalVerificationSignals: Array.isArray(sharedEvidence?.professionalVerificationSignals)
+      ? sharedEvidence.professionalVerificationSignals.slice(0, 16)
+      : [],
+    noiseVerificationSignals: Array.isArray(sharedEvidence?.noiseVerificationSignals)
+      ? sharedEvidence.noiseVerificationSignals.slice(0, 16)
+      : [],
+    verificationFlowMatched: Boolean(sharedEvidence?.verificationFlowMatched),
+    specificityGatePassed: Boolean(sharedEvidence?.specificityGatePassed),
+    finalScore: Number(sharedEvidence?.finalScore) || 0,
+    threshold: Number(sharedEvidence?.threshold) || 0,
+    passed: Boolean(sharedEvidence?.passed),
+    passReason: sharedEvidence?.passReason || "",
+    rejectionReason: sharedEvidence?.rejectionReason || "",
+    deduplicatedTrustedSources: compactIdentityVerificationTrustedSources(sharedEvidence?.deduplicatedTrustedSources || []),
+    removedDuplicateTrustedSources: compactIdentityVerificationRemovedSources(sharedEvidence?.removedDuplicateTrustedSources || []),
+  };
+}
+
+function getIdentityVerificationArticleEvidenceEntries(diagnostics, limit = IDENTITY_VERIFICATION_EVIDENCE_EXPORT_LIMIT) {
+  if (!diagnostics?.enabled || !(diagnostics.filterDecisionTraceMap instanceof Map)) {
+    return [];
+  }
+  const scoreMap = diagnostics.personalDashboardScoreMap instanceof Map
+    ? diagnostics.personalDashboardScoreMap
+    : new Map();
+  const entries = Array.from(diagnostics.filterDecisionTraceMap.values())
+    .map((trace) => buildIdentityVerificationArticleEvidenceEntry(trace, scoreMap.get(String(trace?.articleId || ""))))
+    .sort((left, right) => {
+      const rankDelta = getIdentityVerificationArticleExportSortRank(left) - getIdentityVerificationArticleExportSortRank(right);
+      if (rankDelta) {
+        return rankDelta;
+      }
+      return String(left.title || "").localeCompare(String(right.title || "")) ||
+        String(left.articleId || "").localeCompare(String(right.articleId || ""));
+    });
+  return entries.slice(0, Math.max(1, Number(limit) || IDENTITY_VERIFICATION_EVIDENCE_EXPORT_LIMIT));
+}
+
+function buildIdentityVerificationPhraseFrequency(articles = []) {
+  const phraseMap = new Map();
+  const sourceNames = ["title", "normalizedTitle", "summary", "summaryShort", "contentSnippet"];
+  articles.forEach((article) => {
+    const seenArticlePhrases = new Set();
+    (article.independentAuthoritativeSignalSources || []).forEach((entry) => {
+      const phrase = entry.signal;
+      if (!phrase) {
+        return;
+      }
+      const sources = Array.isArray(entry.sources) ? entry.sources : [];
+      const row = phraseMap.get(phrase) || {
+        phrase,
+        uniqueArticleCount: 0,
+        totalSourceMatchCount: 0,
+        titleCount: 0,
+        normalizedTitleCount: 0,
+        summaryCount: 0,
+        summaryShortCount: 0,
+        contentSnippetCount: 0,
+        multipleSourceCount: 0,
+      };
+      if (!seenArticlePhrases.has(phrase)) {
+        row.uniqueArticleCount += 1;
+        seenArticlePhrases.add(phrase);
+      }
+      row.totalSourceMatchCount += sources.length;
+      sourceNames.forEach((sourceName) => {
+        if (sources.includes(sourceName)) {
+          row[`${sourceName}Count`] += 1;
+        }
+      });
+      if (sources.length > 1) {
+        row.multipleSourceCount += 1;
+      }
+      phraseMap.set(phrase, row);
+    });
+  });
+  return Array.from(phraseMap.values())
+    .sort((left, right) => right.uniqueArticleCount - left.uniqueArticleCount || left.phrase.localeCompare(right.phrase));
+}
+
+function buildIdentityVerificationContextDependentPhraseFrequency(articles = []) {
+  const phraseMap = new Map();
+  articles.forEach((article) => {
+    const candidates = new Set(article.contextDependentSignals || []);
+    candidates.forEach((phrase) => {
+      if (!phrase) {
+        return;
+      }
+      const row = phraseMap.get(phrase) || {
+        phrase,
+        candidateCount: 0,
+        passedWithContextCount: 0,
+        rejectedWithoutContextCount: 0,
+      };
+      row.candidateCount += 1;
+      if ((article.contextDependentSignalMatches || []).some((entry) => entry.signal === phrase)) {
+        row.passedWithContextCount += 1;
+      }
+      if ((article.contextDependentSignalFailures || []).some((entry) => entry.signal === phrase)) {
+        row.rejectedWithoutContextCount += 1;
+      }
+      phraseMap.set(phrase, row);
+    });
+  });
+  return Array.from(phraseMap.values())
+    .sort((left, right) => right.candidateCount - left.candidateCount || left.phrase.localeCompare(right.phrase));
+}
+
+function buildIdentityVerificationAuthoritativeOverlapSummary(articles = []) {
+  const titleSources = ["title", "normalizedTitle"];
+  const snippetSources = ["summary", "summaryShort", "contentSnippet"];
+  let zeroIndependentPhraseCount = 0;
+  let exactlyOneIndependentPhraseCount = 0;
+  let exactlyTwoIndependentPhraseCount = 0;
+  let threeOrMoreIndependentPhraseCount = 0;
+  let titleOnlyCount = 0;
+  let snippetOnlyCount = 0;
+  let titleAndSnippetCount = 0;
+
+  articles.forEach((article) => {
+    const phrases = new Set(article.independentlyAuthoritativeSignals || []);
+    if (phrases.size === 0) {
+      zeroIndependentPhraseCount += 1;
+    } else if (phrases.size === 1) {
+      exactlyOneIndependentPhraseCount += 1;
+    } else if (phrases.size === 2) {
+      exactlyTwoIndependentPhraseCount += 1;
+    } else {
+      threeOrMoreIndependentPhraseCount += 1;
+    }
+
+    const sources = new Set();
+    (article.independentAuthoritativeSignalSources || []).forEach((entry) => {
+      (entry.sources || []).forEach((source) => sources.add(source));
+    });
+    const hasTitleSource = titleSources.some((source) => sources.has(source));
+    const hasSnippetSource = snippetSources.some((source) => sources.has(source));
+    if (hasTitleSource && !hasSnippetSource) {
+      titleOnlyCount += 1;
+    } else if (!hasTitleSource && hasSnippetSource) {
+      snippetOnlyCount += 1;
+    } else if (hasTitleSource && hasSnippetSource) {
+      titleAndSnippetCount += 1;
+    }
+  });
+
+  return {
+    zeroIndependentPhraseCount,
+    exactlyOneIndependentPhraseCount,
+    exactlyTwoIndependentPhraseCount,
+    threeOrMoreIndependentPhraseCount,
+    titleOnlyCount,
+    snippetOnlyCount,
+    titleAndSnippetCount,
+  };
+}
+
+function buildIdentityVerificationNestedPhraseSummary(articles = []) {
+  return IDENTITY_VERIFICATION_NESTED_PHRASE_PAIRS.map(([shorterPhrase, longerPhrase]) => {
+    let shorterPhraseArticleCount = 0;
+    let longerPhraseArticleCount = 0;
+    let coMatchArticleCount = 0;
+    articles.forEach((article) => {
+      const signals = new Set(article.independentlyAuthoritativeSignals || []);
+      const hasShorter = signals.has(shorterPhrase);
+      const hasLonger = signals.has(longerPhrase);
+      if (hasShorter) {
+        shorterPhraseArticleCount += 1;
+      }
+      if (hasLonger) {
+        longerPhraseArticleCount += 1;
+      }
+      if (hasShorter && hasLonger) {
+        coMatchArticleCount += 1;
+      }
+    });
+    return {
+      shorterPhrase,
+      longerPhrase,
+      shorterPhraseArticleCount,
+      longerPhraseArticleCount,
+      coMatchArticleCount,
+      longestMatchSuppressedShorterEstimate: coMatchArticleCount,
+      longestMatchNormalizedShorterArticleCount: Math.max(0, shorterPhraseArticleCount - coMatchArticleCount),
+    };
+  });
+}
+
+function getIdentityVerificationArticleEvidenceExport(diagnostics) {
+  if (!diagnostics?.enabled || !(diagnostics.filterDecisionTraceMap instanceof Map)) {
+    return {
+      enabled: false,
+      evidenceAuthority: "shared_identity_verification_source_trust",
+      inputArticleCount: 0,
+      exportedArticleCount: 0,
+      truncated: false,
+      exportLimit: IDENTITY_VERIFICATION_EVIDENCE_EXPORT_LIMIT,
+      approximateSerializedSizeBytes: 0,
+      articles: [],
+    };
+  }
+
+  const inputArticleCount = diagnostics.filterDecisionTraceMap.size;
+  const exportLimit = IDENTITY_VERIFICATION_EVIDENCE_EXPORT_LIMIT;
+  const articles = getIdentityVerificationArticleEvidenceEntries(diagnostics, exportLimit);
+  return {
+    enabled: articles.length > 0,
+    evidenceAuthority: "shared_identity_verification_source_trust",
+    inputArticleCount,
+    exportedArticleCount: articles.length,
+    truncated: inputArticleCount > articles.length,
+    exportLimit,
+    approximateSerializedSizeBytes: JSON.stringify(articles).length,
+    articles,
+  };
+}
+
 function getDominantDomainDiagnosticsSummary(diagnostics) {
   if (!diagnostics?.enabled || !diagnostics.personalDashboardScoreMap) {
     return null;
@@ -14619,6 +14981,27 @@ function listIdentityVerificationDiagnostics(limit = 25) {
     .map((trace) => getIdentityVerificationDiagnosticsFromTrace(trace))
     .filter(Boolean)
     .slice(0, normalizedLimit);
+}
+
+function getActiveIdentityVerificationArticleEvidenceExport() {
+  const activeDiagnostic = getActiveFilterPipelineDiagnostic();
+  return activeDiagnostic?.identityVerificationArticleEvidence || null;
+}
+
+function listIdentityVerificationEvidenceExport(limit = 25) {
+  const normalizedLimit = Math.max(1, Number(limit) || 25);
+  const exportSection = getActiveIdentityVerificationArticleEvidenceExport();
+  return Array.isArray(exportSection?.articles)
+    ? exportSection.articles.slice(0, normalizedLimit)
+    : [];
+}
+
+function listIdentityVerificationAuthoritativePhrases(limit = 25) {
+  const normalizedLimit = Math.max(1, Number(limit) || 25);
+  const activeDiagnostic = getActiveFilterPipelineDiagnostic();
+  return Array.isArray(activeDiagnostic?.identityVerificationAuthoritativePhraseFrequency)
+    ? activeDiagnostic.identityVerificationAuthoritativePhraseFrequency.slice(0, normalizedLimit)
+    : [];
 }
 
 function explainIdentityVerificationDecisionByTitle(titlePart) {
@@ -17936,6 +18319,11 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     aiProfessionalGuard: diagnostics.aiProfessionalGuard || null,
     identityVerificationProfessionalGuard: diagnostics.identityVerificationProfessionalGuard || null,
     identityVerificationDecisionAuthority: diagnostics.identityVerificationDecisionAuthority || null,
+    identityVerificationArticleEvidence: diagnostics.identityVerificationArticleEvidence || null,
+    identityVerificationAuthoritativePhraseFrequency: diagnostics.identityVerificationAuthoritativePhraseFrequency || [],
+    identityVerificationContextDependentPhraseFrequency: diagnostics.identityVerificationContextDependentPhraseFrequency || [],
+    identityVerificationAuthoritativeOverlapSummary: diagnostics.identityVerificationAuthoritativeOverlapSummary || null,
+    identityVerificationNestedPhraseSummary: diagnostics.identityVerificationNestedPhraseSummary || [],
     v3DecisionEngineDiagnosticsSummary: diagnostics.v3DecisionEngineDiagnosticsSummary || null,
     v3ConfidenceSummary: diagnostics.v3ConfidenceSummary || null,
     v3DecisionParitySummary: diagnostics.v3DecisionParitySummary || null,
@@ -18396,6 +18784,14 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.explainIdentityVerificationDecisionByTitle = (titlePart) =>
       explainIdentityVerificationDecisionByTitle(titlePart);
   }
+  if (typeof window.listIdentityVerificationAuthoritativePhrases !== "function") {
+    window.listIdentityVerificationAuthoritativePhrases = (limit) =>
+      listIdentityVerificationAuthoritativePhrases(limit);
+  }
+  if (typeof window.listIdentityVerificationEvidenceExport !== "function") {
+    window.listIdentityVerificationEvidenceExport = (limit) =>
+      listIdentityVerificationEvidenceExport(limit);
+  }
 
   if (typeof window.listHighestPersonalDashboardScores !== "function") {
     window.listHighestPersonalDashboardScores = (limit) => listHighestPersonalDashboardScores(limit);
@@ -18525,6 +18921,8 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.explainAiDecisionByTitle(titlePart)",
         "window.listIdentityVerificationDiagnostics(limit)",
         "window.explainIdentityVerificationDecisionByTitle(titlePart)",
+        "window.listIdentityVerificationAuthoritativePhrases(limit)",
+        "window.listIdentityVerificationEvidenceExport(limit)",
         "window.listHighestPersonalDashboardScores(limit)",
         "window.explainIdentityMatchByTitle(titlePart)",
         "window.listIdentityScoreTooLow(limit)",
@@ -18598,6 +18996,19 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.identityVerificationDecisionAuthority = diagnostics.identityVerificationProfessionalGuard?.enabled
     ? "production_filter_shared_object"
     : null;
+  diagnostics.identityVerificationArticleEvidence = getIdentityVerificationArticleEvidenceExport(diagnostics);
+  diagnostics.identityVerificationAuthoritativePhraseFrequency = buildIdentityVerificationPhraseFrequency(
+    diagnostics.identityVerificationArticleEvidence?.articles || []
+  );
+  diagnostics.identityVerificationContextDependentPhraseFrequency = buildIdentityVerificationContextDependentPhraseFrequency(
+    diagnostics.identityVerificationArticleEvidence?.articles || []
+  );
+  diagnostics.identityVerificationAuthoritativeOverlapSummary = buildIdentityVerificationAuthoritativeOverlapSummary(
+    diagnostics.identityVerificationArticleEvidence?.articles || []
+  );
+  diagnostics.identityVerificationNestedPhraseSummary = buildIdentityVerificationNestedPhraseSummary(
+    diagnostics.identityVerificationArticleEvidence?.articles || []
+  );
   if (diagnostics.eidDiagnosticsSummary?.enabled) {
     addFilterPipelineNote(diagnostics, "eID diagnostics active");
     addFilterPipelineNote(diagnostics, "eID Professional Guard active for eID selection");
@@ -22983,6 +23394,23 @@ function collectIdentityVerificationSourceMatches(sourceMap, terms = []) {
   return Array.from(matchesBySignal.values());
 }
 
+function getIdentityVerificationMatchedExcerpt(text, term, maxLength = 240) {
+  const normalizedText = normalizeIdentityVerificationTrustedText(text);
+  const normalizedTerm = normalizeKeyword(term);
+  if (!normalizedText) {
+    return "";
+  }
+  const termIndex = normalizedTerm ? normalizedText.indexOf(normalizedTerm) : -1;
+  if (termIndex === -1 || normalizedText.length <= maxLength) {
+    return normalizedText.slice(0, maxLength);
+  }
+  const contextPadding = Math.max(20, Math.floor((maxLength - normalizedTerm.length) / 2));
+  const start = Math.max(0, termIndex - contextPadding);
+  const end = Math.min(normalizedText.length, start + maxLength);
+  const excerpt = normalizedText.slice(start, end).trim();
+  return `${start > 0 ? "..." : ""}${excerpt}${end < normalizedText.length ? "..." : ""}`;
+}
+
 function normalizeIdentityVerificationTrustedText(value) {
   return String(value || "")
     .replace(/\s+/g, " ")
@@ -23069,7 +23497,8 @@ function buildIdentityVerificationTrustedTextSources(article) {
     sourceMap: Object.fromEntries(kept.map((entry) => [entry.source, entry.normalizedText])),
     deduplicatedTrustedSources: kept.map((entry) => ({
       source: entry.source,
-      text: entry.normalizedText.slice(0, 220),
+      textLength: entry.normalizedText.length,
+      excerpt: entry.normalizedText.slice(0, 240),
     })),
     removedDuplicateTrustedSources: removed,
   };
@@ -23141,10 +23570,19 @@ function flattenIdentityVerificationSignals(matches = []) {
   return matches.map((match) => match.signal).filter(Boolean);
 }
 
-function getIdentityVerificationSignalSourceSummary(matches = []) {
+function getIdentityVerificationSignalSourceSummary(matches = [], sourceMap = null) {
   return matches.map((match) => ({
     signal: match.signal,
     sources: match.sources || [],
+    ...(sourceMap
+      ? {
+          sourceExcerpts: (match.sources || []).map((source) => ({
+            source,
+            textLength: normalizeIdentityVerificationTrustedText(sourceMap[source]).length,
+            excerpt: getIdentityVerificationMatchedExcerpt(sourceMap[source], match.signal),
+          })),
+        }
+      : {}),
   }));
 }
 
@@ -23242,7 +23680,7 @@ function getIdentityVerificationSourceTrustEvidence(article) {
 
     return Object.freeze({
       independentlyAuthoritativeSignals: Object.freeze(independentlyAuthoritativeSignals.slice(0, 16)),
-      independentAuthoritativeSignalSources: Object.freeze(getIdentityVerificationSignalSourceSummary(independentAuthoritativeMatches).slice(0, 16)),
+      independentAuthoritativeSignalSources: Object.freeze(getIdentityVerificationSignalSourceSummary(independentAuthoritativeMatches, trustedTextSources).slice(0, 16)),
       contextDependentSignals: Object.freeze(contextDependentSignals.slice(0, 16)),
       contextDependentSignalMatches: Object.freeze(contextDependentEvaluation.matches.slice(0, 16).map((match) => Object.freeze({
         signal: match.signal,
@@ -23257,9 +23695,9 @@ function getIdentityVerificationSourceTrustEvidence(article) {
         rejectionReason: failure.rejectionReason,
       }))),
       authoritativeSignals: Object.freeze(authoritativeSignals.slice(0, 16)),
-      authoritativeSignalSources: Object.freeze(getIdentityVerificationSignalSourceSummary(authoritativeMatches).slice(0, 16)),
+      authoritativeSignalSources: Object.freeze(getIdentityVerificationSignalSourceSummary(authoritativeMatches, trustedTextSources).slice(0, 16)),
       authoritativeVerificationSignals: Object.freeze(authoritativeSignals.slice(0, 16)),
-      authoritativeVerificationSignalSources: Object.freeze(getIdentityVerificationSignalSourceSummary(authoritativeMatches).slice(0, 16)),
+      authoritativeVerificationSignalSources: Object.freeze(getIdentityVerificationSignalSourceSummary(authoritativeMatches, trustedTextSources).slice(0, 16)),
       deduplicatedTrustedSources: Object.freeze(trustedSourceDetails.deduplicatedTrustedSources.slice(0, 8).map((entry) => Object.freeze(entry))),
       removedDuplicateTrustedSources: Object.freeze(trustedSourceDetails.removedDuplicateTrustedSources.slice(0, 8).map((entry) => Object.freeze(entry))),
       supportingSignals: Object.freeze(supportingSignals.slice(0, 16)),
