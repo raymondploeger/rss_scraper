@@ -13962,6 +13962,10 @@ function getIdentityVerificationProfessionalGuardSummary(diagnostics) {
   let professionalContextWithoutFlowRejectedCount = 0;
   let noiseRejectedCount = 0;
   let sharedEvidenceObjectCount = 0;
+  let independentAuthoritativePassCount = 0;
+  let contextDependentPassCount = 0;
+  let contextDependentRejectedCount = 0;
+  let duplicateTrustedSourceRemovalCount = 0;
 
   guardTraceEntries.forEach(({ trace, stage }) => {
     const assessment = stage.metadata?.identityVerificationProfessionalGuard || {};
@@ -13975,6 +13979,16 @@ function getIdentityVerificationProfessionalGuardSummary(diagnostics) {
     if (sharedEvidence?.passed && sharedEvidence?.verificationFlowMatched) {
       authoritativeEvidencePassCount += 1;
     }
+    if (sharedEvidence?.passed && (sharedEvidence?.independentlyAuthoritativeSignals || []).length > 0) {
+      independentAuthoritativePassCount += 1;
+    }
+    if (sharedEvidence?.passed && (sharedEvidence?.contextDependentSignalMatches || []).length > 0) {
+      contextDependentPassCount += 1;
+    }
+    if ((sharedEvidence?.contextDependentSignalFailures || []).length > 0) {
+      contextDependentRejectedCount += 1;
+    }
+    duplicateTrustedSourceRemovalCount += (sharedEvidence?.removedDuplicateTrustedSources || []).length;
     if (sharedEvidence?.supportingOnlyRejected) {
       supportingOnlyRejectedCount += 1;
     }
@@ -14034,6 +14048,10 @@ function getIdentityVerificationProfessionalGuardSummary(diagnostics) {
     genericRescueBlockedCount,
     productionDecisionObjectCount,
     authoritativeEvidencePassCount,
+    independentAuthoritativePassCount,
+    contextDependentPassCount,
+    contextDependentRejectedCount,
+    duplicateTrustedSourceRemovalCount,
     supportingOnlyRejectedCount,
     metadataOnlyRejectedCount,
     professionalContextWithoutFlowRejectedCount,
@@ -15257,8 +15275,15 @@ function formatPersonalDashboardScoreExplanation(scoreObject) {
           identityVerificationFinalScore: identityVerificationScoringAlignment.identityVerificationFinalScore,
           identityVerificationThreshold: identityVerificationScoringAlignment.identityVerificationThreshold,
           identityVerificationPassed: identityVerificationScoringAlignment.identityVerificationPassed,
+          independentlyAuthoritativeSignals: identityVerificationSharedEvidence?.independentlyAuthoritativeSignals || [],
+          independentAuthoritativeSignalSources: identityVerificationSharedEvidence?.independentAuthoritativeSignalSources || [],
+          contextDependentSignals: identityVerificationSharedEvidence?.contextDependentSignals || [],
+          contextDependentSignalMatches: identityVerificationSharedEvidence?.contextDependentSignalMatches || [],
+          contextDependentSignalFailures: identityVerificationSharedEvidence?.contextDependentSignalFailures || [],
           authoritativeVerificationSignals: identityVerificationSharedEvidence?.authoritativeVerificationSignals || [],
           authoritativeVerificationSignalSources: identityVerificationSharedEvidence?.authoritativeVerificationSignalSources || [],
+          deduplicatedTrustedSources: identityVerificationSharedEvidence?.deduplicatedTrustedSources || [],
+          removedDuplicateTrustedSources: identityVerificationSharedEvidence?.removedDuplicateTrustedSources || [],
           supportingIdentitySignals: identityVerificationSharedEvidence?.supportingIdentitySignals || [],
           supportingSignalSources: identityVerificationSharedEvidence?.supportingSignalSources || [],
           professionalVerificationSignals: identityVerificationSharedEvidence?.professionalVerificationSignals || [],
@@ -22706,13 +22731,92 @@ const IDENTITY_VERIFICATION_SCORING_NEGATIVE_TERMS = Object.freeze([
   "verification platform",
 ]);
 
+const IDENTITY_VERIFICATION_INDEPENDENT_AUTHORITATIVE_TERMS = Object.freeze([
+  "identity verification",
+  "digital identity verification",
+  "id verification",
+  "identity proofing",
+  "proof of identity",
+  "remote identity verification",
+  "customer identity verification",
+  "document verification",
+  "identity document verification",
+  "id document verification",
+  "passport verification",
+  "id card verification",
+  "driver license verification",
+  "driver's license verification",
+  "document authenticity check",
+  "biometric identity verification",
+  "biometric verification",
+  "face verification",
+  "selfie verification",
+  "selfie-to-id matching",
+  "selfie to id matching",
+  "liveness verification",
+  "credential verification",
+  "wallet credential verification",
+  "biometric identity check",
+  "identity fraud detection",
+  "age assurance technology",
+  "biometric age estimation",
+]);
+
+const IDENTITY_VERIFICATION_CONTEXT_DEPENDENT_RULES = Object.freeze([
+  {
+    terms: ["idv"],
+    context: ["identity", "document", "biometric", "onboarding", "kyc", "fraud", "verification provider", "proofing"],
+    rejectionReason: "idv_without_identity_industry_context",
+  },
+  {
+    terms: ["kyc", "ekyc", "e-kyc"],
+    context: ["identity", "customer onboarding", "customer due diligence", "document check", "biometric check", "identity proofing", "account opening", "aml identity verification"],
+    rejectionReason: "kyc_without_verification_or_onboarding_context",
+  },
+  {
+    terms: ["pad"],
+    context: ["presentation attack detection", "liveness", "biometrics", "biometric", "face verification", "spoof detection"],
+    rejectionReason: "pad_without_biometric_liveness_context",
+  },
+  {
+    terms: ["identity check", "id check"],
+    context: ["person", "customer", "document", "credential", "border", "travel", "onboarding", "kyc", "biometric"],
+    rejectionReason: "identity_check_without_identity_process_context",
+  },
+  {
+    terms: ["customer verification", "person verification", "user verification"],
+    context: ["identity", "document", "biometric", "onboarding", "kyc", "proofing", "fraud prevention", "account opening"],
+    rejectionReason: "person_verification_without_identity_context",
+  },
+  {
+    terms: ["onboarding verification"],
+    context: ["customer", "identity", "kyc", "document", "biometric", "regulated onboarding", "account opening"],
+    rejectionReason: "onboarding_verification_without_identity_context",
+  },
+  {
+    terms: ["liveness check"],
+    context: ["biometric", "face", "selfie", "pad", "presentation attack", "spoof detection"],
+    rejectionReason: "liveness_check_without_biometric_context",
+  },
+  {
+    terms: ["age verification"],
+    context: ["identity document", "digital identity", "biometric age estimation", "age assurance", "verification provider", "regulated access implementation"],
+    rejectionReason: "age_verification_without_identity_or_technology_context",
+  },
+  {
+    terms: ["verification platform"],
+    context: ["identity", "document", "biometric", "kyc", "credential"],
+    rejectionReason: "verification_platform_without_identity_context",
+  },
+]);
+
+const IDENTITY_VERIFICATION_CONTEXT_DEPENDENT_TERMS = Object.freeze(
+  IDENTITY_VERIFICATION_CONTEXT_DEPENDENT_RULES.flatMap((rule) => rule.terms)
+);
+
 const IDENTITY_VERIFICATION_AUTHORITATIVE_TERMS = Object.freeze([
-  ...IDENTITY_VERIFICATION_SCORING_STRONG_TERMS,
-  "kyc",
-  "ekyc",
-  "e-kyc",
-  "pad",
-  "liveness check",
+  ...IDENTITY_VERIFICATION_INDEPENDENT_AUTHORITATIVE_TERMS,
+  ...IDENTITY_VERIFICATION_CONTEXT_DEPENDENT_TERMS,
 ]);
 
 const IDENTITY_VERIFICATION_SUPPORTING_TERMS = Object.freeze([
@@ -22879,6 +22983,160 @@ function collectIdentityVerificationSourceMatches(sourceMap, terms = []) {
   return Array.from(matchesBySignal.values());
 }
 
+function normalizeIdentityVerificationTrustedText(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function isIdentityVerificationNearDuplicateTrustedText(left, right) {
+  const leftText = normalizeIdentityVerificationTrustedText(left);
+  const rightText = normalizeIdentityVerificationTrustedText(right);
+  if (!leftText || !rightText || leftText === rightText) {
+    return leftText === rightText;
+  }
+  const shorter = leftText.length <= rightText.length ? leftText : rightText;
+  const longer = leftText.length > rightText.length ? leftText : rightText;
+  if (shorter.length < 32) {
+    return false;
+  }
+  const lengthRatio = shorter.length / Math.max(1, longer.length);
+  return lengthRatio >= 0.58 && (
+    longer.startsWith(shorter) ||
+    longer.endsWith(shorter) ||
+    (lengthRatio >= 0.78 && longer.includes(shorter))
+  );
+}
+
+function buildIdentityVerificationTrustedTextSources(article) {
+  const rawSources = [
+    { source: "title", text: article?.title || "" },
+    { source: "normalizedTitle", text: article?.normalizedTitle || "" },
+    { source: "summary", text: article?.summary || "" },
+    { source: "summaryShort", text: article?.summaryShort || "" },
+    { source: "contentSnippet", text: article?.contentSnippet || "" },
+  ]
+    .map((entry) => ({
+      ...entry,
+      normalizedText: normalizeIdentityVerificationTrustedText(entry.text),
+    }))
+    .filter((entry) => entry.normalizedText);
+
+  const kept = [];
+  const removed = [];
+  rawSources.forEach((entry) => {
+    const duplicateIndex = kept.findIndex((keptEntry) => {
+      if (keptEntry.normalizedText === entry.normalizedText) {
+        return true;
+      }
+      const bothTitleFields = ["title", "normalizedTitle"].includes(keptEntry.source) &&
+        ["title", "normalizedTitle"].includes(entry.source);
+      return !bothTitleFields && isIdentityVerificationNearDuplicateTrustedText(keptEntry.normalizedText, entry.normalizedText);
+    });
+
+    if (duplicateIndex === -1) {
+      kept.push(entry);
+      return;
+    }
+
+    const duplicateEntry = kept[duplicateIndex];
+    const currentIsLonger = entry.normalizedText.length > duplicateEntry.normalizedText.length;
+    const replaceDuplicate =
+      currentIsLonger &&
+      !["title", "normalizedTitle"].includes(duplicateEntry.source);
+
+    if (replaceDuplicate) {
+      removed.push({
+        source: duplicateEntry.source,
+        duplicateOf: entry.source,
+        reason: duplicateEntry.normalizedText === entry.normalizedText ? "exact_duplicate" : "near_duplicate_shorter_text",
+        text: duplicateEntry.normalizedText.slice(0, 220),
+      });
+      kept[duplicateIndex] = entry;
+      return;
+    }
+
+    removed.push({
+      source: entry.source,
+      duplicateOf: duplicateEntry.source,
+      reason: duplicateEntry.normalizedText === entry.normalizedText ? "exact_duplicate" : "near_duplicate_shorter_text",
+      text: entry.normalizedText.slice(0, 220),
+    });
+  });
+
+  return {
+    sourceMap: Object.fromEntries(kept.map((entry) => [entry.source, entry.normalizedText])),
+    deduplicatedTrustedSources: kept.map((entry) => ({
+      source: entry.source,
+      text: entry.normalizedText.slice(0, 220),
+    })),
+    removedDuplicateTrustedSources: removed,
+  };
+}
+
+function evaluateIdentityVerificationContextDependentMatches(trustedTextSources) {
+  const candidateMatches = collectIdentityVerificationSourceMatches(
+    trustedTextSources,
+    IDENTITY_VERIFICATION_CONTEXT_DEPENDENT_TERMS
+  );
+  const candidatesBySignal = new Map(candidateMatches.map((match) => [match.signal, match]));
+  const matches = [];
+  const failures = [];
+
+  IDENTITY_VERIFICATION_CONTEXT_DEPENDENT_RULES.forEach((rule) => {
+    const matchedRuleTerms = normalizeKeywordList(rule.terms)
+      .map((term) => candidatesBySignal.get(term))
+      .filter(Boolean);
+    if (!matchedRuleTerms.length) {
+      return;
+    }
+
+    const contextMatches = collectIdentityVerificationSourceMatches(
+      trustedTextSources,
+      rule.context
+    );
+    matchedRuleTerms.forEach((termMatch) => {
+      const entry = {
+        signal: termMatch.signal,
+        sources: termMatch.sources || [],
+        requiredContextSignals: normalizeKeywordList(rule.context),
+        matchedContextSignals: flattenIdentityVerificationSignals(contextMatches),
+        contextSignalSources: getIdentityVerificationSignalSourceSummary(contextMatches),
+        rejectionReason: rule.rejectionReason,
+      };
+      if (contextMatches.length) {
+        matches.push(entry);
+      } else {
+        failures.push(entry);
+      }
+    });
+  });
+
+  return { matches, failures };
+}
+
+function mergeIdentityVerificationSourceMatches(matches = []) {
+  const merged = new Map();
+  matches.forEach((match) => {
+    const signal = match?.signal;
+    if (!signal) {
+      return;
+    }
+    const existing = merged.get(signal) || {
+      signal,
+      sources: [],
+    };
+    (match.sources || []).forEach((source) => {
+      if (source && !existing.sources.includes(source)) {
+        existing.sources.push(source);
+      }
+    });
+    merged.set(signal, existing);
+  });
+  return Array.from(merged.values());
+}
+
 function flattenIdentityVerificationSignals(matches = []) {
   return matches.map((match) => match.signal).filter(Boolean);
 }
@@ -22893,10 +23151,8 @@ function getIdentityVerificationSignalSourceSummary(matches = []) {
 function getIdentityVerificationSourceTrustEvidence(article) {
   return getCachedArticleValue(article, "identityVerificationSourceTrustEvidence", () => {
     const context = getPersonalBoostContext(article);
-    const trustedTextSources = {
-      title: context.titleText,
-      body: context.bodyText,
-    };
+    const trustedSourceDetails = buildIdentityVerificationTrustedTextSources(article);
+    const trustedTextSources = trustedSourceDetails.sourceMap;
     const supportingTextSources = {
       tags: context.tagText,
       metadata: context.metadataText,
@@ -22906,10 +23162,19 @@ function getIdentityVerificationSourceTrustEvidence(article) {
       ...trustedTextSources,
       ...supportingTextSources,
     };
-    const authoritativeMatches = collectIdentityVerificationSourceMatches(
+    const independentAuthoritativeMatches = collectIdentityVerificationSourceMatches(
       trustedTextSources,
-      IDENTITY_VERIFICATION_AUTHORITATIVE_TERMS
+      IDENTITY_VERIFICATION_INDEPENDENT_AUTHORITATIVE_TERMS
     );
+    const contextDependentEvaluation = evaluateIdentityVerificationContextDependentMatches(trustedTextSources);
+    const contextDependentMatches = contextDependentEvaluation.matches.map((match) => ({
+      signal: match.signal,
+      sources: match.sources,
+    }));
+    const authoritativeMatches = mergeIdentityVerificationSourceMatches([
+      ...independentAuthoritativeMatches,
+      ...contextDependentMatches,
+    ]);
     const supportingMatches = collectIdentityVerificationSourceMatches(
       allTextSources,
       IDENTITY_VERIFICATION_SUPPORTING_TERMS
@@ -22923,6 +23188,11 @@ function getIdentityVerificationSourceTrustEvidence(article) {
       IDENTITY_VERIFICATION_NOISE_TERMS
     );
     const authoritativeSignals = flattenIdentityVerificationSignals(authoritativeMatches);
+    const independentlyAuthoritativeSignals = flattenIdentityVerificationSignals(independentAuthoritativeMatches);
+    const contextDependentSignals = Array.from(new Set([
+      ...contextDependentEvaluation.matches.map((match) => match.signal),
+      ...contextDependentEvaluation.failures.map((failure) => failure.signal),
+    ]));
     const supportingSignals = flattenIdentityVerificationSignals(supportingMatches)
       .filter((signal) => !authoritativeSignals.includes(signal));
     const professionalSignals = flattenIdentityVerificationSignals(professionalMatches);
@@ -22941,6 +23211,8 @@ function getIdentityVerificationSourceTrustEvidence(article) {
     if (!verificationFlowMatched) {
       if (noiseSignals.length > 0) {
         rejectionReason = "noise_without_authoritative_verification_evidence";
+      } else if (contextDependentEvaluation.failures.length > 0) {
+        rejectionReason = "context_dependent_verification_signal_without_trusted_context";
       } else if (supportingSignals.length > 0) {
         rejectionReason = "supporting_context_without_authoritative_verification_evidence";
       } else if (professionalSignals.length > 0) {
@@ -22954,8 +23226,12 @@ function getIdentityVerificationSourceTrustEvidence(article) {
     const passed = verificationFlowMatched && finalScore >= threshold && !rejectionReason;
     const passReason = passed
       ? professionalContextMatched
-        ? "authoritative_verification_evidence_with_professional_context"
-        : "authoritative_verification_evidence"
+        ? independentlyAuthoritativeSignals.length > 0
+          ? "independent_authoritative_verification_evidence_with_professional_context"
+          : "context_dependent_authoritative_verification_evidence_with_professional_context"
+        : independentlyAuthoritativeSignals.length > 0
+          ? "independent_authoritative_verification_evidence"
+          : "context_dependent_authoritative_verification_evidence"
       : "";
     const supportingOnlyRejected = !verificationFlowMatched && supportingSignals.length > 0;
     const metadataOnlyRejected = !verificationFlowMatched && supportingMatches.some((match) =>
@@ -22965,10 +23241,27 @@ function getIdentityVerificationSourceTrustEvidence(article) {
     const noiseRejected = !verificationFlowMatched && noiseSignals.length > 0;
 
     return Object.freeze({
+      independentlyAuthoritativeSignals: Object.freeze(independentlyAuthoritativeSignals.slice(0, 16)),
+      independentAuthoritativeSignalSources: Object.freeze(getIdentityVerificationSignalSourceSummary(independentAuthoritativeMatches).slice(0, 16)),
+      contextDependentSignals: Object.freeze(contextDependentSignals.slice(0, 16)),
+      contextDependentSignalMatches: Object.freeze(contextDependentEvaluation.matches.slice(0, 16).map((match) => Object.freeze({
+        signal: match.signal,
+        sources: Object.freeze((match.sources || []).slice()),
+        matchedContextSignals: Object.freeze((match.matchedContextSignals || []).slice(0, 12)),
+        contextSignalSources: Object.freeze((match.contextSignalSources || []).slice(0, 12)),
+      }))),
+      contextDependentSignalFailures: Object.freeze(contextDependentEvaluation.failures.slice(0, 16).map((failure) => Object.freeze({
+        signal: failure.signal,
+        sources: Object.freeze((failure.sources || []).slice()),
+        requiredContextSignals: Object.freeze((failure.requiredContextSignals || []).slice(0, 12)),
+        rejectionReason: failure.rejectionReason,
+      }))),
       authoritativeSignals: Object.freeze(authoritativeSignals.slice(0, 16)),
       authoritativeSignalSources: Object.freeze(getIdentityVerificationSignalSourceSummary(authoritativeMatches).slice(0, 16)),
       authoritativeVerificationSignals: Object.freeze(authoritativeSignals.slice(0, 16)),
       authoritativeVerificationSignalSources: Object.freeze(getIdentityVerificationSignalSourceSummary(authoritativeMatches).slice(0, 16)),
+      deduplicatedTrustedSources: Object.freeze(trustedSourceDetails.deduplicatedTrustedSources.slice(0, 8).map((entry) => Object.freeze(entry))),
+      removedDuplicateTrustedSources: Object.freeze(trustedSourceDetails.removedDuplicateTrustedSources.slice(0, 8).map((entry) => Object.freeze(entry))),
       supportingSignals: Object.freeze(supportingSignals.slice(0, 16)),
       supportingSignalSources: Object.freeze(getIdentityVerificationSignalSourceSummary(supportingMatches).slice(0, 16)),
       supportingIdentitySignals: Object.freeze(supportingSignals.slice(0, 16)),
@@ -22985,7 +23278,11 @@ function getIdentityVerificationSourceTrustEvidence(article) {
       rejected: !passed,
       passReason,
       rejectionReason,
-      identityVerificationEvidenceAuthority: verificationFlowMatched ? "trusted_article_text" : "supporting_or_metadata_only",
+      identityVerificationEvidenceAuthority: verificationFlowMatched
+        ? independentlyAuthoritativeSignals.length > 0
+          ? "trusted_article_text_independent"
+          : "trusted_article_text_context_dependent"
+        : "supporting_or_metadata_only",
       personalDashboardUsedSharedEvidence: true,
       professionalGuardUsedSharedEvidence: true,
       supportingOnlyRejected,
@@ -23005,6 +23302,12 @@ function getIdentityVerificationPersonalDashboardScoringAlignment(article, rawSc
 
   return Object.freeze({
     strongIdentityVerificationSignals: evidence.authoritativeVerificationSignals,
+    independentlyAuthoritativeSignals: evidence.independentlyAuthoritativeSignals,
+    contextDependentSignals: evidence.contextDependentSignals,
+    contextDependentSignalMatches: evidence.contextDependentSignalMatches,
+    contextDependentSignalFailures: evidence.contextDependentSignalFailures,
+    deduplicatedTrustedSources: evidence.deduplicatedTrustedSources,
+    removedDuplicateTrustedSources: evidence.removedDuplicateTrustedSources,
     contextOnlyIdentitySignals: evidence.supportingIdentitySignals,
     genericVerificationSignals: evidence.supportingIdentitySignals.filter((signal) => signal.includes("verification")),
     genericVerificationContextSignals: evidence.supportingIdentitySignals,
@@ -23255,9 +23558,15 @@ function getDigitalSubgroupHybridAssessment(article, interestId) {
       ...(identityVerificationSharedEvidence
         ? {
             sharedEvidenceUsed: true,
+            independentlyAuthoritativeSignals: identityVerificationSharedEvidence.independentlyAuthoritativeSignals,
+            contextDependentSignals: identityVerificationSharedEvidence.contextDependentSignals,
+            contextDependentSignalMatches: identityVerificationSharedEvidence.contextDependentSignalMatches,
+            contextDependentSignalFailures: identityVerificationSharedEvidence.contextDependentSignalFailures,
             authoritativeVerificationSignals: identityVerificationSharedEvidence.authoritativeVerificationSignals,
             supportingIdentitySignals: identityVerificationSharedEvidence.supportingIdentitySignals,
             noiseVerificationSignals: identityVerificationSharedEvidence.noiseVerificationSignals,
+            deduplicatedTrustedSources: identityVerificationSharedEvidence.deduplicatedTrustedSources,
+            removedDuplicateTrustedSources: identityVerificationSharedEvidence.removedDuplicateTrustedSources,
             identityVerificationEvidenceAuthority: identityVerificationSharedEvidence.identityVerificationEvidenceAuthority,
             passReason: identityVerificationSharedEvidence.passReason,
             rejectionReason: identityVerificationSharedEvidence.rejectionReason,
@@ -25509,8 +25818,15 @@ function getIdentityVerificationProfessionalGuardAssessment(article, options = {
     hardNegativeSignals: frozenHardNegativeSignals,
     identityVerificationHybridAssessment: selectedIdentityVerificationAssessment,
     sharedEvidence,
+    independentlyAuthoritativeSignals: sharedEvidence.independentlyAuthoritativeSignals,
+    independentAuthoritativeSignalSources: sharedEvidence.independentAuthoritativeSignalSources,
+    contextDependentSignals: sharedEvidence.contextDependentSignals,
+    contextDependentSignalMatches: sharedEvidence.contextDependentSignalMatches,
+    contextDependentSignalFailures: sharedEvidence.contextDependentSignalFailures,
     authoritativeVerificationSignals: sharedEvidence.authoritativeVerificationSignals,
     authoritativeVerificationSignalSources: sharedEvidence.authoritativeVerificationSignalSources,
+    deduplicatedTrustedSources: sharedEvidence.deduplicatedTrustedSources,
+    removedDuplicateTrustedSources: sharedEvidence.removedDuplicateTrustedSources,
     supportingIdentitySignals: sharedEvidence.supportingIdentitySignals,
     supportingSignalSources: sharedEvidence.supportingSignalSources,
     professionalVerificationSignals: sharedEvidence.professionalVerificationSignals,
