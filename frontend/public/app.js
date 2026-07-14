@@ -56,6 +56,371 @@ function debugPerformanceLog(label, payload) {
   }
 }
 
+function isFilterPerformanceDiagnosticsEnabled() {
+  if (DEBUG_PERFORMANCE) {
+    return true;
+  }
+  try {
+    return typeof localStorage !== "undefined" &&
+      localStorage.getItem("debugFilterPerformance") === "1";
+  } catch {
+    return false;
+  }
+}
+
+function getPerformanceNow() {
+  return typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+}
+
+const FILTER_PERFORMANCE_STAGE_FIELDS = Object.freeze([
+  "backendResultNormalizationMs",
+  "candidatePreparationMs",
+  "personalDashboardMs",
+  "advancedFiltersMs",
+  "identityProfessionalGuardMs",
+  "digitalIdentityProfessionalGuardMs",
+  "sortingMs",
+  "groupingMs",
+  "paginationMs",
+  "renderModelMs",
+  "domRenderMs",
+  "diagnosticsMs",
+]);
+
+function getArticlePerformanceId(article) {
+  return String(article?.id || article?.url || article?.title || "").trim() || "unknown";
+}
+
+function countDuplicatePerformanceArticles(articles = []) {
+  if (!Array.isArray(articles) || !articles.length) {
+    return 0;
+  }
+  const seen = new Set();
+  let duplicates = 0;
+  articles.forEach((article) => {
+    const articleId = getArticlePerformanceId(article);
+    if (seen.has(articleId)) {
+      duplicates += 1;
+      return;
+    }
+    seen.add(articleId);
+  });
+  return duplicates;
+}
+
+function createFilterPerformanceCounterMap() {
+  return {
+    articleContext: new Map(),
+    sharedEvidence: new Map(),
+  };
+}
+
+function createFilterPerformanceCounters() {
+  return {
+    articleContextBuildCount: 0,
+    sharedEvidenceBuildCount: 0,
+    personalInterestAssessmentCount: 0,
+    subgroupAssessmentCount: 0,
+    professionalGuardAssessmentCount: 0,
+    identityVerificationAssessmentCount: 0,
+    biometricsAssessmentCount: 0,
+    selectedInterestAssessmentCounts: {},
+    textNormalizationCount: 0,
+    groupingInputCount: 0,
+    renderedCardCount: 0,
+    diagnosticsArticleCount: 0,
+  };
+}
+
+function getSelectedInterestIdsForPerformance() {
+  return normalizePersonalDashboardInterests(state.personalDashboard?.interests || []);
+}
+
+function createFilterPerformanceRun(reason = "render") {
+  const enabled = isFilterPerformanceDiagnosticsEnabled();
+  if (!enabled) {
+    return null;
+  }
+  const now = getPerformanceNow();
+  const selectedInterests = getSelectedInterestIdsForPerformance();
+  const previousRunStillActive = Boolean(runtime.activeFilterPerformanceRun && !runtime.activeFilterPerformanceRun.completed);
+  if (previousRunStillActive) {
+    runtime.filterPerformanceOverlappingRunCount += 1;
+    runtime.filterPerformanceSupersededRunCount += 1;
+  }
+  const run = {
+    enabled: true,
+    completed: false,
+    runId: `filter-performance-${++runtime.filterPerformanceRunId}`,
+    startedAt: new Date().toISOString(),
+    startMs: now,
+    selectedMainDomains: getSelectedMainDomains(selectedInterests),
+    selectedInterests,
+    selectedInterestCount: selectedInterests.length,
+    candidateCount: 0,
+    backendResultNormalizationMs: null,
+    candidatePreparationMs: null,
+    personalDashboardMs: null,
+    advancedFiltersMs: null,
+    identityProfessionalGuardMs: null,
+    digitalIdentityProfessionalGuardMs: null,
+    sortingMs: null,
+    groupingMs: null,
+    paginationMs: null,
+    renderModelMs: null,
+    domRenderMs: null,
+    diagnosticsMs: null,
+    totalPipelineMs: null,
+    totalUserVisibleMs: null,
+    operationCounters: createFilterPerformanceCounters(),
+    operationMaps: createFilterPerformanceCounterMap(),
+    activeRunId: "",
+    previousRunStillActive,
+    overlappingRunCount: runtime.filterPerformanceOverlappingRunCount,
+    supersededRunCount: runtime.filterPerformanceSupersededRunCount,
+    runTrigger: reason,
+    timeFromSelectionChangeToRunStartMs: runtime.scheduledRenderRequestedAt
+      ? Math.max(0, now - runtime.scheduledRenderRequestedAt)
+      : null,
+    timeFromRunStartToFirstRenderMs: null,
+    backendRequestCount: null,
+    backendRequestTotalMs: null,
+    cacheHit: null,
+    candidateCountReturned: null,
+    duplicateCandidateCountBeforeDeduplication: null,
+    candidateCountAfterDeduplication: null,
+    interpretation: null,
+  };
+  run.activeRunId = run.runId;
+  runtime.activeFilterPerformanceRun = run;
+  runtime.activeFilterPerformanceRunId = run.runId;
+  return run;
+}
+
+function getActiveFilterPerformanceRun() {
+  const run = runtime.activeFilterPerformanceRun;
+  return run && !run.completed ? run : null;
+}
+
+function withFilterPerformanceStage(stageField, callback) {
+  const run = getActiveFilterPerformanceRun();
+  if (!run || !stageField) {
+    return callback();
+  }
+  const startedAt = getPerformanceNow();
+  try {
+    return callback();
+  } finally {
+    const elapsed = getPerformanceNow() - startedAt;
+    run[stageField] = Math.round(((Number(run[stageField]) || 0) + elapsed) * 10) / 10;
+  }
+}
+
+function incrementFilterPerformanceCounter(name, amount = 1) {
+  const run = getActiveFilterPerformanceRun();
+  if (!run || !run.operationCounters || !name) {
+    return;
+  }
+  run.operationCounters[name] = (Number(run.operationCounters[name]) || 0) + amount;
+}
+
+function incrementFilterPerformanceArticleCounter(mapName, article) {
+  const run = getActiveFilterPerformanceRun();
+  const map = run?.operationMaps?.[mapName];
+  if (!map) {
+    return;
+  }
+  const articleId = getArticlePerformanceId(article);
+  map.set(articleId, (map.get(articleId) || 0) + 1);
+}
+
+function incrementSelectedInterestAssessmentCount(interestId) {
+  const run = getActiveFilterPerformanceRun();
+  if (!run || !interestId) {
+    return;
+  }
+  const counts = run.operationCounters.selectedInterestAssessmentCounts;
+  counts[interestId] = (Number(counts[interestId]) || 0) + 1;
+}
+
+function summarizeFilterPerformanceArticleMap(map, articleCount) {
+  if (!(map instanceof Map) || !map.size) {
+    return {
+      total: 0,
+      perArticle: 0,
+      duplicateCount: 0,
+      maximumForSingleArticle: 0,
+    };
+  }
+  let total = 0;
+  let duplicateCount = 0;
+  let maximumForSingleArticle = 0;
+  map.forEach((count) => {
+    const normalizedCount = Number(count) || 0;
+    total += normalizedCount;
+    if (normalizedCount > 1) {
+      duplicateCount += normalizedCount - 1;
+    }
+    maximumForSingleArticle = Math.max(maximumForSingleArticle, normalizedCount);
+  });
+  return {
+    total,
+    perArticle: articleCount ? Math.round((total / articleCount) * 100) / 100 : 0,
+    duplicateCount,
+    maximumForSingleArticle,
+  };
+}
+
+function buildFilterPerformanceInterpretation(run) {
+  const stageEntries = FILTER_PERFORMANCE_STAGE_FIELDS
+    .map((field) => ({ field, ms: Number(run[field]) || 0 }))
+    .filter((entry) => entry.ms > 0)
+    .sort((left, right) => right.ms - left.ms);
+  const slowest = stageEntries[0] || { field: "", ms: 0 };
+  const total = Number(run.totalPipelineMs || run.totalUserVisibleMs) || stageEntries.reduce((sum, entry) => sum + entry.ms, 0);
+  const counters = run.operationCounters || {};
+  const articleCount = Math.max(1, Number(run.candidateCount) || 0);
+  const likelyRepeatedWork =
+    Number(run.duplicateArticleContextBuildCount || 0) > articleCount * 0.5 ||
+    Number(run.duplicateEvidenceBuildCount || 0) > articleCount * 0.25 ||
+    Number(counters.subgroupAssessmentCount || 0) > articleCount * 2;
+  return {
+    slowestStage: slowest.field || "",
+    slowestStageMs: Math.round(slowest.ms * 10) / 10,
+    slowestStagePercent: total ? Math.round((slowest.ms / total) * 1000) / 10 : 0,
+    likelyRepeatedWork,
+    likelyDiagnosticsOverhead: (Number(run.diagnosticsMs) || 0) > total * 0.2,
+    likelyBackendBound: (Number(run.backendRequestTotalMs) || 0) > total * 0.35 ||
+      (Number(run.candidatePreparationMs) || 0) > total * 0.45,
+    likelyFrontendComputeBound: ["personalDashboardMs", "advancedFiltersMs", "identityProfessionalGuardMs", "digitalIdentityProfessionalGuardMs", "sortingMs", "groupingMs"].includes(slowest.field),
+    likelyDomRenderBound: slowest.field === "domRenderMs" || (Number(run.domRenderMs) || 0) > total * 0.25,
+  };
+}
+
+function compactFilterPerformanceRun(run) {
+  if (!run) {
+    return null;
+  }
+  const counters = run.operationCounters || {};
+  return {
+    runId: run.runId,
+    startedAt: run.startedAt,
+    selectedMainDomains: Array.isArray(run.selectedMainDomains) ? run.selectedMainDomains.slice() : [],
+    selectedInterests: Array.isArray(run.selectedInterests) ? run.selectedInterests.slice() : [],
+    selectedInterestCount: Number(run.selectedInterestCount) || 0,
+    candidateCount: Number(run.candidateCount) || 0,
+    backendResultNormalizationMs: run.backendResultNormalizationMs,
+    candidatePreparationMs: run.candidatePreparationMs,
+    personalDashboardMs: run.personalDashboardMs,
+    advancedFiltersMs: run.advancedFiltersMs,
+    identityProfessionalGuardMs: run.identityProfessionalGuardMs,
+    digitalIdentityProfessionalGuardMs: run.digitalIdentityProfessionalGuardMs,
+    sortingMs: run.sortingMs,
+    groupingMs: run.groupingMs,
+    paginationMs: run.paginationMs,
+    renderModelMs: run.renderModelMs,
+    domRenderMs: run.domRenderMs,
+    diagnosticsMs: run.diagnosticsMs,
+    totalPipelineMs: run.totalPipelineMs,
+    totalUserVisibleMs: run.totalUserVisibleMs,
+    articleContextBuildCount: Number(counters.articleContextBuildCount) || 0,
+    sharedEvidenceBuildCount: Number(counters.sharedEvidenceBuildCount) || 0,
+    personalInterestAssessmentCount: Number(counters.personalInterestAssessmentCount) || 0,
+    subgroupAssessmentCount: Number(counters.subgroupAssessmentCount) || 0,
+    professionalGuardAssessmentCount: Number(counters.professionalGuardAssessmentCount) || 0,
+    identityVerificationAssessmentCount: Number(counters.identityVerificationAssessmentCount) || 0,
+    biometricsAssessmentCount: Number(counters.biometricsAssessmentCount) || 0,
+    selectedInterestAssessmentCounts: { ...(counters.selectedInterestAssessmentCounts || {}) },
+    textNormalizationCount: Number(counters.textNormalizationCount) || 0,
+    groupingInputCount: Number(counters.groupingInputCount) || 0,
+    renderedCardCount: Number(counters.renderedCardCount) || 0,
+    diagnosticsArticleCount: Number(counters.diagnosticsArticleCount) || 0,
+    articleContextBuildsPerArticle: run.articleContextBuildsPerArticle,
+    evidenceBuildsPerArticle: run.evidenceBuildsPerArticle,
+    assessmentsPerArticle: run.assessmentsPerArticle,
+    duplicateArticleContextBuildCount: run.duplicateArticleContextBuildCount,
+    duplicateEvidenceBuildCount: run.duplicateEvidenceBuildCount,
+    maximumContextBuildsForSingleArticle: run.maximumContextBuildsForSingleArticle,
+    maximumEvidenceBuildsForSingleArticle: run.maximumEvidenceBuildsForSingleArticle,
+    activeRunId: run.activeRunId,
+    previousRunStillActive: Boolean(run.previousRunStillActive),
+    overlappingRunCount: Number(run.overlappingRunCount) || 0,
+    supersededRunCount: Number(run.supersededRunCount) || 0,
+    runTrigger: run.runTrigger || "",
+    timeFromSelectionChangeToRunStartMs: run.timeFromSelectionChangeToRunStartMs,
+    timeFromRunStartToFirstRenderMs: run.timeFromRunStartToFirstRenderMs,
+    backendRequestCount: run.backendRequestCount,
+    backendRequestTotalMs: run.backendRequestTotalMs,
+    cacheHit: run.cacheHit,
+    candidateCountReturned: run.candidateCountReturned,
+    duplicateCandidateCountBeforeDeduplication: run.duplicateCandidateCountBeforeDeduplication,
+    candidateCountAfterDeduplication: run.candidateCountAfterDeduplication,
+    interpretation: run.interpretation,
+  };
+}
+
+function completeFilterPerformanceRun(extra = {}) {
+  const run = getActiveFilterPerformanceRun();
+  if (!run) {
+    return null;
+  }
+  const now = getPerformanceNow();
+  if (extra.renderedCardCount != null) {
+    run.operationCounters.renderedCardCount = Number(extra.renderedCardCount) || 0;
+  }
+  if (run.timeFromRunStartToFirstRenderMs == null && run.operationCounters.renderedCardCount >= 0) {
+    run.timeFromRunStartToFirstRenderMs = Math.round((now - run.startMs) * 10) / 10;
+  }
+  run.totalUserVisibleMs = Math.round((now - run.startMs) * 10) / 10;
+  if (run.totalPipelineMs == null) {
+    const stageTotal = FILTER_PERFORMANCE_STAGE_FIELDS.reduce((sum, field) => sum + (Number(run[field]) || 0), 0);
+    run.totalPipelineMs = Math.round(stageTotal * 10) / 10;
+  }
+  const articleCount = Math.max(1, Number(run.candidateCount) || 0);
+  const contextSummary = summarizeFilterPerformanceArticleMap(run.operationMaps.articleContext, articleCount);
+  const evidenceSummary = summarizeFilterPerformanceArticleMap(run.operationMaps.sharedEvidence, articleCount);
+  run.articleContextBuildsPerArticle = contextSummary.perArticle;
+  run.evidenceBuildsPerArticle = evidenceSummary.perArticle;
+  run.assessmentsPerArticle = Math.round(((Number(run.operationCounters.personalInterestAssessmentCount) || 0) / articleCount) * 100) / 100;
+  run.duplicateArticleContextBuildCount = contextSummary.duplicateCount;
+  run.duplicateEvidenceBuildCount = evidenceSummary.duplicateCount;
+  run.maximumContextBuildsForSingleArticle = contextSummary.maximumForSingleArticle;
+  run.maximumEvidenceBuildsForSingleArticle = evidenceSummary.maximumForSingleArticle;
+  run.interpretation = buildFilterPerformanceInterpretation(run);
+  run.completed = true;
+  run.operationMaps = null;
+  const compact = compactFilterPerformanceRun(run);
+  runtime.filterPerformanceRuns.push(compact);
+  runtime.filterPerformanceRuns = runtime.filterPerformanceRuns.slice(-20);
+  runtime.activeFilterPerformanceRun = null;
+  runtime.activeFilterPerformanceRunId = "";
+  if (typeof console !== "undefined" && typeof console.table === "function") {
+    console.table([{
+      runId: compact.runId,
+      interests: compact.selectedInterests.join(", "),
+      candidateCount: compact.candidateCount,
+      totalUserVisibleMs: compact.totalUserVisibleMs,
+      slowestStage: compact.interpretation?.slowestStage || "",
+      slowestStageMs: compact.interpretation?.slowestStageMs || 0,
+      duplicateContextBuilds: compact.duplicateArticleContextBuildCount,
+      duplicateEvidenceBuilds: compact.duplicateEvidenceBuildCount,
+    }]);
+  }
+  return compact;
+}
+
+function getFrontendPerformanceDiagnosticsForExport(limit = 10) {
+  const recentRuns = runtime.filterPerformanceRuns.slice(-Math.max(0, Math.min(20, Number(limit) || 10)));
+  return {
+    enabled: isFilterPerformanceDiagnosticsEnabled(),
+    completedRunCount: runtime.filterPerformanceRuns.length,
+    latestRun: recentRuns[recentRuns.length - 1] || null,
+    recentRuns: recentRuns.slice(-10),
+  };
+}
+
 function debugPersonalDashboardLog(label, payload) {
   if (DEBUG_PERSONAL_DASHBOARD) {
     console.info(label, payload);
@@ -3236,7 +3601,14 @@ const runtime = {
   scheduledRenderFrame: 0,
   scheduledRenderTimeout: 0,
   scheduledRenderReason: "",
+  scheduledRenderRequestedAt: 0,
   lastRenderedReason: "",
+  filterPerformanceRunId: 0,
+  activeFilterPerformanceRun: null,
+  activeFilterPerformanceRunId: "",
+  filterPerformanceRuns: [],
+  filterPerformanceOverlappingRunCount: 0,
+  filterPerformanceSupersededRunCount: 0,
   lastBackgroundRefreshAt: 0,
   lastRefreshStatusAt: 0,
   refreshPauseUntil: 0,
@@ -3352,6 +3724,7 @@ function flushScheduledRender() {
 function scheduleRenderArticles(reason = "interaction", options = {}) {
   const mode = options.mode === "timeout" ? "timeout" : "frame";
   runtime.scheduledRenderReason = reason;
+  runtime.scheduledRenderRequestedAt = getPerformanceNow();
 
   if (runtime.scheduledRenderFrame) {
     window.cancelAnimationFrame(runtime.scheduledRenderFrame);
@@ -3420,6 +3793,7 @@ function promoteNewestArticleInSelectedFeedGroup(article) {
 }
 
 function prepareDateFirstGroupedArticles(articles) {
+  incrementFilterPerformanceCounter("groupingInputCount", Array.isArray(articles) ? articles.length : 0);
   const dateSortedArticles = sortArticlesByPublicationDate(articles);
   return sortArticlesByPublicationDate(
     groupArticlesByEvent(dateSortedArticles).map(promoteNewestArticleInSelectedFeedGroup)
@@ -18381,6 +18755,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     diagnosticsReplay: diagnostics.diagnosticsReplay || null,
     filterPipelineStages: diagnostics.filterPipelineStages || [],
     diagnosticsPerformance: diagnostics.diagnosticsPerformance || null,
+    frontendPerformanceDiagnostics: diagnostics.frontendPerformanceDiagnostics || getFrontendPerformanceDiagnosticsForExport(10),
     filterDecisionTraceSummary: diagnostics.filterDecisionTraceSummary || null,
     filterDecisionDebugTools: diagnostics.filterDecisionDebugTools || null,
     filterDecisionRichTrace: diagnostics.filterDecisionRichTrace || null,
@@ -18621,6 +18996,124 @@ function downloadJsonFile(filename, payload) {
   URL.revokeObjectURL(url);
 }
 
+function getLatestFilterPerformanceDiagnostics() {
+  return runtime.filterPerformanceRuns[runtime.filterPerformanceRuns.length - 1] || null;
+}
+
+function listFilterPerformanceRuns(limit = 10) {
+  const normalizedLimit = Math.max(1, Math.min(20, Number(limit) || 10));
+  return runtime.filterPerformanceRuns.slice(-normalizedLimit).reverse();
+}
+
+function compareFilterPerformanceValue(current, previous) {
+  const currentValue = Number(current) || 0;
+  const previousValue = Number(previous) || 0;
+  const absoluteDifference = Math.round((currentValue - previousValue) * 10) / 10;
+  return {
+    previous: previousValue,
+    latest: currentValue,
+    absoluteDifference,
+    percentageDifference: previousValue
+      ? Math.round((absoluteDifference / previousValue) * 1000) / 10
+      : null,
+  };
+}
+
+function compareLatestFilterPerformanceRuns() {
+  const latestRuns = runtime.filterPerformanceRuns.slice(-2);
+  if (latestRuns.length < 2) {
+    return {
+      available: false,
+      reason: "At least two completed performance runs are required.",
+      completedRunCount: runtime.filterPerformanceRuns.length,
+    };
+  }
+  const [previous, latest] = latestRuns;
+  const stageFields = [
+    ...FILTER_PERFORMANCE_STAGE_FIELDS,
+    "totalPipelineMs",
+    "totalUserVisibleMs",
+  ];
+  const counterFields = [
+    "articleContextBuildCount",
+    "sharedEvidenceBuildCount",
+    "personalInterestAssessmentCount",
+    "subgroupAssessmentCount",
+    "professionalGuardAssessmentCount",
+    "identityVerificationAssessmentCount",
+    "biometricsAssessmentCount",
+    "textNormalizationCount",
+    "groupingInputCount",
+    "renderedCardCount",
+    "diagnosticsArticleCount",
+    "duplicateArticleContextBuildCount",
+    "duplicateEvidenceBuildCount",
+  ];
+  return {
+    available: true,
+    previousRunId: previous.runId,
+    latestRunId: latest.runId,
+    previousSelectedInterests: previous.selectedInterests,
+    latestSelectedInterests: latest.selectedInterests,
+    candidateCount: compareFilterPerformanceValue(latest.candidateCount, previous.candidateCount),
+    totalTime: compareFilterPerformanceValue(latest.totalUserVisibleMs, previous.totalUserVisibleMs),
+    stageTimes: Object.fromEntries(stageFields.map((field) => [
+      field,
+      compareFilterPerformanceValue(latest[field], previous[field]),
+    ])),
+    operationCounters: Object.fromEntries(counterFields.map((field) => [
+      field,
+      compareFilterPerformanceValue(latest[field], previous[field]),
+    ])),
+    selectedInterestAssessmentCounts: {
+      previous: previous.selectedInterestAssessmentCounts || {},
+      latest: latest.selectedInterestAssessmentCounts || {},
+    },
+  };
+}
+
+function exportFilterPerformanceDiagnostics() {
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    appBuild: APP_BUILD,
+    enabled: isFilterPerformanceDiagnosticsEnabled(),
+    completedRunCount: runtime.filterPerformanceRuns.length,
+    latestRun: getLatestFilterPerformanceDiagnostics(),
+    runs: runtime.filterPerformanceRuns.slice(-20),
+  };
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  downloadJsonFile(`filter-performance-diagnostics-${timestamp}.json`, payload);
+  return payload;
+}
+
+function enableFilterPerformanceDiagnostics() {
+  try {
+    window.localStorage?.setItem("debugFilterPerformance", "1");
+  } catch {
+    console.warn("Unable to store debugFilterPerformance in localStorage.");
+  }
+  return {
+    enabled: true,
+    debugFilterPerformance: "1",
+    instruction: "Reload the page to start collecting frontend performance diagnostics.",
+  };
+}
+
+function disableFilterPerformanceDiagnostics() {
+  try {
+    window.localStorage?.removeItem("debugFilterPerformance");
+  } catch {
+    console.warn("Unable to remove debugFilterPerformance from localStorage.");
+  }
+  return {
+    enabled: DEBUG_PERFORMANCE,
+    debugFilterPerformance: DEBUG_PERFORMANCE ? "DEBUG_PERFORMANCE" : "",
+    instruction: DEBUG_PERFORMANCE
+      ? "DEBUG_PERFORMANCE is enabled in code, so diagnostics remain active."
+      : "Reload the page to stop collecting frontend performance diagnostics.",
+  };
+}
+
 function ensureFilterPipelineDiagnosticsExportTools() {
   if (typeof window === "undefined") {
     return;
@@ -18672,6 +19165,30 @@ function ensureFilterPipelineDiagnosticsExportTools() {
 
   if (typeof window.setFilterDiagnosticsLimit !== "function") {
     window.setFilterDiagnosticsLimit = (limit) => setFilterDiagnosticsLimit(limit);
+  }
+
+  if (typeof window.enableFilterPerformanceDiagnostics !== "function") {
+    window.enableFilterPerformanceDiagnostics = () => enableFilterPerformanceDiagnostics();
+  }
+
+  if (typeof window.disableFilterPerformanceDiagnostics !== "function") {
+    window.disableFilterPerformanceDiagnostics = () => disableFilterPerformanceDiagnostics();
+  }
+
+  if (typeof window.getLatestFilterPerformanceDiagnostics !== "function") {
+    window.getLatestFilterPerformanceDiagnostics = () => getLatestFilterPerformanceDiagnostics();
+  }
+
+  if (typeof window.listFilterPerformanceRuns !== "function") {
+    window.listFilterPerformanceRuns = (limit) => listFilterPerformanceRuns(limit);
+  }
+
+  if (typeof window.compareLatestFilterPerformanceRuns !== "function") {
+    window.compareLatestFilterPerformanceRuns = () => compareLatestFilterPerformanceRuns();
+  }
+
+  if (typeof window.exportFilterPerformanceDiagnostics !== "function") {
+    window.exportFilterPerformanceDiagnostics = () => exportFilterPerformanceDiagnostics();
   }
 
   if (typeof window.explainArticleDecision !== "function") {
@@ -18966,6 +19483,12 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.getActiveDashboardSelection()",
         "window.copyFilterPipelineDiagnostics()",
         "window.setFilterDiagnosticsLimit(limit)",
+        "window.enableFilterPerformanceDiagnostics()",
+        "window.disableFilterPerformanceDiagnostics()",
+        "window.getLatestFilterPerformanceDiagnostics()",
+        "window.listFilterPerformanceRuns(limit)",
+        "window.compareLatestFilterPerformanceRuns()",
+        "window.exportFilterPerformanceDiagnostics()",
         "window.listRejectedArticles()",
         "window.listSurvivingArticles()",
         "window.explainArticleDecision(articleId)",
@@ -19160,6 +19683,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.polymerChildMatchDiagnosticsSummary = getPolymerChildMatchDiagnosticsSummary(diagnostics);
   diagnostics.polymerFalseNegativeDiagnostics = getPolymerFalseNegativeDiagnosticsSummary(diagnostics);
   diagnostics.pipelineDiagnosticsArchitecture = getPipelineDiagnosticsArchitecture(diagnostics);
+  diagnostics.frontendPerformanceDiagnostics = getFrontendPerformanceDiagnosticsForExport(10);
   publishFilterDecisionTraceDiagnostics(diagnostics);
   publishPersonalDashboardScores(diagnostics);
   storeFilterPipelineDiagnostics(diagnostics);
@@ -19185,6 +19709,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("filterPipeline", diagnostics.filterPipeline);
   console.log("filterPipelineStages", diagnostics.filterPipelineStages);
   console.log("diagnosticsPerformance", diagnostics.diagnosticsPerformance);
+  console.log("frontendPerformanceDiagnostics", diagnostics.frontendPerformanceDiagnostics);
   console.log("filterDecisionTraceSummary", diagnostics.filterDecisionTraceSummary);
   console.log("filterDecisionDebugTools", diagnostics.filterDecisionDebugTools);
   console.log("filterDecisionRichTrace", diagnostics.filterDecisionRichTrace);
@@ -21323,6 +21848,8 @@ function buildArticleIntelligenceContext(article) {
 }
 
 function getPersonalBoostContext(article) {
+  incrementFilterPerformanceCounter("articleContextBuildCount");
+  incrementFilterPerformanceArticleCounter("articleContext", article);
   return buildArticleIntelligenceContext(article);
 }
 
@@ -23596,6 +24123,7 @@ function getIdentityVerificationMatchedExcerpt(text, term, maxLength = 240) {
 }
 
 function normalizeIdentityVerificationTrustedText(value) {
+  incrementFilterPerformanceCounter("textNormalizationCount");
   return String(value || "")
     .replace(/\s+/g, " ")
     .trim()
@@ -23849,6 +24377,8 @@ function getIdentityVerificationSignalSourceSummary(matches = [], sourceMap = nu
 
 function getIdentityVerificationSourceTrustEvidence(article) {
   return getCachedArticleValue(article, "identityVerificationSourceTrustEvidence", () => {
+    incrementFilterPerformanceCounter("sharedEvidenceBuildCount");
+    incrementFilterPerformanceArticleCounter("sharedEvidence", article);
     const context = getPersonalBoostContext(article);
     const trustedSourceDetails = buildIdentityVerificationTrustedTextSources(article);
     const trustedTextSources = trustedSourceDetails.sourceMap;
@@ -24240,6 +24770,8 @@ function isBanknoteAuthoritySource(article) {
 }
 
 function getDigitalSubgroupHybridAssessment(article, interestId) {
+  incrementFilterPerformanceCounter("subgroupAssessmentCount");
+  incrementSelectedInterestAssessmentCount(interestId);
   return getCachedArticleValue(article, `digitalSubgroupHybrid:${interestId}`, () => {
     const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
     if (!interest || interest.groupId !== "digital_identity_biometrics") {
@@ -24781,6 +25313,7 @@ function shouldApplyEidProfessionalGuardBooleanGate(selectedInterests = normaliz
 }
 
 function getEidProfessionalGuardAssessment(article, options = {}) {
+  incrementFilterPerformanceCounter("professionalGuardAssessmentCount");
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const enabled = Boolean(options.forceEnabled) || shouldApplyEidProfessionalGuardBooleanGate(selectedInterests);
   const diagnosticsEntry = buildEidDiagnosticEntry(article, { passed: true });
@@ -24971,6 +25504,7 @@ function shouldApplyDigitalWalletProfessionalGuard(selectedInterests = normalize
 }
 
 function getDigitalWalletProfessionalGuardAssessment(article, options = {}) {
+  incrementFilterPerformanceCounter("professionalGuardAssessmentCount");
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const enabled = Boolean(options.forceEnabled) || shouldApplyDigitalWalletProfessionalGuard(selectedInterests);
   const context = getPersonalBoostContext(article);
@@ -25291,6 +25825,7 @@ function shouldApplyKycProfessionalGuard(selectedInterests = normalizePersonalDa
 }
 
 function getKycProfessionalGuardAssessment(article, options = {}) {
+  incrementFilterPerformanceCounter("professionalGuardAssessmentCount");
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const enabled = Boolean(options.forceEnabled) || shouldApplyKycProfessionalGuard(selectedInterests);
   const context = getPersonalBoostContext(article);
@@ -25482,6 +26017,7 @@ function shouldApplyOnboardingProfessionalGuard(selectedInterests = normalizePer
 }
 
 function getOnboardingProfessionalGuardAssessment(article, options = {}) {
+  incrementFilterPerformanceCounter("professionalGuardAssessmentCount");
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const enabled = Boolean(options.forceEnabled) || shouldApplyOnboardingProfessionalGuard(selectedInterests);
   const context = getPersonalBoostContext(article);
@@ -25702,6 +26238,7 @@ function shouldApplyLivenessProfessionalGuard(selectedInterests = normalizePerso
 }
 
 function getLivenessProfessionalGuardAssessment(article, options = {}) {
+  incrementFilterPerformanceCounter("professionalGuardAssessmentCount");
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const enabled = Boolean(options.forceEnabled) || shouldApplyLivenessProfessionalGuard(selectedInterests);
   const context = getPersonalBoostContext(article);
@@ -25981,6 +26518,7 @@ function shouldApplyAiProfessionalGuard(selectedInterests = normalizePersonalDas
 }
 
 function getAiProfessionalGuardAssessment(article, options = {}) {
+  incrementFilterPerformanceCounter("professionalGuardAssessmentCount");
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const enabled = Boolean(options.forceEnabled) || shouldApplyAiProfessionalGuard(selectedInterests);
   const context = getPersonalBoostContext(article);
@@ -26432,6 +26970,8 @@ function shouldApplyIdentityVerificationProfessionalGuard(selectedInterests = no
 }
 
 function getIdentityVerificationProfessionalGuardAssessment(article, options = {}) {
+  incrementFilterPerformanceCounter("professionalGuardAssessmentCount");
+  incrementFilterPerformanceCounter("identityVerificationAssessmentCount");
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const enabled = Boolean(options.forceEnabled) ||
     shouldApplyIdentityVerificationProfessionalGuard(selectedInterests);
@@ -26706,6 +27246,7 @@ function getDigitalIdentityProfessionalGuardBooleanGateAssessment(article, selec
 }
 
 function getDigitalIdentityProfessionalGuardAssessment(article, options = {}) {
+  incrementFilterPerformanceCounter("professionalGuardAssessmentCount");
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const enabled = Boolean(options.forceEnabled) || shouldApplyDigitalIdentityProfessionalGuard(selectedInterests);
   const context = getPersonalBoostContext(article);
@@ -26975,6 +27516,8 @@ function shouldApplyBiometricsProfessionalGuardBooleanGate(selectedInterests = n
 }
 
 function getBiometricsProfessionalGuardAssessment(article, options = {}) {
+  incrementFilterPerformanceCounter("professionalGuardAssessmentCount");
+  incrementFilterPerformanceCounter("biometricsAssessmentCount");
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const enabled = Boolean(options.forceEnabled) || shouldApplyBiometricsProfessionalGuardBooleanGate(selectedInterests);
   const context = getPersonalBoostContext(article);
@@ -30333,6 +30876,7 @@ function getPersonalDashboardDomainMatch(article) {
 }
 
 function articleMatchesPersonalDashboardSelection(article) {
+  incrementFilterPerformanceCounter("personalInterestAssessmentCount");
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   if (!selectedInterests.length) {
     return true;
@@ -42028,6 +42572,11 @@ function logFeedFilterDiagnostics(selectedFeedId, selectedFeedLabel, rawMatches,
 
 function finalizeRenderDiagnostics(payload = {}) {
   const renderedCardCount = document.querySelectorAll(".article-card").length;
+  const activePerformanceRun = getActiveFilterPerformanceRun();
+  if (activePerformanceRun?.domRenderStartedAt) {
+    activePerformanceRun.domRenderMs = Math.round((getPerformanceNow() - activePerformanceRun.domRenderStartedAt) * 10) / 10;
+    activePerformanceRun.domRenderStartedAt = 0;
+  }
   const maxRenderedCards = 30;
   const branchName = payload.branchName || "default";
   const total = Number(payload.total) || 0;
@@ -42059,6 +42608,14 @@ function finalizeRenderDiagnostics(payload = {}) {
     groupedFeedCacheSize: runtime.groupedFeedCache.size,
     domCardCount: renderedCardCount,
   });
+  completeFilterPerformanceRun({ renderedCardCount });
+}
+
+function startFilterPerformanceDomRender() {
+  const run = getActiveFilterPerformanceRun();
+  if (run && !run.domRenderStartedAt) {
+    run.domRenderStartedAt = getPerformanceNow();
+  }
 }
 
 function logRenderingPageArticlesOnly(groupedArticlesCount, pageArticles) {
@@ -42913,6 +43470,7 @@ function replayFilterDiagnosticsStage({ result, diagnostics, activeFeedId, useBa
   const candidatePool = replayInput.candidatePool;
   const filteredRawArticles = replayInput.filteredRawArticles;
   const diagnosticReplayArticles = replayInput.articles;
+  incrementFilterPerformanceCounter("diagnosticsArticleCount", diagnosticReplayArticles.length);
   recordDiagnosticsReplayMetadata(diagnostics, {
     enabled: true,
     status: "started",
@@ -42944,38 +43502,39 @@ function replayFilterDiagnosticsStage({ result, diagnostics, activeFeedId, useBa
   });
   stageResults.push(feedScopeStage.stage);
 
-  const personalDashboardStage = applyPersonalDashboardStage({
+  const personalDashboardStage = withFilterPerformanceStage("personalDashboardMs", () => applyPersonalDashboardStage({
     articles: feedScopeStage.articles,
     diagnostics,
-  });
+  }));
   stageResults.push(personalDashboardStage.stage);
 
-  const advancedFiltersStage = applyAdvancedFiltersStage({
+  const advancedFiltersStage = withFilterPerformanceStage("advancedFiltersMs", () => applyAdvancedFiltersStage({
     articles: personalDashboardStage.articles,
     advancedFilterOptions,
     diagnostics,
-  });
+  }));
   stageResults.push(advancedFiltersStage.stage);
 
-  const identityProfessionalRelevanceGuardStage = applyIdentityProfessionalRelevanceGuardStage({
+  const identityProfessionalRelevanceGuardStage = withFilterPerformanceStage("identityProfessionalGuardMs", () => applyIdentityProfessionalRelevanceGuardStage({
     articles: advancedFiltersStage.articles,
     branch: result.branch || diagnostics?.branch || "",
     diagnostics,
-  });
+  }));
   stageResults.push(identityProfessionalRelevanceGuardStage.stage);
 
-  const digitalIdentityProfessionalGuardStage = applyDigitalIdentityProfessionalGuardStage({
+  const digitalIdentityProfessionalGuardStage = withFilterPerformanceStage("digitalIdentityProfessionalGuardMs", () => applyDigitalIdentityProfessionalGuardStage({
     articles: identityProfessionalRelevanceGuardStage.articles,
     branch: result.branch || diagnostics?.branch || "",
     diagnostics,
-  });
+  }));
   stageResults.push(digitalIdentityProfessionalGuardStage.stage);
 
   const digitalIdentityProfessionalGuardArticleIds = new Set(
     digitalIdentityProfessionalGuardStage.articles.map((article) => getFilterDecisionTraceArticleId(article))
   );
-  const sortedArticlesAfterDigitalIdentityGuard = filteredRawArticles
-    .filter((article) => digitalIdentityProfessionalGuardArticleIds.has(getFilterDecisionTraceArticleId(article)));
+  const sortedArticlesAfterDigitalIdentityGuard = withFilterPerformanceStage("sortingMs", () =>
+    filteredRawArticles.filter((article) => digitalIdentityProfessionalGuardArticleIds.has(getFilterDecisionTraceArticleId(article)))
+  );
   const sortedArticleIdsAfterDigitalIdentityGuard = new Set(
     sortedArticlesAfterDigitalIdentityGuard.map((article) => getFilterDecisionTraceArticleId(article))
   );
@@ -42985,21 +43544,23 @@ function replayFilterDiagnosticsStage({ result, diagnostics, activeFeedId, useBa
       sortedArticlesAfterDigitalIdentityGuard.push(article);
     }
   });
-  const groupedArticlesAfterDigitalIdentityGuard = prepareDateFirstGroupedArticles(sortedArticlesAfterDigitalIdentityGuard);
+  const groupedArticlesAfterDigitalIdentityGuard = withFilterPerformanceStage("groupingMs", () => {
+    return prepareDateFirstGroupedArticles(sortedArticlesAfterDigitalIdentityGuard);
+  });
 
-  const sortingStage = applySortingStage({
+  const sortingStage = withFilterPerformanceStage("sortingMs", () => applySortingStage({
     inputArticles: digitalIdentityProfessionalGuardStage.articles,
     sortedArticles: sortedArticlesAfterDigitalIdentityGuard,
     diagnostics,
-  });
+  }));
   stageResults.push(sortingStage.stage);
 
-  const groupingStage = applyGroupingStage({
+  const groupingStage = withFilterPerformanceStage("groupingMs", () => applyGroupingStage({
     inputArticles: sortingStage.articles,
     groupedArticles: groupedArticlesAfterDigitalIdentityGuard,
     groupedCount: groupedArticlesAfterDigitalIdentityGuard.length,
     diagnostics,
-  });
+  }));
   stageResults.push(groupingStage.stage);
 
   recordPipelineCount(diagnostics, "candidatePool", diagnosticReplayArticles.length);
@@ -43053,12 +43614,12 @@ function applyLegacyFilterPipeline({
 
   recordFilterPipelineResult(diagnostics, result);
   try {
-    replayFilterDiagnosticsStage({
+    withFilterPerformanceStage("diagnosticsMs", () => replayFilterDiagnosticsStage({
       result,
       diagnostics,
       activeFeedId,
       useBackendQuery,
-    });
+    }));
   } catch (error) {
     const replayInput = resolveDiagnosticsReplayInput(result);
     recordDiagnosticsReplayMetadata(diagnostics, {
@@ -43281,7 +43842,7 @@ function executeCandidateRetrievalPipeline({
   shouldIgnoreFeedIdForGrouping,
   useBackendQuery,
 } = {}) {
-  const candidateBuilderResult = resolveArticleCandidatePool(candidatePoolContext, {
+  const candidateBuilderResult = withFilterPerformanceStage("candidatePreparationMs", () => resolveArticleCandidatePool(candidatePoolContext, {
     activeFeedId,
     candidateSource,
     candidateProvider,
@@ -43290,7 +43851,27 @@ function executeCandidateRetrievalPipeline({
     strategyExecutionPlan,
     shouldIgnoreFeedIdForGrouping,
     useBackendQuery,
-  });
+  }));
+  const run = getActiveFilterPerformanceRun();
+  if (run) {
+    run.candidateCount = Array.isArray(candidateBuilderResult?.candidatePool)
+      ? candidateBuilderResult.candidatePool.length
+      : Number(candidateBuilderResult?.candidateCount || candidateBuilderResult?.articleCount || 0);
+    run.backendRequestCount = Array.isArray(candidateBuilderResult?.backendRequests)
+      ? candidateBuilderResult.backendRequests.length
+      : null;
+    run.cacheHit = typeof candidateBuilderResult?.cacheHit === "boolean"
+      ? candidateBuilderResult.cacheHit
+      : null;
+    run.candidateCountReturned = Array.isArray(candidateBuilderResult?.candidatePool)
+      ? candidateBuilderResult.candidatePool.length
+      : null;
+    run.duplicateCandidateCountBeforeDeduplication = Array.isArray(candidateBuilderResult?.candidatePool)
+      ? countDuplicatePerformanceArticles(candidateBuilderResult.candidatePool)
+      : null;
+    run.candidateCountAfterDeduplication = Number(candidateBuilderResult?.groupedArticlesCount) ||
+      (Array.isArray(candidateBuilderResult?.articles) ? candidateBuilderResult.articles.length : null);
+  }
   const executedCandidateProvider = candidateProvider
     ? {
         ...candidateProvider,
@@ -43327,10 +43908,10 @@ function executePaginationPipeline({
     return null;
   }
 
-  const paginationResult = preparePipelinePagination({
+  const paginationResult = withFilterPerformanceStage("paginationMs", () => preparePipelinePagination({
     articles: filterPipelineResult.articles,
     useBackendQuery,
-  });
+  }));
   recordPaginationDecisionTraces(diagnostics, filterPipelineResult.articles, paginationResult);
   recordPaginationPipelineResult(diagnostics, paginationResult);
   return paginationResult;
@@ -43342,13 +43923,13 @@ function executeRenderPreparationPipeline({
   paginationResult,
   diagnostics,
 } = {}) {
-  const renderModel = preparePipelineRenderModel({
+  const renderModel = withFilterPerformanceStage("renderModelMs", () => preparePipelineRenderModel({
     articles: filterPipelineResult.articles,
     filterPipelineResult,
     paginationResult,
     branch: candidateBuilderResult?.branch || "",
     pending: filterPipelineResult.pending,
-  });
+  }));
   recordRenderModel(diagnostics, renderModel);
   const renderDispatch = prepareRenderDispatch({
     renderModel,
@@ -43998,13 +44579,23 @@ function executeBackendQueryProvider(candidateProvider, normalizedFilterState, c
   }
 
   setFilterPipelineBranch(diagnostics, "backend-query");
-  const normalizationStage = normalizeBackendProviderResultStage({
+  const normalizationStage = withFilterPerformanceStage("backendResultNormalizationMs", () => normalizeBackendProviderResultStage({
     cachedQuery,
     queryKey,
     backendRequests,
     diagnostics,
-  });
+  }));
   backendProviderStages.push(normalizationStage.stage);
+  const run = getActiveFilterPerformanceRun();
+  if (run) {
+    run.backendRequestCount = Array.isArray(backendRequests) ? backendRequests.length : null;
+    run.cacheHit = true;
+    run.candidateCountReturned = Array.isArray(cachedQuery?.articles) ? cachedQuery.articles.length : null;
+    run.duplicateCandidateCountBeforeDeduplication = Array.isArray(cachedQuery?.articles)
+      ? countDuplicatePerformanceArticles(cachedQuery.articles)
+      : null;
+    run.candidateCountAfterDeduplication = Number(normalizationStage?.result?.groupedArticlesCount) || null;
+  }
   recordBackendProviderStages(diagnostics, backendProviderStages);
   return normalizationStage.result;
 }
@@ -44155,6 +44746,7 @@ function renderArticles() {
   const renderReason = runtime.lastRenderedReason || "render";
   let pipelineDiagnostics = null;
   let pipelineDiagnosticsFlushed = false;
+  const filterPerformanceRun = createFilterPerformanceRun(renderReason);
   const flushPipelineDiagnosticsOnce = () => {
     if (pipelineDiagnosticsFlushed || !pipelineDiagnostics) {
       return;
@@ -44172,11 +44764,15 @@ function renderArticles() {
   intelligenceTime("renderArticles");
   try {
     intelligenceTime("renderArticles:filter-group");
+    const pipelineStartedAt = filterPerformanceRun ? getPerformanceNow() : 0;
     const pipelineResult = executePipelineOrchestrator({
       onDiagnostics: (diagnostics) => {
         pipelineDiagnostics = diagnostics;
       },
     });
+    if (filterPerformanceRun) {
+      filterPerformanceRun.totalPipelineMs = Math.round((getPerformanceNow() - pipelineStartedAt) * 10) / 10;
+    }
     const useBackendQuery = pipelineResult.useBackendQuery;
     let articles;
     let filteredRawArticles = [];
@@ -44217,6 +44813,7 @@ function renderArticles() {
             elements.resultsCount.textContent = error?.message || "Failed to load filtered articles.";
           });
       }
+      completeFilterPerformanceRun({ renderedCardCount: 0 });
       flushPipelineDiagnosticsOnce();
       return;
     }
@@ -44307,6 +44904,7 @@ function renderArticles() {
 
     if (renderDispatch?.renderMode === "selected_feed") {
       intelligenceTime("renderArticles:dom-update");
+      startFilterPerformanceDomRender();
       elements.articlesGrid.classList.remove("is-grouped-feed-view");
       elements.articlesGrid.classList.remove("has-personal-lanes");
       elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
@@ -44331,6 +44929,7 @@ function renderArticles() {
 
     if (renderDispatch?.renderMode === "selected_dmv") {
       intelligenceTime("renderArticles:dom-update");
+      startFilterPerformanceDomRender();
       elements.articlesGrid.classList.remove("is-grouped-feed-view");
       elements.articlesGrid.classList.remove("has-personal-lanes");
       elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
@@ -44361,6 +44960,7 @@ function renderArticles() {
 
     if (renderDispatch?.renderMode === "usa_grouped") {
       intelligenceTime("renderArticles:dom-update");
+      startFilterPerformanceDomRender();
       elements.articlesGrid.classList.add("is-grouped-feed-view");
       elements.articlesGrid.classList.remove("has-personal-lanes");
       const dmvFeeds = getUsDmvFeeds();
@@ -44407,6 +45007,7 @@ function renderArticles() {
 
     if (renderDispatch?.renderMode === "canada_grouped") {
       intelligenceTime("renderArticles:dom-update");
+      startFilterPerformanceDomRender();
       elements.articlesGrid.classList.add("is-grouped-feed-view");
       elements.articlesGrid.classList.remove("has-personal-lanes");
       const canadaEntries = getCanadaDmvCatalogEntries();
@@ -44470,6 +45071,7 @@ function renderArticles() {
     }
 
     intelligenceTime("renderArticles:dom-update");
+    startFilterPerformanceDomRender();
     elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
     elements.articlesGrid.classList.remove("is-grouped-feed-view");
     elements.articlesGrid.classList.remove("has-personal-lanes");
@@ -44506,6 +45108,9 @@ function renderArticles() {
     finalizeRenderDiagnostics(renderDiagnostics);
   } catch (error) {
     renderArticlesFallback(error);
+    completeFilterPerformanceRun({
+      renderedCardCount: document.querySelectorAll(".article-card").length,
+    });
   } finally {
     flushPipelineDiagnosticsOnce();
     intelligenceTimeEnd("renderArticles");
