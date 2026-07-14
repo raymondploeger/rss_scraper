@@ -13956,12 +13956,37 @@ function getIdentityVerificationProfessionalGuardSummary(diagnostics) {
   let specificityRejectedCount = 0;
   let genericRescueBlockedCount = 0;
   let productionDecisionObjectCount = 0;
+  let authoritativeEvidencePassCount = 0;
+  let supportingOnlyRejectedCount = 0;
+  let metadataOnlyRejectedCount = 0;
+  let professionalContextWithoutFlowRejectedCount = 0;
+  let noiseRejectedCount = 0;
+  let sharedEvidenceObjectCount = 0;
 
   guardTraceEntries.forEach(({ trace, stage }) => {
     const assessment = stage.metadata?.identityVerificationProfessionalGuard || {};
     const productionDecision = stage.metadata?.identityVerificationProductionDecision ||
       assessment.authoritativeDecision ||
       assessment;
+    const sharedEvidence = assessment.sharedEvidence || productionDecision?.sharedEvidence || null;
+    if (sharedEvidence) {
+      sharedEvidenceObjectCount += 1;
+    }
+    if (sharedEvidence?.passed && sharedEvidence?.verificationFlowMatched) {
+      authoritativeEvidencePassCount += 1;
+    }
+    if (sharedEvidence?.supportingOnlyRejected) {
+      supportingOnlyRejectedCount += 1;
+    }
+    if (sharedEvidence?.metadataOnlyRejected) {
+      metadataOnlyRejectedCount += 1;
+    }
+    if (sharedEvidence?.professionalContextWithoutFlowRejected) {
+      professionalContextWithoutFlowRejectedCount += 1;
+    }
+    if (sharedEvidence?.noiseRejected) {
+      noiseRejectedCount += 1;
+    }
     if (productionDecision?.decisionAuthority === "identity_verification_professional_guard") {
       productionDecisionObjectCount += 1;
     }
@@ -14008,6 +14033,12 @@ function getIdentityVerificationProfessionalGuardSummary(diagnostics) {
     specificityRejectedCount,
     genericRescueBlockedCount,
     productionDecisionObjectCount,
+    authoritativeEvidencePassCount,
+    supportingOnlyRejectedCount,
+    metadataOnlyRejectedCount,
+    professionalContextWithoutFlowRejectedCount,
+    noiseRejectedCount,
+    sharedEvidenceObjectCount,
     exampleRejectedTitles,
   };
 }
@@ -14547,6 +14578,16 @@ function getIdentityVerificationDiagnosticsFromTrace(trace) {
     matchedTutorialNoiseTerms: assessment.matchedTutorialNoiseTerms || [],
     matchedWrongDomainNoiseTerms: assessment.matchedWrongDomainNoiseTerms || [],
     identityVerificationHybridAssessment: assessment.identityVerificationHybridAssessment || null,
+    sharedEvidence: assessment.sharedEvidence || assessment.authoritativeDecision?.sharedEvidence || null,
+    authoritativeVerificationSignals: assessment.authoritativeVerificationSignals || [],
+    authoritativeVerificationSignalSources: assessment.authoritativeVerificationSignalSources || [],
+    supportingIdentitySignals: assessment.supportingIdentitySignals || [],
+    supportingSignalSources: assessment.supportingSignalSources || [],
+    professionalVerificationSignals: assessment.professionalVerificationSignals || [],
+    noiseVerificationSignals: assessment.noiseVerificationSignals || [],
+    identityVerificationEvidenceAuthority: assessment.identityVerificationEvidenceAuthority || "",
+    personalDashboardUsedSharedEvidence: Boolean(assessment.personalDashboardUsedSharedEvidence),
+    professionalGuardUsedSharedEvidence: Boolean(assessment.professionalGuardUsedSharedEvidence),
   };
 }
 
@@ -15199,6 +15240,7 @@ function formatPersonalDashboardScoreExplanation(scoreObject) {
     scoreObject.identityVerificationScoringAlignment ||
     scoreObject.metadata?.identityVerificationScoringAlignment ||
     null;
+  const identityVerificationSharedEvidence = identityVerificationScoringAlignment?.identityVerificationSharedEvidence || null;
 
   return {
     ...scoreObject,
@@ -15215,6 +15257,19 @@ function formatPersonalDashboardScoreExplanation(scoreObject) {
           identityVerificationFinalScore: identityVerificationScoringAlignment.identityVerificationFinalScore,
           identityVerificationThreshold: identityVerificationScoringAlignment.identityVerificationThreshold,
           identityVerificationPassed: identityVerificationScoringAlignment.identityVerificationPassed,
+          authoritativeVerificationSignals: identityVerificationSharedEvidence?.authoritativeVerificationSignals || [],
+          authoritativeVerificationSignalSources: identityVerificationSharedEvidence?.authoritativeVerificationSignalSources || [],
+          supportingIdentitySignals: identityVerificationSharedEvidence?.supportingIdentitySignals || [],
+          supportingSignalSources: identityVerificationSharedEvidence?.supportingSignalSources || [],
+          professionalVerificationSignals: identityVerificationSharedEvidence?.professionalVerificationSignals || [],
+          noiseVerificationSignals: identityVerificationSharedEvidence?.noiseVerificationSignals || [],
+          verificationFlowMatched: Boolean(identityVerificationSharedEvidence?.verificationFlowMatched),
+          specificityGatePassed: Boolean(identityVerificationSharedEvidence?.specificityGatePassed),
+          identityVerificationEvidenceAuthority: identityVerificationSharedEvidence?.identityVerificationEvidenceAuthority || "",
+          personalDashboardUsedSharedEvidence: Boolean(identityVerificationSharedEvidence?.personalDashboardUsedSharedEvidence),
+          professionalGuardUsedSharedEvidence: Boolean(identityVerificationSharedEvidence?.professionalGuardUsedSharedEvidence),
+          passReason: identityVerificationSharedEvidence?.passReason || "",
+          rejectionReason: identityVerificationSharedEvidence?.rejectionReason || "",
         }
       : {}),
     legacyMatchesDetected: matchedContributions.map((contribution) => ({
@@ -22651,72 +22706,316 @@ const IDENTITY_VERIFICATION_SCORING_NEGATIVE_TERMS = Object.freeze([
   "verification platform",
 ]);
 
+const IDENTITY_VERIFICATION_AUTHORITATIVE_TERMS = Object.freeze([
+  ...IDENTITY_VERIFICATION_SCORING_STRONG_TERMS,
+  "kyc",
+  "ekyc",
+  "e-kyc",
+  "pad",
+  "liveness check",
+]);
+
+const IDENTITY_VERIFICATION_SUPPORTING_TERMS = Object.freeze([
+  ...IDENTITY_VERIFICATION_SCORING_CONTEXT_ONLY_TERMS,
+  "kyc",
+  "customer onboarding",
+  "remote onboarding",
+  "account opening",
+  "banking",
+  "fintech",
+  "border control",
+  "travel identity",
+  "government services",
+  "digital wallet credentials",
+  "fraud prevention",
+  "synthetic identity fraud",
+  "document fraud",
+  "jumio",
+  "onfido",
+  "entrust",
+  "regula",
+  "veriff",
+  "sumsub",
+  "idnow",
+  "persona",
+  "trulioo",
+  "socure",
+  "mitek",
+  "iproov",
+  "facephi",
+  "shufti",
+  "incode",
+  "idemia",
+  "thales",
+  "identity proofing service",
+  "verification product",
+  "verification deployment",
+  "wallet credentials",
+  "professional source",
+  "identity verification provider",
+]);
+
+const IDENTITY_VERIFICATION_PROFESSIONAL_RELEVANCE_TERMS = Object.freeze([
+  "launch",
+  "launches",
+  "launched",
+  "deployment",
+  "deployed",
+  "implementation",
+  "implemented",
+  "integration",
+  "integrates",
+  "integrated",
+  "partnership",
+  "partners",
+  "certification",
+  "certified",
+  "compliance",
+  "regulation",
+  "regulatory",
+  "contract",
+  "rollout",
+  "rolls out",
+  "product release",
+  "incident",
+  "incidents",
+  "breach",
+  "assessment",
+  "government program",
+  "vendor deployment",
+  "product launch",
+  "standard",
+  "standards",
+]);
+
+const IDENTITY_VERIFICATION_NOISE_TERMS = Object.freeze([
+  ...IDENTITY_VERIFICATION_SCORING_UNRELATED_VERIFICATION_TERMS,
+  ...IDENTITY_VERIFICATION_SCORING_NEGATIVE_TERMS,
+  "email verification",
+  "phone verification",
+  "payment verification",
+  "transaction verification",
+  "fact verification",
+  "content verification",
+  "news verification",
+  "ai output verification",
+  "model verification",
+  "blockchain transaction verification",
+  "verification code",
+  "generic authentication",
+  "authentication",
+  "passwordless",
+  "passkey",
+  "login",
+  "account security",
+  "biometrics market",
+  "biometric market",
+  "biometric platform",
+  "biometric platforms",
+  "facial recognition",
+  "face recognition",
+  "digital identity partnership",
+  "digital identity",
+  "identity platform",
+  "digital identity infrastructure",
+  "digital transformation",
+  "digital identity legislation",
+  "digital identity bills",
+  "digital identity solutions",
+  "government digital transformation",
+  "government identity",
+  "government digital identity",
+  "national digital identity",
+  "digital transformation bills",
+  "identity legislation",
+  "credential issuance",
+  "digital credential issuance",
+  "wallet credential issuance",
+  "ai agent",
+  "ai agents",
+  "agentic",
+  "human intent",
+  "voice threat",
+  "voice fraud",
+  "deepfake threat",
+  "political debate",
+  "policy discussion",
+  "tutorial",
+  "how to",
+  "how-to",
+  "step-by-step",
+  "setup guide",
+  "buyer guide",
+  "guide",
+  "what is",
+  "explainer",
+  "opinion",
+  "passport renewal",
+  "passport appointment",
+  "software",
+  "device",
+  "payment",
+  "transaction",
+]);
+
+function collectIdentityVerificationSourceMatches(sourceMap, terms = []) {
+  const matchesBySignal = new Map();
+  const normalizedTerms = normalizeKeywordList(terms);
+  Object.entries(sourceMap || {}).forEach(([source, text]) => {
+    normalizedTerms.forEach((term) => {
+      if (!textMatchesKeyword(text, term)) {
+        return;
+      }
+      const existing = matchesBySignal.get(term) || {
+        signal: term,
+        sources: [],
+      };
+      if (!existing.sources.includes(source)) {
+        existing.sources.push(source);
+      }
+      matchesBySignal.set(term, existing);
+    });
+  });
+  return Array.from(matchesBySignal.values());
+}
+
+function flattenIdentityVerificationSignals(matches = []) {
+  return matches.map((match) => match.signal).filter(Boolean);
+}
+
+function getIdentityVerificationSignalSourceSummary(matches = []) {
+  return matches.map((match) => ({
+    signal: match.signal,
+    sources: match.sources || [],
+  }));
+}
+
+function getIdentityVerificationSourceTrustEvidence(article) {
+  return getCachedArticleValue(article, "identityVerificationSourceTrustEvidence", () => {
+    const context = getPersonalBoostContext(article);
+    const trustedTextSources = {
+      title: context.titleText,
+      body: context.bodyText,
+    };
+    const supportingTextSources = {
+      tags: context.tagText,
+      metadata: context.metadataText,
+      source: [context.sourceText, context.domainText].filter(Boolean).join(" "),
+    };
+    const allTextSources = {
+      ...trustedTextSources,
+      ...supportingTextSources,
+    };
+    const authoritativeMatches = collectIdentityVerificationSourceMatches(
+      trustedTextSources,
+      IDENTITY_VERIFICATION_AUTHORITATIVE_TERMS
+    );
+    const supportingMatches = collectIdentityVerificationSourceMatches(
+      allTextSources,
+      IDENTITY_VERIFICATION_SUPPORTING_TERMS
+    );
+    const professionalMatches = collectIdentityVerificationSourceMatches(
+      allTextSources,
+      IDENTITY_VERIFICATION_PROFESSIONAL_RELEVANCE_TERMS
+    );
+    const noiseMatches = collectIdentityVerificationSourceMatches(
+      allTextSources,
+      IDENTITY_VERIFICATION_NOISE_TERMS
+    );
+    const authoritativeSignals = flattenIdentityVerificationSignals(authoritativeMatches);
+    const supportingSignals = flattenIdentityVerificationSignals(supportingMatches)
+      .filter((signal) => !authoritativeSignals.includes(signal));
+    const professionalSignals = flattenIdentityVerificationSignals(professionalMatches);
+    const noiseSignals = flattenIdentityVerificationSignals(noiseMatches);
+    const verificationFlowMatched = authoritativeSignals.length > 0;
+    const specificityGatePassed = verificationFlowMatched;
+    const professionalContextMatched = professionalSignals.length > 0 || supportingSignals.length > 0;
+    const threshold = Number(DIGITAL_SUBGROUP_HYBRID_FILTERS.identity_verification?.minimumInterestScore) || 20;
+    const supportingBonus = Math.min(10, supportingSignals.length * 2);
+    const professionalBonus = Math.min(8, professionalSignals.length * 2);
+    const noisePenalty = verificationFlowMatched ? Math.min(12, noiseSignals.length * 3) : Math.min(30, noiseSignals.length * 6);
+    const finalScore = verificationFlowMatched
+      ? Math.max(0, Math.round(24 + supportingBonus + professionalBonus - noisePenalty))
+      : Math.max(0, Math.round(Math.min(threshold - 1, supportingBonus + professionalBonus - noisePenalty)));
+    let rejectionReason = "";
+    if (!verificationFlowMatched) {
+      if (noiseSignals.length > 0) {
+        rejectionReason = "noise_without_authoritative_verification_evidence";
+      } else if (supportingSignals.length > 0) {
+        rejectionReason = "supporting_context_without_authoritative_verification_evidence";
+      } else if (professionalSignals.length > 0) {
+        rejectionReason = "professional_context_without_verification_flow";
+      } else {
+        rejectionReason = "missing_authoritative_verification_evidence";
+      }
+    } else if (noiseSignals.length >= 3 && finalScore < threshold) {
+      rejectionReason = "verification_noise_dominates";
+    }
+    const passed = verificationFlowMatched && finalScore >= threshold && !rejectionReason;
+    const passReason = passed
+      ? professionalContextMatched
+        ? "authoritative_verification_evidence_with_professional_context"
+        : "authoritative_verification_evidence"
+      : "";
+    const supportingOnlyRejected = !verificationFlowMatched && supportingSignals.length > 0;
+    const metadataOnlyRejected = !verificationFlowMatched && supportingMatches.some((match) =>
+      (match.sources || []).some((source) => source === "tags" || source === "metadata" || source === "source")
+    );
+    const professionalContextWithoutFlowRejected = !verificationFlowMatched && professionalSignals.length > 0;
+    const noiseRejected = !verificationFlowMatched && noiseSignals.length > 0;
+
+    return Object.freeze({
+      authoritativeSignals: Object.freeze(authoritativeSignals.slice(0, 16)),
+      authoritativeSignalSources: Object.freeze(getIdentityVerificationSignalSourceSummary(authoritativeMatches).slice(0, 16)),
+      authoritativeVerificationSignals: Object.freeze(authoritativeSignals.slice(0, 16)),
+      authoritativeVerificationSignalSources: Object.freeze(getIdentityVerificationSignalSourceSummary(authoritativeMatches).slice(0, 16)),
+      supportingSignals: Object.freeze(supportingSignals.slice(0, 16)),
+      supportingSignalSources: Object.freeze(getIdentityVerificationSignalSourceSummary(supportingMatches).slice(0, 16)),
+      supportingIdentitySignals: Object.freeze(supportingSignals.slice(0, 16)),
+      professionalSignals: Object.freeze(professionalSignals.slice(0, 16)),
+      professionalVerificationSignals: Object.freeze(professionalSignals.slice(0, 16)),
+      noiseSignals: Object.freeze(noiseSignals.slice(0, 16)),
+      noiseVerificationSignals: Object.freeze(noiseSignals.slice(0, 16)),
+      verificationFlowMatched,
+      specificityGatePassed,
+      professionalContextMatched,
+      finalScore,
+      threshold,
+      passed,
+      rejected: !passed,
+      passReason,
+      rejectionReason,
+      identityVerificationEvidenceAuthority: verificationFlowMatched ? "trusted_article_text" : "supporting_or_metadata_only",
+      personalDashboardUsedSharedEvidence: true,
+      professionalGuardUsedSharedEvidence: true,
+      supportingOnlyRejected,
+      metadataOnlyRejected,
+      professionalContextWithoutFlowRejected,
+      noiseRejected,
+    });
+  });
+}
+
 function getIdentityVerificationPersonalDashboardScoringAlignment(article, rawScore) {
-  const context = getPersonalBoostContext(article);
-  const haystack = [
-    context.titleText,
-    context.tagText,
-    context.metadataText,
-    context.bodyText,
-  ].filter(Boolean).join(" ");
-  const matchTerms = (terms = []) => normalizeKeywordList(terms)
-    .filter((term) => textMatchesKeyword(haystack, term));
-  const strongIdentityVerificationSignals = matchTerms(IDENTITY_VERIFICATION_SCORING_STRONG_TERMS);
-  const contextOnlyIdentitySignals = matchTerms(IDENTITY_VERIFICATION_SCORING_CONTEXT_ONLY_TERMS);
-  const genericVerificationSignals = textMatchesKeyword(haystack, "verification") ? ["verification"] : [];
-  const genericVerificationContextSignals = genericVerificationSignals.length
-    ? matchTerms(IDENTITY_VERIFICATION_SCORING_GENERIC_CONTEXT_TERMS)
-    : [];
-  const unrelatedVerificationSignals = matchTerms(IDENTITY_VERIFICATION_SCORING_UNRELATED_VERIFICATION_TERMS);
-  const negativeIdentityVerificationSignals = matchTerms(IDENTITY_VERIFICATION_SCORING_NEGATIVE_TERMS);
-  const threshold = Number(DIGITAL_SUBGROUP_HYBRID_FILTERS.identity_verification?.minimumInterestScore) || 20;
-  const hasStrongIdentityVerification = strongIdentityVerificationSignals.length > 0;
-  const hasConnectedGenericVerification = genericVerificationSignals.length > 0 &&
-    genericVerificationContextSignals.length > 0;
-  let penalty = 0;
-
-  if (!hasStrongIdentityVerification && contextOnlyIdentitySignals.length > 0) {
-    penalty += Math.min(44, 16 + (contextOnlyIdentitySignals.length * 4));
-  }
-  if (!hasStrongIdentityVerification && genericVerificationSignals.length > 0 && !hasConnectedGenericVerification) {
-    penalty += 28;
-  }
-  if (!hasStrongIdentityVerification && unrelatedVerificationSignals.length > 0) {
-    penalty += Math.min(70, 35 + (unrelatedVerificationSignals.length * 10));
-  }
-  if (!hasStrongIdentityVerification && negativeIdentityVerificationSignals.length > 0) {
-    penalty += Math.min(80, 24 + (negativeIdentityVerificationSignals.length * 10));
-  }
-
-  let finalScore = Math.max(0, Math.round((Number(rawScore) || 0) - penalty));
-  if (
-    !hasStrongIdentityVerification &&
-    (
-      !hasConnectedGenericVerification ||
-      negativeIdentityVerificationSignals.length > 0 ||
-      unrelatedVerificationSignals.length > 0
-    )
-  ) {
-    finalScore = Math.min(finalScore, Math.max(0, threshold - 1));
-  }
-
-  const passed = finalScore >= threshold &&
-    (hasStrongIdentityVerification || hasConnectedGenericVerification) &&
-    unrelatedVerificationSignals.length === 0 &&
-    negativeIdentityVerificationSignals.length === 0;
+  const evidence = getIdentityVerificationSourceTrustEvidence(article);
+  const raw = Math.round(Number(rawScore) || 0);
+  const finalScore = evidence.passed
+    ? Math.max(evidence.finalScore, Math.min(raw, evidence.threshold + 10))
+    : Math.min(evidence.finalScore, Math.max(0, evidence.threshold - 1));
 
   return Object.freeze({
-    strongIdentityVerificationSignals: Object.freeze(strongIdentityVerificationSignals.slice(0, 16)),
-    contextOnlyIdentitySignals: Object.freeze(contextOnlyIdentitySignals.slice(0, 16)),
-    genericVerificationSignals: Object.freeze(genericVerificationSignals),
-    genericVerificationContextSignals: Object.freeze(genericVerificationContextSignals.slice(0, 16)),
-    unrelatedVerificationSignals: Object.freeze(unrelatedVerificationSignals.slice(0, 16)),
-    negativeIdentityVerificationSignals: Object.freeze(negativeIdentityVerificationSignals.slice(0, 16)),
-    identityVerificationRawScore: Math.round(Number(rawScore) || 0),
-    identityVerificationPenalty: penalty,
+    strongIdentityVerificationSignals: evidence.authoritativeVerificationSignals,
+    contextOnlyIdentitySignals: evidence.supportingIdentitySignals,
+    genericVerificationSignals: evidence.supportingIdentitySignals.filter((signal) => signal.includes("verification")),
+    genericVerificationContextSignals: evidence.supportingIdentitySignals,
+    unrelatedVerificationSignals: evidence.noiseVerificationSignals,
+    negativeIdentityVerificationSignals: evidence.noiseVerificationSignals,
+    identityVerificationRawScore: raw,
+    identityVerificationPenalty: Math.max(0, raw - finalScore),
     identityVerificationFinalScore: finalScore,
-    identityVerificationThreshold: threshold,
-    identityVerificationPassed: passed,
+    identityVerificationThreshold: evidence.threshold,
+    identityVerificationPassed: evidence.passed && finalScore >= evidence.threshold,
+    identityVerificationSharedEvidence: evidence,
   });
 }
 
@@ -22932,13 +23231,18 @@ function getDigitalSubgroupHybridAssessment(article, interestId) {
       netEvidence >= minimumNetEvidence &&
       !conflictDominates;
     const beforeIncluded = interestScore >= DIGITAL_SUBGROUP_BASELINE_MINIMUM_SCORE;
-    const included = directMatch || hybridMatch;
+    const identityVerificationSharedEvidence = interestId === "identity_verification"
+      ? getIdentityVerificationSourceTrustEvidence(article)
+      : null;
+    const included = identityVerificationSharedEvidence
+      ? identityVerificationSharedEvidence.passed
+      : directMatch || hybridMatch;
 
     return {
       beforeIncluded,
       included,
-      directMatch,
-      hybridMatch,
+      directMatch: identityVerificationSharedEvidence ? identityVerificationSharedEvidence.verificationFlowMatched : directMatch,
+      hybridMatch: identityVerificationSharedEvidence ? false : hybridMatch,
       excludedWeakMatch: beforeIncluded && !included,
       directStrongHits,
       directWeakHits,
@@ -22946,8 +23250,19 @@ function getDigitalSubgroupHybridAssessment(article, interestId) {
       preferredHits,
       crossHits,
       netEvidence,
-      interestScore,
+      interestScore: identityVerificationSharedEvidence ? identityVerificationSharedEvidence.finalScore : interestScore,
       domainScore: domainContext.score,
+      ...(identityVerificationSharedEvidence
+        ? {
+            sharedEvidenceUsed: true,
+            authoritativeVerificationSignals: identityVerificationSharedEvidence.authoritativeVerificationSignals,
+            supportingIdentitySignals: identityVerificationSharedEvidence.supportingIdentitySignals,
+            noiseVerificationSignals: identityVerificationSharedEvidence.noiseVerificationSignals,
+            identityVerificationEvidenceAuthority: identityVerificationSharedEvidence.identityVerificationEvidenceAuthority,
+            passReason: identityVerificationSharedEvidence.passReason,
+            rejectionReason: identityVerificationSharedEvidence.rejectionReason,
+          }
+        : {}),
     };
   });
 }
@@ -25009,136 +25324,89 @@ function getIdentityVerificationProfessionalGuardAssessment(article, options = {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const enabled = Boolean(options.forceEnabled) ||
     shouldApplyIdentityVerificationProfessionalGuard(selectedInterests);
-  const context = getPersonalBoostContext(article);
-  const matchedStrongSignals = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_PROFESSIONAL_STRONG_SIGNALS);
-  const matchedUseCaseTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_PROFESSIONAL_USE_CASE_TERMS);
-  const matchedEventContextTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_PROFESSIONAL_EVENT_TERMS);
-  const matchedVendorSignals = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_VENDOR_SIGNALS);
-  const matchedVendorContextTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_VENDOR_CONTEXT_TERMS);
-  const matchedAgeVerificationTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_AGE_TERMS);
-  const matchedAgeTechnologyTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_AGE_TECHNOLOGY_TERMS);
-  const matchedGenericVerificationNoiseTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_GENERIC_VERIFICATION_NOISE_TERMS);
-  const matchedAuthenticationNoiseTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_AUTHENTICATION_NOISE_TERMS);
-  const matchedGenericBiometricsNoiseTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_GENERIC_BIOMETRICS_NOISE_TERMS);
-  const matchedGenericDigitalIdentityNoiseTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_GENERIC_DIGITAL_IDENTITY_NOISE_TERMS);
-  const matchedGovernmentIdentityNoiseTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_GOVERNMENT_IDENTITY_NOISE_TERMS);
-  const matchedCredentialIssuanceNoiseTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_CREDENTIAL_ISSUANCE_NOISE_TERMS);
-  const matchedAiAgentNoiseTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_AI_AGENT_NOISE_TERMS);
-  const matchedVoiceThreatNoiseTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_VOICE_THREAT_NOISE_TERMS);
-  const matchedContextOnlyTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_CONTEXT_ONLY_TERMS);
-  const matchedAgePolicyNoiseTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_AGE_POLICY_NOISE_TERMS);
-  const matchedSoftwareDeviceNoiseTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_SOFTWARE_DEVICE_NOISE_TERMS);
-  const matchedTutorialNoiseTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_TUTORIAL_NOISE_TERMS);
-  const matchedWrongDomainNoiseTerms = getEidDiagnosticMatchedTerms(context, IDENTITY_VERIFICATION_WRONG_DOMAIN_NOISE_TERMS);
+  const sharedEvidence = getIdentityVerificationSourceTrustEvidence(article);
   const selectedIdentityVerificationAssessment = getDigitalSubgroupHybridAssessment(article, "identity_verification");
-  const hasStrongIdentityVerification = matchedStrongSignals.length > 0;
+  const matchedStrongSignals = sharedEvidence.authoritativeVerificationSignals || [];
+  const matchedUseCaseTerms = sharedEvidence.supportingIdentitySignals || [];
+  const matchedEventContextTerms = sharedEvidence.professionalVerificationSignals || [];
+  const matchedVendorSignals = matchedUseCaseTerms.filter((signal) =>
+    IDENTITY_VERIFICATION_SUPPORTING_TERMS.includes(signal) &&
+    [
+      "jumio",
+      "onfido",
+      "entrust",
+      "regula",
+      "veriff",
+      "sumsub",
+      "idnow",
+      "persona",
+      "trulioo",
+      "socure",
+      "mitek",
+      "iproov",
+      "facephi",
+      "shufti",
+      "incode",
+      "idemia",
+      "thales",
+    ].includes(signal)
+  );
+  const matchedVendorContextTerms = matchedUseCaseTerms.filter((signal) => signal.includes("verification") || signal.includes("credential") || signal.includes("kyc") || signal.includes("onboarding"));
+  const matchedAgeVerificationTerms = matchedStrongSignals.filter((signal) => signal.includes("age"));
+  const matchedAgeTechnologyTerms = matchedStrongSignals.filter((signal) => signal.includes("age") || signal.includes("biometric age"));
+  const matchedGenericVerificationNoiseTerms = sharedEvidence.noiseVerificationSignals || [];
+  const matchedAuthenticationNoiseTerms = matchedGenericVerificationNoiseTerms.filter((signal) => signal.includes("authentication") || signal.includes("login") || signal.includes("passkey"));
+  const matchedGenericBiometricsNoiseTerms = matchedGenericVerificationNoiseTerms.filter((signal) => signal.includes("biometric") || signal.includes("facial recognition"));
+  const matchedGenericDigitalIdentityNoiseTerms = matchedGenericVerificationNoiseTerms.filter((signal) => signal.includes("digital identity"));
+  const matchedGovernmentIdentityNoiseTerms = matchedGenericVerificationNoiseTerms.filter((signal) => signal.includes("government") || signal.includes("legislation") || signal.includes("transformation"));
+  const matchedCredentialIssuanceNoiseTerms = matchedGenericVerificationNoiseTerms.filter((signal) => signal.includes("credential issuance"));
+  const matchedAiAgentNoiseTerms = matchedGenericVerificationNoiseTerms.filter((signal) => signal.includes("ai agent") || signal.includes("human intent") || signal.includes("agentic"));
+  const matchedVoiceThreatNoiseTerms = matchedGenericVerificationNoiseTerms.filter((signal) => signal.includes("voice") || signal.includes("deepfake threat"));
+  const matchedContextOnlyTerms = matchedUseCaseTerms;
+  const matchedAgePolicyNoiseTerms = matchedGenericVerificationNoiseTerms.filter((signal) => signal.includes("political") || signal.includes("policy"));
+  const matchedSoftwareDeviceNoiseTerms = matchedGenericVerificationNoiseTerms.filter((signal) => signal.includes("software") || signal.includes("device"));
+  const matchedTutorialNoiseTerms = matchedGenericVerificationNoiseTerms.filter((signal) => signal.includes("tutorial") || signal.includes("guide") || signal.includes("what is"));
+  const matchedWrongDomainNoiseTerms = matchedGenericVerificationNoiseTerms.filter((signal) => signal.includes("passport renewal") || signal.includes("payment") || signal.includes("transaction"));
+  const hasStrongIdentityVerification = sharedEvidence.verificationFlowMatched;
   const hasUseCaseContext = matchedUseCaseTerms.length > 0;
   const hasEventContext = matchedEventContextTerms.length > 0;
   const hasVendorIdentityContext = matchedVendorSignals.length > 0 && matchedVendorContextTerms.length > 0;
-  const hasAgeVerificationTechnology = matchedAgeVerificationTerms.length > 0 &&
-    (matchedAgeTechnologyTerms.length > 0 || hasVendorIdentityContext);
-  const verificationFlowMatched = hasStrongIdentityVerification || hasAgeVerificationTechnology;
-  const hasVendorProfessionalEvent = hasVendorIdentityContext &&
-    hasEventContext &&
-    (hasUseCaseContext || matchedVendorContextTerms.length > 0);
-  const vendorRescueApproved = hasVendorProfessionalEvent &&
-    (matchedVendorContextTerms.length > 0 || hasUseCaseContext);
-  const specificityGatePassed = verificationFlowMatched;
+  const hasAgeVerificationTechnology = matchedAgeVerificationTerms.length > 0;
+  const verificationFlowMatched = sharedEvidence.verificationFlowMatched;
+  const hasVendorProfessionalEvent = hasVendorIdentityContext && hasEventContext;
+  const vendorRescueApproved = false;
+  const specificityGatePassed = sharedEvidence.specificityGatePassed;
   const genericRescueCandidate = hasUseCaseContext ||
     hasEventContext ||
     hasVendorIdentityContext ||
     matchedContextOnlyTerms.length > 0 ||
     selectedIdentityVerificationAssessment.included;
   const genericRescueAttempted = Boolean(genericRescueCandidate);
-  const genericRescueBlockedWithoutVerificationFlow = genericRescueCandidate &&
-    !specificityGatePassed;
-  const vendorRescueBlocked = vendorRescueApproved && !specificityGatePassed;
+  const genericRescueBlockedWithoutVerificationFlow = genericRescueCandidate && !specificityGatePassed;
+  const vendorRescueBlocked = hasVendorProfessionalEvent && !specificityGatePassed;
   const professionalIdentityVerificationMatched = specificityGatePassed;
-  const tutorialNoise = matchedTutorialNoiseTerms.length > 0;
-  const agePolicyNoise = matchedAgePolicyNoiseTerms.length > 0 && !hasAgeVerificationTechnology;
+  const tutorialNoise = matchedTutorialNoiseTerms.length > 0 && !specificityGatePassed;
+  const agePolicyNoise = matchedAgePolicyNoiseTerms.length > 0 && !specificityGatePassed;
   const softwareDeviceNoise = matchedSoftwareDeviceNoiseTerms.length > 0 && !specificityGatePassed;
   const authenticationNoise = matchedAuthenticationNoiseTerms.length > 0 && !specificityGatePassed;
   const genericBiometricsNoise = matchedGenericBiometricsNoiseTerms.length > 0 && !specificityGatePassed;
-  const genericDigitalIdentityNoise = matchedGenericDigitalIdentityNoiseTerms.length > 0 && !specificityGatePassed && !hasAgeVerificationTechnology;
-  const governmentIdentityNoise = matchedGovernmentIdentityNoiseTerms.length > 0 && !specificityGatePassed && !hasAgeVerificationTechnology;
+  const genericDigitalIdentityNoise = matchedGenericDigitalIdentityNoiseTerms.length > 0 && !specificityGatePassed;
+  const governmentIdentityNoise = matchedGovernmentIdentityNoiseTerms.length > 0 && !specificityGatePassed;
   const credentialIssuanceNoise = matchedCredentialIssuanceNoiseTerms.length > 0 && !specificityGatePassed;
   const aiAgentVerificationNoise = matchedAiAgentNoiseTerms.length > 0 && !specificityGatePassed;
   const voiceThreatNoise = matchedVoiceThreatNoiseTerms.length > 0 && !specificityGatePassed;
-  const contextOnlyNoise = matchedContextOnlyTerms.length > 0 &&
-    !specificityGatePassed &&
-    !hasAgeVerificationTechnology;
-  const genericVerificationNoise = matchedGenericVerificationNoiseTerms.length > 0 && !specificityGatePassed && !hasAgeVerificationTechnology;
+  const contextOnlyNoise = sharedEvidence.supportingOnlyRejected;
+  const genericVerificationNoise = matchedGenericVerificationNoiseTerms.length > 0 && !specificityGatePassed;
   const wrongDomainNoise = (matchedWrongDomainNoiseTerms.length > 0 || voiceThreatNoise) && !specificityGatePassed;
-  const hardNegativeSignals = [
-    ...(tutorialNoise ? matchedTutorialNoiseTerms : []),
-    ...(aiAgentVerificationNoise ? matchedAiAgentNoiseTerms : []),
-    ...(agePolicyNoise ? matchedAgePolicyNoiseTerms : []),
-    ...(softwareDeviceNoise ? matchedSoftwareDeviceNoiseTerms : []),
-    ...(authenticationNoise ? matchedAuthenticationNoiseTerms : []),
-    ...(genericVerificationNoise ? matchedGenericVerificationNoiseTerms : []),
-    ...(genericBiometricsNoise ? matchedGenericBiometricsNoiseTerms : []),
-    ...(genericDigitalIdentityNoise ? matchedGenericDigitalIdentityNoiseTerms : []),
-    ...(governmentIdentityNoise ? matchedGovernmentIdentityNoiseTerms : []),
-    ...(credentialIssuanceNoise ? matchedCredentialIssuanceNoiseTerms : []),
-    ...(contextOnlyNoise ? matchedContextOnlyTerms : []),
-    ...(wrongDomainNoise ? [...matchedWrongDomainNoiseTerms, ...matchedVoiceThreatNoiseTerms] : []),
-  ];
-  let rejectionReason = "";
-  if (enabled && hardNegativeSignals.length > 0) {
-    if (tutorialNoise) {
-      rejectionReason = "tutorial_or_guide_noise";
-    } else if (voiceThreatNoise) {
-      rejectionReason = "wrong_domain_verification_signal";
-    } else if (aiAgentVerificationNoise) {
-      rejectionReason = "ai_identity_concept_noise";
-    } else if (agePolicyNoise) {
-      rejectionReason = "age_policy_without_verification_technology";
-    } else if (softwareDeviceNoise) {
-      rejectionReason = "software_or_device_verification_noise";
-    } else if (authenticationNoise) {
-      rejectionReason = "authentication_without_identity_verification";
-    } else if (genericBiometricsNoise) {
-      rejectionReason = "generic_biometrics_without_verification";
-    } else if (governmentIdentityNoise) {
-      rejectionReason = "government_digitization_without_verification";
-    } else if (credentialIssuanceNoise) {
-      rejectionReason = "credential_issuance_without_verification";
-    } else if (contextOnlyNoise && matchedGenericBiometricsNoiseTerms.length > 0) {
-      rejectionReason = "generic_biometrics_only";
-    } else if (contextOnlyNoise && matchedAuthenticationNoiseTerms.length > 0) {
-      rejectionReason = "authentication_only";
-    } else if (contextOnlyNoise && matchedVendorSignals.length > 0) {
-      rejectionReason = "vendor_without_verification_use_case";
-    } else if (contextOnlyNoise) {
-      rejectionReason = "generic_identity_platform_only";
-    } else if (genericDigitalIdentityNoise) {
-      rejectionReason = "generic_digital_identity_without_verification";
-    } else if (wrongDomainNoise) {
-      rejectionReason = "wrong_domain_verification_signal";
-    } else {
-      rejectionReason = "missing_identity_verification_flow";
-    }
-  } else if (enabled && genericRescueBlockedWithoutVerificationFlow) {
-    rejectionReason = vendorRescueBlocked
-      ? "generic_rescue_blocked_without_verification_flow"
-      : "missing_specific_identity_verification_flow";
-  } else if (enabled && !specificityGatePassed) {
-    rejectionReason = "missing_specific_identity_verification_flow";
-  }
-  const passed = !enabled || !rejectionReason;
+  const hardNegativeSignals = sharedEvidence.noiseVerificationSignals || [];
+  const rejectionReason = enabled ? sharedEvidence.rejectionReason : "";
+  const passed = !enabled || sharedEvidence.passed;
   const passReason = !passed
     ? ""
-    : verificationFlowMatched
-      ? hasAgeVerificationTechnology && !hasStrongIdentityVerification
-        ? "age_verification_technology_context"
-        : "explicit_identity_verification_flow"
-      : vendorRescueApproved
-        ? "vendor_professional_verification_use_case"
-        : "identity_verification_guard_not_enabled";
+    : sharedEvidence.passReason || "authoritative_verification_evidence";
   const stageResult = passed ? "passed" : "rejected";
   const verificationFlowSignals = Object.freeze([
     ...matchedStrongSignals,
-    ...(hasAgeVerificationTechnology ? matchedAgeTechnologyTerms : []),
   ].slice(0, 12));
   const genericContextSignals = Object.freeze(matchedContextOnlyTerms.slice(0, 12));
   const vendorSignals = Object.freeze(matchedVendorSignals.slice(0, 12));
@@ -25166,6 +25434,7 @@ function getIdentityVerificationProfessionalGuardAssessment(article, options = {
     finalPassReason: passReason,
     finalRejectionReason: rejectionReason,
     decisionAuthority: "identity_verification_professional_guard",
+    sharedEvidence,
   });
 
   return Object.freeze({
@@ -25239,6 +25508,16 @@ function getIdentityVerificationProfessionalGuardAssessment(article, options = {
     professionalEventSignals,
     hardNegativeSignals: frozenHardNegativeSignals,
     identityVerificationHybridAssessment: selectedIdentityVerificationAssessment,
+    sharedEvidence,
+    authoritativeVerificationSignals: sharedEvidence.authoritativeVerificationSignals,
+    authoritativeVerificationSignalSources: sharedEvidence.authoritativeVerificationSignalSources,
+    supportingIdentitySignals: sharedEvidence.supportingIdentitySignals,
+    supportingSignalSources: sharedEvidence.supportingSignalSources,
+    professionalVerificationSignals: sharedEvidence.professionalVerificationSignals,
+    noiseVerificationSignals: sharedEvidence.noiseVerificationSignals,
+    identityVerificationEvidenceAuthority: sharedEvidence.identityVerificationEvidenceAuthority,
+    personalDashboardUsedSharedEvidence: true,
+    professionalGuardUsedSharedEvidence: true,
   });
 }
 
