@@ -257,7 +257,94 @@ const DIGITAL_SUBGROUP_HYBRID_FILTERS = {
   identity_verification: {
     minimumDomainScore: 11,
     minimumInterestScore: 20,
-    related: ["document verification", "id verification", "identity proofing", "proof of identity", "idv"],
+    related: [
+      "identity verification",
+      "id verification",
+      "identity proofing",
+      "proof of identity",
+      "remote identity verification",
+      "customer identity verification",
+      "digital identity verification",
+      "document verification",
+      "identity document verification",
+      "id document verification",
+      "passport verification",
+      "id card verification",
+      "driver license verification",
+      "document authenticity check",
+      "customer verification",
+      "person verification",
+      "biometric identity verification",
+      "biometric verification",
+      "face verification",
+      "selfie verification",
+      "selfie-to-id matching",
+      "liveness verification",
+      "kyc verification",
+      "onboarding verification",
+      "credential verification",
+      "wallet credential verification",
+      "identity check",
+      "id check",
+      "biometric identity check",
+      "age assurance technology",
+      "biometric age estimation",
+      "idv",
+    ],
+    preferred: [
+      "identity verification",
+      "id verification",
+      "identity proofing",
+      "proof of identity",
+      "remote identity verification",
+      "customer identity verification",
+      "digital identity verification",
+      "document verification",
+      "identity document verification",
+      "id document verification",
+      "passport verification",
+      "id card verification",
+      "driver license verification",
+      "document authenticity check",
+      "customer verification",
+      "person verification",
+      "biometric identity verification",
+      "biometric verification",
+      "face verification",
+      "selfie verification",
+      "selfie-to-id matching",
+      "liveness verification",
+      "kyc verification",
+      "onboarding verification",
+      "credential verification",
+      "wallet credential verification",
+      "identity check",
+      "id check",
+      "biometric identity check",
+      "age assurance technology",
+      "biometric age estimation",
+      "identity fraud detection",
+      "idv",
+    ],
+    cross: [
+      "digital identity market",
+      "digital identity ecosystem",
+      "digital identity platform",
+      "digital identity infrastructure",
+      "digital transformation bill",
+      "digital transformation bills",
+      "identity infrastructure",
+      "credential issuance",
+      "authentication",
+      "biometric platform",
+      "machine identity",
+      "ai agent identity",
+      "human intent",
+      "human-intent verification",
+      "verification platform",
+    ],
+    minimumPreferredHits: 1,
+    minimumNetEvidence: 1,
   },
   authentication: {
     minimumDomainScore: 11,
@@ -2204,7 +2291,46 @@ const PERSONAL_DASHBOARD_GROUPS = [
       { id: "onboarding", label: "Onboarding", strong: ["onboarding", "remote onboarding", "digital onboarding"], weak: ["identity onboarding"] },
       { id: "liveness", label: "Liveness", strong: ["liveness", "liveness detection", "presentation attack"], weak: ["face match"] },
       { id: "artificial_intelligence", label: "Artificial intelligence", strong: ["artificial intelligence", "ai identity", "ai-assisted identity"], weak: ["machine learning", "ai"] },
-      { id: "identity_verification", label: "Identity verification", strong: ["identity verification", "document verification", "id verification"], weak: ["verification platform"] },
+      {
+        id: "identity_verification",
+        label: "Identity verification",
+        strong: [
+          "identity verification",
+          "id verification",
+          "identity proofing",
+          "proof of identity",
+          "remote identity verification",
+          "customer identity verification",
+          "digital identity verification",
+          "document verification",
+          "identity document verification",
+          "id document verification",
+          "passport verification",
+          "id card verification",
+          "driver license verification",
+          "document authenticity check",
+          "biometric identity verification",
+          "biometric verification",
+          "liveness verification",
+          "kyc verification",
+          "onboarding verification",
+        ],
+        weak: [
+          "customer verification",
+          "person verification",
+          "face verification",
+          "selfie verification",
+          "selfie-to-id matching",
+          "credential verification",
+          "wallet credential verification",
+          "identity check",
+          "id check",
+          "biometric identity check",
+          "age assurance technology",
+          "biometric age estimation",
+          "idv",
+        ],
+      },
       { id: "authentication", label: "Authentication", strong: ["authentication", "login verification", "multi-factor authentication"], weak: ["authenticator"] },
     ],
   },
@@ -12798,6 +12924,7 @@ function getLegacyPersonalDashboardDecisionSignals(article, options = {}) {
       label: interest?.label || interestId,
       score: Number(boost?.score) || 0,
       matched: Boolean(boost?.matched),
+      identityVerificationScoringAlignment: boost?.identityVerificationScoringAlignment || null,
     };
   });
   const banknoteInterestMatches = selectedBanknoteInterests.map((interestId) => ({
@@ -12894,6 +13021,9 @@ function buildPersonalDashboardScore(article, options = {}) {
   const selectedMainDomains = Array.isArray(signals.selectedMainDomains) ? signals.selectedMainDomains : [];
   const primaryDomain = signals.primaryDomain || getArticleDominantDomain(article);
   const threshold = Number(signals.threshold) || 0;
+  const identityVerificationBoost = (Array.isArray(signals.perInterestBoosts) ? signals.perInterestBoosts : [])
+    .find((boost) => boost?.interestId === "identity_verification");
+  const identityVerificationScoringAlignment = identityVerificationBoost?.identityVerificationScoringAlignment || null;
   const interestContributions = (Array.isArray(signals.perInterestBoosts) ? signals.perInterestBoosts : []).map((boost) => {
     const rawScore = Number(boost?.score) || 0;
     const groupId = boost?.groupId || "";
@@ -12930,6 +13060,9 @@ function buildPersonalDashboardScore(article, options = {}) {
           : {}),
         ...(groupId === "identity_documents" && signals.identityNoiseGuardDiagnostics
           ? { identityNoiseGuardDiagnostics: signals.identityNoiseGuardDiagnostics }
+          : {}),
+        ...(boost?.interestId === "identity_verification" && boost?.identityVerificationScoringAlignment
+          ? { identityVerificationScoringAlignment: boost.identityVerificationScoringAlignment }
           : {}),
       },
     };
@@ -13057,7 +13190,11 @@ function buildPersonalDashboardScore(article, options = {}) {
       dominantDomainDiagnostics: signals.dominantDomainDecisionDiagnostics || null,
       dominantDomainDecisionDiagnostics: signals.dominantDomainDecisionDiagnostics || null,
       identityNoiseGuardDiagnostics: signals.identityNoiseGuardDiagnostics || null,
+      identityVerificationScoringAlignment,
     },
+    ...(identityVerificationScoringAlignment
+      ? { identityVerificationScoringAlignment }
+      : {}),
     polymerChildMatchDiagnostics: signals.polymerChildMatchDiagnostics || null,
     identityDecisionDiagnostics: signals.identityDecisionDiagnostics || null,
     contributions,
@@ -15058,10 +15195,28 @@ function formatPersonalDashboardScoreExplanation(scoreObject) {
   const contributions = Array.isArray(scoreObject.contributions) ? scoreObject.contributions : [];
   const matchedContributions = contributions.filter((contribution) => contribution.matched);
   const contributionSubtotal = contributions.reduce((sum, contribution) => sum + (Number(contribution.score) || 0), 0);
+  const identityVerificationScoringAlignment =
+    scoreObject.identityVerificationScoringAlignment ||
+    scoreObject.metadata?.identityVerificationScoringAlignment ||
+    null;
 
   return {
     ...scoreObject,
     title: getTraceTitleByArticleId(scoreObject.articleId),
+    ...(identityVerificationScoringAlignment
+      ? {
+          strongIdentityVerificationSignals: identityVerificationScoringAlignment.strongIdentityVerificationSignals || [],
+          contextOnlyIdentitySignals: identityVerificationScoringAlignment.contextOnlyIdentitySignals || [],
+          genericVerificationSignals: identityVerificationScoringAlignment.genericVerificationSignals || [],
+          unrelatedVerificationSignals: identityVerificationScoringAlignment.unrelatedVerificationSignals || [],
+          negativeIdentityVerificationSignals: identityVerificationScoringAlignment.negativeIdentityVerificationSignals || [],
+          identityVerificationRawScore: identityVerificationScoringAlignment.identityVerificationRawScore,
+          identityVerificationPenalty: identityVerificationScoringAlignment.identityVerificationPenalty,
+          identityVerificationFinalScore: identityVerificationScoringAlignment.identityVerificationFinalScore,
+          identityVerificationThreshold: identityVerificationScoringAlignment.identityVerificationThreshold,
+          identityVerificationPassed: identityVerificationScoringAlignment.identityVerificationPassed,
+        }
+      : {}),
     legacyMatchesDetected: matchedContributions.map((contribution) => ({
       category: contribution.category,
       score: contribution.score,
@@ -22035,6 +22190,7 @@ function computePersonalInterestBoost(article, interestId) {
     const metaWeakHits = countBoostKeywordMatches(context.metadataText, weakKeywords);
     const bodyWeakHits = countBoostKeywordMatches(context.bodyText, weakKeywords);
     let score = 0;
+    let identityVerificationScoringAlignment = null;
     const hasDomainContext = domainContext.score >= 6;
     const isGenericInterest = PERSONAL_DASHBOARD_GENERIC_INTEREST_IDS.has(interest.id);
 
@@ -22312,11 +22468,18 @@ function computePersonalInterestBoost(article, interestId) {
     }
 
     score -= domainContext.excludedHits * 10;
+    if (interest.id === "identity_verification") {
+      identityVerificationScoringAlignment = getIdentityVerificationPersonalDashboardScoringAlignment(article, score);
+      score = identityVerificationScoringAlignment.identityVerificationFinalScore;
+    }
     score = Math.max(0, Math.round(score));
 
     return {
       score,
       matched: score > 0,
+      ...(identityVerificationScoringAlignment
+        ? { identityVerificationScoringAlignment }
+        : {}),
     };
   });
 }
@@ -22367,6 +22530,194 @@ function contextMatchesSpecialistSource(context, groupId) {
   return Array.isArray(SPECIALIST_SOURCE_INTERESTS[groupId]) && SPECIALIST_SOURCE_INTERESTS[groupId].some((specialistSource) =>
     context.sourceText.includes(specialistSource) || context.domainText.includes(specialistSource)
   );
+}
+
+const IDENTITY_VERIFICATION_SCORING_STRONG_TERMS = Object.freeze([
+  "identity verification",
+  "id verification",
+  "identity proofing",
+  "proof of identity",
+  "remote identity verification",
+  "customer identity verification",
+  "digital identity verification",
+  "document verification",
+  "identity document verification",
+  "id document verification",
+  "passport verification",
+  "id card verification",
+  "driver license verification",
+  "driver's license verification",
+  "document authenticity check",
+  "customer verification",
+  "person verification",
+  "biometric identity verification",
+  "biometric verification",
+  "face verification",
+  "selfie verification",
+  "selfie-to-id matching",
+  "selfie to id matching",
+  "liveness verification",
+  "kyc verification",
+  "onboarding verification",
+  "credential verification",
+  "wallet credential verification",
+  "identity check",
+  "id check",
+  "biometric identity check",
+  "age assurance technology",
+  "biometric age estimation",
+  "identity fraud detection",
+  "idv",
+]);
+
+const IDENTITY_VERIFICATION_SCORING_CONTEXT_ONLY_TERMS = Object.freeze([
+  "identity",
+  "digital identity",
+  "digital id",
+  "biometrics",
+  "biometric",
+  "authentication",
+  "credentials",
+  "credential",
+  "platform",
+  "solution",
+  "solutions",
+  "ecosystem",
+  "infrastructure",
+  "government",
+  "regulation",
+  "standard",
+  "rollout",
+  "launch",
+  "partnership",
+  "compliance",
+  "identity platform",
+  "identity infrastructure",
+]);
+
+const IDENTITY_VERIFICATION_SCORING_GENERIC_CONTEXT_TERMS = Object.freeze([
+  "identity",
+  "id",
+  "document",
+  "passport",
+  "identity card",
+  "id card",
+  "driver license",
+  "driver's license",
+  "customer",
+  "person",
+  "selfie",
+  "face",
+  "biometric",
+  "biometrics",
+  "kyc",
+  "onboarding",
+  "credential",
+  "age assurance",
+]);
+
+const IDENTITY_VERIFICATION_SCORING_UNRELATED_VERIFICATION_TERMS = Object.freeze([
+  "software verification",
+  "device verification",
+  "transaction verification",
+  "payment verification",
+  "email verification",
+  "phone verification",
+  "fact verification",
+  "content verification",
+  "ai output verification",
+  "model verification",
+  "blockchain transaction verification",
+  "human-intent verification",
+  "human intent verification",
+]);
+
+const IDENTITY_VERIFICATION_SCORING_NEGATIVE_TERMS = Object.freeze([
+  "generic digital identity platform",
+  "digital identity market",
+  "digital identity ecosystem",
+  "digital transformation bill",
+  "digital transformation bills",
+  "digital identity legislation",
+  "identity infrastructure",
+  "credential issuance",
+  "ai agent identity",
+  "machine identity",
+  "human-intent verification",
+  "human intent verification",
+  "biometric platform",
+  "authentication-only",
+  "authentication only",
+  "verification platform",
+]);
+
+function getIdentityVerificationPersonalDashboardScoringAlignment(article, rawScore) {
+  const context = getPersonalBoostContext(article);
+  const haystack = [
+    context.titleText,
+    context.tagText,
+    context.metadataText,
+    context.bodyText,
+  ].filter(Boolean).join(" ");
+  const matchTerms = (terms = []) => normalizeKeywordList(terms)
+    .filter((term) => textMatchesKeyword(haystack, term));
+  const strongIdentityVerificationSignals = matchTerms(IDENTITY_VERIFICATION_SCORING_STRONG_TERMS);
+  const contextOnlyIdentitySignals = matchTerms(IDENTITY_VERIFICATION_SCORING_CONTEXT_ONLY_TERMS);
+  const genericVerificationSignals = textMatchesKeyword(haystack, "verification") ? ["verification"] : [];
+  const genericVerificationContextSignals = genericVerificationSignals.length
+    ? matchTerms(IDENTITY_VERIFICATION_SCORING_GENERIC_CONTEXT_TERMS)
+    : [];
+  const unrelatedVerificationSignals = matchTerms(IDENTITY_VERIFICATION_SCORING_UNRELATED_VERIFICATION_TERMS);
+  const negativeIdentityVerificationSignals = matchTerms(IDENTITY_VERIFICATION_SCORING_NEGATIVE_TERMS);
+  const threshold = Number(DIGITAL_SUBGROUP_HYBRID_FILTERS.identity_verification?.minimumInterestScore) || 20;
+  const hasStrongIdentityVerification = strongIdentityVerificationSignals.length > 0;
+  const hasConnectedGenericVerification = genericVerificationSignals.length > 0 &&
+    genericVerificationContextSignals.length > 0;
+  let penalty = 0;
+
+  if (!hasStrongIdentityVerification && contextOnlyIdentitySignals.length > 0) {
+    penalty += Math.min(44, 16 + (contextOnlyIdentitySignals.length * 4));
+  }
+  if (!hasStrongIdentityVerification && genericVerificationSignals.length > 0 && !hasConnectedGenericVerification) {
+    penalty += 28;
+  }
+  if (!hasStrongIdentityVerification && unrelatedVerificationSignals.length > 0) {
+    penalty += Math.min(70, 35 + (unrelatedVerificationSignals.length * 10));
+  }
+  if (!hasStrongIdentityVerification && negativeIdentityVerificationSignals.length > 0) {
+    penalty += Math.min(80, 24 + (negativeIdentityVerificationSignals.length * 10));
+  }
+
+  let finalScore = Math.max(0, Math.round((Number(rawScore) || 0) - penalty));
+  if (
+    !hasStrongIdentityVerification &&
+    (
+      !hasConnectedGenericVerification ||
+      negativeIdentityVerificationSignals.length > 0 ||
+      unrelatedVerificationSignals.length > 0
+    )
+  ) {
+    finalScore = Math.min(finalScore, Math.max(0, threshold - 1));
+  }
+
+  const passed = finalScore >= threshold &&
+    (hasStrongIdentityVerification || hasConnectedGenericVerification) &&
+    unrelatedVerificationSignals.length === 0 &&
+    negativeIdentityVerificationSignals.length === 0;
+
+  return Object.freeze({
+    strongIdentityVerificationSignals: Object.freeze(strongIdentityVerificationSignals.slice(0, 16)),
+    contextOnlyIdentitySignals: Object.freeze(contextOnlyIdentitySignals.slice(0, 16)),
+    genericVerificationSignals: Object.freeze(genericVerificationSignals),
+    genericVerificationContextSignals: Object.freeze(genericVerificationContextSignals.slice(0, 16)),
+    unrelatedVerificationSignals: Object.freeze(unrelatedVerificationSignals.slice(0, 16)),
+    negativeIdentityVerificationSignals: Object.freeze(negativeIdentityVerificationSignals.slice(0, 16)),
+    identityVerificationRawScore: Math.round(Number(rawScore) || 0),
+    identityVerificationPenalty: penalty,
+    identityVerificationFinalScore: finalScore,
+    identityVerificationThreshold: threshold,
+    identityVerificationPassed: passed,
+  });
 }
 
 function getBanknoteSourceAuthority(article) {
