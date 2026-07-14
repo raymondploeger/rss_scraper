@@ -13968,6 +13968,10 @@ function getIdentityVerificationProfessionalGuardSummary(diagnostics) {
   let contextDependentPassCount = 0;
   let contextDependentRejectedCount = 0;
   let duplicateTrustedSourceRemovalCount = 0;
+  let titleIdentityVerificationPassCount = 0;
+  let snippetIdentityVerificationPassCount = 0;
+  let snippetIdentityVerificationBlockedCount = 0;
+  let longestMatchSuppressionCount = 0;
 
   guardTraceEntries.forEach(({ trace, stage }) => {
     const assessment = stage.metadata?.identityVerificationProfessionalGuard || {};
@@ -13987,6 +13991,16 @@ function getIdentityVerificationProfessionalGuardSummary(diagnostics) {
     if (sharedEvidence?.passed && (sharedEvidence?.contextDependentSignalMatches || []).length > 0) {
       contextDependentPassCount += 1;
     }
+    if (sharedEvidence?.passed && sharedEvidence?.titleIdentityVerificationMatched) {
+      titleIdentityVerificationPassCount += 1;
+    }
+    if (sharedEvidence?.passed && sharedEvidence?.snippetOnlyIdentityVerificationContextPassed) {
+      snippetIdentityVerificationPassCount += 1;
+    }
+    if (sharedEvidence?.snippetOnlyIdentityVerificationBlocked) {
+      snippetIdentityVerificationBlockedCount += 1;
+    }
+    longestMatchSuppressionCount += (sharedEvidence?.longestMatchSuppressedSignals || []).length;
     if ((sharedEvidence?.contextDependentSignalFailures || []).length > 0) {
       contextDependentRejectedCount += 1;
     }
@@ -14053,6 +14067,10 @@ function getIdentityVerificationProfessionalGuardSummary(diagnostics) {
     independentAuthoritativePassCount,
     contextDependentPassCount,
     contextDependentRejectedCount,
+    titleIdentityVerificationPassCount,
+    snippetIdentityVerificationPassCount,
+    snippetIdentityVerificationBlockedCount,
+    longestMatchSuppressionCount,
     duplicateTrustedSourceRemovalCount,
     supportingOnlyRejectedCount,
     metadataOnlyRejectedCount,
@@ -14066,6 +14084,9 @@ function getIdentityVerificationProfessionalGuardSummary(diagnostics) {
 const IDENTITY_VERIFICATION_EVIDENCE_EXPORT_LIMIT = 500;
 const IDENTITY_VERIFICATION_NESTED_PHRASE_PAIRS = Object.freeze([
   ["identity verification", "digital identity verification"],
+  ["identity verification", "remote identity verification"],
+  ["identity verification", "customer identity verification"],
+  ["identity verification", "biometric identity verification"],
   ["document verification", "identity document verification"],
   ["document verification", "id document verification"],
   ["credential verification", "wallet credential verification"],
@@ -14191,6 +14212,36 @@ function buildIdentityVerificationArticleEvidenceEntry(trace, scoreObject) {
     independentAuthoritativeSignalSources: compactIdentityVerificationSignalSources(
       sharedEvidence?.independentAuthoritativeSignalSources || []
     ),
+    rawAuthoritativeSignals: Array.isArray(sharedEvidence?.rawAuthoritativeSignals)
+      ? sharedEvidence.rawAuthoritativeSignals.slice(0, 16)
+      : [],
+    rawAuthoritativeSignalSources: compactIdentityVerificationSignalSources(
+      sharedEvidence?.rawAuthoritativeSignalSources || []
+    ),
+    normalizedAuthoritativeSignals: Array.isArray(sharedEvidence?.normalizedAuthoritativeSignals)
+      ? sharedEvidence.normalizedAuthoritativeSignals.slice(0, 16)
+      : [],
+    normalizedAuthoritativeSignalSources: compactIdentityVerificationSignalSources(
+      sharedEvidence?.normalizedAuthoritativeSignalSources || []
+    ),
+    snippetOnlyIdentityVerificationMatched: Boolean(sharedEvidence?.snippetOnlyIdentityVerificationMatched),
+    snippetOnlyIdentityVerificationContextSignals: Array.isArray(sharedEvidence?.snippetOnlyIdentityVerificationContextSignals)
+      ? sharedEvidence.snippetOnlyIdentityVerificationContextSignals.slice(0, 16)
+      : [],
+    snippetOnlyIdentityVerificationContextSignalSources: compactIdentityVerificationSignalSources(
+      sharedEvidence?.snippetOnlyIdentityVerificationContextSignalSources || []
+    ),
+    snippetOnlyIdentityVerificationContextPassed: Boolean(sharedEvidence?.snippetOnlyIdentityVerificationContextPassed),
+    snippetOnlyIdentityVerificationBlocked: Boolean(sharedEvidence?.snippetOnlyIdentityVerificationBlocked),
+    identityVerificationSourceAuthority: sharedEvidence?.identityVerificationSourceAuthority || "",
+    titleIdentityVerificationMatched: Boolean(sharedEvidence?.titleIdentityVerificationMatched),
+    snippetIdentityVerificationMatched: Boolean(sharedEvidence?.snippetIdentityVerificationMatched),
+    longestMatchSuppressedSignals: Array.isArray(sharedEvidence?.longestMatchSuppressedSignals)
+      ? sharedEvidence.longestMatchSuppressedSignals.slice(0, 16).map((entry) => ({
+          signal: entry?.signal || "",
+          suppressedBy: entry?.suppressedBy || "",
+        })).filter((entry) => entry.signal && entry.suppressedBy)
+      : [],
     authoritativeVerificationSignals: Array.isArray(sharedEvidence?.authoritativeVerificationSignals)
       ? sharedEvidence.authoritativeVerificationSignals.slice(0, 16)
       : [],
@@ -15660,6 +15711,18 @@ function formatPersonalDashboardScoreExplanation(scoreObject) {
           identityVerificationPassed: identityVerificationScoringAlignment.identityVerificationPassed,
           independentlyAuthoritativeSignals: identityVerificationSharedEvidence?.independentlyAuthoritativeSignals || [],
           independentAuthoritativeSignalSources: identityVerificationSharedEvidence?.independentAuthoritativeSignalSources || [],
+          rawAuthoritativeSignals: identityVerificationSharedEvidence?.rawAuthoritativeSignals || [],
+          rawAuthoritativeSignalSources: identityVerificationSharedEvidence?.rawAuthoritativeSignalSources || [],
+          normalizedAuthoritativeSignals: identityVerificationSharedEvidence?.normalizedAuthoritativeSignals || [],
+          normalizedAuthoritativeSignalSources: identityVerificationSharedEvidence?.normalizedAuthoritativeSignalSources || [],
+          snippetOnlyIdentityVerificationMatched: Boolean(identityVerificationSharedEvidence?.snippetOnlyIdentityVerificationMatched),
+          snippetOnlyIdentityVerificationContextSignals: identityVerificationSharedEvidence?.snippetOnlyIdentityVerificationContextSignals || [],
+          snippetOnlyIdentityVerificationContextPassed: Boolean(identityVerificationSharedEvidence?.snippetOnlyIdentityVerificationContextPassed),
+          snippetOnlyIdentityVerificationBlocked: Boolean(identityVerificationSharedEvidence?.snippetOnlyIdentityVerificationBlocked),
+          identityVerificationSourceAuthority: identityVerificationSharedEvidence?.identityVerificationSourceAuthority || "",
+          titleIdentityVerificationMatched: Boolean(identityVerificationSharedEvidence?.titleIdentityVerificationMatched),
+          snippetIdentityVerificationMatched: Boolean(identityVerificationSharedEvidence?.snippetIdentityVerificationMatched),
+          longestMatchSuppressedSignals: identityVerificationSharedEvidence?.longestMatchSuppressedSignals || [],
           contextDependentSignals: identityVerificationSharedEvidence?.contextDependentSignals || [],
           contextDependentSignalMatches: identityVerificationSharedEvidence?.contextDependentSignalMatches || [],
           contextDependentSignalFailures: identityVerificationSharedEvidence?.contextDependentSignalFailures || [],
@@ -23225,6 +23288,116 @@ const IDENTITY_VERIFICATION_CONTEXT_DEPENDENT_TERMS = Object.freeze(
   IDENTITY_VERIFICATION_CONTEXT_DEPENDENT_RULES.flatMap((rule) => rule.terms)
 );
 
+const IDENTITY_VERIFICATION_TITLE_AUTHORITY_SOURCES = Object.freeze(["title", "normalizedTitle"]);
+const IDENTITY_VERIFICATION_SNIPPET_AUTHORITY_SOURCES = Object.freeze(["summary", "summaryShort", "contentSnippet"]);
+
+const IDENTITY_VERIFICATION_LONGEST_MATCH_SUPPRESSION_PAIRS = Object.freeze([
+  ["identity verification", "digital identity verification"],
+  ["identity verification", "remote identity verification"],
+  ["identity verification", "customer identity verification"],
+  ["identity verification", "biometric identity verification"],
+  ["document verification", "identity document verification"],
+  ["document verification", "id document verification"],
+  ["credential verification", "wallet credential verification"],
+]);
+
+const IDENTITY_VERIFICATION_SNIPPET_CONTEXT_GROUPS = Object.freeze([
+  {
+    group: "document_identity_checking",
+    terms: [
+      "document verification",
+      "identity document verification",
+      "id verification",
+      "passport verification",
+      "id card verification",
+      "driver license verification",
+      "driver's license verification",
+      "proof of identity",
+      "identity proofing",
+      "document authenticity",
+      "identity check",
+      "id check",
+    ],
+  },
+  {
+    group: "kyc_onboarding_customer",
+    terms: [
+      "kyc",
+      "ekyc",
+      "e-kyc",
+      "customer due diligence",
+      "customer onboarding",
+      "account opening",
+      "customer identity",
+      "onboarding verification",
+      "aml identity verification",
+    ],
+  },
+  {
+    group: "biometrics_liveness",
+    terms: [
+      "biometric verification",
+      "biometric identity verification",
+      "face verification",
+      "selfie verification",
+      "selfie-to-id matching",
+      "selfie to id matching",
+      "liveness",
+      "pad",
+      "presentation attack detection",
+      "spoof detection",
+      "biometric check",
+    ],
+  },
+  {
+    group: "credentials_digital_government_identity",
+    terms: [
+      "digital id",
+      "digital identity credential",
+      "verifiable credential",
+      "credential verification",
+      "wallet credential",
+      "national id",
+      "government identity",
+      "identity document",
+      "digital identity verification",
+    ],
+  },
+]);
+
+const IDENTITY_VERIFICATION_SNIPPET_OPERATIONAL_IDENTITY_CONTEXT_TERMS = Object.freeze([
+  "document verification",
+  "identity document",
+  "id verification",
+  "passport",
+  "id card",
+  "driver license",
+  "driver's license",
+  "digital id",
+  "digital identity",
+  "credential",
+  "customer identity",
+  "kyc",
+  "biometric",
+  "liveness",
+  "identity proofing",
+]);
+
+const IDENTITY_VERIFICATION_SNIPPET_OPERATIONAL_TERMS = Object.freeze([
+  "deployment",
+  "implementation",
+  "rollout",
+  "launch",
+  "integration",
+  "verification provider",
+  "identity verification vendor",
+  "government program",
+  "border control",
+  "immigration",
+  "airport",
+  "travel credential",
+]);
+
 const IDENTITY_VERIFICATION_AUTHORITATIVE_TERMS = Object.freeze([
   ...IDENTITY_VERIFICATION_INDEPENDENT_AUTHORITATIVE_TERMS,
   ...IDENTITY_VERIFICATION_CONTEXT_DEPENDENT_TERMS,
@@ -23566,6 +23739,99 @@ function mergeIdentityVerificationSourceMatches(matches = []) {
   return Array.from(merged.values());
 }
 
+function getIdentityVerificationMatchSources(match) {
+  return Array.isArray(match?.sources) ? match.sources.filter(Boolean) : [];
+}
+
+function identityVerificationMatchHasSource(match, sources = []) {
+  const allowedSources = new Set(sources);
+  return getIdentityVerificationMatchSources(match).some((source) => allowedSources.has(source));
+}
+
+function isSnippetOnlyIdentityVerificationMatch(match) {
+  if (match?.signal !== "identity verification") {
+    return false;
+  }
+  const sources = getIdentityVerificationMatchSources(match);
+  return sources.length > 0 &&
+    sources.every((source) => IDENTITY_VERIFICATION_SNIPPET_AUTHORITY_SOURCES.includes(source)) &&
+    !sources.some((source) => IDENTITY_VERIFICATION_TITLE_AUTHORITY_SOURCES.includes(source));
+}
+
+function evaluateSnippetOnlyIdentityVerificationContext(trustedTextSources) {
+  const matchedGroups = [];
+  const matchedSignals = [];
+  const matchedSignalSources = [];
+
+  IDENTITY_VERIFICATION_SNIPPET_CONTEXT_GROUPS.forEach((group) => {
+    const matches = collectIdentityVerificationSourceMatches(trustedTextSources, group.terms);
+    if (!matches.length) {
+      return;
+    }
+    matchedGroups.push(group.group);
+    flattenIdentityVerificationSignals(matches).forEach((signal) => {
+      if (!matchedSignals.includes(signal)) {
+        matchedSignals.push(signal);
+      }
+    });
+    matchedSignalSources.push(...getIdentityVerificationSignalSourceSummary(matches, trustedTextSources));
+  });
+
+  const operationalIdentityMatches = collectIdentityVerificationSourceMatches(
+    trustedTextSources,
+    IDENTITY_VERIFICATION_SNIPPET_OPERATIONAL_IDENTITY_CONTEXT_TERMS
+  );
+  const operationalMatches = collectIdentityVerificationSourceMatches(
+    trustedTextSources,
+    IDENTITY_VERIFICATION_SNIPPET_OPERATIONAL_TERMS
+  );
+  if (operationalIdentityMatches.length && operationalMatches.length) {
+    matchedGroups.push("operational_implementation");
+    [
+      ...flattenIdentityVerificationSignals(operationalIdentityMatches),
+      ...flattenIdentityVerificationSignals(operationalMatches),
+    ].forEach((signal) => {
+      if (!matchedSignals.includes(signal)) {
+        matchedSignals.push(signal);
+      }
+    });
+    matchedSignalSources.push(
+      ...getIdentityVerificationSignalSourceSummary(operationalIdentityMatches, trustedTextSources),
+      ...getIdentityVerificationSignalSourceSummary(operationalMatches, trustedTextSources)
+    );
+  }
+
+  return {
+    passed: matchedGroups.length > 0,
+    matchedGroups,
+    matchedSignals,
+    matchedSignalSources: mergeIdentityVerificationSourceMatches(matchedSignalSources),
+  };
+}
+
+function normalizeIdentityVerificationAuthoritativeMatches(matches = []) {
+  const normalized = mergeIdentityVerificationSourceMatches(matches);
+  const signalSet = new Set(normalized.map((match) => match.signal));
+  const suppressed = [];
+  const kept = normalized.filter((match) => {
+    const suppression = IDENTITY_VERIFICATION_LONGEST_MATCH_SUPPRESSION_PAIRS.find(([shorter, longer]) =>
+      match.signal === shorter && signalSet.has(longer)
+    );
+    if (!suppression) {
+      return true;
+    }
+    suppressed.push({
+      signal: suppression[0],
+      suppressedBy: suppression[1],
+    });
+    return false;
+  });
+  return {
+    matches: kept,
+    suppressed,
+  };
+}
+
 function flattenIdentityVerificationSignals(matches = []) {
   return matches.map((match) => match.signal).filter(Boolean);
 }
@@ -23600,10 +23866,37 @@ function getIdentityVerificationSourceTrustEvidence(article) {
       ...trustedTextSources,
       ...supportingTextSources,
     };
-    const independentAuthoritativeMatches = collectIdentityVerificationSourceMatches(
+    const rawIndependentAuthoritativeMatches = collectIdentityVerificationSourceMatches(
       trustedTextSources,
       IDENTITY_VERIFICATION_INDEPENDENT_AUTHORITATIVE_TERMS
     );
+    const identityVerificationRawMatch = rawIndependentAuthoritativeMatches.find((match) =>
+      match.signal === "identity verification"
+    );
+    const titleIdentityVerificationMatched = identityVerificationMatchHasSource(
+      identityVerificationRawMatch,
+      IDENTITY_VERIFICATION_TITLE_AUTHORITY_SOURCES
+    );
+    const snippetIdentityVerificationMatched = identityVerificationMatchHasSource(
+      identityVerificationRawMatch,
+      IDENTITY_VERIFICATION_SNIPPET_AUTHORITY_SOURCES
+    );
+    const snippetOnlyIdentityVerificationMatched = isSnippetOnlyIdentityVerificationMatch(identityVerificationRawMatch);
+    const snippetOnlyIdentityVerificationContext = evaluateSnippetOnlyIdentityVerificationContext(trustedTextSources);
+    const snippetOnlyIdentityVerificationContextPassed =
+      snippetOnlyIdentityVerificationMatched && snippetOnlyIdentityVerificationContext.passed;
+    const snippetOnlyIdentityVerificationBlocked =
+      snippetOnlyIdentityVerificationMatched && !snippetOnlyIdentityVerificationContextPassed;
+    const sourceSensitiveIndependentMatches = rawIndependentAuthoritativeMatches.filter((match) =>
+      match.signal !== "identity verification" ||
+      titleIdentityVerificationMatched ||
+      !snippetOnlyIdentityVerificationMatched ||
+      snippetOnlyIdentityVerificationContextPassed
+    );
+    const normalizedIndependentAuthoritativeEvaluation =
+      normalizeIdentityVerificationAuthoritativeMatches(sourceSensitiveIndependentMatches);
+    const independentAuthoritativeMatches = normalizedIndependentAuthoritativeEvaluation.matches;
+    const longestMatchSuppressedSignals = normalizedIndependentAuthoritativeEvaluation.suppressed;
     const contextDependentEvaluation = evaluateIdentityVerificationContextDependentMatches(trustedTextSources);
     const contextDependentMatches = contextDependentEvaluation.matches.map((match) => ({
       signal: match.signal,
@@ -23627,6 +23920,8 @@ function getIdentityVerificationSourceTrustEvidence(article) {
     );
     const authoritativeSignals = flattenIdentityVerificationSignals(authoritativeMatches);
     const independentlyAuthoritativeSignals = flattenIdentityVerificationSignals(independentAuthoritativeMatches);
+    const rawAuthoritativeSignals = flattenIdentityVerificationSignals(rawIndependentAuthoritativeMatches);
+    const normalizedAuthoritativeSignals = independentlyAuthoritativeSignals.slice();
     const contextDependentSignals = Array.from(new Set([
       ...contextDependentEvaluation.matches.map((match) => match.signal),
       ...contextDependentEvaluation.failures.map((failure) => failure.signal),
@@ -23663,13 +23958,15 @@ function getIdentityVerificationSourceTrustEvidence(article) {
     }
     const passed = verificationFlowMatched && finalScore >= threshold && !rejectionReason;
     const passReason = passed
-      ? professionalContextMatched
-        ? independentlyAuthoritativeSignals.length > 0
-          ? "independent_authoritative_verification_evidence_with_professional_context"
-          : "context_dependent_authoritative_verification_evidence_with_professional_context"
-        : independentlyAuthoritativeSignals.length > 0
-          ? "independent_authoritative_verification_evidence"
-          : "context_dependent_authoritative_verification_evidence"
+      ? titleIdentityVerificationMatched && independentlyAuthoritativeSignals.includes("identity verification")
+        ? "title_identity_verification"
+        : snippetOnlyIdentityVerificationContextPassed && independentlyAuthoritativeSignals.includes("identity verification")
+          ? "snippet_identity_verification_with_trusted_context"
+          : independentlyAuthoritativeSignals.length > 0
+            ? "specific_authoritative_verification_phrase"
+            : professionalContextMatched
+              ? "context_dependent_authoritative_verification_evidence_with_professional_context"
+              : "context_dependent_authoritative_verification_evidence"
       : "";
     const supportingOnlyRejected = !verificationFlowMatched && supportingSignals.length > 0;
     const metadataOnlyRejected = !verificationFlowMatched && supportingMatches.some((match) =>
@@ -23681,6 +23978,27 @@ function getIdentityVerificationSourceTrustEvidence(article) {
     return Object.freeze({
       independentlyAuthoritativeSignals: Object.freeze(independentlyAuthoritativeSignals.slice(0, 16)),
       independentAuthoritativeSignalSources: Object.freeze(getIdentityVerificationSignalSourceSummary(independentAuthoritativeMatches, trustedTextSources).slice(0, 16)),
+      rawAuthoritativeSignals: Object.freeze(rawAuthoritativeSignals.slice(0, 16)),
+      rawAuthoritativeSignalSources: Object.freeze(getIdentityVerificationSignalSourceSummary(rawIndependentAuthoritativeMatches, trustedTextSources).slice(0, 16)),
+      normalizedAuthoritativeSignals: Object.freeze(normalizedAuthoritativeSignals.slice(0, 16)),
+      normalizedAuthoritativeSignalSources: Object.freeze(getIdentityVerificationSignalSourceSummary(independentAuthoritativeMatches, trustedTextSources).slice(0, 16)),
+      snippetOnlyIdentityVerificationMatched,
+      snippetOnlyIdentityVerificationContextSignals: Object.freeze(snippetOnlyIdentityVerificationContext.matchedSignals.slice(0, 16)),
+      snippetOnlyIdentityVerificationContextSignalSources: Object.freeze(
+        getIdentityVerificationSignalSourceSummary(snippetOnlyIdentityVerificationContext.matchedSignalSources, trustedTextSources).slice(0, 16)
+      ),
+      snippetOnlyIdentityVerificationContextPassed,
+      snippetOnlyIdentityVerificationBlocked,
+      identityVerificationSourceAuthority: titleIdentityVerificationMatched
+        ? "title_identity_verification"
+        : snippetOnlyIdentityVerificationContextPassed
+          ? "snippet_identity_verification_with_trusted_context"
+          : snippetOnlyIdentityVerificationBlocked
+            ? "snippet_identity_verification_blocked_without_trusted_context"
+            : "specific_or_context_dependent_authority",
+      titleIdentityVerificationMatched,
+      snippetIdentityVerificationMatched,
+      longestMatchSuppressedSignals: Object.freeze(longestMatchSuppressedSignals.slice(0, 16).map((entry) => Object.freeze({ ...entry }))),
       contextDependentSignals: Object.freeze(contextDependentSignals.slice(0, 16)),
       contextDependentSignalMatches: Object.freeze(contextDependentEvaluation.matches.slice(0, 16).map((match) => Object.freeze({
         signal: match.signal,
@@ -23717,7 +24035,11 @@ function getIdentityVerificationSourceTrustEvidence(article) {
       passReason,
       rejectionReason,
       identityVerificationEvidenceAuthority: verificationFlowMatched
-        ? independentlyAuthoritativeSignals.length > 0
+        ? titleIdentityVerificationMatched && independentlyAuthoritativeSignals.includes("identity verification")
+          ? "trusted_article_text_title_identity_verification"
+          : snippetOnlyIdentityVerificationContextPassed && independentlyAuthoritativeSignals.includes("identity verification")
+            ? "trusted_article_text_snippet_identity_verification_with_context"
+            : independentlyAuthoritativeSignals.length > 0
           ? "trusted_article_text_independent"
           : "trusted_article_text_context_dependent"
         : "supporting_or_metadata_only",
@@ -23741,6 +24063,16 @@ function getIdentityVerificationPersonalDashboardScoringAlignment(article, rawSc
   return Object.freeze({
     strongIdentityVerificationSignals: evidence.authoritativeVerificationSignals,
     independentlyAuthoritativeSignals: evidence.independentlyAuthoritativeSignals,
+    rawAuthoritativeSignals: evidence.rawAuthoritativeSignals,
+    normalizedAuthoritativeSignals: evidence.normalizedAuthoritativeSignals,
+    snippetOnlyIdentityVerificationMatched: evidence.snippetOnlyIdentityVerificationMatched,
+    snippetOnlyIdentityVerificationContextSignals: evidence.snippetOnlyIdentityVerificationContextSignals,
+    snippetOnlyIdentityVerificationContextPassed: evidence.snippetOnlyIdentityVerificationContextPassed,
+    snippetOnlyIdentityVerificationBlocked: evidence.snippetOnlyIdentityVerificationBlocked,
+    identityVerificationSourceAuthority: evidence.identityVerificationSourceAuthority,
+    titleIdentityVerificationMatched: evidence.titleIdentityVerificationMatched,
+    snippetIdentityVerificationMatched: evidence.snippetIdentityVerificationMatched,
+    longestMatchSuppressedSignals: evidence.longestMatchSuppressedSignals,
     contextDependentSignals: evidence.contextDependentSignals,
     contextDependentSignalMatches: evidence.contextDependentSignalMatches,
     contextDependentSignalFailures: evidence.contextDependentSignalFailures,
@@ -23997,6 +24329,16 @@ function getDigitalSubgroupHybridAssessment(article, interestId) {
         ? {
             sharedEvidenceUsed: true,
             independentlyAuthoritativeSignals: identityVerificationSharedEvidence.independentlyAuthoritativeSignals,
+            rawAuthoritativeSignals: identityVerificationSharedEvidence.rawAuthoritativeSignals,
+            normalizedAuthoritativeSignals: identityVerificationSharedEvidence.normalizedAuthoritativeSignals,
+            snippetOnlyIdentityVerificationMatched: identityVerificationSharedEvidence.snippetOnlyIdentityVerificationMatched,
+            snippetOnlyIdentityVerificationContextSignals: identityVerificationSharedEvidence.snippetOnlyIdentityVerificationContextSignals,
+            snippetOnlyIdentityVerificationContextPassed: identityVerificationSharedEvidence.snippetOnlyIdentityVerificationContextPassed,
+            snippetOnlyIdentityVerificationBlocked: identityVerificationSharedEvidence.snippetOnlyIdentityVerificationBlocked,
+            identityVerificationSourceAuthority: identityVerificationSharedEvidence.identityVerificationSourceAuthority,
+            titleIdentityVerificationMatched: identityVerificationSharedEvidence.titleIdentityVerificationMatched,
+            snippetIdentityVerificationMatched: identityVerificationSharedEvidence.snippetIdentityVerificationMatched,
+            longestMatchSuppressedSignals: identityVerificationSharedEvidence.longestMatchSuppressedSignals,
             contextDependentSignals: identityVerificationSharedEvidence.contextDependentSignals,
             contextDependentSignalMatches: identityVerificationSharedEvidence.contextDependentSignalMatches,
             contextDependentSignalFailures: identityVerificationSharedEvidence.contextDependentSignalFailures,
@@ -26258,6 +26600,18 @@ function getIdentityVerificationProfessionalGuardAssessment(article, options = {
     sharedEvidence,
     independentlyAuthoritativeSignals: sharedEvidence.independentlyAuthoritativeSignals,
     independentAuthoritativeSignalSources: sharedEvidence.independentAuthoritativeSignalSources,
+    rawAuthoritativeSignals: sharedEvidence.rawAuthoritativeSignals,
+    rawAuthoritativeSignalSources: sharedEvidence.rawAuthoritativeSignalSources,
+    normalizedAuthoritativeSignals: sharedEvidence.normalizedAuthoritativeSignals,
+    normalizedAuthoritativeSignalSources: sharedEvidence.normalizedAuthoritativeSignalSources,
+    snippetOnlyIdentityVerificationMatched: sharedEvidence.snippetOnlyIdentityVerificationMatched,
+    snippetOnlyIdentityVerificationContextSignals: sharedEvidence.snippetOnlyIdentityVerificationContextSignals,
+    snippetOnlyIdentityVerificationContextPassed: sharedEvidence.snippetOnlyIdentityVerificationContextPassed,
+    snippetOnlyIdentityVerificationBlocked: sharedEvidence.snippetOnlyIdentityVerificationBlocked,
+    identityVerificationSourceAuthority: sharedEvidence.identityVerificationSourceAuthority,
+    titleIdentityVerificationMatched: sharedEvidence.titleIdentityVerificationMatched,
+    snippetIdentityVerificationMatched: sharedEvidence.snippetIdentityVerificationMatched,
+    longestMatchSuppressedSignals: sharedEvidence.longestMatchSuppressedSignals,
     contextDependentSignals: sharedEvidence.contextDependentSignals,
     contextDependentSignalMatches: sharedEvidence.contextDependentSignalMatches,
     contextDependentSignalFailures: sharedEvidence.contextDependentSignalFailures,
