@@ -13972,6 +13972,9 @@ function getIdentityVerificationProfessionalGuardSummary(diagnostics) {
   let snippetIdentityVerificationPassCount = 0;
   let snippetIdentityVerificationBlockedCount = 0;
   let longestMatchSuppressionCount = 0;
+  let semanticGatePassedCount = 0;
+  let missingVerificationActionCount = 0;
+  let missingIdentityObjectCount = 0;
 
   guardTraceEntries.forEach(({ trace, stage }) => {
     const assessment = stage.metadata?.identityVerificationProfessionalGuard || {};
@@ -13999,6 +14002,15 @@ function getIdentityVerificationProfessionalGuardSummary(diagnostics) {
     }
     if (sharedEvidence?.snippetOnlyIdentityVerificationBlocked) {
       snippetIdentityVerificationBlockedCount += 1;
+    }
+    if (sharedEvidence?.semanticGatePassed) {
+      semanticGatePassedCount += 1;
+    }
+    if (sharedEvidence?.missingVerificationAction) {
+      missingVerificationActionCount += 1;
+    }
+    if (sharedEvidence?.missingIdentityObject) {
+      missingIdentityObjectCount += 1;
     }
     longestMatchSuppressionCount += (sharedEvidence?.longestMatchSuppressedSignals || []).length;
     if ((sharedEvidence?.contextDependentSignalFailures || []).length > 0) {
@@ -14071,6 +14083,9 @@ function getIdentityVerificationProfessionalGuardSummary(diagnostics) {
     snippetIdentityVerificationPassCount,
     snippetIdentityVerificationBlockedCount,
     longestMatchSuppressionCount,
+    semanticGatePassedCount,
+    missingVerificationActionCount,
+    missingIdentityObjectCount,
     duplicateTrustedSourceRemovalCount,
     supportingOnlyRejectedCount,
     metadataOnlyRejectedCount,
@@ -14233,6 +14248,17 @@ function buildIdentityVerificationArticleEvidenceEntry(trace, scoreObject) {
     ),
     snippetOnlyIdentityVerificationContextPassed: Boolean(sharedEvidence?.snippetOnlyIdentityVerificationContextPassed),
     snippetOnlyIdentityVerificationBlocked: Boolean(sharedEvidence?.snippetOnlyIdentityVerificationBlocked),
+    identityVerificationSemanticGate: sharedEvidence?.identityVerificationSemanticGate || null,
+    verificationActionsMatched: Array.isArray(sharedEvidence?.verificationActionsMatched)
+      ? sharedEvidence.verificationActionsMatched.slice(0, 16)
+      : [],
+    identityObjectsMatched: Array.isArray(sharedEvidence?.identityObjectsMatched)
+      ? sharedEvidence.identityObjectsMatched.slice(0, 16)
+      : [],
+    semanticGatePassed: Boolean(sharedEvidence?.semanticGatePassed),
+    semanticGateReason: sharedEvidence?.semanticGateReason || "",
+    missingVerificationAction: Boolean(sharedEvidence?.missingVerificationAction),
+    missingIdentityObject: Boolean(sharedEvidence?.missingIdentityObject),
     identityVerificationSourceAuthority: sharedEvidence?.identityVerificationSourceAuthority || "",
     titleIdentityVerificationMatched: Boolean(sharedEvidence?.titleIdentityVerificationMatched),
     snippetIdentityVerificationMatched: Boolean(sharedEvidence?.snippetIdentityVerificationMatched),
@@ -15719,6 +15745,13 @@ function formatPersonalDashboardScoreExplanation(scoreObject) {
           snippetOnlyIdentityVerificationContextSignals: identityVerificationSharedEvidence?.snippetOnlyIdentityVerificationContextSignals || [],
           snippetOnlyIdentityVerificationContextPassed: Boolean(identityVerificationSharedEvidence?.snippetOnlyIdentityVerificationContextPassed),
           snippetOnlyIdentityVerificationBlocked: Boolean(identityVerificationSharedEvidence?.snippetOnlyIdentityVerificationBlocked),
+          identityVerificationSemanticGate: identityVerificationSharedEvidence?.identityVerificationSemanticGate || null,
+          verificationActionsMatched: identityVerificationSharedEvidence?.verificationActionsMatched || [],
+          identityObjectsMatched: identityVerificationSharedEvidence?.identityObjectsMatched || [],
+          semanticGatePassed: Boolean(identityVerificationSharedEvidence?.semanticGatePassed),
+          semanticGateReason: identityVerificationSharedEvidence?.semanticGateReason || "",
+          missingVerificationAction: Boolean(identityVerificationSharedEvidence?.missingVerificationAction),
+          missingIdentityObject: Boolean(identityVerificationSharedEvidence?.missingIdentityObject),
           identityVerificationSourceAuthority: identityVerificationSharedEvidence?.identityVerificationSourceAuthority || "",
           titleIdentityVerificationMatched: Boolean(identityVerificationSharedEvidence?.titleIdentityVerificationMatched),
           snippetIdentityVerificationMatched: Boolean(identityVerificationSharedEvidence?.snippetIdentityVerificationMatched),
@@ -23301,101 +23334,79 @@ const IDENTITY_VERIFICATION_LONGEST_MATCH_SUPPRESSION_PAIRS = Object.freeze([
   ["credential verification", "wallet credential verification"],
 ]);
 
-const IDENTITY_VERIFICATION_SNIPPET_CONTEXT_GROUPS = Object.freeze([
-  {
-    group: "document_identity_checking",
-    terms: [
-      "document verification",
-      "identity document verification",
-      "id verification",
-      "passport verification",
-      "id card verification",
-      "driver license verification",
-      "driver's license verification",
-      "proof of identity",
-      "identity proofing",
-      "document authenticity",
-      "identity check",
-      "id check",
-    ],
-  },
-  {
-    group: "kyc_onboarding_customer",
-    terms: [
-      "kyc",
-      "ekyc",
-      "e-kyc",
-      "customer due diligence",
-      "customer onboarding",
-      "account opening",
-      "customer identity",
-      "onboarding verification",
-      "aml identity verification",
-    ],
-  },
-  {
-    group: "biometrics_liveness",
-    terms: [
-      "biometric verification",
-      "biometric identity verification",
-      "face verification",
-      "selfie verification",
-      "selfie-to-id matching",
-      "selfie to id matching",
-      "liveness",
-      "pad",
-      "presentation attack detection",
-      "spoof detection",
-      "biometric check",
-    ],
-  },
-  {
-    group: "credentials_digital_government_identity",
-    terms: [
-      "digital id",
-      "digital identity credential",
-      "verifiable credential",
-      "credential verification",
-      "wallet credential",
-      "national id",
-      "government identity",
-      "identity document",
-      "digital identity verification",
-    ],
-  },
+const IDENTITY_VERIFICATION_SEMANTIC_ACTION_TERMS = Object.freeze([
+  "verify identity",
+  "verified identity",
+  "verifies identity",
+  "verifying identity",
+  "verification of identity",
+  "identity proofing",
+  "proof identity",
+  "prove identity",
+  "proof of identity",
+  "identity check",
+  "identity checked",
+  "id check",
+  "confirm identity",
+  "confirmed identity",
+  "authentication against identity",
+  "document authenticity",
+  "document validation",
+  "document check",
+  "document verification",
+  "identity document verification",
+  "id document verification",
+  "passport verification",
+  "id card verification",
+  "driver license verification",
+  "driver's license verification",
+  "compare identity",
+  "compares identity",
+  "identity comparison",
+  "match identity",
+  "matches identity",
+  "match selfie to id",
+  "selfie-to-id matching",
+  "selfie to id matching",
+  "selfie comparison",
+  "face comparison",
+  "biometric comparison",
+  "credential validation",
+  "credential verification",
+  "wallet credential verification",
+  "identity assurance",
+  "identity assurance workflow",
+  "customer identity verification",
+  "biometric verification",
+  "biometric identity verification",
+  "face verification",
+  "selfie verification",
+  "liveness verification",
 ]);
 
-const IDENTITY_VERIFICATION_SNIPPET_OPERATIONAL_IDENTITY_CONTEXT_TERMS = Object.freeze([
-  "document verification",
-  "identity document",
-  "id verification",
+const IDENTITY_VERIFICATION_SEMANTIC_OBJECT_TERMS = Object.freeze([
+  "identity",
+  "person",
+  "individual",
+  "citizen",
+  "customer",
   "passport",
+  "travel document",
+  "identity document",
   "id card",
+  "identity card",
+  "driver licence",
   "driver license",
   "driver's license",
-  "digital id",
-  "digital identity",
   "credential",
-  "customer identity",
-  "kyc",
-  "biometric",
-  "liveness",
-  "identity proofing",
-]);
-
-const IDENTITY_VERIFICATION_SNIPPET_OPERATIONAL_TERMS = Object.freeze([
-  "deployment",
-  "implementation",
-  "rollout",
-  "launch",
-  "integration",
-  "verification provider",
-  "identity verification vendor",
-  "government program",
-  "border control",
-  "immigration",
-  "airport",
-  "travel credential",
+  "wallet credential",
+  "digital credential",
+  "biometric template",
+  "face",
+  "selfie",
+  "government identity",
+  "national identity",
+  "national id",
 ]);
 
 const IDENTITY_VERIFICATION_AUTHORITATIVE_TERMS = Object.freeze([
@@ -23758,55 +23769,39 @@ function isSnippetOnlyIdentityVerificationMatch(match) {
     !sources.some((source) => IDENTITY_VERIFICATION_TITLE_AUTHORITY_SOURCES.includes(source));
 }
 
-function evaluateSnippetOnlyIdentityVerificationContext(trustedTextSources) {
-  const matchedGroups = [];
-  const matchedSignals = [];
-  const matchedSignalSources = [];
+function getIdentityVerificationSemanticGate(article = null, trustedTextSources = null) {
+  const sourceMap = trustedTextSources || buildIdentityVerificationTrustedTextSources(article).sourceMap;
+  const verificationActionMatches = collectIdentityVerificationSourceMatches(
+    sourceMap,
+    IDENTITY_VERIFICATION_SEMANTIC_ACTION_TERMS
+  );
+  const identityObjectMatches = collectIdentityVerificationSourceMatches(
+    sourceMap,
+    IDENTITY_VERIFICATION_SEMANTIC_OBJECT_TERMS
+  );
+  const verificationActionsMatched = flattenIdentityVerificationSignals(verificationActionMatches);
+  const identityObjectsMatched = flattenIdentityVerificationSignals(identityObjectMatches);
+  const missingVerificationAction = verificationActionsMatched.length === 0;
+  const missingIdentityObject = identityObjectsMatched.length === 0;
+  const semanticGatePassed = !missingVerificationAction && !missingIdentityObject;
+  const semanticGateReason = semanticGatePassed
+    ? "verification_action_and_identity_object_matched"
+    : missingVerificationAction && missingIdentityObject
+      ? "missing_verification_action_and_identity_object"
+      : missingVerificationAction
+        ? "missing_verification_action"
+        : "missing_identity_object";
 
-  IDENTITY_VERIFICATION_SNIPPET_CONTEXT_GROUPS.forEach((group) => {
-    const matches = collectIdentityVerificationSourceMatches(trustedTextSources, group.terms);
-    if (!matches.length) {
-      return;
-    }
-    matchedGroups.push(group.group);
-    flattenIdentityVerificationSignals(matches).forEach((signal) => {
-      if (!matchedSignals.includes(signal)) {
-        matchedSignals.push(signal);
-      }
-    });
-    matchedSignalSources.push(...getIdentityVerificationSignalSourceSummary(matches, trustedTextSources));
+  return Object.freeze({
+    verificationActionsMatched: Object.freeze(verificationActionsMatched.slice(0, 16)),
+    verificationActionSources: Object.freeze(getIdentityVerificationSignalSourceSummary(verificationActionMatches, sourceMap).slice(0, 16)),
+    identityObjectsMatched: Object.freeze(identityObjectsMatched.slice(0, 16)),
+    identityObjectSources: Object.freeze(getIdentityVerificationSignalSourceSummary(identityObjectMatches, sourceMap).slice(0, 16)),
+    semanticGatePassed,
+    semanticGateReason,
+    missingVerificationAction,
+    missingIdentityObject,
   });
-
-  const operationalIdentityMatches = collectIdentityVerificationSourceMatches(
-    trustedTextSources,
-    IDENTITY_VERIFICATION_SNIPPET_OPERATIONAL_IDENTITY_CONTEXT_TERMS
-  );
-  const operationalMatches = collectIdentityVerificationSourceMatches(
-    trustedTextSources,
-    IDENTITY_VERIFICATION_SNIPPET_OPERATIONAL_TERMS
-  );
-  if (operationalIdentityMatches.length && operationalMatches.length) {
-    matchedGroups.push("operational_implementation");
-    [
-      ...flattenIdentityVerificationSignals(operationalIdentityMatches),
-      ...flattenIdentityVerificationSignals(operationalMatches),
-    ].forEach((signal) => {
-      if (!matchedSignals.includes(signal)) {
-        matchedSignals.push(signal);
-      }
-    });
-    matchedSignalSources.push(
-      ...getIdentityVerificationSignalSourceSummary(operationalIdentityMatches, trustedTextSources),
-      ...getIdentityVerificationSignalSourceSummary(operationalMatches, trustedTextSources)
-    );
-  }
-
-  return {
-    passed: matchedGroups.length > 0,
-    matchedGroups,
-    matchedSignals,
-    matchedSignalSources: mergeIdentityVerificationSourceMatches(matchedSignalSources),
-  };
 }
 
 function normalizeIdentityVerificationAuthoritativeMatches(matches = []) {
@@ -23882,9 +23877,9 @@ function getIdentityVerificationSourceTrustEvidence(article) {
       IDENTITY_VERIFICATION_SNIPPET_AUTHORITY_SOURCES
     );
     const snippetOnlyIdentityVerificationMatched = isSnippetOnlyIdentityVerificationMatch(identityVerificationRawMatch);
-    const snippetOnlyIdentityVerificationContext = evaluateSnippetOnlyIdentityVerificationContext(trustedTextSources);
+    const identityVerificationSemanticGate = getIdentityVerificationSemanticGate(article, trustedTextSources);
     const snippetOnlyIdentityVerificationContextPassed =
-      snippetOnlyIdentityVerificationMatched && snippetOnlyIdentityVerificationContext.passed;
+      snippetOnlyIdentityVerificationMatched && identityVerificationSemanticGate.semanticGatePassed;
     const snippetOnlyIdentityVerificationBlocked =
       snippetOnlyIdentityVerificationMatched && !snippetOnlyIdentityVerificationContextPassed;
     const sourceSensitiveIndependentMatches = rawIndependentAuthoritativeMatches.filter((match) =>
@@ -23942,7 +23937,9 @@ function getIdentityVerificationSourceTrustEvidence(article) {
       : Math.max(0, Math.round(Math.min(threshold - 1, supportingBonus + professionalBonus - noisePenalty)));
     let rejectionReason = "";
     if (!verificationFlowMatched) {
-      if (noiseSignals.length > 0) {
+      if (snippetOnlyIdentityVerificationBlocked) {
+        rejectionReason = "snippet_identity_verification_without_semantic_verification_flow";
+      } else if (noiseSignals.length > 0) {
         rejectionReason = "noise_without_authoritative_verification_evidence";
       } else if (contextDependentEvaluation.failures.length > 0) {
         rejectionReason = "context_dependent_verification_signal_without_trusted_context";
@@ -23983,12 +23980,23 @@ function getIdentityVerificationSourceTrustEvidence(article) {
       normalizedAuthoritativeSignals: Object.freeze(normalizedAuthoritativeSignals.slice(0, 16)),
       normalizedAuthoritativeSignalSources: Object.freeze(getIdentityVerificationSignalSourceSummary(independentAuthoritativeMatches, trustedTextSources).slice(0, 16)),
       snippetOnlyIdentityVerificationMatched,
-      snippetOnlyIdentityVerificationContextSignals: Object.freeze(snippetOnlyIdentityVerificationContext.matchedSignals.slice(0, 16)),
-      snippetOnlyIdentityVerificationContextSignalSources: Object.freeze(
-        getIdentityVerificationSignalSourceSummary(snippetOnlyIdentityVerificationContext.matchedSignalSources, trustedTextSources).slice(0, 16)
-      ),
+      snippetOnlyIdentityVerificationContextSignals: Object.freeze([
+        ...identityVerificationSemanticGate.verificationActionsMatched,
+        ...identityVerificationSemanticGate.identityObjectsMatched,
+      ].slice(0, 16)),
+      snippetOnlyIdentityVerificationContextSignalSources: Object.freeze([
+        ...identityVerificationSemanticGate.verificationActionSources,
+        ...identityVerificationSemanticGate.identityObjectSources,
+      ].slice(0, 16)),
       snippetOnlyIdentityVerificationContextPassed,
       snippetOnlyIdentityVerificationBlocked,
+      identityVerificationSemanticGate,
+      verificationActionsMatched: identityVerificationSemanticGate.verificationActionsMatched,
+      identityObjectsMatched: identityVerificationSemanticGate.identityObjectsMatched,
+      semanticGatePassed: identityVerificationSemanticGate.semanticGatePassed,
+      semanticGateReason: identityVerificationSemanticGate.semanticGateReason,
+      missingVerificationAction: identityVerificationSemanticGate.missingVerificationAction,
+      missingIdentityObject: identityVerificationSemanticGate.missingIdentityObject,
       identityVerificationSourceAuthority: titleIdentityVerificationMatched
         ? "title_identity_verification"
         : snippetOnlyIdentityVerificationContextPassed
@@ -24069,6 +24077,13 @@ function getIdentityVerificationPersonalDashboardScoringAlignment(article, rawSc
     snippetOnlyIdentityVerificationContextSignals: evidence.snippetOnlyIdentityVerificationContextSignals,
     snippetOnlyIdentityVerificationContextPassed: evidence.snippetOnlyIdentityVerificationContextPassed,
     snippetOnlyIdentityVerificationBlocked: evidence.snippetOnlyIdentityVerificationBlocked,
+    identityVerificationSemanticGate: evidence.identityVerificationSemanticGate,
+    verificationActionsMatched: evidence.verificationActionsMatched,
+    identityObjectsMatched: evidence.identityObjectsMatched,
+    semanticGatePassed: evidence.semanticGatePassed,
+    semanticGateReason: evidence.semanticGateReason,
+    missingVerificationAction: evidence.missingVerificationAction,
+    missingIdentityObject: evidence.missingIdentityObject,
     identityVerificationSourceAuthority: evidence.identityVerificationSourceAuthority,
     titleIdentityVerificationMatched: evidence.titleIdentityVerificationMatched,
     snippetIdentityVerificationMatched: evidence.snippetIdentityVerificationMatched,
@@ -24335,6 +24350,13 @@ function getDigitalSubgroupHybridAssessment(article, interestId) {
             snippetOnlyIdentityVerificationContextSignals: identityVerificationSharedEvidence.snippetOnlyIdentityVerificationContextSignals,
             snippetOnlyIdentityVerificationContextPassed: identityVerificationSharedEvidence.snippetOnlyIdentityVerificationContextPassed,
             snippetOnlyIdentityVerificationBlocked: identityVerificationSharedEvidence.snippetOnlyIdentityVerificationBlocked,
+            identityVerificationSemanticGate: identityVerificationSharedEvidence.identityVerificationSemanticGate,
+            verificationActionsMatched: identityVerificationSharedEvidence.verificationActionsMatched,
+            identityObjectsMatched: identityVerificationSharedEvidence.identityObjectsMatched,
+            semanticGatePassed: identityVerificationSharedEvidence.semanticGatePassed,
+            semanticGateReason: identityVerificationSharedEvidence.semanticGateReason,
+            missingVerificationAction: identityVerificationSharedEvidence.missingVerificationAction,
+            missingIdentityObject: identityVerificationSharedEvidence.missingIdentityObject,
             identityVerificationSourceAuthority: identityVerificationSharedEvidence.identityVerificationSourceAuthority,
             titleIdentityVerificationMatched: identityVerificationSharedEvidence.titleIdentityVerificationMatched,
             snippetIdentityVerificationMatched: identityVerificationSharedEvidence.snippetIdentityVerificationMatched,
@@ -26414,6 +26436,7 @@ function getIdentityVerificationProfessionalGuardAssessment(article, options = {
   const enabled = Boolean(options.forceEnabled) ||
     shouldApplyIdentityVerificationProfessionalGuard(selectedInterests);
   const sharedEvidence = getIdentityVerificationSourceTrustEvidence(article);
+  const semanticGate = getIdentityVerificationSemanticGate(article);
   const selectedIdentityVerificationAssessment = getDigitalSubgroupHybridAssessment(article, "identity_verification");
   const matchedStrongSignals = sharedEvidence.authoritativeVerificationSignals || [];
   const matchedUseCaseTerms = sharedEvidence.supportingIdentitySignals || [];
@@ -26523,6 +26546,7 @@ function getIdentityVerificationProfessionalGuardAssessment(article, options = {
     finalPassReason: passReason,
     finalRejectionReason: rejectionReason,
     decisionAuthority: "identity_verification_professional_guard",
+    semanticGate,
     sharedEvidence,
   });
 
@@ -26597,6 +26621,13 @@ function getIdentityVerificationProfessionalGuardAssessment(article, options = {
     professionalEventSignals,
     hardNegativeSignals: frozenHardNegativeSignals,
     identityVerificationHybridAssessment: selectedIdentityVerificationAssessment,
+    semanticGate,
+    verificationActionsMatched: semanticGate.verificationActionsMatched,
+    identityObjectsMatched: semanticGate.identityObjectsMatched,
+    semanticGatePassed: semanticGate.semanticGatePassed,
+    semanticGateReason: semanticGate.semanticGateReason,
+    missingVerificationAction: semanticGate.missingVerificationAction,
+    missingIdentityObject: semanticGate.missingIdentityObject,
     sharedEvidence,
     independentlyAuthoritativeSignals: sharedEvidence.independentlyAuthoritativeSignals,
     independentAuthoritativeSignalSources: sharedEvidence.independentAuthoritativeSignalSources,
@@ -26608,6 +26639,13 @@ function getIdentityVerificationProfessionalGuardAssessment(article, options = {
     snippetOnlyIdentityVerificationContextSignals: sharedEvidence.snippetOnlyIdentityVerificationContextSignals,
     snippetOnlyIdentityVerificationContextPassed: sharedEvidence.snippetOnlyIdentityVerificationContextPassed,
     snippetOnlyIdentityVerificationBlocked: sharedEvidence.snippetOnlyIdentityVerificationBlocked,
+    identityVerificationSemanticGate: sharedEvidence.identityVerificationSemanticGate,
+    verificationActionsMatched: sharedEvidence.verificationActionsMatched,
+    identityObjectsMatched: sharedEvidence.identityObjectsMatched,
+    semanticGatePassed: sharedEvidence.semanticGatePassed,
+    semanticGateReason: sharedEvidence.semanticGateReason,
+    missingVerificationAction: sharedEvidence.missingVerificationAction,
+    missingIdentityObject: sharedEvidence.missingIdentityObject,
     identityVerificationSourceAuthority: sharedEvidence.identityVerificationSourceAuthority,
     titleIdentityVerificationMatched: sharedEvidence.titleIdentityVerificationMatched,
     snippetIdentityVerificationMatched: sharedEvidence.snippetIdentityVerificationMatched,
