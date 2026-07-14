@@ -12,6 +12,7 @@
     "audit:storage": "node scripts/audit-storage.js",
     "audit:crane-currency": "node scripts/audit-crane-currency.js",
     "db:size": "node scripts/database-size-report.js",
+    "db:storage-diagnostics": "node scripts/postgres-storage-diagnostics.js",
     "db:poll-logs": "node scripts/poll-logs-analysis.js",
     "db:poll-indexes": "node scripts/poll-logs-index-analysis.js",
     "db:cleanup-poll-logs": "node scripts/cleanup-poll-logs.js",

@@ -8,6 +8,7 @@
     "start": "npm --prefix backend start",
     "audit:storage": "npm --prefix backend run audit:storage",
     "audit:crane-currency": "npm --prefix backend run audit:crane-currency",
+    "db:storage-diagnostics": "npm --prefix backend run db:storage-diagnostics",
     "cleanup:vendor-noise": "npm --prefix backend run cleanup:vendor-noise",
     "cleanup:vendor-noise:apply": "npm --prefix backend run cleanup:vendor-noise:apply",
     "cleanup:vendor-quality": "npm --prefix backend run cleanup:vendor-quality",
