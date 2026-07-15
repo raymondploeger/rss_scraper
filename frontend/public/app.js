@@ -126,6 +126,12 @@ function createFilterPerformanceCounters() {
     articleContextCacheMissCount: 0,
     articleContextActualBuildCount: 0,
     sharedEvidenceBuildCount: 0,
+    identityTravelNoiseAssessmentRequestCount: 0,
+    identityTravelNoiseAssessmentCacheHitCount: 0,
+    identityTravelNoiseAssessmentCacheMissCount: 0,
+    identityTravelNoiseAssessmentActualBuildCount: 0,
+    identityTravelNoiseTermGroupEvaluationCount: 0,
+    identityTravelNoiseLegacyFallbackCount: 0,
     personalInterestAssessmentCount: 0,
     subgroupAssessmentCount: 0,
     professionalGuardAssessmentCount: 0,
@@ -283,6 +289,26 @@ function incrementFilterPerformanceArticleCounter(mapName, article) {
   }
   const articleId = getArticlePerformanceId(article);
   map.set(articleId, (map.get(articleId) || 0) + 1);
+}
+
+function buildIdentityTravelNoiseAssessmentDiagnostics(counters = {}) {
+  const requestCount = Number(counters.identityTravelNoiseAssessmentRequestCount) || 0;
+  const cacheHits = Number(counters.identityTravelNoiseAssessmentCacheHitCount) || 0;
+  const cacheMisses = Number(counters.identityTravelNoiseAssessmentCacheMissCount) || 0;
+  const actualBuilds = Number(counters.identityTravelNoiseAssessmentActualBuildCount) || 0;
+  const termGroupEvaluations = Number(counters.identityTravelNoiseTermGroupEvaluationCount) || 0;
+  const legacyFallbackCalls = Number(counters.identityTravelNoiseLegacyFallbackCount) || 0;
+  const estimatedLegacyScansAvoided = Math.max(0, (requestCount * 5) - termGroupEvaluations);
+
+  return {
+    requestCount,
+    cacheHits,
+    cacheMisses,
+    actualBuilds,
+    termGroupEvaluations,
+    legacyFallbackCalls,
+    estimatedLegacyScansAvoided,
+  };
 }
 
 function getArticleContextInterestLabel(interest) {
@@ -618,6 +644,13 @@ function compactFilterPerformanceRun(run) {
     articleContextCacheMissCount: Number(counters.articleContextCacheMissCount) || 0,
     articleContextActualBuildCount: Number(counters.articleContextActualBuildCount) || 0,
     sharedEvidenceBuildCount: Number(counters.sharedEvidenceBuildCount) || 0,
+    identityTravelNoiseAssessmentRequestCount: Number(counters.identityTravelNoiseAssessmentRequestCount) || 0,
+    identityTravelNoiseAssessmentCacheHitCount: Number(counters.identityTravelNoiseAssessmentCacheHitCount) || 0,
+    identityTravelNoiseAssessmentCacheMissCount: Number(counters.identityTravelNoiseAssessmentCacheMissCount) || 0,
+    identityTravelNoiseAssessmentActualBuildCount: Number(counters.identityTravelNoiseAssessmentActualBuildCount) || 0,
+    identityTravelNoiseTermGroupEvaluationCount: Number(counters.identityTravelNoiseTermGroupEvaluationCount) || 0,
+    identityTravelNoiseLegacyFallbackCount: Number(counters.identityTravelNoiseLegacyFallbackCount) || 0,
+    identityTravelNoiseAssessmentDiagnostics: buildIdentityTravelNoiseAssessmentDiagnostics(counters),
     personalInterestAssessmentCount: Number(counters.personalInterestAssessmentCount) || 0,
     subgroupAssessmentCount: Number(counters.subgroupAssessmentCount) || 0,
     professionalGuardAssessmentCount: Number(counters.professionalGuardAssessmentCount) || 0,
@@ -19214,6 +19247,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     filterPipelineStages: diagnostics.filterPipelineStages || [],
     diagnosticsPerformance: diagnostics.diagnosticsPerformance || null,
     frontendPerformanceDiagnostics: diagnostics.frontendPerformanceDiagnostics || getFrontendPerformanceDiagnosticsForExport(10),
+    identityTravelNoiseAssessmentDiagnostics: diagnostics.identityTravelNoiseAssessmentDiagnostics || getIdentityTravelNoiseAssessmentDiagnostics(),
     articleContextRequestAttribution: diagnostics.articleContextRequestAttribution || null,
     articleContextTopCallers: diagnostics.articleContextTopCallers || [],
     articleContextStageSummary: diagnostics.articleContextStageSummary || [],
@@ -19502,6 +19536,10 @@ function compareLatestFilterPerformanceRuns() {
   const counterFields = [
     "articleContextBuildCount",
     "sharedEvidenceBuildCount",
+    "identityTravelNoiseAssessmentRequestCount",
+    "identityTravelNoiseAssessmentActualBuildCount",
+    "identityTravelNoiseTermGroupEvaluationCount",
+    "identityTravelNoiseLegacyFallbackCount",
     "personalInterestAssessmentCount",
     "subgroupAssessmentCount",
     "professionalGuardAssessmentCount",
@@ -19539,6 +19577,24 @@ function compareLatestFilterPerformanceRuns() {
 
 function getLatestArticleContextRequestAttribution() {
   return getLatestFilterPerformanceDiagnostics()?.articleContextRequestAttribution || null;
+}
+
+function getIdentityTravelNoiseAssessmentDiagnostics() {
+  const activeRun = getActiveFilterPerformanceRun();
+  if (activeRun?.operationCounters) {
+    return {
+      activeRunId: activeRun.runId || "",
+      completed: false,
+      ...buildIdentityTravelNoiseAssessmentDiagnostics(activeRun.operationCounters),
+    };
+  }
+
+  const latestRun = getLatestFilterPerformanceDiagnostics();
+  return {
+    activeRunId: latestRun?.runId || "",
+    completed: Boolean(latestRun),
+    ...(latestRun?.identityTravelNoiseAssessmentDiagnostics || buildIdentityTravelNoiseAssessmentDiagnostics()),
+  };
 }
 
 function listArticleContextRequestCallers(limit = 25) {
@@ -19579,6 +19635,7 @@ function exportFilterPerformanceDiagnostics() {
     articleContextStageSummary: latestRun?.articleContextStageSummary || [],
     articleContextInterestSummary: latestRun?.articleContextInterestSummary || [],
     articleContextDiagnosticsVsProductionSummary: latestRun?.articleContextDiagnosticsVsProductionSummary || null,
+    identityTravelNoiseAssessmentDiagnostics: getIdentityTravelNoiseAssessmentDiagnostics(),
     identityDocumentParityDiagnosticsStatus: getIdentityDocumentParityDiagnosticsStatus(),
     backendRequestContributionDiagnostics: backendRequestContributionDiagnostics
       ? {
@@ -19722,6 +19779,10 @@ function ensureFilterPipelineDiagnosticsExportTools() {
 
   if (typeof window.compareArticleContextProductionAndDiagnostics !== "function") {
     window.compareArticleContextProductionAndDiagnostics = () => compareArticleContextProductionAndDiagnostics();
+  }
+
+  if (typeof window.getIdentityTravelNoiseAssessmentDiagnostics !== "function") {
+    window.getIdentityTravelNoiseAssessmentDiagnostics = () => getIdentityTravelNoiseAssessmentDiagnostics();
   }
 
   if (typeof window.exportFilterPerformanceDiagnostics !== "function") {
@@ -20050,6 +20111,7 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.listArticleContextRequestsByStage()",
         "window.listArticleContextRequestsByInterest()",
         "window.compareArticleContextProductionAndDiagnostics()",
+        "window.getIdentityTravelNoiseAssessmentDiagnostics()",
         "window.exportFilterPerformanceDiagnostics()",
         "window.listBackendRequestContributions(limit)",
         "window.listLowValueBackendRequests(limit)",
@@ -20159,6 +20221,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.filterDecisionRichTrace = getFilterDecisionRichTraceSummary(diagnostics);
   diagnostics.personalDashboardScoring = getPersonalDashboardScoringSummary(diagnostics);
   diagnostics.personalDashboardScoreDistribution = getPersonalDashboardScoreDistribution(diagnostics);
+  diagnostics.identityTravelNoiseAssessmentDiagnostics = getIdentityTravelNoiseAssessmentDiagnostics();
   if (diagnostics.diagnosticsPerformance) {
     diagnostics.diagnosticsPerformance.fullCandidateCount = diagnostics.counts?.candidatePool || 0;
   }
@@ -24369,11 +24432,12 @@ function computePersonalInterestBoost(article, interestId) {
       const genericDmvNoise = isGenericDmvNoise(article);
       const requiredContext = selectedSubinterest ? hasRequiredContextCombo(article, selectedSubinterest) : { matched: false, matchedCombos: [] };
       const hardPenaltyBase = selectedSubinterest ? Number(IDENTITY_REQUIRED_CONTEXT_STRICT_PENALTIES[selectedSubinterest] || 0) : 0;
-      const borderTravelNoise = hasIdentityTravelNoise(article, IDENTITY_BORDER_CONTROL_TRAVEL_NOISE_TERMS);
-      const borderTechContext = hasIdentityTravelNoise(article, IDENTITY_BORDER_CONTROL_TECH_TERMS);
-      const passportLifestyleNoise = hasIdentityTravelNoise(article, IDENTITY_PASSPORT_LIGHT_NOISE_TERMS);
-      const passportAnchorContext = hasIdentityTravelNoise(article, IDENTITY_PASSPORT_ANCHOR_TERMS);
-      const visaSpamNoise = hasIdentityTravelNoise(article, IDENTITY_VISA_SPAM_TERMS);
+      const travelNoiseAssessment = getIdentityTravelNoiseAssessment(article);
+      const borderTravelNoise = travelNoiseAssessment.borderTravelNoise;
+      const borderTechContext = travelNoiseAssessment.borderTechContext;
+      const passportLifestyleNoise = travelNoiseAssessment.passportLifestyleNoise;
+      const passportAnchorContext = travelNoiseAssessment.passportAnchorContext;
+      const visaSpamNoise = travelNoiseAssessment.visaSpamNoise;
       const selectedIntent = selectedSubinterest
         ? (subinterestScore.intentByInterest?.[selectedSubinterest] || {
           score: 0,
@@ -30644,7 +30708,64 @@ function hasRequiredContextCombo(article, profileId) {
   });
 }
 
+const IDENTITY_TRAVEL_NOISE_ASSESSMENT_CACHE_KEY = "identityTravelNoiseAssessment";
+
+function evaluateIdentityTravelNoiseTermGroup(haystack, terms = []) {
+  incrementFilterPerformanceCounter("identityTravelNoiseTermGroupEvaluationCount");
+  return normalizeKeywordList(terms).some((term) => textMatchesKeyword(haystack, term));
+}
+
+function getIdentityTravelNoiseAssessment(article) {
+  incrementFilterPerformanceCounter("identityTravelNoiseAssessmentRequestCount");
+  const articleKey = getArticleStableCacheKey(article);
+  const articleCache = runtime.articleComputationCache.get(articleKey);
+  const cacheHit = Boolean(articleCache?.has(IDENTITY_TRAVEL_NOISE_ASSESSMENT_CACHE_KEY));
+  incrementFilterPerformanceCounter(cacheHit
+    ? "identityTravelNoiseAssessmentCacheHitCount"
+    : "identityTravelNoiseAssessmentCacheMissCount");
+
+  return getCachedArticleValue(article, IDENTITY_TRAVEL_NOISE_ASSESSMENT_CACHE_KEY, () => {
+    incrementFilterPerformanceCounter("identityTravelNoiseAssessmentActualBuildCount");
+    const context = getPersonalBoostContext(article, "getIdentityTravelNoiseAssessment", { interest: "identity_documents" });
+    const haystack = [
+      context.titleText,
+      context.tagText,
+      context.metadataText,
+      context.bodyText,
+      context.sourceText,
+      context.domainText,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const assessment = {
+      borderTravelNoise: evaluateIdentityTravelNoiseTermGroup(haystack, IDENTITY_BORDER_CONTROL_TRAVEL_NOISE_TERMS),
+      borderTechContext: evaluateIdentityTravelNoiseTermGroup(haystack, IDENTITY_BORDER_CONTROL_TECH_TERMS),
+      passportLifestyleNoise: evaluateIdentityTravelNoiseTermGroup(haystack, IDENTITY_PASSPORT_LIGHT_NOISE_TERMS),
+      passportAnchorContext: evaluateIdentityTravelNoiseTermGroup(haystack, IDENTITY_PASSPORT_ANCHOR_TERMS),
+      visaSpamNoise: evaluateIdentityTravelNoiseTermGroup(haystack, IDENTITY_VISA_SPAM_TERMS),
+    };
+    return Object.freeze(assessment);
+  });
+}
+
 function hasIdentityTravelNoise(article, terms = []) {
+  if (terms === IDENTITY_BORDER_CONTROL_TRAVEL_NOISE_TERMS) {
+    return getIdentityTravelNoiseAssessment(article).borderTravelNoise;
+  }
+  if (terms === IDENTITY_BORDER_CONTROL_TECH_TERMS) {
+    return getIdentityTravelNoiseAssessment(article).borderTechContext;
+  }
+  if (terms === IDENTITY_PASSPORT_LIGHT_NOISE_TERMS) {
+    return getIdentityTravelNoiseAssessment(article).passportLifestyleNoise;
+  }
+  if (terms === IDENTITY_PASSPORT_ANCHOR_TERMS) {
+    return getIdentityTravelNoiseAssessment(article).passportAnchorContext;
+  }
+  if (terms === IDENTITY_VISA_SPAM_TERMS) {
+    return getIdentityTravelNoiseAssessment(article).visaSpamNoise;
+  }
+
+  incrementFilterPerformanceCounter("identityTravelNoiseLegacyFallbackCount");
   const context = getPersonalBoostContext(article, "hasIdentityTravelNoise", { interest: "identity_documents" });
   const haystack = [
     context.titleText,
@@ -31541,11 +31662,12 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
         const genericDmvNoise = isGenericDmvNoise(article);
         const requiredContext = selectedSubinterest ? hasRequiredContextCombo(article, selectedSubinterest) : { matched: false, matchedCombos: [] };
         const hardPenaltyBase = selectedSubinterest ? Number(IDENTITY_REQUIRED_CONTEXT_STRICT_PENALTIES[selectedSubinterest] || 0) : 0;
-        const borderTravelNoise = hasIdentityTravelNoise(article, IDENTITY_BORDER_CONTROL_TRAVEL_NOISE_TERMS);
-        const borderTechContext = hasIdentityTravelNoise(article, IDENTITY_BORDER_CONTROL_TECH_TERMS);
-        const passportLifestyleNoise = hasIdentityTravelNoise(article, IDENTITY_PASSPORT_LIGHT_NOISE_TERMS);
-        const passportAnchorContext = hasIdentityTravelNoise(article, IDENTITY_PASSPORT_ANCHOR_TERMS);
-        const visaSpamNoise = hasIdentityTravelNoise(article, IDENTITY_VISA_SPAM_TERMS);
+        const travelNoiseAssessment = getIdentityTravelNoiseAssessment(article);
+        const borderTravelNoise = travelNoiseAssessment.borderTravelNoise;
+        const borderTechContext = travelNoiseAssessment.borderTechContext;
+        const passportLifestyleNoise = travelNoiseAssessment.passportLifestyleNoise;
+        const passportAnchorContext = travelNoiseAssessment.passportAnchorContext;
+        const visaSpamNoise = travelNoiseAssessment.visaSpamNoise;
         const selectedIntent = selectedSubinterest
           ? (identitySubinterest.intentByInterest?.[selectedSubinterest] || {
             score: 0,
@@ -37192,7 +37314,8 @@ function buildVisaDecisionContext(article) {
     EXPLICIT_VISA_EVIDENCE_IDS
   );
   const identityTechniqueBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, ["visas"]);
-  const visaSpamNoise = hasIdentityTravelNoise(article, IDENTITY_VISA_SPAM_TERMS);
+  const travelNoiseAssessment = getIdentityTravelNoiseAssessment(article);
+  const visaSpamNoise = travelNoiseAssessment.visaSpamNoise;
 
   return {
     selectedInterests,
