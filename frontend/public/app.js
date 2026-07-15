@@ -132,6 +132,10 @@ function createFilterPerformanceCounters() {
     identityTravelNoiseAssessmentActualBuildCount: 0,
     identityTravelNoiseTermGroupEvaluationCount: 0,
     identityTravelNoiseLegacyFallbackCount: 0,
+    identityDocumentShadowProfileBuildCount: 0,
+    identityDocumentShadowProfileSkipCount: 0,
+    identityDocumentShadowHardContextBuildCount: 0,
+    identityDocumentShadowHardContextSkipCount: 0,
     personalInterestAssessmentCount: 0,
     subgroupAssessmentCount: 0,
     professionalGuardAssessmentCount: 0,
@@ -651,6 +655,10 @@ function compactFilterPerformanceRun(run) {
     identityTravelNoiseTermGroupEvaluationCount: Number(counters.identityTravelNoiseTermGroupEvaluationCount) || 0,
     identityTravelNoiseLegacyFallbackCount: Number(counters.identityTravelNoiseLegacyFallbackCount) || 0,
     identityTravelNoiseAssessmentDiagnostics: buildIdentityTravelNoiseAssessmentDiagnostics(counters),
+    identityDocumentShadowProfileBuildCount: Number(counters.identityDocumentShadowProfileBuildCount) || 0,
+    identityDocumentShadowProfileSkipCount: Number(counters.identityDocumentShadowProfileSkipCount) || 0,
+    identityDocumentShadowHardContextBuildCount: Number(counters.identityDocumentShadowHardContextBuildCount) || 0,
+    identityDocumentShadowHardContextSkipCount: Number(counters.identityDocumentShadowHardContextSkipCount) || 0,
     personalInterestAssessmentCount: Number(counters.personalInterestAssessmentCount) || 0,
     subgroupAssessmentCount: Number(counters.subgroupAssessmentCount) || 0,
     professionalGuardAssessmentCount: Number(counters.professionalGuardAssessmentCount) || 0,
@@ -5457,6 +5465,8 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     identityDiagnosticsSummary: null,
     identityNoiseGuardDiagnosticsSummary: null,
     identityProfessionalRelevanceGuardSummary: null,
+    identityDocumentShadowDiagnosticsTracker: null,
+    identityDocumentShadowDiagnosticsSummary: null,
     evidenceBuilderDiagnosticsSummary: null,
     evidenceBuilderParitySummary: null,
     evidenceBuilderIdCardsParitySummary: null,
@@ -5810,6 +5820,167 @@ function isHeavyDiagnosticsTrace(trace) {
   return Boolean(trace?.heavyDiagnosticsEnabled);
 }
 
+const IDENTITY_DOCUMENT_SHADOW_DIAGNOSTIC_PROFILES = Object.freeze([
+  "id_cards",
+  "residence_permits",
+  "visas",
+  "drivers_licenses",
+]);
+
+const IDENTITY_DOCUMENT_SHADOW_HARD_CONTEXT_PROFILES = Object.freeze([
+  "passports",
+  "residence_permits",
+  "border_control",
+  "icao",
+]);
+
+function getDiagnosticsDocumentScope(options = {}) {
+  const normalizedInterests = normalizePersonalDashboardInterests(
+    options.selectedInterests || state.personalDashboard.interests
+  );
+  const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
+  const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(normalizedInterests);
+  const selectedDigitalInterests = normalizedInterests.filter(
+    (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "digital_identity_biometrics"
+  );
+  const identityDocumentsSelected =
+    selectedMainDomains.includes("identity_documents") ||
+    selectedIdentityInterests.length > 0;
+  const pureDigitalSelection =
+    selectedMainDomains.length === 1 &&
+    selectedMainDomains[0] === "digital_identity_biometrics" &&
+    selectedDigitalInterests.length > 0 &&
+    !identityDocumentsSelected;
+  const forced = Boolean(options.forceIdentityDocumentShadowDiagnostics);
+  const fullTraceEnabled = Boolean(options.fullTraceEnabled);
+  const profilesConsidered = IDENTITY_DOCUMENT_SHADOW_DIAGNOSTIC_PROFILES.slice();
+
+  if (forced || fullTraceEnabled || identityDocumentsSelected || !pureDigitalSelection) {
+    return Object.freeze({
+      identityDocumentsSelected,
+      pureDigitalSelection,
+      fullTraceEnabled,
+      profilesConsidered: Object.freeze(profilesConsidered),
+      allowedProfiles: Object.freeze(profilesConsidered.slice()),
+      skippedProfiles: Object.freeze([]),
+      mode: forced ? "forced" : "full",
+      skipReason: "",
+    });
+  }
+
+  return Object.freeze({
+    identityDocumentsSelected,
+    pureDigitalSelection,
+    fullTraceEnabled,
+    profilesConsidered: Object.freeze(profilesConsidered),
+    allowedProfiles: Object.freeze([]),
+    skippedProfiles: Object.freeze(profilesConsidered.slice()),
+    mode: "skipped_unselected",
+    skipReason: "pure_digital_selection",
+  });
+}
+
+function shouldBuildIdentityDocumentShadowDiagnostics(profileId, options = {}) {
+  const scope = options.scope || getDiagnosticsDocumentScope(options);
+  if (!profileId || scope.mode === "full" || scope.mode === "forced") {
+    return true;
+  }
+  return scope.allowedProfiles.includes(profileId);
+}
+
+function recordIdentityDocumentShadowDiagnosticsDecision(diagnostics, article, profileId, built, scope = null) {
+  if (!diagnostics?.enabled || !profileId) {
+    return;
+  }
+  if (!diagnostics.identityDocumentShadowDiagnosticsTracker) {
+    diagnostics.identityDocumentShadowDiagnosticsTracker = {
+      articleIds: new Set(),
+      profilesConsidered: {},
+      profilesBuilt: {},
+      profilesSkipped: {},
+      profileBuildDecisions: 0,
+      profileSkipDecisions: 0,
+      hardContextBuildDecisions: 0,
+      hardContextSkipDecisions: 0,
+      mode: "",
+      skipReason: "",
+      identityDocumentsSelected: false,
+      pureDigitalSelection: false,
+      fullTraceEnabled: false,
+    };
+  }
+
+  const tracker = diagnostics.identityDocumentShadowDiagnosticsTracker;
+  const activeScope = scope || getDiagnosticsDocumentScope();
+  const articleId = getFilterDecisionTraceArticleId(article);
+  if (articleId) {
+    tracker.articleIds.add(articleId);
+  }
+  tracker.mode = activeScope.mode;
+  tracker.skipReason = activeScope.skipReason || "";
+  tracker.identityDocumentsSelected = Boolean(activeScope.identityDocumentsSelected);
+  tracker.pureDigitalSelection = Boolean(activeScope.pureDigitalSelection);
+  tracker.fullTraceEnabled = Boolean(activeScope.fullTraceEnabled);
+  tracker.profilesConsidered[profileId] = (tracker.profilesConsidered[profileId] || 0) + 1;
+
+  if (built) {
+    tracker.profileBuildDecisions += 1;
+    tracker.profilesBuilt[profileId] = (tracker.profilesBuilt[profileId] || 0) + 1;
+    incrementFilterPerformanceCounter("identityDocumentShadowProfileBuildCount");
+    tracker.hardContextBuildDecisions += IDENTITY_DOCUMENT_SHADOW_HARD_CONTEXT_PROFILES.length;
+    incrementFilterPerformanceCounter(
+      "identityDocumentShadowHardContextBuildCount",
+      IDENTITY_DOCUMENT_SHADOW_HARD_CONTEXT_PROFILES.length
+    );
+  } else {
+    tracker.profileSkipDecisions += 1;
+    tracker.profilesSkipped[profileId] = (tracker.profilesSkipped[profileId] || 0) + 1;
+    incrementFilterPerformanceCounter("identityDocumentShadowProfileSkipCount");
+    tracker.hardContextSkipDecisions += IDENTITY_DOCUMENT_SHADOW_HARD_CONTEXT_PROFILES.length;
+    incrementFilterPerformanceCounter(
+      "identityDocumentShadowHardContextSkipCount",
+      IDENTITY_DOCUMENT_SHADOW_HARD_CONTEXT_PROFILES.length
+    );
+  }
+}
+
+function getIdentityDocumentShadowDiagnosticsSummary(diagnostics = null) {
+  const scope = getDiagnosticsDocumentScope();
+  const tracker = diagnostics?.identityDocumentShadowDiagnosticsTracker || {};
+  const profilesBuiltCounts = tracker.profilesBuilt || {};
+  const profilesSkippedCounts = tracker.profilesSkipped || {};
+  const profileBuildDecisions = Number(tracker.profileBuildDecisions) || 0;
+  const profileSkipDecisions = Number(tracker.profileSkipDecisions) || 0;
+  const hardContextBuildDecisions = Number(tracker.hardContextBuildDecisions) || 0;
+  const hardContextSkipDecisions = Number(tracker.hardContextSkipDecisions) || 0;
+
+  return {
+    mode: tracker.mode || scope.mode,
+    identityDocumentsSelected: Object.prototype.hasOwnProperty.call(tracker, "identityDocumentsSelected")
+      ? Boolean(tracker.identityDocumentsSelected)
+      : Boolean(scope.identityDocumentsSelected),
+    pureDigitalSelection: Object.prototype.hasOwnProperty.call(tracker, "pureDigitalSelection")
+      ? Boolean(tracker.pureDigitalSelection)
+      : Boolean(scope.pureDigitalSelection),
+    fullTraceEnabled: Object.prototype.hasOwnProperty.call(tracker, "fullTraceEnabled")
+      ? Boolean(tracker.fullTraceEnabled)
+      : Boolean(scope.fullTraceEnabled),
+    profilesConsidered: scope.profilesConsidered.slice(),
+    profilesBuilt: Object.keys(profilesBuiltCounts),
+    profilesSkipped: Object.keys(profilesSkippedCounts),
+    profileBuildDecisions,
+    profileSkipDecisions,
+    hardContextBuildDecisions,
+    hardContextSkipDecisions,
+    articlesEvaluated: tracker.articleIds instanceof Set ? tracker.articleIds.size : 0,
+    estimatedProfileComputationsSkipped: profileSkipDecisions * 8,
+    estimatedHardContextComputationsSkipped: hardContextSkipDecisions,
+    profileBuildCounts: { ...profilesBuiltCounts },
+    profileSkipCounts: { ...profilesSkippedCounts },
+    skipReason: tracker.skipReason || scope.skipReason || "",
+  };
+}
+
 function getHeavyDiagnosticsTraces(diagnostics) {
   if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap) {
     return [];
@@ -5829,8 +6000,39 @@ function getFilterDecisionTrace(diagnostics, article) {
 
   if (!diagnostics.filterDecisionTraceMap.has(articleId)) {
     const heavyDiagnosticsEnabled = reserveHeavyDiagnosticsSlot(diagnostics);
+    const identityDocumentShadowPolicy = getDiagnosticsDocumentScope({ diagnostics });
+    const buildDocumentShadowDecision = (profileId, builder) => {
+      const shouldBuild = shouldBuildIdentityDocumentShadowDiagnostics(profileId, {
+        scope: identityDocumentShadowPolicy,
+      });
+      recordIdentityDocumentShadowDiagnosticsDecision(
+        diagnostics,
+        article,
+        profileId,
+        shouldBuild,
+        identityDocumentShadowPolicy
+      );
+      if (shouldBuild) {
+        return builder();
+      }
+      return {
+        skipped: true,
+        status: "skipped_unselected",
+        reason: identityDocumentShadowPolicy.skipReason || "pure_digital_selection",
+        documentType: profileId,
+        rejected: false,
+        matchedRuleId: `${profileId}_shadow_diagnostics_skipped`,
+        rejectionReason: "",
+        rejectionCategory: "",
+        ruleResults: [],
+        decisionPath: [`${profileId}:skipped_unselected`],
+      };
+    };
     const articleEvidence = heavyDiagnosticsEnabled
-      ? buildArticleEvidence(article)
+      ? buildArticleEvidence(article, {
+          diagnostics,
+          identityDocumentShadowPolicy,
+        })
       : {
           articleId,
           skipped: true,
@@ -5838,7 +6040,11 @@ function getFilterDecisionTrace(diagnostics, article) {
           evidence: {},
         };
     const evidenceParity = heavyDiagnosticsEnabled
-      ? compareArticleEvidenceParity(article)
+      ? compareArticleEvidenceParity(article, {
+          articleEvidence,
+          diagnostics,
+          identityDocumentShadowPolicy,
+        })
       : {
           articleId,
           title: article?.title || "Untitled article",
@@ -5890,13 +6096,13 @@ function getFilterDecisionTrace(diagnostics, article) {
       ? getPassportProfessionalAlignmentDiagnostics(article, articleEvidence)
       : null;
     const idCardDecision = heavyDiagnosticsEnabled
-      ? evaluateIdCardDecisionRules(article)
+      ? buildDocumentShadowDecision("id_cards", () => evaluateIdCardDecisionRules(article))
       : null;
     const residencePermitDecision = heavyDiagnosticsEnabled
-      ? evaluateResidencePermitDecisionRules(article)
+      ? buildDocumentShadowDecision("residence_permits", () => evaluateResidencePermitDecisionRules(article))
       : null;
     const visaDecision = heavyDiagnosticsEnabled
-      ? evaluateVisaDecisionRules(article)
+      ? buildDocumentShadowDecision("visas", () => evaluateVisaDecisionRules(article))
       : null;
     const selectedIdentityInterestsForTrace = getSelectedIdentityDocumentSubinterests();
     const visaNoise = heavyDiagnosticsEnabled && selectedIdentityInterestsForTrace.includes("visas")
@@ -5906,7 +6112,7 @@ function getFilterDecisionTrace(diagnostics, article) {
         })
       : null;
     const driverLicenseDecision = heavyDiagnosticsEnabled
-      ? evaluateDriverLicenseDecisionRules(article)
+      ? buildDocumentShadowDecision("drivers_licenses", () => evaluateDriverLicenseDecisionRules(article))
       : null;
     const driverLicenseNoise = heavyDiagnosticsEnabled
       ? getDriverLicenseNoiseDiagnostics(article, {
@@ -5917,6 +6123,7 @@ function getFilterDecisionTrace(diagnostics, article) {
     diagnostics.filterDecisionTraceMap.set(articleId, {
       articleId,
       title: article?.title || "Untitled article",
+      article,
       heavyDiagnosticsEnabled,
       enteredPipeline: {
         renderId: diagnostics.renderId,
@@ -8322,8 +8529,11 @@ function getIdCardEvidenceGapExplanation(article, articleEvidence, legacyIdCards
   };
 }
 
-function compareArticleEvidenceParity(article) {
-  const articleEvidence = buildArticleEvidence(article);
+function compareArticleEvidenceParity(article, options = {}) {
+  const articleEvidence = options.articleEvidence || buildArticleEvidence(article, {
+    diagnostics: options.diagnostics,
+    identityDocumentShadowPolicy: options.identityDocumentShadowPolicy,
+  });
   const evidenceSummary = summarizeArticleEvidenceForParity(articleEvidence);
   const identityDocumentParityMode = getIdentityDocumentParityDiagnosticsMode();
   const identityDocumentParitySkipped = Boolean(identityDocumentParityMode.identityDocumentParitySkipped);
@@ -17252,11 +17462,18 @@ function compareIdCardDecisionByTitle(titlePart) {
     title: match.title,
     finalResult: match.finalResult || "",
     finalReason: match.finalReason || "",
-    idCardDecisionDiagnostics: match.idCardDecisionDiagnostics || null,
+    idCardDecisionDiagnostics: match.idCardDecisionDiagnostics?.skipped
+      ? {
+          ...evaluateIdCardDecisionRules(match.article),
+          forcedOnDemand: true,
+          originalTraceStatus: match.idCardDecisionDiagnostics.status || "skipped_unselected",
+        }
+      : match.idCardDecisionDiagnostics || null,
     heavyDiagnosticsEnabled: Boolean(match.heavyDiagnosticsEnabled),
     notes: [
       "ID Card rule set is shadow-only",
       "Legacy filtering remains authoritative",
+      "Explicit helper builds ID Card diagnostics on demand when automatic shadow diagnostics were skipped",
     ],
   };
 }
@@ -17278,11 +17495,18 @@ function compareResidencePermitDecisionByTitle(titlePart) {
     title: match.title,
     finalResult: match.finalResult || "",
     finalReason: match.finalReason || "",
-    residencePermitDecisionDiagnostics: match.residencePermitDecisionDiagnostics || null,
+    residencePermitDecisionDiagnostics: match.residencePermitDecisionDiagnostics?.skipped
+      ? {
+          ...evaluateResidencePermitDecisionRules(match.article),
+          forcedOnDemand: true,
+          originalTraceStatus: match.residencePermitDecisionDiagnostics.status || "skipped_unselected",
+        }
+      : match.residencePermitDecisionDiagnostics || null,
     heavyDiagnosticsEnabled: Boolean(match.heavyDiagnosticsEnabled),
     notes: [
       "Residence Permit rule set is shadow-only",
       "Legacy filtering remains authoritative",
+      "Explicit helper builds Residence Permit diagnostics on demand when automatic shadow diagnostics were skipped",
     ],
   };
 }
@@ -17304,11 +17528,18 @@ function compareVisaDecisionByTitle(titlePart) {
     title: match.title,
     finalResult: match.finalResult || "",
     finalReason: match.finalReason || "",
-    visaDecisionDiagnostics: match.visaDecisionDiagnostics || null,
+    visaDecisionDiagnostics: match.visaDecisionDiagnostics?.skipped
+      ? {
+          ...evaluateVisaDecisionRules(match.article),
+          forcedOnDemand: true,
+          originalTraceStatus: match.visaDecisionDiagnostics.status || "skipped_unselected",
+        }
+      : match.visaDecisionDiagnostics || null,
     heavyDiagnosticsEnabled: Boolean(match.heavyDiagnosticsEnabled),
     notes: [
       "Visa rule set is shadow-only",
       "Legacy filtering remains authoritative",
+      "Explicit helper builds Visa diagnostics on demand when automatic shadow diagnostics were skipped",
     ],
   };
 }
@@ -17330,11 +17561,18 @@ function compareDriverLicenseDecisionByTitle(titlePart) {
     title: match.title,
     finalResult: match.finalResult || "",
     finalReason: match.finalReason || "",
-    driverLicenseDecisionDiagnostics: match.driverLicenseDecisionDiagnostics || null,
+    driverLicenseDecisionDiagnostics: match.driverLicenseDecisionDiagnostics?.skipped
+      ? {
+          ...evaluateDriverLicenseDecisionRules(match.article),
+          forcedOnDemand: true,
+          originalTraceStatus: match.driverLicenseDecisionDiagnostics.status || "skipped_unselected",
+        }
+      : match.driverLicenseDecisionDiagnostics || null,
     heavyDiagnosticsEnabled: Boolean(match.heavyDiagnosticsEnabled),
     notes: [
       "Driver License rule set is shadow-only",
       "Legacy filtering remains authoritative",
+      "Explicit helper builds Driver License diagnostics on demand when automatic shadow diagnostics were skipped",
     ],
   };
 }
@@ -19262,6 +19500,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     identityDiagnosticsSummary: diagnostics.identityDiagnosticsSummary || null,
     identityNoiseGuardDiagnosticsSummary: diagnostics.identityNoiseGuardDiagnosticsSummary || null,
     identityProfessionalRelevanceGuardSummary: diagnostics.identityProfessionalRelevanceGuardSummary || null,
+    identityDocumentShadowDiagnosticsSummary: diagnostics.identityDocumentShadowDiagnosticsSummary || getIdentityDocumentShadowDiagnosticsSummary(diagnostics),
     evidenceBuilderDiagnosticsSummary: diagnostics.evidenceBuilderDiagnosticsSummary || null,
     evidenceBuilderParitySummary: diagnostics.evidenceBuilderParitySummary || null,
     evidenceBuilderIdCardsParitySummary: diagnostics.evidenceBuilderIdCardsParitySummary || null,
@@ -19540,6 +19779,10 @@ function compareLatestFilterPerformanceRuns() {
     "identityTravelNoiseAssessmentActualBuildCount",
     "identityTravelNoiseTermGroupEvaluationCount",
     "identityTravelNoiseLegacyFallbackCount",
+    "identityDocumentShadowProfileBuildCount",
+    "identityDocumentShadowProfileSkipCount",
+    "identityDocumentShadowHardContextBuildCount",
+    "identityDocumentShadowHardContextSkipCount",
     "personalInterestAssessmentCount",
     "subgroupAssessmentCount",
     "professionalGuardAssessmentCount",
@@ -19597,6 +19840,12 @@ function getIdentityTravelNoiseAssessmentDiagnostics() {
   };
 }
 
+function getLatestIdentityDocumentShadowDiagnosticsSummary() {
+  const activeDiagnostic = getActiveFilterPipelineDiagnostic();
+  return activeDiagnostic?.identityDocumentShadowDiagnosticsSummary ||
+    getIdentityDocumentShadowDiagnosticsSummary(activeDiagnostic);
+}
+
 function listArticleContextRequestCallers(limit = 25) {
   const attribution = getLatestArticleContextRequestAttribution();
   const normalizedLimit = Math.max(1, Math.min(100, Number(limit) || 25));
@@ -19636,6 +19885,7 @@ function exportFilterPerformanceDiagnostics() {
     articleContextInterestSummary: latestRun?.articleContextInterestSummary || [],
     articleContextDiagnosticsVsProductionSummary: latestRun?.articleContextDiagnosticsVsProductionSummary || null,
     identityTravelNoiseAssessmentDiagnostics: getIdentityTravelNoiseAssessmentDiagnostics(),
+    identityDocumentShadowDiagnosticsSummary: getLatestIdentityDocumentShadowDiagnosticsSummary(),
     identityDocumentParityDiagnosticsStatus: getIdentityDocumentParityDiagnosticsStatus(),
     backendRequestContributionDiagnostics: backendRequestContributionDiagnostics
       ? {
@@ -19783,6 +20033,10 @@ function ensureFilterPipelineDiagnosticsExportTools() {
 
   if (typeof window.getIdentityTravelNoiseAssessmentDiagnostics !== "function") {
     window.getIdentityTravelNoiseAssessmentDiagnostics = () => getIdentityTravelNoiseAssessmentDiagnostics();
+  }
+
+  if (typeof window.getIdentityDocumentShadowDiagnosticsSummary !== "function") {
+    window.getIdentityDocumentShadowDiagnosticsSummary = () => getLatestIdentityDocumentShadowDiagnosticsSummary();
   }
 
   if (typeof window.exportFilterPerformanceDiagnostics !== "function") {
@@ -20112,6 +20366,7 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.listArticleContextRequestsByInterest()",
         "window.compareArticleContextProductionAndDiagnostics()",
         "window.getIdentityTravelNoiseAssessmentDiagnostics()",
+        "window.getIdentityDocumentShadowDiagnosticsSummary()",
         "window.exportFilterPerformanceDiagnostics()",
         "window.listBackendRequestContributions(limit)",
         "window.listLowValueBackendRequests(limit)",
@@ -20222,6 +20477,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.personalDashboardScoring = getPersonalDashboardScoringSummary(diagnostics);
   diagnostics.personalDashboardScoreDistribution = getPersonalDashboardScoreDistribution(diagnostics);
   diagnostics.identityTravelNoiseAssessmentDiagnostics = getIdentityTravelNoiseAssessmentDiagnostics();
+  diagnostics.identityDocumentShadowDiagnosticsSummary = getIdentityDocumentShadowDiagnosticsSummary(diagnostics);
   if (diagnostics.diagnosticsPerformance) {
     diagnostics.diagnosticsPerformance.fullCandidateCount = diagnostics.counts?.candidatePool || 0;
   }
@@ -24009,16 +24265,39 @@ function getNormalizedEventEvidenceEntries(article, context) {
   return entries;
 }
 
-function buildArticleEvidence(article) {
+function buildArticleEvidence(article, options = {}) {
   const context = buildArticleIntelligenceContext(article);
+  const identityDocumentShadowPolicy = options.identityDocumentShadowPolicy ||
+    getDiagnosticsDocumentScope({ forceIdentityDocumentShadowDiagnostics: true });
+  const buildIdentityDocumentShadowEvidence = (profileId, builder) => {
+    const shouldBuild = shouldBuildIdentityDocumentShadowDiagnostics(profileId, {
+      scope: identityDocumentShadowPolicy,
+    });
+    recordIdentityDocumentShadowDiagnosticsDecision(
+      options.diagnostics,
+      article,
+      profileId,
+      shouldBuild,
+      identityDocumentShadowPolicy
+    );
+    return shouldBuild ? builder() : [];
+  };
   const idCardsEvidence = collectMappedArticleEvidenceEntries(context, getIdCardsEvidenceMappings());
-  const legacyIdCardDerivedEvidence = getLegacyIdCardDerivedEvidenceEntries(article, context, idCardsEvidence);
+  const legacyIdCardDerivedEvidence = buildIdentityDocumentShadowEvidence("id_cards", () =>
+    getLegacyIdCardDerivedEvidenceEntries(article, context, idCardsEvidence)
+  );
   const residencePermitEvidence = collectMappedArticleEvidenceEntries(context, getResidencePermitEvidenceMappings());
-  const legacyResidencePermitDerivedEvidence = getLegacyResidencePermitDerivedEvidenceEntries(article, context, residencePermitEvidence);
+  const legacyResidencePermitDerivedEvidence = buildIdentityDocumentShadowEvidence("residence_permits", () =>
+    getLegacyResidencePermitDerivedEvidenceEntries(article, context, residencePermitEvidence)
+  );
   const driverLicenseEvidence = collectMappedArticleEvidenceEntries(context, getDriverLicenseEvidenceMappings());
-  const legacyDriverLicenseDerivedEvidence = getLegacyDriverLicenseDerivedEvidenceEntries(article, context, driverLicenseEvidence);
+  const legacyDriverLicenseDerivedEvidence = buildIdentityDocumentShadowEvidence("drivers_licenses", () =>
+    getLegacyDriverLicenseDerivedEvidenceEntries(article, context, driverLicenseEvidence)
+  );
   const visaEvidence = collectMappedArticleEvidenceEntries(context, getVisaEvidenceMappings());
-  const legacyVisaDerivedEvidence = getLegacyVisaDerivedEvidenceEntries(article, context, visaEvidence);
+  const legacyVisaDerivedEvidence = buildIdentityDocumentShadowEvidence("visas", () =>
+    getLegacyVisaDerivedEvidenceEntries(article, context, visaEvidence)
+  );
   const passportGuardEvidence = getPassportGuardEvidenceMappings();
   const passportDocumentEvidence = collectMappedArticleEvidenceEntries(context, passportGuardEvidence.documentTypes);
   const passportProfessionalEvidence = collectMappedArticleEvidenceEntries(context, passportGuardEvidence.professionalSignals);
@@ -24108,6 +24387,12 @@ function buildArticleEvidence(article) {
 
   return {
     articleId: getFilterDecisionTraceArticleId(article),
+    identityDocumentShadowDiagnostics: {
+      status: identityDocumentShadowPolicy.mode === "skipped_unselected" ? "skipped_unselected" : "evaluated",
+      reason: identityDocumentShadowPolicy.skipReason || "",
+      mode: identityDocumentShadowPolicy.mode,
+      profilesSkipped: identityDocumentShadowPolicy.skippedProfiles.slice(),
+    },
     evidence,
   };
 }
