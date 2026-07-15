@@ -8142,6 +8142,41 @@ function summarizeArticleEvidenceForParity(articleEvidence) {
   };
 }
 
+function getIdentityDocumentParityDiagnosticsMode(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests), options = {}) {
+  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
+  const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(normalizedInterests);
+  const forced = Boolean(options.forceIdentityDocumentParity);
+
+  if (forced) {
+    return {
+      identityDocumentParitySkipped: false,
+      identityDocumentParitySkipReason: "",
+      identityDocumentParityExecutionMode: "forced",
+      selectedMainDomains,
+      selectedIdentityInterests,
+    };
+  }
+
+  if (selectedMainDomains.includes("identity_documents") || selectedIdentityInterests.length > 0) {
+    return {
+      identityDocumentParitySkipped: false,
+      identityDocumentParitySkipReason: "",
+      identityDocumentParityExecutionMode: "full",
+      selectedMainDomains,
+      selectedIdentityInterests,
+    };
+  }
+
+  return {
+    identityDocumentParitySkipped: true,
+    identityDocumentParitySkipReason: "identity_documents_not_selected",
+    identityDocumentParityExecutionMode: "skipped_unselected",
+    selectedMainDomains,
+    selectedIdentityInterests,
+  };
+}
+
 function normalizeDiagnosticsText(value) {
   return String(value || "").trim().toLowerCase();
 }
@@ -8257,17 +8292,8 @@ function getIdCardEvidenceGapExplanation(article, articleEvidence, legacyIdCards
 function compareArticleEvidenceParity(article) {
   const articleEvidence = buildArticleEvidence(article);
   const evidenceSummary = summarizeArticleEvidenceForParity(articleEvidence);
-  const legacyIdCardsBoost = computePersonalInterestBoost(article, "id_cards");
-  const legacyIdentitySubinterest = getIdentityDocumentSubinterestScore(article, ["id_cards"]);
-  const legacyKeesingIdentityRelevance = getKeesingIdentityRelevance(article);
-  const legacyHighConfidencePassportAssessment = getHighConfidencePassportAssessment(article);
-  const legacyIdentityDocumentRelevance = getIdentityDocumentRelevance(article);
-  const legacyUiRelevant = isUiRelevantIntelligenceArticle(article);
-  const legacyShouldRejectPassport = shouldRejectPassportArticle(article);
-  const legacyHardPassportNoise = isHardPassportNoise(article);
-  const legacyLowRelevancePassport = isLowRelevancePassportArticle(article);
-  const legacyProfessionalIdentityRescue = shouldRescueProfessionalIdentityArticle(article);
-  const passportProfessionalAlignment = getPassportProfessionalAlignmentDiagnostics(article, articleEvidence);
+  const identityDocumentParityMode = getIdentityDocumentParityDiagnosticsMode();
+  const identityDocumentParitySkipped = Boolean(identityDocumentParityMode.identityDocumentParitySkipped);
   const evidenceHasIdentityObject = evidenceEntriesContainTerm(articleEvidence, "domainObjects", [
     "identity",
     "id document",
@@ -8328,18 +8354,50 @@ function compareArticleEvidenceParity(article) {
   const evidenceHasNoiseSignal = evidenceSummary.noiseSignals > 0;
   const evidenceHasProfessionalSignal = getEvidenceEntriesForGroup(articleEvidence, "professionalSignals")
     .some((entry) => Boolean(entry?.category || entry?.sourceHelper));
-  const idCardEvidenceGapExplanation = getIdCardEvidenceGapExplanation(
-    article,
-    articleEvidence,
-    legacyIdCardsBoost,
-    legacyIdentitySubinterest
-  );
+  const legacyDominantDomain = getArticleDominantDomain(article);
+  const legacyIdCardsBoost = identityDocumentParitySkipped
+    ? { score: 0, matched: false, skipped: true }
+    : computePersonalInterestBoost(article, "id_cards");
+  const legacyIdentitySubinterest = identityDocumentParitySkipped
+    ? { score: 0, skipped: true }
+    : getIdentityDocumentSubinterestScore(article, ["id_cards"]);
+  const legacyKeesingIdentityRelevance = identityDocumentParitySkipped ? null : getKeesingIdentityRelevance(article);
+  const legacyHighConfidencePassportAssessment = identityDocumentParitySkipped ? null : getHighConfidencePassportAssessment(article);
+  const legacyIdentityDocumentRelevance = identityDocumentParitySkipped ? null : getIdentityDocumentRelevance(article);
+  const legacyUiRelevant = identityDocumentParitySkipped ? false : isUiRelevantIntelligenceArticle(article);
+  const legacyShouldRejectPassport = identityDocumentParitySkipped ? false : shouldRejectPassportArticle(article);
+  const legacyHardPassportNoise = identityDocumentParitySkipped ? false : isHardPassportNoise(article);
+  const legacyLowRelevancePassport = identityDocumentParitySkipped ? false : isLowRelevancePassportArticle(article);
+  const legacyProfessionalIdentityRescue = identityDocumentParitySkipped ? false : shouldRescueProfessionalIdentityArticle(article);
+  const passportProfessionalAlignment = identityDocumentParitySkipped
+    ? {
+        skipped: true,
+        identityDocumentParitySkipped: true,
+        professionalRescueCandidate: false,
+      }
+    : getPassportProfessionalAlignmentDiagnostics(article, articleEvidence);
+  const idCardEvidenceGapExplanation = identityDocumentParitySkipped
+    ? {
+        skipped: true,
+        reason: "identity_document_parity_skipped_unselected",
+        notes: [
+          "diagnostics only",
+          "Identity Documents parity skipped because Identity Documents is not selected",
+          "production filtering and dominant-domain safety remain unchanged",
+        ],
+      }
+    : getIdCardEvidenceGapExplanation(
+        article,
+        articleEvidence,
+        legacyIdCardsBoost,
+        legacyIdentitySubinterest
+      );
   const parityWarnings = [];
 
-  if (getArticleDominantDomain(article) === "identity_documents" && !evidenceHasIdentityObject) {
+  if (!identityDocumentParitySkipped && legacyDominantDomain === "identity_documents" && !evidenceHasIdentityObject) {
     parityWarnings.push("legacy_identity_domain_without_identity_object_evidence");
   }
-  if ((legacyIdCardsBoost?.score || 0) > 0 && !evidenceHasExplicitIdCardEvidence) {
+  if (!identityDocumentParitySkipped && (legacyIdCardsBoost?.score || 0) > 0 && !evidenceHasExplicitIdCardEvidence) {
     if (evidenceHasRelatedIdentityEvidence) {
       parityWarnings.push("legacy_id_cards_score_with_related_identity_evidence_only");
     } else if (evidenceHasWeakOrIndirectIdCardEvidence) {
@@ -8348,7 +8406,7 @@ function compareArticleEvidenceParity(article) {
       parityWarnings.push("legacy_id_cards_score_without_any_id_or_identity_document_evidence");
     }
   }
-  if (legacyShouldRejectPassport) {
+  if (!identityDocumentParitySkipped && legacyShouldRejectPassport) {
     if (passportProfessionalAlignment.professionalRescueCandidate) {
       parityWarnings.push("legacy_passport_guard_aligned_professional_passport_rescue_candidate");
     } else if (evidenceHasProfessionalSignal && evidenceHasExplicitPassportEvidence) {
@@ -8367,27 +8425,27 @@ function compareArticleEvidenceParity(article) {
       parityWarnings.push("legacy_passport_guard_without_document_noise_or_professional_signal");
     }
   }
-  if (legacyProfessionalIdentityRescue && !evidenceHasVendor && !evidenceHasProfessionalSignal) {
+  if (!identityDocumentParitySkipped && legacyProfessionalIdentityRescue && !evidenceHasVendor && !evidenceHasProfessionalSignal) {
     parityWarnings.push("legacy_professional_rescue_without_professional_signal");
   }
-  if (legacyKeesingIdentityRelevance?.hasRequiredComponent && !evidenceHasProfessionalSignal) {
+  if (!identityDocumentParitySkipped && legacyKeesingIdentityRelevance?.hasRequiredComponent && !evidenceHasProfessionalSignal) {
     parityWarnings.push("legacy_keesing_identity_without_professional_signal");
   }
-  if (legacyHighConfidencePassportAssessment?.kept && !evidenceHasProfessionalSignal) {
+  if (!identityDocumentParitySkipped && legacyHighConfidencePassportAssessment?.kept && !evidenceHasProfessionalSignal) {
     parityWarnings.push("legacy_high_confidence_passport_without_professional_signal");
   }
-  if (legacyUiRelevant && !evidenceHasProfessionalSignal && !evidenceHasEventSignal) {
+  if (!identityDocumentParitySkipped && legacyUiRelevant && !evidenceHasProfessionalSignal && !evidenceHasEventSignal) {
     parityWarnings.push("legacy_ui_relevance_without_professional_signal");
   }
-  if ((legacyIdentityDocumentRelevance || 0) >= IDENTITY_DOCUMENT_RELEVANCE_THRESHOLD && !evidenceHasProfessionalSignal) {
+  if (!identityDocumentParitySkipped && (legacyIdentityDocumentRelevance || 0) >= IDENTITY_DOCUMENT_RELEVANCE_THRESHOLD && !evidenceHasProfessionalSignal) {
     parityWarnings.push("legacy_identity_relevance_without_professional_signal");
   }
-  if (legacyHardPassportNoise && !evidenceHasNoiseSignal) {
+  if (!identityDocumentParitySkipped && legacyHardPassportNoise && !evidenceHasNoiseSignal) {
     parityWarnings.push("legacy_hard_passport_noise_without_noise_evidence");
-  } else if (legacyLowRelevancePassport && !evidenceHasNoiseSignal) {
+  } else if (!identityDocumentParitySkipped && legacyLowRelevancePassport && !evidenceHasNoiseSignal) {
     parityWarnings.push("legacy_low_relevance_passport_without_noise_evidence");
   }
-  if (legacyUiRelevant && !evidenceHasEventSignal) {
+  if (!identityDocumentParitySkipped && legacyUiRelevant && !evidenceHasEventSignal) {
     parityWarnings.push("legacy_ui_relevant_without_event_evidence");
   }
 
@@ -8409,7 +8467,14 @@ function compareArticleEvidenceParity(article) {
     evidenceHasEventSignal,
     evidenceHasNoiseSignal,
     evidenceHasProfessionalSignal,
-    legacyDominantDomain: getArticleDominantDomain(article),
+    identityDocumentParitySkipped,
+    identityDocumentParitySkipReason: identityDocumentParityMode.identityDocumentParitySkipReason,
+    identityDocumentParityExecutionMode: identityDocumentParityMode.identityDocumentParityExecutionMode,
+    identityDocumentParitySelectedMainDomains: identityDocumentParityMode.selectedMainDomains,
+    identityDocumentParitySelectedInterests: identityDocumentParityMode.selectedIdentityInterests,
+    identityDocumentParityRequestsSkipped: identityDocumentParitySkipped ? 1 : 0,
+    identityDocumentParityEstimatedContextRequestsSaved: identityDocumentParitySkipped ? 12 : 0,
+    legacyDominantDomain,
     legacyIdCardsScore: legacyIdCardsBoost?.score || 0,
     legacyIdentitySubinterestScore: legacyIdentitySubinterest?.score || 0,
     legacyUiRelevant,
@@ -8450,24 +8515,36 @@ function getEvidenceBuilderParitySummary(diagnostics) {
   const agreements = {};
   const warnings = new Map();
   let warningCount = 0;
+  let identityDocumentParityRequestsSkipped = 0;
+  let identityDocumentParityEstimatedContextRequestsSaved = 0;
+  const identityDocumentParityExecutionModes = new Map();
 
   traces.forEach((trace) => {
     const parity = trace.evidenceParityDiagnostics;
     if (!parity) {
       return;
     }
+    if (parity.identityDocumentParitySkipped) {
+      identityDocumentParityRequestsSkipped += Number(parity.identityDocumentParityRequestsSkipped) || 1;
+      identityDocumentParityEstimatedContextRequestsSaved += Number(parity.identityDocumentParityEstimatedContextRequestsSaved) || 0;
+    }
+    const executionMode = parity.identityDocumentParityExecutionMode || "unknown";
+    identityDocumentParityExecutionModes.set(
+      executionMode,
+      (identityDocumentParityExecutionModes.get(executionMode) || 0) + 1
+    );
     incrementParityAgreement(agreements, "identityObjectAgreement",
-      parity.legacyDominantDomain !== "identity_documents" || parity.evidenceHasIdentityObject);
+      parity.identityDocumentParitySkipped || parity.legacyDominantDomain !== "identity_documents" || parity.evidenceHasIdentityObject);
     incrementParityAgreement(agreements, "idCardsEvidenceVsScorePositive",
-      !(parity.legacyIdCardsScore > 0) || parity.evidenceHasExplicitIdCardEvidence);
+      parity.identityDocumentParitySkipped || !(parity.legacyIdCardsScore > 0) || parity.evidenceHasExplicitIdCardEvidence);
     incrementParityAgreement(agreements, "passportEvidenceVsPassportGuard",
-      !parity.legacyShouldRejectPassport || parity.evidenceHasExplicitPassportEvidence || parity.evidenceHasConsumerPassportNoise || parity.evidenceHasProfessionalSignal);
+      parity.identityDocumentParitySkipped || !parity.legacyShouldRejectPassport || parity.evidenceHasExplicitPassportEvidence || parity.evidenceHasConsumerPassportNoise || parity.evidenceHasProfessionalSignal);
     incrementParityAgreement(agreements, "vendorEvidenceVsProfessionalRescue",
-      !parity.legacyProfessionalIdentityRescue || parity.evidenceHasVendor || parity.evidenceHasProfessionalSignal);
+      parity.identityDocumentParitySkipped || !parity.legacyProfessionalIdentityRescue || parity.evidenceHasVendor || parity.evidenceHasProfessionalSignal);
     incrementParityAgreement(agreements, "noiseEvidenceVsLegacyNoise",
-      !(parity.legacyHardPassportNoise || parity.legacyLowRelevancePassport) || parity.evidenceHasNoiseSignal);
+      parity.identityDocumentParitySkipped || !(parity.legacyHardPassportNoise || parity.legacyLowRelevancePassport) || parity.evidenceHasNoiseSignal);
     incrementParityAgreement(agreements, "uiRelevantVsEventEvidence",
-      !parity.legacyUiRelevant || parity.evidenceHasEventSignal);
+      parity.identityDocumentParitySkipped || !parity.legacyUiRelevant || parity.evidenceHasEventSignal);
     (parity.parityWarnings || []).forEach((warning) => {
       warningCount += 1;
       warnings.set(warning, (warnings.get(warning) || 0) + 1);
@@ -8483,6 +8560,16 @@ function getEvidenceBuilderParitySummary(diagnostics) {
     vendorEvidenceVsProfessionalRescue: agreements.vendorEvidenceVsProfessionalRescue || { agree: 0, mismatch: 0 },
     noiseEvidenceVsLegacyNoise: agreements.noiseEvidenceVsLegacyNoise || { agree: 0, mismatch: 0 },
     uiRelevantVsEventEvidence: agreements.uiRelevantVsEventEvidence || { agree: 0, mismatch: 0 },
+    identityDocumentParityRequestsSkipped,
+    identityDocumentParityEstimatedContextRequestsSaved,
+    identityDocumentParityExecutionModes: Object.fromEntries(identityDocumentParityExecutionModes.entries()),
+    identityDocumentParityExecutionMode: identityDocumentParityExecutionModes.get("full")
+      ? "full"
+      : identityDocumentParityExecutionModes.get("forced")
+        ? "forced"
+        : identityDocumentParityExecutionModes.get("skipped_unselected")
+          ? "skipped_unselected"
+          : "unknown",
     warningCount,
     topWarnings: getTopParityWarnings(warnings),
   };
@@ -8503,10 +8590,17 @@ function getEvidenceBuilderIdCardsParitySummary(diagnostics) {
   let relatedIdentityEvidenceOnlyCount = 0;
   let noIdOrIdentityEvidenceCount = 0;
   let weakOrIndirectEvidenceCount = 0;
+  let identityDocumentParityRequestsSkipped = 0;
+  let identityDocumentParityEstimatedContextRequestsSaved = 0;
 
   traces.forEach((trace) => {
     const parity = trace.evidenceParityDiagnostics;
     if (!parity) {
+      return;
+    }
+    if (parity.identityDocumentParitySkipped) {
+      identityDocumentParityRequestsSkipped += Number(parity.identityDocumentParityRequestsSkipped) || 1;
+      identityDocumentParityEstimatedContextRequestsSaved += Number(parity.identityDocumentParityEstimatedContextRequestsSaved) || 0;
       return;
     }
     const hasPositiveIdCardsScore = (parity.legacyIdCardsScore || 0) > 0;
@@ -8572,6 +8666,13 @@ function getEvidenceBuilderIdCardsParitySummary(diagnostics) {
   return {
     enabled: true,
     evaluatedArticles: traces.length,
+    identityDocumentParityRequestsSkipped,
+    identityDocumentParityEstimatedContextRequestsSaved,
+    identityDocumentParityExecutionMode: identityDocumentParityRequestsSkipped === traces.length
+      ? "skipped_unselected"
+      : identityDocumentParityRequestsSkipped > 0
+        ? "mixed"
+        : "full",
     legacyPositiveIdCardsScore,
     explicitIdCardEvidenceCount,
     relatedIdentityEvidenceOnlyCount,
@@ -8597,10 +8698,17 @@ function getEvidenceBuilderPassportParitySummary(diagnostics) {
   let citizenshipOrTravelEvidenceOnlyCount = 0;
   let consumerPassportNoiseEvidenceCount = 0;
   let noPassportOrNoiseEvidenceCount = 0;
+  let identityDocumentParityRequestsSkipped = 0;
+  let identityDocumentParityEstimatedContextRequestsSaved = 0;
 
   traces.forEach((trace) => {
     const parity = trace.evidenceParityDiagnostics;
     if (!parity) {
+      return;
+    }
+    if (parity.identityDocumentParitySkipped) {
+      identityDocumentParityRequestsSkipped += Number(parity.identityDocumentParityRequestsSkipped) || 1;
+      identityDocumentParityEstimatedContextRequestsSaved += Number(parity.identityDocumentParityEstimatedContextRequestsSaved) || 0;
       return;
     }
     if (parity.legacyShouldRejectPassport) {
@@ -8647,6 +8755,13 @@ function getEvidenceBuilderPassportParitySummary(diagnostics) {
   return {
     enabled: true,
     evaluatedArticles: traces.length,
+    identityDocumentParityRequestsSkipped,
+    identityDocumentParityEstimatedContextRequestsSaved,
+    identityDocumentParityExecutionMode: identityDocumentParityRequestsSkipped === traces.length
+      ? "skipped_unselected"
+      : identityDocumentParityRequestsSkipped > 0
+        ? "mixed"
+        : "full",
     legacyPassportGuardTriggered,
     explicitPassportEvidenceCount,
     citizenshipOrTravelEvidenceOnlyCount,
@@ -17294,6 +17409,30 @@ function explainEvidenceParityByTitle(titlePart) {
   };
 }
 
+function getIdentityDocumentParityDiagnosticsStatus(diagnostic = getActiveFilterPipelineDiagnostic()) {
+  const summary = diagnostic?.evidenceBuilderParitySummary || null;
+  const idCardsSummary = diagnostic?.evidenceBuilderIdCardsParitySummary || null;
+  const passportSummary = diagnostic?.evidenceBuilderPassportParitySummary || null;
+  return {
+    available: Boolean(summary || idCardsSummary || passportSummary),
+    executionMode: summary?.identityDocumentParityExecutionMode ||
+      idCardsSummary?.identityDocumentParityExecutionMode ||
+      passportSummary?.identityDocumentParityExecutionMode ||
+      "unknown",
+    executionModes: summary?.identityDocumentParityExecutionModes || null,
+    identityDocumentParityRequestsSkipped: Number(summary?.identityDocumentParityRequestsSkipped || 0),
+    identityDocumentParityEstimatedContextRequestsSaved: Number(summary?.identityDocumentParityEstimatedContextRequestsSaved || 0),
+    idCardsParityExecutionMode: idCardsSummary?.identityDocumentParityExecutionMode || "unknown",
+    passportParityExecutionMode: passportSummary?.identityDocumentParityExecutionMode || "unknown",
+    selectedMainDomains: diagnostic?.normalizedFilterState?.dashboard?.mainDomains || [],
+    selectedInterests: diagnostic?.normalizedFilterState?.dashboard?.selectedInterests || [],
+    notes: [
+      "Identity Documents parity diagnostics are skipped when Identity Documents is not selected.",
+      "Production dominant-domain safety remains separate from diagnostics parity execution.",
+    ],
+  };
+}
+
 function listEvidenceParityWarnings(limit = 50) {
   const traceMap = getActiveFilterDecisionTraceMap();
   if (!traceMap) {
@@ -19093,6 +19232,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     evidenceBuilderParitySummary: diagnostics.evidenceBuilderParitySummary || null,
     evidenceBuilderIdCardsParitySummary: diagnostics.evidenceBuilderIdCardsParitySummary || null,
     evidenceBuilderPassportParitySummary: diagnostics.evidenceBuilderPassportParitySummary || null,
+    identityDocumentParityDiagnosticsStatus: diagnostics.identityDocumentParityDiagnosticsStatus || null,
     evidenceBuilderNoiseSummary: diagnostics.evidenceBuilderNoiseSummary || null,
     evidenceBuilderProfessionalSummary: diagnostics.evidenceBuilderProfessionalSummary || null,
     evidenceBuilderProfessionalParitySummary: diagnostics.evidenceBuilderProfessionalParitySummary || null,
@@ -19439,6 +19579,7 @@ function exportFilterPerformanceDiagnostics() {
     articleContextStageSummary: latestRun?.articleContextStageSummary || [],
     articleContextInterestSummary: latestRun?.articleContextInterestSummary || [],
     articleContextDiagnosticsVsProductionSummary: latestRun?.articleContextDiagnosticsVsProductionSummary || null,
+    identityDocumentParityDiagnosticsStatus: getIdentityDocumentParityDiagnosticsStatus(),
     backendRequestContributionDiagnostics: backendRequestContributionDiagnostics
       ? {
           generatedRequestCount: backendRequestContributionDiagnostics.generatedRequestCount,
@@ -19737,6 +19878,10 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.listEvidenceParityWarnings = (limit) => listEvidenceParityWarnings(limit);
   }
 
+  if (typeof window.getIdentityDocumentParityDiagnosticsStatus !== "function") {
+    window.getIdentityDocumentParityDiagnosticsStatus = () => getIdentityDocumentParityDiagnosticsStatus();
+  }
+
   if (typeof window.explainRejectedArticle !== "function") {
     window.explainRejectedArticle = (titlePart) => explainRejectedArticle(titlePart);
   }
@@ -19943,6 +20088,7 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.explainDecisionParityByTitle(titlePart)",
         "window.explainEvidenceParityByTitle(titlePart)",
         "window.listEvidenceParityWarnings(limit)",
+        "window.getIdentityDocumentParityDiagnosticsStatus()",
         "window.explainRejectedArticle(titlePart)",
         "window.listRejectionReasons()",
         "window.explainPersonalDashboardScore(articleId)",
@@ -20057,6 +20203,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.evidenceBuilderParitySummary = getEvidenceBuilderParitySummary(diagnostics);
   diagnostics.evidenceBuilderIdCardsParitySummary = getEvidenceBuilderIdCardsParitySummary(diagnostics);
   diagnostics.evidenceBuilderPassportParitySummary = getEvidenceBuilderPassportParitySummary(diagnostics);
+  diagnostics.identityDocumentParityDiagnosticsStatus = getIdentityDocumentParityDiagnosticsStatus(diagnostics);
   diagnostics.evidenceBuilderNoiseSummary = getEvidenceBuilderNoiseSummary(diagnostics);
   diagnostics.evidenceBuilderProfessionalSummary = getEvidenceBuilderProfessionalSummary(diagnostics);
   diagnostics.evidenceBuilderProfessionalParitySummary = getEvidenceBuilderProfessionalParitySummary(diagnostics);
