@@ -113,13 +113,18 @@ function countDuplicatePerformanceArticles(articles = []) {
 function createFilterPerformanceCounterMap() {
   return {
     articleContext: new Map(),
+    articleContextActualBuild: new Map(),
     sharedEvidence: new Map(),
   };
 }
 
 function createFilterPerformanceCounters() {
   return {
+    articleContextRequestCount: 0,
     articleContextBuildCount: 0,
+    articleContextCacheHitCount: 0,
+    articleContextCacheMissCount: 0,
+    articleContextActualBuildCount: 0,
     sharedEvidenceBuildCount: 0,
     personalInterestAssessmentCount: 0,
     subgroupAssessmentCount: 0,
@@ -131,6 +136,16 @@ function createFilterPerformanceCounters() {
     groupingInputCount: 0,
     renderedCardCount: 0,
     diagnosticsArticleCount: 0,
+  };
+}
+
+function createArticleContextAttributionState() {
+  return {
+    byCaller: new Map(),
+    byExecutionPath: new Map(),
+    byLogicalStage: new Map(),
+    byInterest: new Map(),
+    combinations: new Map(),
   };
 }
 
@@ -176,6 +191,9 @@ function createFilterPerformanceRun(reason = "render") {
     totalUserVisibleMs: null,
     operationCounters: createFilterPerformanceCounters(),
     operationMaps: createFilterPerformanceCounterMap(),
+    articleContextAttributionState: createArticleContextAttributionState(),
+    currentExecutionPath: "production",
+    currentLogicalStage: "other",
     activeRunId: "",
     previousRunStillActive,
     overlappingRunCount: runtime.filterPerformanceOverlappingRunCount,
@@ -191,6 +209,7 @@ function createFilterPerformanceRun(reason = "render") {
     candidateCountReturned: null,
     duplicateCandidateCountBeforeDeduplication: null,
     candidateCountAfterDeduplication: null,
+    attributionInstrumentationMs: 0,
     interpretation: null,
   };
   run.activeRunId = run.runId;
@@ -204,17 +223,47 @@ function getActiveFilterPerformanceRun() {
   return run && !run.completed ? run : null;
 }
 
+function getFilterPerformanceStageLabels(stageField) {
+  const logicalStageByField = {
+    backendResultNormalizationMs: "candidate_preparation",
+    candidatePreparationMs: "candidate_preparation",
+    personalDashboardMs: "personal_dashboard",
+    advancedFiltersMs: "advanced_filters",
+    identityProfessionalGuardMs: "identity_professional_guard",
+    digitalIdentityProfessionalGuardMs: "digital_identity_professional_guard",
+    sortingMs: "sorting",
+    groupingMs: "grouping",
+    paginationMs: "pagination",
+    renderModelMs: "render",
+    domRenderMs: "render",
+    diagnosticsMs: "diagnostics_replay",
+  };
+  return {
+    logicalStage: logicalStageByField[stageField] || "other",
+    executionPath: stageField === "diagnosticsMs" ? "diagnostics_replay" : "production",
+  };
+}
+
 function withFilterPerformanceStage(stageField, callback) {
   const run = getActiveFilterPerformanceRun();
   if (!run || !stageField) {
     return callback();
   }
+  const previousExecutionPath = run.currentExecutionPath || "production";
+  const previousLogicalStage = run.currentLogicalStage || "other";
+  const stageLabels = getFilterPerformanceStageLabels(stageField);
+  run.currentExecutionPath = previousExecutionPath === "diagnostics_replay"
+    ? "diagnostics_replay"
+    : stageLabels.executionPath;
+  run.currentLogicalStage = stageLabels.logicalStage;
   const startedAt = getPerformanceNow();
   try {
     return callback();
   } finally {
     const elapsed = getPerformanceNow() - startedAt;
     run[stageField] = Math.round(((Number(run[stageField]) || 0) + elapsed) * 10) / 10;
+    run.currentExecutionPath = previousExecutionPath;
+    run.currentLogicalStage = previousLogicalStage;
   }
 }
 
@@ -234,6 +283,118 @@ function incrementFilterPerformanceArticleCounter(mapName, article) {
   }
   const articleId = getArticlePerformanceId(article);
   map.set(articleId, (map.get(articleId) || 0) + 1);
+}
+
+function getArticleContextInterestLabel(interest) {
+  const normalized = String(interest || "").trim();
+  if (!normalized) {
+    return "unknown";
+  }
+  if ([
+    "identity_verification",
+    "biometrics",
+    "digital_identity",
+    "digital_wallet",
+    "kyc",
+    "onboarding",
+    "liveness",
+    "artificial_intelligence",
+  ].includes(normalized)) {
+    return normalized;
+  }
+  if (normalized === "banknote_intelligence" || normalized === "banknotes") {
+    return "banknotes";
+  }
+  if (normalized === "identity_documents" || PERSONAL_DASHBOARD_INTEREST_MAP.get(normalized)?.groupId === "identity_documents") {
+    return "identity_documents";
+  }
+  if (normalized === PERSONAL_DASHBOARD_SHARED_GROUP_ID || PERSONAL_DASHBOARD_INTEREST_MAP.get(normalized)?.groupId === PERSONAL_DASHBOARD_SHARED_GROUP_ID) {
+    return "shared_security";
+  }
+  if (normalized === "cross_domain") {
+    return "cross_domain";
+  }
+  return normalized;
+}
+
+function normalizeArticleContextRequestOptions(callerId, options = {}) {
+  if (callerId && typeof callerId === "object") {
+    return {
+      callerId: String(callerId.callerId || "unknown"),
+      interest: getArticleContextInterestLabel(callerId.interest || callerId.interestId),
+    };
+  }
+  return {
+    callerId: String(callerId || "unknown"),
+    interest: getArticleContextInterestLabel(options.interest || options.interestId),
+  };
+}
+
+function incrementArticleContextAttributionEntry(map, key, articleId, cacheHit) {
+  if (!map || !key) {
+    return;
+  }
+  if (!map.has(key)) {
+    map.set(key, {
+      requestCount: 0,
+      cacheHitCount: 0,
+      cacheMissCount: 0,
+      articleCounts: new Map(),
+    });
+  }
+  const entry = map.get(key);
+  entry.requestCount += 1;
+  if (cacheHit) {
+    entry.cacheHitCount += 1;
+  } else {
+    entry.cacheMissCount += 1;
+  }
+  if (articleId) {
+    entry.articleCounts.set(articleId, (entry.articleCounts.get(articleId) || 0) + 1);
+  }
+}
+
+function hasCachedPersonalBoostContext(article) {
+  if (!article) {
+    return false;
+  }
+  const articleKey = getArticleStableCacheKey(article);
+  return Boolean(runtime.articleComputationCache.get(articleKey)?.has("personalBoostContext"));
+}
+
+function recordArticleContextRequest(article, callerId = "unknown", options = {}) {
+  const run = getActiveFilterPerformanceRun();
+  if (!run) {
+    return;
+  }
+  const startedAt = getPerformanceNow();
+  const normalizedOptions = normalizeArticleContextRequestOptions(callerId, options);
+  const articleId = getArticlePerformanceId(article);
+  const cacheHit = hasCachedPersonalBoostContext(article);
+  const executionPath = run.currentExecutionPath || "production";
+  const logicalStage = run.currentLogicalStage || "other";
+  const interest = normalizedOptions.interest || "unknown";
+  incrementFilterPerformanceCounter("articleContextRequestCount");
+  incrementFilterPerformanceCounter("articleContextBuildCount");
+  incrementFilterPerformanceCounter(cacheHit ? "articleContextCacheHitCount" : "articleContextCacheMissCount");
+  incrementFilterPerformanceArticleCounter("articleContext", article);
+  const attribution = run.articleContextAttributionState;
+  incrementArticleContextAttributionEntry(attribution?.byCaller, normalizedOptions.callerId, articleId, cacheHit);
+  incrementArticleContextAttributionEntry(attribution?.byExecutionPath, executionPath, articleId, cacheHit);
+  incrementArticleContextAttributionEntry(attribution?.byLogicalStage, logicalStage, articleId, cacheHit);
+  incrementArticleContextAttributionEntry(attribution?.byInterest, interest, articleId, cacheHit);
+  incrementArticleContextAttributionEntry(
+    attribution?.combinations,
+    `${normalizedOptions.callerId}|${executionPath}|${logicalStage}|${interest}`,
+    articleId,
+    cacheHit
+  );
+  run.attributionInstrumentationMs = Math.round(((Number(run.attributionInstrumentationMs) || 0) + (getPerformanceNow() - startedAt)) * 10) / 10;
+}
+
+function recordArticleContextActualBuild(article) {
+  incrementFilterPerformanceCounter("articleContextActualBuildCount");
+  incrementFilterPerformanceArticleCounter("articleContextActualBuild", article);
 }
 
 function incrementSelectedInterestAssessmentCount(interestId) {
@@ -273,6 +434,131 @@ function summarizeFilterPerformanceArticleMap(map, articleCount) {
   };
 }
 
+function summarizeArticleContextAttributionMap(map, totalRequests, extraBuilder = null, limit = Infinity) {
+  if (!(map instanceof Map) || !map.size) {
+    return [];
+  }
+  return Array.from(map.entries())
+    .map(([key, entry]) => {
+      let maximumRequestsForSingleArticle = 0;
+      entry.articleCounts.forEach((count) => {
+        maximumRequestsForSingleArticle = Math.max(maximumRequestsForSingleArticle, Number(count) || 0);
+      });
+      const base = {
+        requestCount: Number(entry.requestCount) || 0,
+        uniqueArticleCount: entry.articleCounts.size,
+        cacheHitCount: Number(entry.cacheHitCount) || 0,
+        cacheMissCount: Number(entry.cacheMissCount) || 0,
+        actualBuilds: Number(entry.cacheMissCount) || 0,
+        percentOfTotal: totalRequests ? Math.round((entry.requestCount / totalRequests) * 1000) / 10 : 0,
+        averageRequestsPerArticle: entry.articleCounts.size
+          ? Math.round((entry.requestCount / entry.articleCounts.size) * 100) / 100
+          : 0,
+        requestsPerArticle: entry.articleCounts.size
+          ? Math.round((entry.requestCount / entry.articleCounts.size) * 100) / 100
+          : 0,
+        maximumRequestsForSingleArticle,
+      };
+      return {
+        ...(typeof extraBuilder === "function" ? extraBuilder(key) : { key }),
+        ...base,
+      };
+    })
+    .sort((left, right) => right.requestCount - left.requestCount)
+    .slice(0, limit);
+}
+
+function buildArticleContextDiagnosticsVsProductionSummary(byExecutionPathRows = [], totalRequests = 0, actualBuilds = 0) {
+  const diagnosticsRequestCount = byExecutionPathRows
+    .filter((row) => String(row.executionPath || "").startsWith("diagnostics"))
+    .reduce((sum, row) => sum + row.requestCount, 0);
+  const diagnosticsActualBuildCount = byExecutionPathRows
+    .filter((row) => String(row.executionPath || "").startsWith("diagnostics"))
+    .reduce((sum, row) => sum + (Number(row.actualBuilds || row.cacheMissCount) || 0), 0);
+  const productionRequestCount = Math.max(0, totalRequests - diagnosticsRequestCount);
+  return {
+    productionRequestCount,
+    diagnosticsRequestCount,
+    diagnosticsPercent: totalRequests ? Math.round((diagnosticsRequestCount / totalRequests) * 1000) / 10 : 0,
+    productionActualBuildCount: Math.max(0, actualBuilds - diagnosticsActualBuildCount),
+    diagnosticsActualBuildCount,
+  };
+}
+
+function buildArticleContextRequestAttribution(run, requestSummary, buildSummary) {
+  const attribution = run.articleContextAttributionState;
+  const counters = run.operationCounters || {};
+  const totalRequests = Number(counters.articleContextRequestCount || counters.articleContextBuildCount) || 0;
+  const cacheHits = Number(counters.articleContextCacheHitCount) || 0;
+  const cacheMisses = Number(counters.articleContextCacheMissCount) || 0;
+  const actualBuilds = Number(counters.articleContextActualBuildCount) || 0;
+  const byCaller = summarizeArticleContextAttributionMap(
+    attribution?.byCaller,
+    totalRequests,
+    (callerId) => ({ callerId })
+  );
+  const byExecutionPath = summarizeArticleContextAttributionMap(
+    attribution?.byExecutionPath,
+    totalRequests,
+    (executionPath) => ({ executionPath })
+  );
+  const byLogicalStage = summarizeArticleContextAttributionMap(
+    attribution?.byLogicalStage,
+    totalRequests,
+    (logicalStage) => ({ logicalStage })
+  );
+  const byInterest = summarizeArticleContextAttributionMap(
+    attribution?.byInterest,
+    totalRequests,
+    (interest) => ({ interest })
+  );
+  const topCallerStageCombinations = summarizeArticleContextAttributionMap(
+    attribution?.combinations,
+    totalRequests,
+    (key) => {
+      const [callerId, executionPath, logicalStage, interest] = String(key || "").split("|");
+      return {
+        callerId: callerId || "unknown",
+        executionPath: executionPath || "other",
+        logicalStage: logicalStage || "other",
+        interest: interest || "unknown",
+      };
+    },
+    100
+  );
+  const topCaller = byCaller[0] || null;
+  const topStage = byLogicalStage[0] || null;
+  const topInterest = byInterest[0] || null;
+  const diagnosticsVsProduction = buildArticleContextDiagnosticsVsProductionSummary(
+    byExecutionPath,
+    totalRequests,
+    actualBuilds
+  );
+  return {
+    totalRequests,
+    cacheHits,
+    cacheMisses,
+    actualBuilds,
+    uniqueArticleCount: requestSummary?.total || 0,
+    byCaller,
+    byExecutionPath,
+    byLogicalStage,
+    byInterest,
+    topCallerStageCombinations,
+    attributionInstrumentationMs: Number(run.attributionInstrumentationMs) || 0,
+    diagnosticsVsProduction,
+    interpretation: {
+      topCaller: topCaller?.callerId || "",
+      topCallerPercent: topCaller?.percentOfTotal || 0,
+      topStage: topStage?.logicalStage || "",
+      topInterest: topInterest?.interest || "",
+      diagnosticsRequestPercent: diagnosticsVsProduction.diagnosticsPercent,
+      cacheHitRatePercent: totalRequests ? Math.round((cacheHits / totalRequests) * 1000) / 10 : 0,
+      likelyBestReuseBoundary: topCaller?.callerId || topStage?.logicalStage || "",
+    },
+  };
+}
+
 function buildFilterPerformanceInterpretation(run) {
   const stageEntries = FILTER_PERFORMANCE_STAGE_FIELDS
     .map((field) => ({ field, ms: Number(run[field]) || 0 }))
@@ -283,7 +569,7 @@ function buildFilterPerformanceInterpretation(run) {
   const counters = run.operationCounters || {};
   const articleCount = Math.max(1, Number(run.candidateCount) || 0);
   const likelyRepeatedWork =
-    Number(run.duplicateArticleContextBuildCount || 0) > articleCount * 0.5 ||
+    Number(run.duplicateArticleContextRequestCount || run.duplicateArticleContextBuildCount || 0) > articleCount * 0.5 ||
     Number(run.duplicateEvidenceBuildCount || 0) > articleCount * 0.25 ||
     Number(counters.subgroupAssessmentCount || 0) > articleCount * 2;
   return {
@@ -325,7 +611,12 @@ function compactFilterPerformanceRun(run) {
     diagnosticsMs: run.diagnosticsMs,
     totalPipelineMs: run.totalPipelineMs,
     totalUserVisibleMs: run.totalUserVisibleMs,
-    articleContextBuildCount: Number(counters.articleContextBuildCount) || 0,
+    articleContextRequestCount: Number(counters.articleContextRequestCount || counters.articleContextBuildCount) || 0,
+    articleContextBuildCount: Number(counters.articleContextRequestCount || counters.articleContextBuildCount) || 0,
+    articleContextBuildCountDeprecated: true,
+    articleContextCacheHitCount: Number(counters.articleContextCacheHitCount) || 0,
+    articleContextCacheMissCount: Number(counters.articleContextCacheMissCount) || 0,
+    articleContextActualBuildCount: Number(counters.articleContextActualBuildCount) || 0,
     sharedEvidenceBuildCount: Number(counters.sharedEvidenceBuildCount) || 0,
     personalInterestAssessmentCount: Number(counters.personalInterestAssessmentCount) || 0,
     subgroupAssessmentCount: Number(counters.subgroupAssessmentCount) || 0,
@@ -337,13 +628,23 @@ function compactFilterPerformanceRun(run) {
     groupingInputCount: Number(counters.groupingInputCount) || 0,
     renderedCardCount: Number(counters.renderedCardCount) || 0,
     diagnosticsArticleCount: Number(counters.diagnosticsArticleCount) || 0,
-    articleContextBuildsPerArticle: run.articleContextBuildsPerArticle,
+    articleContextRequestPerArticle: run.articleContextRequestPerArticle,
+    articleContextBuildsPerArticle: run.articleContextRequestPerArticle,
     evidenceBuildsPerArticle: run.evidenceBuildsPerArticle,
     assessmentsPerArticle: run.assessmentsPerArticle,
-    duplicateArticleContextBuildCount: run.duplicateArticleContextBuildCount,
+    duplicateArticleContextRequestCount: run.duplicateArticleContextRequestCount,
+    duplicateArticleContextBuildCount: run.duplicateArticleContextRequestCount,
     duplicateEvidenceBuildCount: run.duplicateEvidenceBuildCount,
-    maximumContextBuildsForSingleArticle: run.maximumContextBuildsForSingleArticle,
+    maximumContextRequestsForSingleArticle: run.maximumContextRequestsForSingleArticle,
+    maximumContextBuildsForSingleArticle: run.maximumContextRequestsForSingleArticle,
+    maximumActualContextBuildsForSingleArticle: run.maximumActualContextBuildsForSingleArticle,
     maximumEvidenceBuildsForSingleArticle: run.maximumEvidenceBuildsForSingleArticle,
+    articleContextRequestAttribution: run.articleContextRequestAttribution,
+    articleContextTopCallers: run.articleContextTopCallers,
+    articleContextStageSummary: run.articleContextStageSummary,
+    articleContextInterestSummary: run.articleContextInterestSummary,
+    articleContextDiagnosticsVsProductionSummary: run.articleContextDiagnosticsVsProductionSummary,
+    attributionInstrumentationMs: Number(run.attributionInstrumentationMs) || 0,
     activeRunId: run.activeRunId,
     previousRunStillActive: Boolean(run.previousRunStillActive),
     overlappingRunCount: Number(run.overlappingRunCount) || 0,
@@ -379,18 +680,34 @@ function completeFilterPerformanceRun(extra = {}) {
     run.totalPipelineMs = Math.round(stageTotal * 10) / 10;
   }
   const articleCount = Math.max(1, Number(run.candidateCount) || 0);
-  const contextSummary = summarizeFilterPerformanceArticleMap(run.operationMaps.articleContext, articleCount);
+  const contextRequestSummary = summarizeFilterPerformanceArticleMap(run.operationMaps.articleContext, articleCount);
+  const contextActualBuildSummary = summarizeFilterPerformanceArticleMap(run.operationMaps.articleContextActualBuild, articleCount);
   const evidenceSummary = summarizeFilterPerformanceArticleMap(run.operationMaps.sharedEvidence, articleCount);
-  run.articleContextBuildsPerArticle = contextSummary.perArticle;
+  run.articleContextRequestPerArticle = contextRequestSummary.perArticle;
   run.evidenceBuildsPerArticle = evidenceSummary.perArticle;
   run.assessmentsPerArticle = Math.round(((Number(run.operationCounters.personalInterestAssessmentCount) || 0) / articleCount) * 100) / 100;
-  run.duplicateArticleContextBuildCount = contextSummary.duplicateCount;
+  run.duplicateArticleContextRequestCount = contextRequestSummary.duplicateCount;
   run.duplicateEvidenceBuildCount = evidenceSummary.duplicateCount;
-  run.maximumContextBuildsForSingleArticle = contextSummary.maximumForSingleArticle;
+  run.maximumContextRequestsForSingleArticle = contextRequestSummary.maximumForSingleArticle;
+  run.maximumActualContextBuildsForSingleArticle = contextActualBuildSummary.maximumForSingleArticle;
   run.maximumEvidenceBuildsForSingleArticle = evidenceSummary.maximumForSingleArticle;
+  run.articleContextRequestAttribution = buildArticleContextRequestAttribution(
+    run,
+    contextRequestSummary,
+    contextActualBuildSummary
+  );
+  run.articleContextTopCallers = run.articleContextRequestAttribution.byCaller.slice(0, 25);
+  run.articleContextStageSummary = run.articleContextRequestAttribution.byLogicalStage;
+  run.articleContextInterestSummary = run.articleContextRequestAttribution.byInterest;
+  run.articleContextDiagnosticsVsProductionSummary = buildArticleContextDiagnosticsVsProductionSummary(
+    run.articleContextRequestAttribution.byExecutionPath,
+    run.articleContextRequestAttribution.totalRequests,
+    run.articleContextRequestAttribution.actualBuilds
+  );
   run.interpretation = buildFilterPerformanceInterpretation(run);
   run.completed = true;
   run.operationMaps = null;
+  run.articleContextAttributionState = null;
   const compact = compactFilterPerformanceRun(run);
   runtime.filterPerformanceRuns.push(compact);
   runtime.filterPerformanceRuns = runtime.filterPerformanceRuns.slice(-20);
@@ -404,7 +721,7 @@ function completeFilterPerformanceRun(extra = {}) {
       totalUserVisibleMs: compact.totalUserVisibleMs,
       slowestStage: compact.interpretation?.slowestStage || "",
       slowestStageMs: compact.interpretation?.slowestStageMs || 0,
-      duplicateContextBuilds: compact.duplicateArticleContextBuildCount,
+      duplicateContextRequests: compact.duplicateArticleContextRequestCount,
       duplicateEvidenceBuilds: compact.duplicateEvidenceBuildCount,
     }]);
   }
@@ -12164,7 +12481,7 @@ const BANKNOTE_POLYMER_CHILD_MATCH_SUBSTRATE_TERMS = Object.freeze([
 ]);
 
 function getMatchedBanknoteDiagnosticTerms(article, terms = []) {
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "getMatchedBanknoteDiagnosticTerms", { interest: "banknotes" });
   const fields = [
     ["title", context.titleText],
     ["tags", context.tagText],
@@ -13125,7 +13442,7 @@ function getDominantDomainTopMatchedSignals(scoreBreakdown) {
 }
 
 function getDominantDomainDecisionDiagnostics(article) {
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "getDominantDomainDecisionDiagnostics");
   const banknoteSignals = getPersonalDomainContextProfile(context, "banknote_intelligence");
   const identitySignals = getPersonalDomainContextProfile(context, "identity_documents");
   const digitalSignals = getPersonalDomainContextProfile(context, "digital_identity_biometrics");
@@ -18758,6 +19075,11 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     filterPipelineStages: diagnostics.filterPipelineStages || [],
     diagnosticsPerformance: diagnostics.diagnosticsPerformance || null,
     frontendPerformanceDiagnostics: diagnostics.frontendPerformanceDiagnostics || getFrontendPerformanceDiagnosticsForExport(10),
+    articleContextRequestAttribution: diagnostics.articleContextRequestAttribution || null,
+    articleContextTopCallers: diagnostics.articleContextTopCallers || [],
+    articleContextStageSummary: diagnostics.articleContextStageSummary || [],
+    articleContextInterestSummary: diagnostics.articleContextInterestSummary || [],
+    articleContextDiagnosticsVsProductionSummary: diagnostics.articleContextDiagnosticsVsProductionSummary || null,
     filterDecisionTraceSummary: diagnostics.filterDecisionTraceSummary || null,
     filterDecisionDebugTools: diagnostics.filterDecisionDebugTools || null,
     filterDecisionRichTrace: diagnostics.filterDecisionRichTrace || null,
@@ -19075,14 +19397,48 @@ function compareLatestFilterPerformanceRuns() {
   };
 }
 
+function getLatestArticleContextRequestAttribution() {
+  return getLatestFilterPerformanceDiagnostics()?.articleContextRequestAttribution || null;
+}
+
+function listArticleContextRequestCallers(limit = 25) {
+  const attribution = getLatestArticleContextRequestAttribution();
+  const normalizedLimit = Math.max(1, Math.min(100, Number(limit) || 25));
+  return (attribution?.byCaller || []).slice(0, normalizedLimit);
+}
+
+function listArticleContextRequestsByStage() {
+  return getLatestArticleContextRequestAttribution()?.byLogicalStage || [];
+}
+
+function listArticleContextRequestsByInterest() {
+  return getLatestArticleContextRequestAttribution()?.byInterest || [];
+}
+
+function compareArticleContextProductionAndDiagnostics() {
+  const latest = getLatestFilterPerformanceDiagnostics();
+  return {
+    available: Boolean(latest?.articleContextDiagnosticsVsProductionSummary),
+    articleContextDiagnosticsVsProductionSummary: latest?.articleContextDiagnosticsVsProductionSummary || null,
+    interpretation: latest?.articleContextRequestAttribution?.interpretation || null,
+    byExecutionPath: latest?.articleContextRequestAttribution?.byExecutionPath || [],
+  };
+}
+
 function exportFilterPerformanceDiagnostics() {
+  const latestRun = getLatestFilterPerformanceDiagnostics();
   const backendRequestContributionDiagnostics = getBackendRequestContributionDiagnostics();
   const payload = {
     exportedAt: new Date().toISOString(),
     appBuild: APP_BUILD,
     enabled: isFilterPerformanceDiagnosticsEnabled(),
     completedRunCount: runtime.filterPerformanceRuns.length,
-    latestRun: getLatestFilterPerformanceDiagnostics(),
+    latestRun,
+    articleContextRequestAttribution: latestRun?.articleContextRequestAttribution || null,
+    articleContextTopCallers: latestRun?.articleContextTopCallers || [],
+    articleContextStageSummary: latestRun?.articleContextStageSummary || [],
+    articleContextInterestSummary: latestRun?.articleContextInterestSummary || [],
+    articleContextDiagnosticsVsProductionSummary: latestRun?.articleContextDiagnosticsVsProductionSummary || null,
     backendRequestContributionDiagnostics: backendRequestContributionDiagnostics
       ? {
           generatedRequestCount: backendRequestContributionDiagnostics.generatedRequestCount,
@@ -19205,6 +19561,26 @@ function ensureFilterPipelineDiagnosticsExportTools() {
 
   if (typeof window.compareLatestFilterPerformanceRuns !== "function") {
     window.compareLatestFilterPerformanceRuns = () => compareLatestFilterPerformanceRuns();
+  }
+
+  if (typeof window.getLatestArticleContextRequestAttribution !== "function") {
+    window.getLatestArticleContextRequestAttribution = () => getLatestArticleContextRequestAttribution();
+  }
+
+  if (typeof window.listArticleContextRequestCallers !== "function") {
+    window.listArticleContextRequestCallers = (limit) => listArticleContextRequestCallers(limit);
+  }
+
+  if (typeof window.listArticleContextRequestsByStage !== "function") {
+    window.listArticleContextRequestsByStage = () => listArticleContextRequestsByStage();
+  }
+
+  if (typeof window.listArticleContextRequestsByInterest !== "function") {
+    window.listArticleContextRequestsByInterest = () => listArticleContextRequestsByInterest();
+  }
+
+  if (typeof window.compareArticleContextProductionAndDiagnostics !== "function") {
+    window.compareArticleContextProductionAndDiagnostics = () => compareArticleContextProductionAndDiagnostics();
   }
 
   if (typeof window.exportFilterPerformanceDiagnostics !== "function") {
@@ -19524,6 +19900,11 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.getLatestFilterPerformanceDiagnostics()",
         "window.listFilterPerformanceRuns(limit)",
         "window.compareLatestFilterPerformanceRuns()",
+        "window.getLatestArticleContextRequestAttribution()",
+        "window.listArticleContextRequestCallers(limit)",
+        "window.listArticleContextRequestsByStage()",
+        "window.listArticleContextRequestsByInterest()",
+        "window.compareArticleContextProductionAndDiagnostics()",
         "window.exportFilterPerformanceDiagnostics()",
         "window.listBackendRequestContributions(limit)",
         "window.listLowValueBackendRequests(limit)",
@@ -19723,6 +20104,13 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.polymerChildMatchDiagnosticsSummary = getPolymerChildMatchDiagnosticsSummary(diagnostics);
   diagnostics.polymerFalseNegativeDiagnostics = getPolymerFalseNegativeDiagnosticsSummary(diagnostics);
   diagnostics.pipelineDiagnosticsArchitecture = getPipelineDiagnosticsArchitecture(diagnostics);
+  const latestPerformanceDiagnostics = getLatestFilterPerformanceDiagnostics();
+  diagnostics.articleContextRequestAttribution = latestPerformanceDiagnostics?.articleContextRequestAttribution || null;
+  diagnostics.articleContextTopCallers = latestPerformanceDiagnostics?.articleContextTopCallers || [];
+  diagnostics.articleContextStageSummary = latestPerformanceDiagnostics?.articleContextStageSummary || [];
+  diagnostics.articleContextInterestSummary = latestPerformanceDiagnostics?.articleContextInterestSummary || [];
+  diagnostics.articleContextDiagnosticsVsProductionSummary =
+    latestPerformanceDiagnostics?.articleContextDiagnosticsVsProductionSummary || null;
   diagnostics.frontendPerformanceDiagnostics = getFrontendPerformanceDiagnosticsForExport(10);
   publishFilterDecisionTraceDiagnostics(diagnostics);
   publishPersonalDashboardScores(diagnostics);
@@ -19892,7 +20280,7 @@ function normalizeArticleImageUrl(value) {
 
 function isGoogleNewsArticle(article) {
   return getCachedArticleValue(article, "isGoogleNewsArticle", () => {
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "isGoogleNewsArticle");
     const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
     return [
       "news.google.com",
@@ -20392,7 +20780,7 @@ function matchesIdCardsHolographyOvdCombinationBridge(article, selectedIdentityI
     return false;
   }
 
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "matchesIdCardsHolographyOvdCombinationBridge", { interest: "shared_security" });
   const articleText = [
     context.titleText,
     context.tagText,
@@ -20426,7 +20814,7 @@ function articleMatchesSelectedIdentityTechniqueBridge(article, selectedInterest
     return false;
   }
 
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "articleMatchesSelectedIdentityTechniqueBridge", { interest: "shared_security" });
   const articleText = [
     context.titleText,
     context.tagText,
@@ -20618,7 +21006,7 @@ function getSelectedSharedSecurityBridgeTechniqueInterests(selectedInterests = n
 }
 
 function getSharedSecurityFeatureBridgeEvidence(article) {
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "getSharedSecurityFeatureBridgeEvidence", { interest: "shared_security" });
   const textBuckets = {
     title: context.titleText,
     tags: context.tagText,
@@ -20666,7 +21054,7 @@ function getSharedSecurityMaterialBridgeEvidence(textBuckets = {}, matchedTerms 
 }
 
 function getSharedSecurityDashboardTechniqueMatch(article, selectedTechniqueInterests = []) {
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "getSharedSecurityDashboardTechniqueMatch", { interest: interestId || "shared_security" });
   const textBuckets = {
     title: context.titleText,
     tags: context.tagText,
@@ -20764,7 +21152,7 @@ function getSharedSecurityBridgeScoreRescueAssessment(article, options = {}) {
     ? options.selectedBridgeTechniqueInterests
     : [];
   const selectedIdentityBaseInterests = selectedIdentityInterests;
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "getSharedSecurityBridgeScoreRescueAssessment", { interest: "shared_security" });
   const identitySignals = getIdentityDocumentInterestSignals(article);
   const banknoteSignals = getBanknoteInterestSignals(article);
   const identityDomainContext = getPersonalDomainContextProfile(context, "identity_documents");
@@ -20847,7 +21235,7 @@ function getSharedSecurityBridgeScoreRescueAssessment(article, options = {}) {
 }
 
 function hasObviousSharedSecurityBridgeNoise(article) {
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "hasObviousSharedSecurityBridgeNoise", { interest: "shared_security" });
   const haystack = [
     context.titleText,
     context.tagText,
@@ -20895,7 +21283,7 @@ function getSharedSecurityBridgeDecision(article, selectedInterests = normalizeP
   // Recursion safety: this active matcher helper must not call dashboard
   // scoring/matching entry points such as articleMatchesPersonalDashboardSelection,
   // computePersonalInterestBoost, or getPersonalDashboardDomainMatch.
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "getSharedSecurityBridgeDecision", { interest: "shared_security" });
   const primaryDomain = getArticleDominantDomain(article);
   const matchedDashboardDomains = [];
   const sharedSecurityTechniqueMatch = getSharedSecurityDashboardTechniqueMatch(article, selectedBridgeTechniqueInterests);
@@ -21136,7 +21524,7 @@ function shouldExcludeIdentityDocumentsRetrievalCandidate(
 ) {
   const selectedIdentitySubinterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
   const selectedSet = new Set(selectedIdentitySubinterests);
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "shouldExcludeIdentityDocumentsRetrievalCandidate", { interest: "identity_documents" });
   const haystack = [
     context.titleText,
     context.tagText,
@@ -22251,6 +22639,7 @@ function compareSelectedVsBroadBaselineRequests() {
 
 function buildArticleIntelligenceContext(article) {
   return getCachedArticleValue(article, "personalBoostContext", () => {
+    recordArticleContextActualBuild(article);
     const normalizedEvent = article?._intelligence?.normalizedEvent || normalizeIntelligenceEvent(article);
     const signalIds = getArticleSignalCategories(article);
     const signalLabels = signalIds
@@ -22310,9 +22699,8 @@ function buildArticleIntelligenceContext(article) {
   });
 }
 
-function getPersonalBoostContext(article) {
-  incrementFilterPerformanceCounter("articleContextBuildCount");
-  incrementFilterPerformanceArticleCounter("articleContext", article);
+function getPersonalBoostContext(article, callerId = "unknown", options = {}) {
+  recordArticleContextRequest(article, callerId, options);
   return buildArticleIntelligenceContext(article);
 }
 
@@ -23560,7 +23948,7 @@ function countSecurityInkKeywordMatches(text, keywords = [], options = {}) {
 }
 
 function articleHasExplicitBanknoteCurrencyContext(article) {
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "articleHasExplicitBanknoteCurrencyContext", { interest: "banknotes" });
   const haystack = [
     context.titleText,
     context.tagText,
@@ -23581,7 +23969,7 @@ function articleHasExplicitBanknoteCurrencyContext(article) {
 
 function getStrongBanknoteDomainSignalAssessment(article) {
   return getCachedArticleValue(article, "strongBanknoteDomainSignalAssessment", () => {
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "getStrongBanknoteDomainSignalAssessment", { interest: "banknotes" });
     const titleMatches = STRONG_BANKNOTE_DOMAIN_SIGNAL_TERMS.filter((term) => textMatchesKeyword(context.titleText, term));
     const tagMatches = STRONG_BANKNOTE_DOMAIN_SIGNAL_TERMS.filter((term) => textMatchesKeyword(context.tagText, term));
     const metadataMatches = STRONG_BANKNOTE_DOMAIN_SIGNAL_TERMS.filter((term) => textMatchesKeyword(context.metadataText, term));
@@ -23754,7 +24142,7 @@ function computePersonalInterestBoost(article, interestId) {
     }
 
     const groupId = interest.groupId;
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "computePersonalInterestBoost", { interest: interestId });
     const domainContext = getPersonalDomainContextProfile(context, groupId);
     const strongKeywords = Array.isArray(interest.strong) ? interest.strong : [];
     const weakKeywords = Array.isArray(interest.weak) ? interest.weak : [];
@@ -24842,7 +25230,7 @@ function getIdentityVerificationSourceTrustEvidence(article) {
   return getCachedArticleValue(article, "identityVerificationSourceTrustEvidence", () => {
     incrementFilterPerformanceCounter("sharedEvidenceBuildCount");
     incrementFilterPerformanceArticleCounter("sharedEvidence", article);
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "getIdentityVerificationSourceTrustEvidence", { interest: "identity_verification" });
     const trustedSourceDetails = buildIdentityVerificationTrustedTextSources(article);
     const trustedTextSources = trustedSourceDetails.sourceMap;
     const supportingTextSources = {
@@ -25102,7 +25490,7 @@ function getIdentityVerificationPersonalDashboardScoringAlignment(article, rawSc
 
 function getBanknoteSourceAuthority(article) {
   return getCachedArticleValue(article, "banknoteSourceAuthority", () => {
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "getBanknoteSourceAuthority", { interest: "banknotes" });
     const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
     const hasAny = (values = []) => values.some((value) => textMatchesKeyword(sourceFingerprint, value));
 
@@ -25252,7 +25640,7 @@ function getDigitalSubgroupHybridAssessment(article, interestId) {
       };
     }
 
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "getDigitalSubgroupHybridAssessment", { interest: interestId });
     const domainContext = getPersonalDomainContextProfile(context, "digital_identity_biometrics");
     const interestScore = computePersonalInterestBoost(article, interestId).score;
     const config = DIGITAL_SUBGROUP_HYBRID_FILTERS[interestId] || {
@@ -25712,7 +26100,7 @@ function getEidDiagnosticMatchedTerms(context, terms) {
 }
 
 function buildEidDiagnosticEntry(article, options = {}) {
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "buildEidDiagnosticEntry", { interest: "eid" });
   const matchedStrongSignals = getEidDiagnosticMatchedTerms(context, EID_DIAGNOSTIC_STRONG_SIGNALS);
   const matchedRelatedSignals = getEidDiagnosticMatchedTerms(context, EID_DIAGNOSTIC_RELATED_SIGNALS);
   const matchedNoiseSignals = getEidDiagnosticMatchedTerms(context, EID_DIAGNOSTIC_NOISE_SIGNALS);
@@ -25780,7 +26168,7 @@ function getEidProfessionalGuardAssessment(article, options = {}) {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const enabled = Boolean(options.forceEnabled) || shouldApplyEidProfessionalGuardBooleanGate(selectedInterests);
   const diagnosticsEntry = buildEidDiagnosticEntry(article, { passed: true });
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "getEidProfessionalGuardAssessment", { interest: "eid" });
   const relatedPassSignals = getEidDiagnosticMatchedTerms(context, EID_PROFESSIONAL_RELATED_PASS_SIGNALS);
   const emergencyNoiseTerms = getEidDiagnosticMatchedTerms(context, EID_PROFESSIONAL_EMERGENCY_NOISE_TERMS);
   const securityFeatureNoiseTerms = getEidDiagnosticMatchedTerms(context, EID_PROFESSIONAL_SECURITY_FEATURE_NOISE_TERMS);
@@ -25970,7 +26358,7 @@ function getDigitalWalletProfessionalGuardAssessment(article, options = {}) {
   incrementFilterPerformanceCounter("professionalGuardAssessmentCount");
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const enabled = Boolean(options.forceEnabled) || shouldApplyDigitalWalletProfessionalGuard(selectedInterests);
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "getDigitalWalletProfessionalGuardAssessment", { interest: "digital_wallet" });
   const matchedStrongSignals = getEidDiagnosticMatchedTerms(context, DIGITAL_WALLET_PROFESSIONAL_STRONG_SIGNALS);
   const matchedMediumSignals = getEidDiagnosticMatchedTerms(context, DIGITAL_WALLET_PROFESSIONAL_MEDIUM_SIGNALS);
   const matchedIdentityContextTerms = getEidDiagnosticMatchedTerms(context, DIGITAL_WALLET_PROFESSIONAL_IDENTITY_CONTEXT_TERMS);
@@ -26291,7 +26679,7 @@ function getKycProfessionalGuardAssessment(article, options = {}) {
   incrementFilterPerformanceCounter("professionalGuardAssessmentCount");
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const enabled = Boolean(options.forceEnabled) || shouldApplyKycProfessionalGuard(selectedInterests);
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "getKycProfessionalGuardAssessment", { interest: "kyc" });
   const matchedStrongSignals = getEidDiagnosticMatchedTerms(context, KYC_PROFESSIONAL_STRONG_SIGNALS);
   const matchedVendorSignals = getEidDiagnosticMatchedTerms(context, KYC_PROFESSIONAL_VENDOR_SIGNALS);
   const matchedVendorContextTerms = getEidDiagnosticMatchedTerms(context, KYC_PROFESSIONAL_VENDOR_CONTEXT_TERMS);
@@ -26483,7 +26871,7 @@ function getOnboardingProfessionalGuardAssessment(article, options = {}) {
   incrementFilterPerformanceCounter("professionalGuardAssessmentCount");
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const enabled = Boolean(options.forceEnabled) || shouldApplyOnboardingProfessionalGuard(selectedInterests);
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "getOnboardingProfessionalGuardAssessment", { interest: "onboarding" });
   const matchedStrongSignals = getEidDiagnosticMatchedTerms(context, ONBOARDING_PROFESSIONAL_STRONG_SIGNALS);
   const matchedIdentityContextTerms = getEidDiagnosticMatchedTerms(context, ONBOARDING_PROFESSIONAL_CONTEXT_TERMS);
   const matchedBusinessContextTerms = getEidDiagnosticMatchedTerms(context, ONBOARDING_PROFESSIONAL_BUSINESS_TERMS);
@@ -26704,7 +27092,7 @@ function getLivenessProfessionalGuardAssessment(article, options = {}) {
   incrementFilterPerformanceCounter("professionalGuardAssessmentCount");
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const enabled = Boolean(options.forceEnabled) || shouldApplyLivenessProfessionalGuard(selectedInterests);
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "getLivenessProfessionalGuardAssessment", { interest: "liveness" });
   const matchedStrongSignals = getEidDiagnosticMatchedTerms(context, LIVENESS_PROFESSIONAL_STRONG_SIGNALS);
   const matchedProfessionalContextTerms = getEidDiagnosticMatchedTerms(context, LIVENESS_PROFESSIONAL_CONTEXT_TERMS);
   const matchedVendorSignals = getEidDiagnosticMatchedTerms(context, LIVENESS_PROFESSIONAL_VENDOR_SIGNALS);
@@ -26984,7 +27372,7 @@ function getAiProfessionalGuardAssessment(article, options = {}) {
   incrementFilterPerformanceCounter("professionalGuardAssessmentCount");
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const enabled = Boolean(options.forceEnabled) || shouldApplyAiProfessionalGuard(selectedInterests);
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "getAiProfessionalGuardAssessment", { interest: "artificial_intelligence" });
   const matchedAiSignals = getEidDiagnosticMatchedTerms(context, AI_PROFESSIONAL_AI_SIGNALS);
   const matchedIdentityUseCaseTerms = getEidDiagnosticMatchedTerms(context, AI_PROFESSIONAL_IDENTITY_USE_CASE_TERMS);
   const matchedProfessionalContextTerms = getEidDiagnosticMatchedTerms(context, AI_PROFESSIONAL_CONTEXT_TERMS);
@@ -27712,7 +28100,7 @@ function getDigitalIdentityProfessionalGuardAssessment(article, options = {}) {
   incrementFilterPerformanceCounter("professionalGuardAssessmentCount");
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const enabled = Boolean(options.forceEnabled) || shouldApplyDigitalIdentityProfessionalGuard(selectedInterests);
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "getDigitalIdentityProfessionalGuardAssessment", { interest: "digital_identity" });
   const haystack = [
     context.titleText,
     context.tagText,
@@ -27983,7 +28371,7 @@ function getBiometricsProfessionalGuardAssessment(article, options = {}) {
   incrementFilterPerformanceCounter("biometricsAssessmentCount");
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const enabled = Boolean(options.forceEnabled) || shouldApplyBiometricsProfessionalGuardBooleanGate(selectedInterests);
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "getBiometricsProfessionalGuardAssessment", { interest: "biometrics" });
   const haystack = [
     context.titleText,
     context.tagText,
@@ -28641,7 +29029,7 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       };
     }
 
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "getSharedSecurityStandaloneAssessment", { interest: "shared_security" });
     const metadataTextForMatching = interestId === "security_printing"
       ? String(context.metadataText || "").replace(/\bshared security printing\b/gi, " ").replace(/\s+/g, " ").trim()
       : context.metadataText;
@@ -28815,7 +29203,7 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
 
 function isBanknoteSocialSource(article) {
   return getCachedArticleValue(article, "isBanknoteSocialSource", () => {
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "isBanknoteSocialSource", { interest: "banknotes" });
     const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
     return [
       "reddit",
@@ -28831,7 +29219,7 @@ function isBanknoteSocialSource(article) {
 
 function getIdentityDocumentSourceAuthority(article) {
   return getCachedArticleValue(article, "identityDocumentSourceAuthority", () => {
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "getIdentityDocumentSourceAuthority", { interest: "identity_documents" });
     const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
     const hasAny = (values = []) => values.some((value) => textMatchesKeyword(sourceFingerprint, value));
     const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests();
@@ -28884,7 +29272,7 @@ function getIdentityDocumentSourceAuthority(article) {
 
 function getIdentityDocumentInterestSignals(article) {
   return getCachedArticleValue(article, "identityDocumentInterestSignals", () => {
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "getIdentityDocumentInterestSignals", { interest: "identity_documents" });
     const weightedHits = (terms = []) =>
       (countBoostKeywordMatches(context.titleText, terms) * 5) +
       (countBoostKeywordMatches(context.tagText, terms) * 2.5) +
@@ -29126,7 +29514,7 @@ function getIdentityDocumentInterestSignals(article) {
 }
 
 function isDriverLicenseSpecificArticle(article) {
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "isDriverLicenseSpecificArticle", { interest: "identity_documents" });
   const text = `${context.titleText} ${context.tagText} ${context.metadataText} ${context.bodyText}`;
   return [
     "real id",
@@ -29203,7 +29591,7 @@ function calculateIntentScore(articleText, intentProfile) {
 }
 
 function getIdentityDocumentIntentText(article) {
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "getIdentityDocumentIntentText", { interest: "identity_documents" });
   return [
     context.titleText,
     context.tagText,
@@ -29228,7 +29616,7 @@ const IDENTITY_INTENT_AUTHORITY_SOURCES = [
 
 function isIdentityTravelNoiseArticle(article) {
   return getCachedArticleValue(article, "identityTravelNoiseArticle", () => {
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "isIdentityTravelNoiseArticle", { interest: "identity_documents" });
     const text = [
       context.titleText,
       context.tagText,
@@ -29282,7 +29670,7 @@ function getIdentityIntentAuthorityBoost(article, intentScore) {
     return 0;
   }
 
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "getIdentityIntentAuthorityBoost", { interest: "identity_documents" });
   const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
   return IDENTITY_INTENT_AUTHORITY_SOURCES.some((value) => textMatchesKeyword(sourceFingerprint, value)) ? 20 : 0;
 }
@@ -29296,7 +29684,7 @@ function normalizeIdentityNavTitle(value) {
 
 function isIdentityNavigationPageArticle(article) {
   return getCachedArticleValue(article, "identityNavigationPageArticle", () => {
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "isIdentityNavigationPageArticle", { interest: "identity_documents" });
     const normalizedTitle = normalizeIdentityNavTitle(article?.title || "");
     const linkValue = `${article?.link || ""} ${article?.canonicalLink || ""}`.toLowerCase();
     const strongContextTerms = Array.from(
@@ -29343,7 +29731,7 @@ function isIdentityNavigationPageArticle(article) {
 
 function getBorderControlMarketingPagePenalty(article) {
   return getCachedArticleValue(article, "borderControlMarketingPagePenalty", () => {
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "getBorderControlMarketingPagePenalty", { interest: "identity_documents" });
     const normalizedTitle = normalizeIdentityNavTitle(article?.title || "");
     const linkValue = `${article?.link || ""} ${article?.canonicalLink || ""}`.toLowerCase();
     const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
@@ -29402,7 +29790,7 @@ function getBorderControlMarketingPagePenalty(article) {
 
 function getBorderControlNewsPriority(article) {
   return getCachedArticleValue(article, "borderControlNewsPriority", () => {
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "getBorderControlNewsPriority", { interest: "identity_documents" });
     const haystack = [
       context.titleText,
       context.tagText,
@@ -29530,7 +29918,7 @@ function getBorderControlAuthorityAdjustment(article, authority) {
 
 function getBorderControlGuidancePenalty(article) {
   return getCachedArticleValue(article, "borderControlGuidancePenalty", () => {
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "getBorderControlGuidancePenalty", { interest: "identity_documents" });
     const haystack = [
       context.titleText,
       context.tagText,
@@ -29603,7 +29991,7 @@ function getBorderControlRecencyAdjustment(article) {
 
 function getResidencePermitIntentAdjustment(article) {
   return getCachedArticleValue(article, "residencePermitIntentAdjustment", () => {
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "getResidencePermitIntentAdjustment", { interest: "identity_documents" });
     const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
 
     const titleCardHits = countBoostKeywordMatches(context.titleText, RESIDENCE_PERMIT_CARD_PRIORITY_TERMS);
@@ -29662,7 +30050,7 @@ function getIdentityProfileSourcePriorityBoost(article, profileId) {
       };
     }
 
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "getIdentityProfileSourcePriorityBoost", { interest: profileId || "identity_documents" });
     const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
     const hasAny = (values = []) => values.some((value) => textMatchesKeyword(sourceFingerprint, value));
 
@@ -29695,7 +30083,7 @@ function getIdentityProfileSoftNoiseAssessment(article, profileId) {
     const strongContextTerms = Array.isArray(IDENTITY_PROFILE_STRONG_CONTEXT_TERMS[profileId])
       ? IDENTITY_PROFILE_STRONG_CONTEXT_TERMS[profileId]
       : [];
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "getIdentityProfileSoftNoiseAssessment", { interest: profileId || "identity_documents" });
     const haystack = [
       context.titleText,
       context.tagText,
@@ -29781,7 +30169,7 @@ function getIdentityGoogleNewsPenalty(article, profileId) {
       : Array.from(
         new Set(Object.values(IDENTITY_PROFILE_STRONG_CONTEXT_TERMS).flatMap((terms) => terms))
       );
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "getIdentityGoogleNewsPenalty", { interest: profileId || "identity_documents" });
     const haystack = [
       context.titleText,
       context.tagText,
@@ -29853,7 +30241,7 @@ function evaluateIdentityDocumentHardContext(article, profileId) {
       };
     }
 
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "evaluateIdentityDocumentHardContext", { interest: profileId || "identity_documents" });
     const haystack = [
       context.titleText,
       context.tagText,
@@ -29952,7 +30340,7 @@ function calculateIdentityProfileScore(article, profileId) {
       };
     }
 
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "calculateIdentityProfileScore", { interest: profileId || "identity_documents" });
     const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
     const hardContext = evaluateIdentityDocumentHardContext(article, profileId);
     const scoreMatches = (terms = [], weights) => {
@@ -30086,7 +30474,7 @@ function hasRequiredContextCombo(article, profileId) {
     const combos = Array.isArray(IDENTITY_REQUIRED_CONTEXT_COMBOS[profileId])
       ? IDENTITY_REQUIRED_CONTEXT_COMBOS[profileId]
       : [];
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "hasRequiredContextCombo", { interest: profileId || "identity_documents" });
     const haystack = [
       context.titleText,
       context.tagText,
@@ -30110,7 +30498,7 @@ function hasRequiredContextCombo(article, profileId) {
 }
 
 function hasIdentityTravelNoise(article, terms = []) {
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "hasIdentityTravelNoise", { interest: "identity_documents" });
   const haystack = [
     context.titleText,
     context.tagText,
@@ -30306,7 +30694,7 @@ function getPersonalDashboardBanknoteSourceCounts(articles = []) {
   }
 
   articles.forEach((article) => {
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "getPersonalDashboardBanknoteSourceCounts", { interest: "banknotes" });
     const fingerprint = `${context.sourceText} ${context.domainText}`;
     PERSONAL_DASHBOARD_BANKNOTE_DEBUG_SOURCES.forEach((sourceKey) => {
       if (textMatchesKeyword(fingerprint, sourceKey)) {
@@ -30337,7 +30725,7 @@ function getPersonalBucketOrder(bucket) {
 
 function getBanknoteInterestSignals(article) {
   return getCachedArticleValue(article, "banknoteInterestSignals", () => {
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "getBanknoteInterestSignals", { interest: "banknotes" });
     const weightedHits = (terms = []) =>
       (countBoostKeywordMatches(context.titleText, terms) * 5) +
       (countBoostKeywordMatches(context.tagText, terms) * 2) +
@@ -30499,7 +30887,7 @@ function getBanknoteInterestSignals(article) {
 
 function getBanknoteNoiseAssessment(article) {
   return getCachedArticleValue(article, "banknoteNoiseAssessment", () => {
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "getBanknoteNoiseAssessment", { interest: "banknotes" });
     const weightedHits = (terms = []) =>
       (countBoostKeywordMatches(context.titleText, terms) * 5) +
       (countBoostKeywordMatches(context.tagText, terms) * 2) +
@@ -30650,7 +31038,7 @@ function getBanknoteNoiseAssessment(article) {
 
 function getArticleDominantDomain(article) {
   return getCachedArticleValue(article, "personalDominantDomain", () => {
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "getArticleDominantDomain", { interest: "cross_domain" });
     const banknoteSignals = getPersonalDomainContextProfile(context, "banknote_intelligence");
     const identitySignals = getPersonalDomainContextProfile(context, "identity_documents");
     const digitalSignals = getPersonalDomainContextProfile(context, "digital_identity_biometrics");
@@ -30692,7 +31080,7 @@ function getArticleDominantDomain(article) {
 }
 
 function hasSelectedDomainContext(article, selectedMainDomain) {
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "hasSelectedDomainContext", { interest: selectedMainDomain || "cross_domain" });
   if (selectedMainDomain === "banknotes") {
     return getPersonalDomainContextProfile(context, "banknote_intelligence").score >= 8;
   }
@@ -30732,7 +31120,7 @@ function isBanknoteContaminated(article) {
       return true;
     }
 
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "isBanknoteContaminated", { interest: "banknotes" });
     const contaminationConcepts = [
       "digital identity",
       "digital wallet",
@@ -30929,7 +31317,7 @@ function calculatePersonalDomainScore(article, selectedInterests = normalizePers
       };
     }
 
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "calculatePersonalDomainScore", { interest: "cross_domain" });
     const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
     const effectiveDomains = getEffectivePersonalDashboardDomains();
     const { mainDomainSelections, sharedInterestSelections } = getPersonalDashboardSelectedDomainConfig();
@@ -31262,7 +31650,7 @@ function getPersonalDashboardDomainMatch(article) {
     }
 
     const { mainDomainSelections, sharedInterestSelections } = getPersonalDashboardSelectedDomainConfig();
-    const context = getPersonalBoostContext(article);
+    const context = getPersonalBoostContext(article, "getPersonalDashboardDomainMatch", { interest: "cross_domain" });
     const selectedDomains = Array.from(mainDomainSelections.keys());
     const effectiveDomains = selectedDomains.length
       ? selectedDomains
@@ -31590,7 +31978,7 @@ function comparePersonalDashboardArticlesByRelevance(left, right) {
 }
 
 function getPersonalDashboardSourceKey(article) {
-  const context = getPersonalBoostContext(article);
+  const context = getPersonalBoostContext(article, "getPersonalDashboardSourceKey");
   return String(
     article?.source
     || article?.sourceName
@@ -43103,6 +43491,8 @@ function startFilterPerformanceDomRender() {
   const run = getActiveFilterPerformanceRun();
   if (run && !run.domRenderStartedAt) {
     run.domRenderStartedAt = getPerformanceNow();
+    run.currentExecutionPath = "production";
+    run.currentLogicalStage = "render";
   }
 }
 
