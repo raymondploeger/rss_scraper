@@ -4479,6 +4479,8 @@ function normalizeCandidateProviderResult(resolved = {}) {
     candidateLimit: resolved.candidateLimit || MAX_ARTICLES_IN_MEMORY,
     warnings: Array.isArray(resolved.warnings) ? resolved.warnings.slice() : [],
     diagnostics: resolved.diagnostics || {},
+    backendRequestContributionRaw: resolved.backendRequestContributionRaw || null,
+    backendRequestContributionDiagnostics: resolved.backendRequestContributionDiagnostics || null,
     expectedTotal: Number.isFinite(Number(resolved.expectedTotal)) ? Number(resolved.expectedTotal) : null,
     partial: Boolean(resolved.partial),
     candidateSourceCount: candidateSource.length,
@@ -18843,6 +18845,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     filters: diagnostics.filters || {},
     cache: diagnostics.cache || {},
     backendRequests: diagnostics.backendRequests || [],
+    backendRequestContributionDiagnostics: diagnostics.backendRequestContributionDiagnostics || null,
     notes: diagnostics.notes || [],
   };
 }
@@ -19073,12 +19076,29 @@ function compareLatestFilterPerformanceRuns() {
 }
 
 function exportFilterPerformanceDiagnostics() {
+  const backendRequestContributionDiagnostics = getBackendRequestContributionDiagnostics();
   const payload = {
     exportedAt: new Date().toISOString(),
     appBuild: APP_BUILD,
     enabled: isFilterPerformanceDiagnosticsEnabled(),
     completedRunCount: runtime.filterPerformanceRuns.length,
     latestRun: getLatestFilterPerformanceDiagnostics(),
+    backendRequestContributionDiagnostics: backendRequestContributionDiagnostics
+      ? {
+          generatedRequestCount: backendRequestContributionDiagnostics.generatedRequestCount,
+          completedRequestCount: backendRequestContributionDiagnostics.completedRequestCount,
+          failedRequestCount: backendRequestContributionDiagnostics.failedRequestCount,
+          rawArticleTotalAcrossRequests: backendRequestContributionDiagnostics.rawArticleTotalAcrossRequests,
+          uniqueCandidateCount: backendRequestContributionDiagnostics.uniqueCandidateCount,
+          duplicateArticleCountAcrossRequests: backendRequestContributionDiagnostics.duplicateArticleCountAcrossRequests,
+          duplicateRatePercent: backendRequestContributionDiagnostics.duplicateRatePercent,
+          requestsWithZeroUniqueCandidates: backendRequestContributionDiagnostics.requestsWithZeroUniqueCandidates,
+          requestsWithZeroFinalSurvivors: backendRequestContributionDiagnostics.requestsWithZeroFinalSurvivors,
+          topicBaselineContribution: backendRequestContributionDiagnostics.topicBaselineContribution,
+          selectedInterestContribution: backendRequestContributionDiagnostics.selectedInterestContribution,
+          broadDigitalBaselineContribution: backendRequestContributionDiagnostics.broadDigitalBaselineContribution,
+        }
+      : null,
     runs: runtime.filterPerformanceRuns.slice(-20),
   };
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -19189,6 +19209,22 @@ function ensureFilterPipelineDiagnosticsExportTools() {
 
   if (typeof window.exportFilterPerformanceDiagnostics !== "function") {
     window.exportFilterPerformanceDiagnostics = () => exportFilterPerformanceDiagnostics();
+  }
+
+  if (typeof window.listBackendRequestContributions !== "function") {
+    window.listBackendRequestContributions = (limit) => listBackendRequestContributions(limit);
+  }
+
+  if (typeof window.listLowValueBackendRequests !== "function") {
+    window.listLowValueBackendRequests = (limit) => listLowValueBackendRequests(limit);
+  }
+
+  if (typeof window.listBackendRequestOverlap !== "function") {
+    window.listBackendRequestOverlap = (limit) => listBackendRequestOverlap(limit);
+  }
+
+  if (typeof window.compareSelectedVsBroadBaselineRequests !== "function") {
+    window.compareSelectedVsBroadBaselineRequests = () => compareSelectedVsBroadBaselineRequests();
   }
 
   if (typeof window.explainArticleDecision !== "function") {
@@ -19489,6 +19525,10 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.listFilterPerformanceRuns(limit)",
         "window.compareLatestFilterPerformanceRuns()",
         "window.exportFilterPerformanceDiagnostics()",
+        "window.listBackendRequestContributions(limit)",
+        "window.listLowValueBackendRequests(limit)",
+        "window.listBackendRequestOverlap(limit)",
+        "window.compareSelectedVsBroadBaselineRequests()",
         "window.listRejectedArticles()",
         "window.listSurvivingArticles()",
         "window.explainArticleDecision(articleId)",
@@ -19794,6 +19834,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   console.log("filters", diagnostics.filters);
   console.log("cache", diagnostics.cache);
   console.log("backendRequests", diagnostics.backendRequests);
+  console.log("backendRequestContributionDiagnostics", diagnostics.backendRequestContributionDiagnostics);
   if (diagnostics.notes.length) {
     console.log("notes", diagnostics.notes);
   }
@@ -21783,6 +21824,428 @@ function getPersonalDashboardBackendDomainPlan() {
     domain: selectedMainDomains.slice().sort().join("+"),
     topic: "",
     searches: [],
+  };
+}
+
+function isBackendRequestContributionDiagnosticsEnabled() {
+  return isFilterPipelineDiagnosticsEnabled() || isFilterPerformanceDiagnosticsEnabled();
+}
+
+function getBackendContributionArticleId(article) {
+  return String(
+    article?.id ||
+      article?._id ||
+      article?.articleId ||
+      article?.canonicalLink ||
+      article?.link ||
+      article?.url ||
+      article?.title ||
+      ""
+  ).trim().toLowerCase();
+}
+
+function getBackendContributionArticleTitle(article) {
+  return String(article?.title || article?.normalizedTitle || "Untitled article").trim() || "Untitled article";
+}
+
+function getBackendRequestOriginDetails(params, plan, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const search = String(params?.get?.("search") || "").trim();
+  const topic = String(params?.get?.("topic") || "").trim();
+  const origins = [];
+  const selectedDigitalInterests = selectedInterests.filter(
+    (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "digital_identity_biometrics"
+  );
+  const isDigitalPlan = plan?.domain === "digital_identity_biometrics";
+  const broadDigitalBaseline = isDigitalPlan && selectedDigitalInterests.length > 1 &&
+    DIGITAL_IDENTITY_BACKEND_RETRIEVAL_BASE_SEARCH_TERMS.includes(search);
+  if (!search && topic) {
+    origins.push("topic_baseline");
+  }
+  if (broadDigitalBaseline) {
+    origins.push("broad_digital_baseline");
+  }
+  selectedInterests.forEach((interestId) => {
+    const terms = DIGITAL_IDENTITY_BACKEND_RETRIEVAL_SEARCH_TERMS[interestId] ||
+      BANKNOTE_BACKEND_RETRIEVAL_SEARCH_TERMS[interestId] ||
+      SHARED_SECURITY_BACKEND_RETRIEVAL_SEARCH_TERMS[interestId] ||
+      [];
+    if (search && terms.includes(search)) {
+      origins.push(`selected_interest:${interestId}`);
+    }
+  });
+  if (!origins.length && search) {
+    origins.push("other");
+  }
+  const selectedInterestOrigins = origins.filter((origin) => origin.startsWith("selected_interest:"));
+  let requestType = "other";
+  if (origins.includes("topic_baseline")) {
+    requestType = "topic_baseline";
+  } else if (origins.includes("broad_digital_baseline") && selectedInterestOrigins.length) {
+    requestType = "shared_exact_term";
+  } else if (origins.includes("broad_digital_baseline")) {
+    requestType = "broad_digital_baseline";
+  } else if (selectedInterestOrigins.length) {
+    requestType = "selected_interest";
+  }
+  return {
+    requestType,
+    requestOrigins: origins,
+  };
+}
+
+function buildBackendRequestContributionPlans(queryParamsList = [], plan = null) {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  return queryParamsList.map((params, requestIndex) => {
+    const originDetails = getBackendRequestOriginDetails(params, plan, selectedInterests);
+    return {
+      requestIndex,
+      requestKey: params.toString(),
+      requestType: originDetails.requestType,
+      requestOrigins: originDetails.requestOrigins,
+      topic: String(params.get("topic") || ""),
+      search: String(params.get("search") || ""),
+      limit: Number(params.get("limit")) || 0,
+      selectedInterests: selectedInterests.slice(),
+      sourceGroup: state.filters.sourceGroup || "all",
+    };
+  });
+}
+
+function createBackendRequestContributionDiagnostics(requestPlans = [], responseEntries = []) {
+  if (!requestPlans.length) {
+    return null;
+  }
+  const rows = requestPlans.map((plan) => ({
+    ...plan,
+    startedAt: responseEntries[plan.requestIndex]?.startedAt || "",
+    durationMs: responseEntries[plan.requestIndex]?.durationMs ?? null,
+    requestSucceeded: responseEntries[plan.requestIndex]?.requestSucceeded !== false,
+    statusCode: responseEntries[plan.requestIndex]?.statusCode ?? null,
+    cacheSource: "network",
+    rawResponseCount: 0,
+    validArticleCount: 0,
+    duplicateWithinRequestCount: 0,
+    duplicateAgainstEarlierRequestsCount: 0,
+    uniqueCandidateContributionCount: 0,
+    personalDashboardSurvivorContributionCount: 0,
+    professionalGuardSurvivorContributionCount: 0,
+    finalGroupedSurvivorContributionCount: 0,
+    exclusiveCandidateContributionCount: 0,
+    exclusiveFinalSurvivorContributionCount: 0,
+    overlappingRequestKeys: [],
+    overlapArticleCount: 0,
+    uniqueCandidateEfficiencyPercent: 0,
+    finalSurvivorEfficiencyPercent: 0,
+    exclusiveFinalSurvivorEfficiencyPercent: 0,
+    diagnosticFlags: [],
+    exampleTitles: [],
+    articleIds: new Set(),
+  }));
+  const articleMembership = new Map();
+  const firstRequestByArticleId = new Map();
+  const globalSeenIds = new Set();
+  rows.forEach((row) => {
+    const response = responseEntries[row.requestIndex]?.response || null;
+    const items = Array.isArray(response?.items) ? response.items : Array.isArray(response?.articles) ? response.articles : [];
+    const requestSeenIds = new Set();
+    row.rawResponseCount = items.length;
+    items.forEach((article) => {
+      if (!article || typeof article !== "object") {
+        return;
+      }
+      row.validArticleCount += 1;
+      const articleId = getBackendContributionArticleId(article);
+      if (!articleId) {
+        return;
+      }
+      if (requestSeenIds.has(articleId)) {
+        row.duplicateWithinRequestCount += 1;
+        return;
+      }
+      requestSeenIds.add(articleId);
+      row.articleIds.add(articleId);
+      if (row.exampleTitles.length < 5) {
+        row.exampleTitles.push(getBackendContributionArticleTitle(article));
+      }
+      if (!articleMembership.has(articleId)) {
+        articleMembership.set(articleId, new Set());
+      }
+      articleMembership.get(articleId).add(row.requestIndex);
+      if (globalSeenIds.has(articleId)) {
+        row.duplicateAgainstEarlierRequestsCount += 1;
+      } else {
+        globalSeenIds.add(articleId);
+        firstRequestByArticleId.set(articleId, row.requestIndex);
+      }
+    });
+  });
+  const overlapRows = [];
+  rows.forEach((leftRow, leftIndex) => {
+    rows.slice(leftIndex + 1).forEach((rightRow) => {
+      let sharedArticleCount = 0;
+      leftRow.articleIds.forEach((articleId) => {
+        if (rightRow.articleIds.has(articleId)) {
+          sharedArticleCount += 1;
+        }
+      });
+      if (sharedArticleCount <= 0) {
+        return;
+      }
+      leftRow.overlappingRequestKeys.push(rightRow.requestKey);
+      rightRow.overlappingRequestKeys.push(leftRow.requestKey);
+      leftRow.overlapArticleCount += sharedArticleCount;
+      rightRow.overlapArticleCount += sharedArticleCount;
+      overlapRows.push({
+        requestKeyA: leftRow.requestKey,
+        requestKeyB: rightRow.requestKey,
+        sharedArticleCount,
+        overlapPercentOfA: leftRow.articleIds.size ? Math.round((sharedArticleCount / leftRow.articleIds.size) * 1000) / 10 : 0,
+        overlapPercentOfB: rightRow.articleIds.size ? Math.round((sharedArticleCount / rightRow.articleIds.size) * 1000) / 10 : 0,
+      });
+    });
+  });
+  return {
+    enabled: true,
+    generatedRequestCount: requestPlans.length,
+    completedRequestCount: rows.filter((row) => row.requestSucceeded).length,
+    failedRequestCount: rows.filter((row) => !row.requestSucceeded).length,
+    rows,
+    articleMembership,
+    firstRequestByArticleId,
+    overlapRows,
+  };
+}
+
+function getBackendContributionArticleIdSet(articles = []) {
+  const ids = new Set();
+  (Array.isArray(articles) ? articles : []).forEach((article) => {
+    const articleId = getBackendContributionArticleId(article);
+    if (articleId) {
+      ids.add(articleId);
+    }
+    const sources = Array.isArray(article?.sources) ? article.sources : [];
+    sources.forEach((sourceArticle) => {
+      const sourceId = getBackendContributionArticleId(sourceArticle);
+      if (sourceId) {
+        ids.add(sourceId);
+      }
+    });
+  });
+  return ids;
+}
+
+function roundBackendContributionPercent(numerator, denominator) {
+  return denominator ? Math.round((numerator / denominator) * 1000) / 10 : 0;
+}
+
+function compactBackendRequestContributionRows(rows = []) {
+  return rows.map((row) => ({
+    requestIndex: row.requestIndex,
+    requestKey: row.requestKey,
+    requestType: row.requestType,
+    requestOrigins: Array.isArray(row.requestOrigins) ? row.requestOrigins.slice() : [],
+    topic: row.topic,
+    search: row.search,
+    limit: row.limit,
+    selectedInterests: Array.isArray(row.selectedInterests) ? row.selectedInterests.slice() : [],
+    sourceGroup: row.sourceGroup,
+    startedAt: row.startedAt,
+    durationMs: row.durationMs,
+    requestSucceeded: row.requestSucceeded,
+    statusCode: row.statusCode,
+    cacheSource: row.cacheSource,
+    rawResponseCount: row.rawResponseCount,
+    validArticleCount: row.validArticleCount,
+    duplicateWithinRequestCount: row.duplicateWithinRequestCount,
+    duplicateAgainstEarlierRequestsCount: row.duplicateAgainstEarlierRequestsCount,
+    uniqueCandidateContributionCount: row.uniqueCandidateContributionCount,
+    personalDashboardSurvivorContributionCount: row.personalDashboardSurvivorContributionCount,
+    professionalGuardSurvivorContributionCount: row.professionalGuardSurvivorContributionCount,
+    finalGroupedSurvivorContributionCount: row.finalGroupedSurvivorContributionCount,
+    exclusiveCandidateContributionCount: row.exclusiveCandidateContributionCount,
+    exclusiveFinalSurvivorContributionCount: row.exclusiveFinalSurvivorContributionCount,
+    overlappingRequestKeys: Array.isArray(row.overlappingRequestKeys) ? row.overlappingRequestKeys.slice(0, 10) : [],
+    overlapArticleCount: row.overlapArticleCount,
+    uniqueCandidateEfficiencyPercent: row.uniqueCandidateEfficiencyPercent,
+    finalSurvivorEfficiencyPercent: row.finalSurvivorEfficiencyPercent,
+    exclusiveFinalSurvivorEfficiencyPercent: row.exclusiveFinalSurvivorEfficiencyPercent,
+    diagnosticFlags: Array.isArray(row.diagnosticFlags) ? row.diagnosticFlags.slice() : [],
+    exampleTitles: Array.isArray(row.exampleTitles) ? row.exampleTitles.slice(0, 5) : [],
+  }));
+}
+
+function summarizeBackendRequestContributionGroup(rows = [], predicate = () => false) {
+  const groupRows = rows.filter(predicate);
+  const rawResponseCount = groupRows.reduce((sum, row) => sum + row.rawResponseCount, 0);
+  const uniqueCandidates = groupRows.reduce((sum, row) => sum + row.uniqueCandidateContributionCount, 0);
+  const finalSurvivors = groupRows.reduce((sum, row) => sum + row.finalGroupedSurvivorContributionCount, 0);
+  const exclusiveFinalSurvivors = groupRows.reduce((sum, row) => sum + row.exclusiveFinalSurvivorContributionCount, 0);
+  const duplicateCount = groupRows.reduce((sum, row) => sum + row.duplicateWithinRequestCount + row.duplicateAgainstEarlierRequestsCount, 0);
+  const durationRows = groupRows.filter((row) => Number.isFinite(Number(row.durationMs)));
+  return {
+    requestCount: groupRows.length,
+    rawResponseCount,
+    uniqueCandidates,
+    finalSurvivors,
+    exclusiveFinalSurvivors,
+    duplicateRatePercent: roundBackendContributionPercent(duplicateCount, rawResponseCount),
+    averageDurationMs: durationRows.length
+      ? Math.round((durationRows.reduce((sum, row) => sum + Number(row.durationMs || 0), 0) / durationRows.length) * 10) / 10
+      : null,
+  };
+}
+
+function finalizeBackendRequestContributionDiagnostics(rawDiagnostics, stageArticles = {}) {
+  if (!rawDiagnostics?.rows?.length) {
+    return null;
+  }
+  const candidateIds = getBackendContributionArticleIdSet(stageArticles.candidatePool);
+  const personalDashboardIds = getBackendContributionArticleIdSet(stageArticles.personalDashboardArticles);
+  const professionalGuardIds = getBackendContributionArticleIdSet(stageArticles.professionalGuardArticles);
+  const finalGroupedIds = getBackendContributionArticleIdSet(stageArticles.groupedArticles);
+  const rows = rawDiagnostics.rows;
+  rows.forEach((row) => {
+    let uniqueCandidateContributionCount = 0;
+    let personalDashboardSurvivorContributionCount = 0;
+    let professionalGuardSurvivorContributionCount = 0;
+    let finalGroupedSurvivorContributionCount = 0;
+    let exclusiveCandidateContributionCount = 0;
+    let exclusiveFinalSurvivorContributionCount = 0;
+    row.articleIds.forEach((articleId) => {
+      const membership = rawDiagnostics.articleMembership.get(articleId) || new Set();
+      if (candidateIds.has(articleId) && rawDiagnostics.firstRequestByArticleId.get(articleId) === row.requestIndex) {
+        uniqueCandidateContributionCount += 1;
+      }
+      if (personalDashboardIds.has(articleId)) {
+        personalDashboardSurvivorContributionCount += 1;
+      }
+      if (professionalGuardIds.has(articleId)) {
+        professionalGuardSurvivorContributionCount += 1;
+      }
+      if (finalGroupedIds.has(articleId)) {
+        finalGroupedSurvivorContributionCount += 1;
+      }
+      if (candidateIds.has(articleId) && membership.size === 1) {
+        exclusiveCandidateContributionCount += 1;
+      }
+      if (finalGroupedIds.has(articleId) && membership.size === 1) {
+        exclusiveFinalSurvivorContributionCount += 1;
+      }
+    });
+    row.uniqueCandidateContributionCount = uniqueCandidateContributionCount;
+    row.personalDashboardSurvivorContributionCount = personalDashboardSurvivorContributionCount;
+    row.professionalGuardSurvivorContributionCount = professionalGuardSurvivorContributionCount;
+    row.finalGroupedSurvivorContributionCount = finalGroupedSurvivorContributionCount;
+    row.exclusiveCandidateContributionCount = exclusiveCandidateContributionCount;
+    row.exclusiveFinalSurvivorContributionCount = exclusiveFinalSurvivorContributionCount;
+    row.uniqueCandidateEfficiencyPercent = roundBackendContributionPercent(uniqueCandidateContributionCount, row.rawResponseCount);
+    row.finalSurvivorEfficiencyPercent = roundBackendContributionPercent(finalGroupedSurvivorContributionCount, row.rawResponseCount);
+    row.exclusiveFinalSurvivorEfficiencyPercent = roundBackendContributionPercent(exclusiveFinalSurvivorContributionCount, row.rawResponseCount);
+    row.diagnosticFlags = [];
+    if (!uniqueCandidateContributionCount) {
+      row.diagnosticFlags.push("zero_unique_contribution");
+    }
+    if (!finalGroupedSurvivorContributionCount) {
+      row.diagnosticFlags.push("zero_final_survivor_contribution");
+    }
+    if (row.overlapArticleCount >= Math.max(10, row.validArticleCount * 0.5)) {
+      row.diagnosticFlags.push("high_overlap");
+    }
+    if (row.uniqueCandidateEfficiencyPercent < 20 && row.rawResponseCount >= 10) {
+      row.diagnosticFlags.push("low_unique_efficiency");
+    }
+    if (row.finalSurvivorEfficiencyPercent < 10 && row.rawResponseCount >= 10) {
+      row.diagnosticFlags.push("low_final_survivor_efficiency");
+    }
+    if (row.requestType === "broad_digital_baseline" && row.finalSurvivorEfficiencyPercent < 10) {
+      row.diagnosticFlags.push("broad_baseline_low_value");
+    }
+    if (row.requestType === "selected_interest" && row.exclusiveFinalSurvivorContributionCount > 0) {
+      row.diagnosticFlags.push("selected_interest_high_value");
+    }
+  });
+  const rawArticleTotalAcrossRequests = rows.reduce((sum, row) => sum + row.rawResponseCount, 0);
+  const uniqueCandidateCount = candidateIds.size;
+  const duplicateArticleCountAcrossRequests = Math.max(0, rawArticleTotalAcrossRequests - rawDiagnostics.articleMembership.size);
+  const overlapRows = rawDiagnostics.overlapRows
+    .slice()
+    .sort((left, right) => right.sharedArticleCount - left.sharedArticleCount)
+    .slice(0, 50);
+  const requestContributionRows = compactBackendRequestContributionRows(rows);
+  return {
+    enabled: true,
+    generatedRequestCount: rawDiagnostics.generatedRequestCount,
+    completedRequestCount: rawDiagnostics.completedRequestCount,
+    failedRequestCount: rawDiagnostics.failedRequestCount,
+    rawArticleTotalAcrossRequests,
+    uniqueCandidateCount,
+    duplicateArticleCountAcrossRequests,
+    duplicateRatePercent: roundBackendContributionPercent(duplicateArticleCountAcrossRequests, rawArticleTotalAcrossRequests),
+    requestsWithZeroUniqueCandidates: rows.filter((row) => row.uniqueCandidateContributionCount === 0).length,
+    requestsWithZeroFinalSurvivors: rows.filter((row) => row.finalGroupedSurvivorContributionCount === 0).length,
+    topicBaselineContribution: summarizeBackendRequestContributionGroup(rows, (row) => row.requestType === "topic_baseline"),
+    selectedInterestContribution: summarizeBackendRequestContributionGroup(rows, (row) =>
+      Array.isArray(row.requestOrigins) && row.requestOrigins.some((origin) => origin.startsWith("selected_interest:"))
+    ),
+    broadDigitalBaselineContribution: summarizeBackendRequestContributionGroup(rows, (row) =>
+      Array.isArray(row.requestOrigins) && row.requestOrigins.includes("broad_digital_baseline")
+    ),
+    requestContributionRows,
+    overlapRows,
+  };
+}
+
+function getBackendRequestContributionDiagnostics() {
+  return getActiveFilterPipelineDiagnostic()?.backendRequestContributionDiagnostics || null;
+}
+
+function listBackendRequestContributions(limit = 25) {
+  const diagnostics = getBackendRequestContributionDiagnostics();
+  const rows = diagnostics?.requestContributionRows || [];
+  const normalizedLimit = Math.max(1, Math.min(100, Number(limit) || 25));
+  return rows
+    .slice()
+    .sort((left, right) =>
+      right.exclusiveFinalSurvivorContributionCount - left.exclusiveFinalSurvivorContributionCount ||
+      right.uniqueCandidateContributionCount - left.uniqueCandidateContributionCount
+    )
+    .slice(0, normalizedLimit);
+}
+
+function listLowValueBackendRequests(limit = 25) {
+  const diagnostics = getBackendRequestContributionDiagnostics();
+  const rows = diagnostics?.requestContributionRows || [];
+  const normalizedLimit = Math.max(1, Math.min(100, Number(limit) || 25));
+  return rows
+    .slice()
+    .sort((left, right) =>
+      Number(right.finalGroupedSurvivorContributionCount === 0) - Number(left.finalGroupedSurvivorContributionCount === 0) ||
+      left.exclusiveFinalSurvivorEfficiencyPercent - right.exclusiveFinalSurvivorEfficiencyPercent ||
+      right.overlapArticleCount - left.overlapArticleCount
+    )
+    .slice(0, normalizedLimit);
+}
+
+function listBackendRequestOverlap(limit = 25) {
+  const diagnostics = getBackendRequestContributionDiagnostics();
+  const rows = diagnostics?.overlapRows || [];
+  const normalizedLimit = Math.max(1, Math.min(50, Number(limit) || 25));
+  return rows.slice(0, normalizedLimit);
+}
+
+function compareSelectedVsBroadBaselineRequests() {
+  const diagnostics = getBackendRequestContributionDiagnostics();
+  if (!diagnostics) {
+    return {
+      available: false,
+      reason: "No backend request contribution diagnostics available.",
+    };
+  }
+  return {
+    available: true,
+    topicBaselineContribution: diagnostics.topicBaselineContribution,
+    selectedInterestContribution: diagnostics.selectedInterestContribution,
+    broadDigitalBaselineContribution: diagnostics.broadDigitalBaselineContribution,
   };
 }
 
@@ -42324,9 +42787,31 @@ async function ensureBackendArticleQueryData() {
     personalDomainPlan && hasPersonalDashboardSelections()
       ? buildPersonalDashboardBackendQueryParamsList()
       : [getBackendArticleQueryParams()];
-  const responses = await Promise.all(
-    queryParamsList.map((params) => apiRequest(`/api/articles?${params.toString()}`))
+  const contributionDiagnosticsEnabled = isBackendRequestContributionDiagnosticsEnabled();
+  const requestContributionPlans = contributionDiagnosticsEnabled
+    ? buildBackendRequestContributionPlans(queryParamsList, personalDomainPlan)
+    : [];
+  const responseEntries = await Promise.all(
+    queryParamsList.map(async (params, requestIndex) => {
+      if (!contributionDiagnosticsEnabled) {
+        return apiRequest(`/api/articles?${params.toString()}`);
+      }
+      const startedAt = new Date().toISOString();
+      const startedMs = getPerformanceNow();
+      const response = await apiRequest(`/api/articles?${params.toString()}`);
+      return {
+        response,
+        startedAt,
+        durationMs: Math.round((getPerformanceNow() - startedMs) * 10) / 10,
+        requestSucceeded: true,
+        statusCode: null,
+        requestIndex,
+      };
+    })
   );
+  const responses = contributionDiagnosticsEnabled
+    ? responseEntries.map((entry) => entry.response)
+    : responseEntries;
   if (requestId !== runtime.backendArticleQueryActiveRequestId) {
     return null;
   }
@@ -42386,6 +42871,9 @@ async function ensureBackendArticleQueryData() {
     articles: normalizedArticles,
     totalCount,
     backendRequests: queryParamsList.map((params) => Object.fromEntries(params.entries())),
+    backendRequestContributionRaw: contributionDiagnosticsEnabled
+      ? createBackendRequestContributionDiagnostics(requestContributionPlans, responseEntries)
+      : null,
   };
   runtime.backendArticleQueryCache.set(queryKey, payload);
   state.remoteQuery = {
@@ -43570,6 +44058,20 @@ function replayFilterDiagnosticsStage({ result, diagnostics, activeFeedId, useBa
   recordPipelineCount(diagnostics, "afterDigitalIdentityProfessionalGuard", digitalIdentityProfessionalGuardStage.articles.length);
   recordPipelineCount(diagnostics, "afterSorting", sortingStage.articles.length);
   recordPipelineCount(diagnostics, "afterGrouping", groupingStage.groupedCount);
+  const backendContributionDiagnostics = finalizeBackendRequestContributionDiagnostics(
+    result.backendRequestContributionRaw,
+    {
+      candidatePool,
+      personalDashboardArticles: personalDashboardStage.articles,
+      professionalGuardArticles: digitalIdentityProfessionalGuardStage.articles,
+      groupedArticles: groupedArticlesAfterDigitalIdentityGuard,
+    }
+  );
+  if (backendContributionDiagnostics) {
+    diagnostics.backendRequestContributionDiagnostics = backendContributionDiagnostics;
+    addFilterPipelineNote(diagnostics, "Backend request contribution diagnostics active");
+    addFilterPipelineNote(diagnostics, "Backend request contribution diagnostics are diagnostics-only");
+  }
   recordFilterPipelineStages(diagnostics, stageResults);
   recordDiagnosticsReplayMetadata(diagnostics, {
     status: "completed",
@@ -43600,6 +44102,8 @@ function applyLegacyFilterPipeline({
     feedRenderGroupedCount: Number(candidateBuilderResult?.feedRenderGroupedCount) || 0,
     filteredCount: Array.isArray(candidateBuilderResult?.filteredRawArticles) ? candidateBuilderResult.filteredRawArticles.length : 0,
     groupedCount: Number(candidateBuilderResult?.groupedArticlesCount) || 0,
+    backendRequestContributionRaw: candidateBuilderResult?.backendRequestContributionRaw || null,
+    backendRequestContributionDiagnostics: candidateBuilderResult?.backendRequestContributionDiagnostics || null,
     pending: Boolean(candidateBuilderResult?.pending),
     warnings: Array.isArray(candidateBuilderResult?.warnings) ? candidateBuilderResult.warnings.slice() : [],
     notes: [
@@ -44520,6 +45024,7 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
       cacheKey: queryKey,
       cacheHit: true,
       backendRequests,
+      backendRequestContributionRaw: cachedQuery.backendRequestContributionRaw || null,
     },
   };
 }
