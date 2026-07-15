@@ -118,6 +118,18 @@ function createFilterPerformanceCounterMap() {
   };
 }
 
+function createFunctionTimingProfilerState(runId = "") {
+  return {
+    enabled: true,
+    runId,
+    entries: new Map(),
+    combinations: new Map(),
+    stack: [],
+    instrumentationMs: 0,
+    finalizedSummary: null,
+  };
+}
+
 function createFilterPerformanceCounters() {
   return {
     articleContextRequestCount: 0,
@@ -202,6 +214,8 @@ function createFilterPerformanceRun(reason = "render") {
     operationCounters: createFilterPerformanceCounters(),
     operationMaps: createFilterPerformanceCounterMap(),
     articleContextAttributionState: createArticleContextAttributionState(),
+    functionTimingProfiler: createFunctionTimingProfilerState(""),
+    functionTimingProfilerSummary: null,
     currentExecutionPath: "production",
     currentLogicalStage: "other",
     activeRunId: "",
@@ -223,6 +237,7 @@ function createFilterPerformanceRun(reason = "render") {
     interpretation: null,
   };
   run.activeRunId = run.runId;
+  run.functionTimingProfiler.runId = run.runId;
   runtime.activeFilterPerformanceRun = run;
   runtime.activeFilterPerformanceRunId = run.runId;
   return run;
@@ -283,6 +298,290 @@ function incrementFilterPerformanceCounter(name, amount = 1) {
     return;
   }
   run.operationCounters[name] = (Number(run.operationCounters[name]) || 0) + amount;
+}
+
+function getCurrentFilterExecutionPath() {
+  return getActiveFilterPerformanceRun()?.currentExecutionPath || "production";
+}
+
+function getCurrentFilterLogicalStage() {
+  return getActiveFilterPerformanceRun()?.currentLogicalStage || "other";
+}
+
+function getFunctionTimingInterestLabel(interest) {
+  return getArticleContextInterestLabel(interest || "unknown");
+}
+
+function updateFunctionTimingContextMap(map, key, inclusiveMs, exclusiveMs) {
+  const normalizedKey = String(key || "unknown");
+  if (!map[normalizedKey]) {
+    map[normalizedKey] = {
+      callCount: 0,
+      totalInclusiveMs: 0,
+      totalExclusiveMs: 0,
+    };
+  }
+  map[normalizedKey].callCount += 1;
+  map[normalizedKey].totalInclusiveMs += inclusiveMs;
+  map[normalizedKey].totalExclusiveMs += exclusiveMs;
+}
+
+function getFunctionTimingProfilerState() {
+  const run = getActiveFilterPerformanceRun();
+  if (!run?.functionTimingProfiler?.enabled) {
+    return null;
+  }
+  return run.functionTimingProfiler;
+}
+
+function measureFilterFunction(functionName, fn, metadata = {}) {
+  const profiler = getFunctionTimingProfilerState();
+  if (!profiler || typeof fn !== "function" || !functionName) {
+    return fn();
+  }
+
+  const instrumentationStartedAt = getPerformanceNow();
+  const run = getActiveFilterPerformanceRun();
+  const executionPath = metadata.executionPath || getCurrentFilterExecutionPath();
+  const logicalStage = metadata.logicalStage || getCurrentFilterLogicalStage();
+  const interest = getFunctionTimingInterestLabel(metadata.interest || "unknown");
+  const frame = {
+    functionName,
+    startedAt: getPerformanceNow(),
+    childElapsedMs: 0,
+  };
+  profiler.stack.push(frame);
+  profiler.instrumentationMs += Math.max(0, getPerformanceNow() - instrumentationStartedAt);
+
+  try {
+    return fn();
+  } finally {
+    const finalizeStartedAt = getPerformanceNow();
+    const endedAt = finalizeStartedAt;
+    const poppedFrame = profiler.stack.pop() || frame;
+    const inclusiveMs = Math.max(0, endedAt - poppedFrame.startedAt);
+    const exclusiveMs = Math.max(0, inclusiveMs - (Number(poppedFrame.childElapsedMs) || 0));
+    const parentFrame = profiler.stack[profiler.stack.length - 1];
+    if (parentFrame) {
+      parentFrame.childElapsedMs += inclusiveMs;
+    }
+
+    if (!profiler.entries.has(functionName)) {
+      profiler.entries.set(functionName, {
+        functionName,
+        callCount: 0,
+        totalInclusiveMs: 0,
+        totalExclusiveMs: 0,
+        maxInclusiveMs: 0,
+        minInclusiveMs: Number.POSITIVE_INFINITY,
+        executionPaths: {},
+        logicalStages: {},
+        interests: {},
+      });
+    }
+    const entry = profiler.entries.get(functionName);
+    entry.callCount += 1;
+    entry.totalInclusiveMs += inclusiveMs;
+    entry.totalExclusiveMs += exclusiveMs;
+    entry.maxInclusiveMs = Math.max(entry.maxInclusiveMs, inclusiveMs);
+    entry.minInclusiveMs = Math.min(entry.minInclusiveMs, inclusiveMs);
+    updateFunctionTimingContextMap(entry.executionPaths, executionPath, inclusiveMs, exclusiveMs);
+    updateFunctionTimingContextMap(entry.logicalStages, logicalStage, inclusiveMs, exclusiveMs);
+    updateFunctionTimingContextMap(entry.interests, interest, inclusiveMs, exclusiveMs);
+
+    const combinationKey = `${functionName}|${executionPath}|${logicalStage}|${interest}`;
+    if (!profiler.combinations.has(combinationKey)) {
+      profiler.combinations.set(combinationKey, {
+        functionName,
+        executionPath,
+        logicalStage,
+        interest,
+        callCount: 0,
+        totalInclusiveMs: 0,
+        totalExclusiveMs: 0,
+      });
+    }
+    const combination = profiler.combinations.get(combinationKey);
+    combination.callCount += 1;
+    combination.totalInclusiveMs += inclusiveMs;
+    combination.totalExclusiveMs += exclusiveMs;
+
+    if (run?.functionTimingProfiler === profiler) {
+      run.functionTimingProfilerSummary = null;
+    }
+    profiler.finalizedSummary = null;
+    profiler.instrumentationMs += Math.max(0, getPerformanceNow() - finalizeStartedAt);
+  }
+}
+
+function roundTimingMs(value) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+
+function summarizeFunctionTimingContextMap(contextMap = {}) {
+  return Object.entries(contextMap)
+    .map(([name, entry]) => ({
+      name,
+      callCount: Number(entry.callCount) || 0,
+      totalInclusiveMs: roundTimingMs(entry.totalInclusiveMs),
+      totalExclusiveMs: roundTimingMs(entry.totalExclusiveMs),
+    }))
+    .sort((left, right) => right.totalExclusiveMs - left.totalExclusiveMs || left.name.localeCompare(right.name));
+}
+
+function formatFunctionTimingEntry(entry, totalExclusiveMs) {
+  const callCount = Number(entry.callCount) || 0;
+  const totalInclusiveMs = Number(entry.totalInclusiveMs) || 0;
+  const totalExclusiveForEntry = Number(entry.totalExclusiveMs) || 0;
+  return {
+    functionName: entry.functionName || "",
+    callCount,
+    totalInclusiveMs: roundTimingMs(totalInclusiveMs),
+    totalExclusiveMs: roundTimingMs(totalExclusiveForEntry),
+    averageInclusiveMs: callCount ? roundTimingMs(totalInclusiveMs / callCount) : 0,
+    averageExclusiveMs: callCount ? roundTimingMs(totalExclusiveForEntry / callCount) : 0,
+    maxInclusiveMs: roundTimingMs(entry.maxInclusiveMs),
+    minInclusiveMs: Number.isFinite(entry.minInclusiveMs) ? roundTimingMs(entry.minInclusiveMs) : 0,
+    percentOfMeasuredTime: totalExclusiveMs
+      ? roundTimingMs((totalExclusiveForEntry / totalExclusiveMs) * 100)
+      : 0,
+    percentOfMeasuredExclusiveTime: totalExclusiveMs
+      ? roundTimingMs((totalExclusiveForEntry / totalExclusiveMs) * 100)
+      : 0,
+    executionPaths: summarizeFunctionTimingContextMap(entry.executionPaths),
+    logicalStages: summarizeFunctionTimingContextMap(entry.logicalStages),
+    interests: summarizeFunctionTimingContextMap(entry.interests),
+  };
+}
+
+function formatFunctionTimingCombination(entry) {
+  const callCount = Number(entry.callCount) || 0;
+  return {
+    functionName: entry.functionName || "",
+    executionPath: entry.executionPath || "unknown",
+    logicalStage: entry.logicalStage || "unknown",
+    interest: entry.interest || "unknown",
+    callCount,
+    totalInclusiveMs: roundTimingMs(entry.totalInclusiveMs),
+    totalExclusiveMs: roundTimingMs(entry.totalExclusiveMs),
+    averageExclusiveMs: callCount ? roundTimingMs((Number(entry.totalExclusiveMs) || 0) / callCount) : 0,
+  };
+}
+
+function aggregateFunctionTimingRows(rows, keyName) {
+  const aggregate = new Map();
+  rows.forEach((row) => {
+    const groups = Array.isArray(row[keyName]) ? row[keyName] : [];
+    groups.forEach((group) => {
+      const name = group.name || "unknown";
+      if (!aggregate.has(name)) {
+        aggregate.set(name, {
+          name,
+          callCount: 0,
+          totalInclusiveMs: 0,
+          totalExclusiveMs: 0,
+        });
+      }
+      const entry = aggregate.get(name);
+      entry.callCount += Number(group.callCount) || 0;
+      entry.totalInclusiveMs += Number(group.totalInclusiveMs) || 0;
+      entry.totalExclusiveMs += Number(group.totalExclusiveMs) || 0;
+    });
+  });
+  return Array.from(aggregate.values())
+    .map((entry) => ({
+      ...entry,
+      totalInclusiveMs: roundTimingMs(entry.totalInclusiveMs),
+      totalExclusiveMs: roundTimingMs(entry.totalExclusiveMs),
+    }))
+    .sort((left, right) => right.totalExclusiveMs - left.totalExclusiveMs || left.name.localeCompare(right.name));
+}
+
+function buildFunctionTimingProfilerSummary(profiler = null) {
+  if (!profiler?.enabled) {
+    return {
+      enabled: false,
+      measuredFunctionCount: 0,
+      totalMeasuredCalls: 0,
+      totalInclusiveMs: 0,
+      totalExclusiveMs: 0,
+      instrumentationMs: 0,
+      topByExclusiveTime: [],
+      topByInclusiveTime: [],
+      topByCallCount: [],
+      byExecutionPath: [],
+      byLogicalStage: [],
+      byInterest: [],
+      topCombinations: [],
+      interpretation: {
+        topExclusiveFunction: "",
+        topInclusiveFunction: "",
+        topCallCountFunction: "",
+        diagnosticsExclusivePercent: 0,
+        productionExclusivePercent: 0,
+        likelyBestOptimizationTarget: "",
+      },
+    };
+  }
+
+  const rawEntries = Array.from(profiler.entries.values());
+  const totalMeasuredCalls = rawEntries.reduce((sum, entry) => sum + (Number(entry.callCount) || 0), 0);
+  const totalInclusiveMs = rawEntries.reduce((sum, entry) => sum + (Number(entry.totalInclusiveMs) || 0), 0);
+  const totalExclusiveMs = rawEntries.reduce((sum, entry) => sum + (Number(entry.totalExclusiveMs) || 0), 0);
+  const rows = rawEntries.map((entry) => formatFunctionTimingEntry(entry, totalExclusiveMs));
+  const topByExclusiveTime = rows
+    .slice()
+    .sort((left, right) => right.totalExclusiveMs - left.totalExclusiveMs || left.functionName.localeCompare(right.functionName));
+  const topByInclusiveTime = rows
+    .slice()
+    .sort((left, right) => right.totalInclusiveMs - left.totalInclusiveMs || left.functionName.localeCompare(right.functionName));
+  const topByCallCount = rows
+    .slice()
+    .sort((left, right) => right.callCount - left.callCount || left.functionName.localeCompare(right.functionName));
+  const byExecutionPath = aggregateFunctionTimingRows(rows, "executionPaths");
+  const byLogicalStage = aggregateFunctionTimingRows(rows, "logicalStages");
+  const byInterest = aggregateFunctionTimingRows(rows, "interests");
+  const topCombinations = Array.from(profiler.combinations.values())
+    .map(formatFunctionTimingCombination)
+    .sort((left, right) => right.totalExclusiveMs - left.totalExclusiveMs || left.functionName.localeCompare(right.functionName))
+    .slice(0, 100);
+  const diagnosticsExclusive = byExecutionPath.find((entry) => entry.name === "diagnostics_replay")?.totalExclusiveMs || 0;
+  const productionExclusive = byExecutionPath.find((entry) => entry.name === "production")?.totalExclusiveMs || 0;
+
+  return {
+    enabled: true,
+    runId: profiler.runId || "",
+    measuredFunctionCount: rawEntries.length,
+    totalMeasuredCalls,
+    totalInclusiveMs: roundTimingMs(totalInclusiveMs),
+    totalExclusiveMs: roundTimingMs(totalExclusiveMs),
+    instrumentationMs: roundTimingMs(profiler.instrumentationMs),
+    topByExclusiveTime: topByExclusiveTime.slice(0, 25),
+    topByInclusiveTime: topByInclusiveTime.slice(0, 25),
+    topByCallCount: topByCallCount.slice(0, 25),
+    byExecutionPath,
+    byLogicalStage,
+    byInterest,
+    topCombinations,
+    interpretation: {
+      topExclusiveFunction: topByExclusiveTime[0]?.functionName || "",
+      topInclusiveFunction: topByInclusiveTime[0]?.functionName || "",
+      topCallCountFunction: topByCallCount[0]?.functionName || "",
+      diagnosticsExclusivePercent: totalExclusiveMs ? roundTimingMs((diagnosticsExclusive / totalExclusiveMs) * 100) : 0,
+      productionExclusivePercent: totalExclusiveMs ? roundTimingMs((productionExclusive / totalExclusiveMs) * 100) : 0,
+      likelyBestOptimizationTarget: topByExclusiveTime[0]?.functionName || "",
+    },
+  };
+}
+
+function finalizeFunctionTimingProfilerForRun(run) {
+  if (!run?.functionTimingProfiler?.enabled) {
+    return null;
+  }
+  const summary = buildFunctionTimingProfilerSummary(run.functionTimingProfiler);
+  run.functionTimingProfiler.finalizedSummary = summary;
+  run.functionTimingProfilerSummary = summary;
+  return summary;
 }
 
 function incrementFilterPerformanceArticleCounter(mapName, article) {
@@ -685,6 +984,7 @@ function compactFilterPerformanceRun(run) {
     articleContextStageSummary: run.articleContextStageSummary,
     articleContextInterestSummary: run.articleContextInterestSummary,
     articleContextDiagnosticsVsProductionSummary: run.articleContextDiagnosticsVsProductionSummary,
+    functionTimingProfilerSummary: run.functionTimingProfilerSummary || null,
     attributionInstrumentationMs: Number(run.attributionInstrumentationMs) || 0,
     activeRunId: run.activeRunId,
     previousRunStillActive: Boolean(run.previousRunStillActive),
@@ -745,10 +1045,12 @@ function completeFilterPerformanceRun(extra = {}) {
     run.articleContextRequestAttribution.totalRequests,
     run.articleContextRequestAttribution.actualBuilds
   );
+  finalizeFunctionTimingProfilerForRun(run);
   run.interpretation = buildFilterPerformanceInterpretation(run);
   run.completed = true;
   run.operationMaps = null;
   run.articleContextAttributionState = null;
+  run.functionTimingProfiler = null;
   const compact = compactFilterPerformanceRun(run);
   runtime.filterPerformanceRuns.push(compact);
   runtime.filterPerformanceRuns = runtime.filterPerformanceRuns.slice(-20);
@@ -4151,6 +4453,11 @@ function promoteNewestArticleInSelectedFeedGroup(article) {
 }
 
 function prepareDateFirstGroupedArticles(articles) {
+  return measureFilterFunction("prepareDateFirstGroupedArticles", () =>
+    prepareDateFirstGroupedArticlesMeasured(articles), { logicalStage: "grouping" });
+}
+
+function prepareDateFirstGroupedArticlesMeasured(articles) {
   incrementFilterPerformanceCounter("groupingInputCount", Array.isArray(articles) ? articles.length : 0);
   const dateSortedArticles = sortArticlesByPublicationDate(articles);
   return sortArticlesByPublicationDate(
@@ -5989,6 +6296,11 @@ function getHeavyDiagnosticsTraces(diagnostics) {
 }
 
 function getFilterDecisionTrace(diagnostics, article) {
+  return measureFilterFunction("getFilterDecisionTrace", () =>
+    getFilterDecisionTraceMeasured(diagnostics, article), { logicalStage: "decision_trace" });
+}
+
+function getFilterDecisionTraceMeasured(diagnostics, article) {
   if (!diagnostics?.enabled || !diagnostics.filterDecisionTraceMap || !article) {
     return null;
   }
@@ -6160,6 +6472,11 @@ function getFilterDecisionTrace(diagnostics, article) {
 }
 
 function recordFilterDecisionStage(diagnostics, article, stageEntry = {}) {
+  return measureFilterFunction("recordFilterDecisionStage", () =>
+    recordFilterDecisionStageMeasured(diagnostics, article, stageEntry), { logicalStage: "decision_trace" });
+}
+
+function recordFilterDecisionStageMeasured(diagnostics, article, stageEntry = {}) {
   const trace = getFilterDecisionTrace(diagnostics, article);
   if (!trace || Object.isFrozen(trace)) {
     return;
@@ -8530,6 +8847,14 @@ function getIdCardEvidenceGapExplanation(article, articleEvidence, legacyIdCards
 }
 
 function compareArticleEvidenceParity(article, options = {}) {
+  return measureFilterFunction("compareArticleEvidenceParity", () =>
+    compareArticleEvidenceParityMeasured(article, options), {
+      logicalStage: "evidence_parity",
+      interest: "identity_documents",
+    });
+}
+
+function compareArticleEvidenceParityMeasured(article, options = {}) {
   const articleEvidence = options.articleEvidence || buildArticleEvidence(article, {
     diagnostics: options.diagnostics,
     identityDocumentShadowPolicy: options.identityDocumentShadowPolicy,
@@ -13800,6 +14125,14 @@ function getDominantDomainTopMatchedSignals(scoreBreakdown) {
 }
 
 function getDominantDomainDecisionDiagnostics(article) {
+  return measureFilterFunction("getDominantDomainDecisionDiagnostics", () =>
+    getDominantDomainDecisionDiagnosticsMeasured(article), {
+      logicalStage: "dominant_domain",
+      interest: "cross_domain",
+    });
+}
+
+function getDominantDomainDecisionDiagnosticsMeasured(article) {
   const context = getPersonalBoostContext(article, "getDominantDomainDecisionDiagnostics");
   const banknoteSignals = getPersonalDomainContextProfile(context, "banknote_intelligence");
   const identitySignals = getPersonalDomainContextProfile(context, "identity_documents");
@@ -13955,6 +14288,14 @@ function getDominantDomainDecisionDiagnostics(article) {
 }
 
 function getLegacyPersonalDashboardDecisionSignals(article, options = {}) {
+  return measureFilterFunction("getLegacyPersonalDashboardDecisionSignals", () =>
+    getLegacyPersonalDashboardDecisionSignalsMeasured(article, options), {
+      logicalStage: "personal_dashboard",
+      interest: "cross_domain",
+    });
+}
+
+function getLegacyPersonalDashboardDecisionSignalsMeasured(article, options = {}) {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const selectedMainDomains = getSelectedMainDomains(selectedInterests);
   const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
@@ -14069,6 +14410,14 @@ function getLegacyPersonalDashboardDecisionSignals(article, options = {}) {
 }
 
 function buildPersonalDashboardScore(article, options = {}) {
+  return measureFilterFunction("buildPersonalDashboardScore", () =>
+    buildPersonalDashboardScoreMeasured(article, options), {
+      logicalStage: "personal_dashboard",
+      interest: "cross_domain",
+    });
+}
+
+function buildPersonalDashboardScoreMeasured(article, options = {}) {
   const signals = options.signals || getLegacyPersonalDashboardDecisionSignals(article, options);
   const selectedInterests = Array.isArray(signals.selectedInterests) ? signals.selectedInterests : [];
   const selectedMainDomains = Array.isArray(signals.selectedMainDomains) ? signals.selectedMainDomains : [];
@@ -19491,6 +19840,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     articleContextStageSummary: diagnostics.articleContextStageSummary || [],
     articleContextInterestSummary: diagnostics.articleContextInterestSummary || [],
     articleContextDiagnosticsVsProductionSummary: diagnostics.articleContextDiagnosticsVsProductionSummary || null,
+    functionTimingProfilerSummary: diagnostics.functionTimingProfilerSummary || getLatestFunctionTimingProfilerSummary(),
     filterDecisionTraceSummary: diagnostics.filterDecisionTraceSummary || null,
     filterDecisionDebugTools: diagnostics.filterDecisionDebugTools || null,
     filterDecisionRichTrace: diagnostics.filterDecisionRichTrace || null,
@@ -19846,6 +20196,72 @@ function getLatestIdentityDocumentShadowDiagnosticsSummary() {
     getIdentityDocumentShadowDiagnosticsSummary(activeDiagnostic);
 }
 
+function getLatestFunctionTimingProfilerSummary() {
+  const activeRun = getActiveFilterPerformanceRun();
+  if (activeRun?.functionTimingProfiler?.enabled) {
+    return buildFunctionTimingProfilerSummary(activeRun.functionTimingProfiler);
+  }
+  return getLatestFilterPerformanceDiagnostics()?.functionTimingProfilerSummary ||
+    buildFunctionTimingProfilerSummary(null);
+}
+
+function listFilterFunctionTimings(limit = 25) {
+  const normalizedLimit = Math.max(1, Math.min(100, Number(limit) || 25));
+  const rows = (getLatestFunctionTimingProfilerSummary()?.topByExclusiveTime || []).slice(0, normalizedLimit);
+  if (typeof console !== "undefined" && typeof console.table === "function") {
+    console.table(rows);
+  }
+  return rows;
+}
+
+function listFilterFunctionTimingsByInclusive(limit = 25) {
+  const normalizedLimit = Math.max(1, Math.min(100, Number(limit) || 25));
+  const rows = (getLatestFunctionTimingProfilerSummary()?.topByInclusiveTime || []).slice(0, normalizedLimit);
+  if (typeof console !== "undefined" && typeof console.table === "function") {
+    console.table(rows);
+  }
+  return rows;
+}
+
+function listFilterFunctionCallCounts(limit = 25) {
+  const normalizedLimit = Math.max(1, Math.min(100, Number(limit) || 25));
+  const rows = (getLatestFunctionTimingProfilerSummary()?.topByCallCount || []).slice(0, normalizedLimit);
+  if (typeof console !== "undefined" && typeof console.table === "function") {
+    console.table(rows);
+  }
+  return rows;
+}
+
+function compareProductionAndDiagnosticsFunctionTime() {
+  const summary = getLatestFunctionTimingProfilerSummary();
+  const byExecutionPath = Array.isArray(summary?.byExecutionPath) ? summary.byExecutionPath : [];
+  const production = byExecutionPath.find((entry) => entry.name === "production") || {
+    callCount: 0,
+    totalInclusiveMs: 0,
+    totalExclusiveMs: 0,
+  };
+  const diagnostics = byExecutionPath.find((entry) => entry.name === "diagnostics_replay") || {
+    callCount: 0,
+    totalInclusiveMs: 0,
+    totalExclusiveMs: 0,
+  };
+  const comparison = {
+    enabled: Boolean(summary?.enabled),
+    production,
+    diagnostics,
+    diagnosticsExclusivePercent: summary?.interpretation?.diagnosticsExclusivePercent || 0,
+    productionExclusivePercent: summary?.interpretation?.productionExclusivePercent || 0,
+    likelyBestOptimizationTarget: summary?.interpretation?.likelyBestOptimizationTarget || "",
+  };
+  if (typeof console !== "undefined" && typeof console.table === "function") {
+    console.table([
+      { executionPath: "production", ...production },
+      { executionPath: "diagnostics_replay", ...diagnostics },
+    ]);
+  }
+  return comparison;
+}
+
 function listArticleContextRequestCallers(limit = 25) {
   const attribution = getLatestArticleContextRequestAttribution();
   const normalizedLimit = Math.max(1, Math.min(100, Number(limit) || 25));
@@ -19886,6 +20302,7 @@ function exportFilterPerformanceDiagnostics() {
     articleContextDiagnosticsVsProductionSummary: latestRun?.articleContextDiagnosticsVsProductionSummary || null,
     identityTravelNoiseAssessmentDiagnostics: getIdentityTravelNoiseAssessmentDiagnostics(),
     identityDocumentShadowDiagnosticsSummary: getLatestIdentityDocumentShadowDiagnosticsSummary(),
+    functionTimingProfilerSummary: getLatestFunctionTimingProfilerSummary(),
     identityDocumentParityDiagnosticsStatus: getIdentityDocumentParityDiagnosticsStatus(),
     backendRequestContributionDiagnostics: backendRequestContributionDiagnostics
       ? {
@@ -20037,6 +20454,26 @@ function ensureFilterPipelineDiagnosticsExportTools() {
 
   if (typeof window.getIdentityDocumentShadowDiagnosticsSummary !== "function") {
     window.getIdentityDocumentShadowDiagnosticsSummary = () => getLatestIdentityDocumentShadowDiagnosticsSummary();
+  }
+
+  if (typeof window.getLatestFunctionTimingProfilerSummary !== "function") {
+    window.getLatestFunctionTimingProfilerSummary = () => getLatestFunctionTimingProfilerSummary();
+  }
+
+  if (typeof window.listFilterFunctionTimings !== "function") {
+    window.listFilterFunctionTimings = (limit = 25) => listFilterFunctionTimings(limit);
+  }
+
+  if (typeof window.listFilterFunctionTimingsByInclusive !== "function") {
+    window.listFilterFunctionTimingsByInclusive = (limit = 25) => listFilterFunctionTimingsByInclusive(limit);
+  }
+
+  if (typeof window.listFilterFunctionCallCounts !== "function") {
+    window.listFilterFunctionCallCounts = (limit = 25) => listFilterFunctionCallCounts(limit);
+  }
+
+  if (typeof window.compareProductionAndDiagnosticsFunctionTime !== "function") {
+    window.compareProductionAndDiagnosticsFunctionTime = () => compareProductionAndDiagnosticsFunctionTime();
   }
 
   if (typeof window.exportFilterPerformanceDiagnostics !== "function") {
@@ -20367,6 +20804,11 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.compareArticleContextProductionAndDiagnostics()",
         "window.getIdentityTravelNoiseAssessmentDiagnostics()",
         "window.getIdentityDocumentShadowDiagnosticsSummary()",
+        "window.getLatestFunctionTimingProfilerSummary()",
+        "window.listFilterFunctionTimings(limit)",
+        "window.listFilterFunctionTimingsByInclusive(limit)",
+        "window.listFilterFunctionCallCounts(limit)",
+        "window.compareProductionAndDiagnosticsFunctionTime()",
         "window.exportFilterPerformanceDiagnostics()",
         "window.listBackendRequestContributions(limit)",
         "window.listLowValueBackendRequests(limit)",
@@ -20577,6 +21019,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.articleContextInterestSummary = latestPerformanceDiagnostics?.articleContextInterestSummary || [];
   diagnostics.articleContextDiagnosticsVsProductionSummary =
     latestPerformanceDiagnostics?.articleContextDiagnosticsVsProductionSummary || null;
+  diagnostics.functionTimingProfilerSummary = getLatestFunctionTimingProfilerSummary();
   diagnostics.frontendPerformanceDiagnostics = getFrontendPerformanceDiagnosticsForExport(10);
   publishFilterDecisionTraceDiagnostics(diagnostics);
   publishPersonalDashboardScores(diagnostics);
@@ -24266,6 +24709,14 @@ function getNormalizedEventEvidenceEntries(article, context) {
 }
 
 function buildArticleEvidence(article, options = {}) {
+  return measureFilterFunction("buildArticleEvidence", () =>
+    buildArticleEvidenceMeasured(article, options), {
+      logicalStage: "evidence_builder",
+      interest: options?.interest || "cross_domain",
+    });
+}
+
+function buildArticleEvidenceMeasured(article, options = {}) {
   const context = buildArticleIntelligenceContext(article);
   const identityDocumentShadowPolicy = options.identityDocumentShadowPolicy ||
     getDiagnosticsDocumentScope({ forceIdentityDocumentShadowDiagnostics: true });
@@ -24630,6 +25081,14 @@ function getPersonalDomainContextProfile(context, groupId) {
 }
 
 function computePersonalInterestBoost(article, interestId) {
+  return measureFilterFunction("computePersonalInterestBoost", () =>
+    computePersonalInterestBoostMeasured(article, interestId), {
+      logicalStage: "personal_dashboard",
+      interest: interestId,
+    });
+}
+
+function computePersonalInterestBoostMeasured(article, interestId) {
   return getCachedArticleValue(article, `personalInterestBoost:${interestId}`, () => {
     const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
     if (!interest) {
@@ -25723,6 +26182,14 @@ function getIdentityVerificationSignalSourceSummary(matches = [], sourceMap = nu
 }
 
 function getIdentityVerificationSourceTrustEvidence(article) {
+  return measureFilterFunction("getIdentityVerificationSourceTrustEvidence", () =>
+    getIdentityVerificationSourceTrustEvidenceMeasured(article), {
+      logicalStage: "source_trust",
+      interest: "identity_verification",
+    });
+}
+
+function getIdentityVerificationSourceTrustEvidenceMeasured(article) {
   return getCachedArticleValue(article, "identityVerificationSourceTrustEvidence", () => {
     incrementFilterPerformanceCounter("sharedEvidenceBuildCount");
     incrementFilterPerformanceArticleCounter("sharedEvidence", article);
@@ -26117,6 +26584,14 @@ function isBanknoteAuthoritySource(article) {
 }
 
 function getDigitalSubgroupHybridAssessment(article, interestId) {
+  return measureFilterFunction("getDigitalSubgroupHybridAssessment", () =>
+    getDigitalSubgroupHybridAssessmentMeasured(article, interestId), {
+      logicalStage: "digital_identity_professional_guard",
+      interest: interestId,
+    });
+}
+
+function getDigitalSubgroupHybridAssessmentMeasured(article, interestId) {
   incrementFilterPerformanceCounter("subgroupAssessmentCount");
   incrementSelectedInterestAssessmentCount(interestId);
   return getCachedArticleValue(article, `digitalSubgroupHybrid:${interestId}`, () => {
@@ -28863,6 +29338,14 @@ function shouldApplyBiometricsProfessionalGuardBooleanGate(selectedInterests = n
 }
 
 function getBiometricsProfessionalGuardAssessment(article, options = {}) {
+  return measureFilterFunction("getBiometricsProfessionalGuardAssessment", () =>
+    getBiometricsProfessionalGuardAssessmentMeasured(article, options), {
+      logicalStage: "digital_identity_professional_guard",
+      interest: "biometrics",
+    });
+}
+
+function getBiometricsProfessionalGuardAssessmentMeasured(article, options = {}) {
   incrementFilterPerformanceCounter("professionalGuardAssessmentCount");
   incrementFilterPerformanceCounter("biometricsAssessmentCount");
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
@@ -29714,6 +30197,14 @@ function isBanknoteSocialSource(article) {
 }
 
 function getIdentityDocumentSourceAuthority(article) {
+  return measureFilterFunction("getIdentityDocumentSourceAuthority", () =>
+    getIdentityDocumentSourceAuthorityMeasured(article), {
+      logicalStage: "identity_documents",
+      interest: "identity_documents",
+    });
+}
+
+function getIdentityDocumentSourceAuthorityMeasured(article) {
   return getCachedArticleValue(article, "identityDocumentSourceAuthority", () => {
     const context = getPersonalBoostContext(article, "getIdentityDocumentSourceAuthority", { interest: "identity_documents" });
     const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
@@ -29767,6 +30258,14 @@ function getIdentityDocumentSourceAuthority(article) {
 }
 
 function getIdentityDocumentInterestSignals(article) {
+  return measureFilterFunction("getIdentityDocumentInterestSignals", () =>
+    getIdentityDocumentInterestSignalsMeasured(article), {
+      logicalStage: "identity_documents",
+      interest: "identity_documents",
+    });
+}
+
+function getIdentityDocumentInterestSignalsMeasured(article) {
   return getCachedArticleValue(article, "identityDocumentInterestSignals", () => {
     const context = getPersonalBoostContext(article, "getIdentityDocumentInterestSignals", { interest: "identity_documents" });
     const weightedHits = (terms = []) =>
@@ -30162,6 +30661,14 @@ function isIdentityTravelNoiseArticle(article) {
 }
 
 function getIdentityIntentAuthorityBoost(article, intentScore) {
+  return measureFilterFunction("getIdentityIntentAuthorityBoost", () =>
+    getIdentityIntentAuthorityBoostMeasured(article, intentScore), {
+      logicalStage: "identity_documents",
+      interest: "identity_documents",
+    });
+}
+
+function getIdentityIntentAuthorityBoostMeasured(article, intentScore) {
   if (intentScore <= 10) {
     return 0;
   }
@@ -30722,6 +31229,14 @@ function getIdentityDocumentIntentBreakdown(article) {
 }
 
 function evaluateIdentityDocumentHardContext(article, profileId) {
+  return measureFilterFunction("evaluateIdentityDocumentHardContext", () =>
+    evaluateIdentityDocumentHardContextMeasured(article, profileId), {
+      logicalStage: "identity_documents",
+      interest: "identity_documents",
+    });
+}
+
+function evaluateIdentityDocumentHardContextMeasured(article, profileId) {
   return getCachedArticleValue(article, `identityHardContext:${profileId}`, () => {
     const gate = IDENTITY_DOCUMENT_HARD_CONTEXT_GATES[profileId];
     if (!gate) {
@@ -30821,6 +31336,14 @@ function evaluateIdentityDocumentHardContext(article, profileId) {
 }
 
 function calculateIdentityProfileScore(article, profileId) {
+  return measureFilterFunction("calculateIdentityProfileScore", () =>
+    calculateIdentityProfileScoreMeasured(article, profileId), {
+      logicalStage: "identity_documents",
+      interest: "identity_documents",
+    });
+}
+
+function calculateIdentityProfileScoreMeasured(article, profileId) {
   return getCachedArticleValue(article, `identityProfileScore:${profileId}`, () => {
     const profile = IDENTITY_INTELLIGENCE_PROFILES[profileId];
     if (!profile) {
@@ -31001,6 +31524,14 @@ function evaluateIdentityTravelNoiseTermGroup(haystack, terms = []) {
 }
 
 function getIdentityTravelNoiseAssessment(article) {
+  return measureFilterFunction("getIdentityTravelNoiseAssessment", () =>
+    getIdentityTravelNoiseAssessmentMeasured(article), {
+      logicalStage: "identity_documents",
+      interest: "identity_documents",
+    });
+}
+
+function getIdentityTravelNoiseAssessmentMeasured(article) {
   incrementFilterPerformanceCounter("identityTravelNoiseAssessmentRequestCount");
   const articleKey = getArticleStableCacheKey(article);
   const articleCache = runtime.articleComputationCache.get(articleKey);
@@ -31065,7 +31596,15 @@ function hasIdentityTravelNoise(article, terms = []) {
   return normalizeKeywordList(terms).some((term) => textMatchesKeyword(haystack, term));
 }
 
-function getIdentityDocumentSubinterestScore(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+function getIdentityDocumentSubinterestScore(article, selectedInterests) {
+  return measureFilterFunction("getIdentityDocumentSubinterestScore", () =>
+    getIdentityDocumentSubinterestScoreMeasured(article, selectedInterests), {
+      logicalStage: "identity_documents",
+      interest: "identity_documents",
+    });
+}
+
+function getIdentityDocumentSubinterestScoreMeasured(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
   const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
   const signature = selectedIdentityInterests.slice().sort().join("|");
   const cacheKey = `identityDocumentSubinterestScore:${signature}`;
@@ -31590,6 +32129,14 @@ function getBanknoteNoiseAssessment(article) {
 }
 
 function getArticleDominantDomain(article) {
+  return measureFilterFunction("getArticleDominantDomain", () =>
+    getArticleDominantDomainMeasured(article), {
+      logicalStage: "dominant_domain",
+      interest: "cross_domain",
+    });
+}
+
+function getArticleDominantDomainMeasured(article) {
   return getCachedArticleValue(article, "personalDominantDomain", () => {
     const context = getPersonalBoostContext(article, "getArticleDominantDomain", { interest: "cross_domain" });
     const banknoteSignals = getPersonalDomainContextProfile(context, "banknote_intelligence");
@@ -31856,7 +32403,15 @@ function getDomainDecayMultiplier(article, selectedMainDomains) {
   return 0.45;
 }
 
-function calculatePersonalDomainScore(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+function calculatePersonalDomainScore(article, selectedInterests) {
+  return measureFilterFunction("calculatePersonalDomainScore", () =>
+    calculatePersonalDomainScoreMeasured(article, selectedInterests), {
+      logicalStage: "personal_dashboard",
+      interest: "cross_domain",
+    });
+}
+
+function calculatePersonalDomainScoreMeasured(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
   const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
   const mode = normalizePersonalDashboardMode(state.personalDashboard.mode);
   const cacheKey = `personalDomainScore:${mode}:${normalizedInterests.join("|")}`;
@@ -32281,6 +32836,14 @@ function getPersonalDashboardDomainMatch(article) {
 }
 
 function articleMatchesPersonalDashboardSelection(article) {
+  return measureFilterFunction("articleMatchesPersonalDashboardSelection", () =>
+    articleMatchesPersonalDashboardSelectionMeasured(article), {
+      logicalStage: "personal_dashboard",
+      interest: "cross_domain",
+    });
+}
+
+function articleMatchesPersonalDashboardSelectionMeasured(article) {
   incrementFilterPerformanceCounter("personalInterestAssessmentCount");
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   if (!selectedInterests.length) {
@@ -44250,6 +44813,14 @@ function applyFeedScopeStage({ articles, activeFeedId, diagnostics } = {}) {
 }
 
 function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
+  return measureFilterFunction("applyPersonalDashboardStage", () =>
+    applyPersonalDashboardStageMeasured({ articles, diagnostics }), {
+      logicalStage: "personal_dashboard",
+      interest: "cross_domain",
+    });
+}
+
+function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
   const inputArticles = Array.isArray(articles) ? articles : [];
   const outputArticles = [];
   inputArticles.forEach((article) => {
@@ -44568,6 +45139,14 @@ function applyIdentityProfessionalRelevanceGuardStage({ articles, branch, diagno
 }
 
 function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnostics } = {}) {
+  return measureFilterFunction("applyDigitalIdentityProfessionalGuardStage", () =>
+    applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, diagnostics }), {
+      logicalStage: "digital_identity_professional_guard",
+      interest: "digital_identity_biometrics",
+    });
+}
+
+function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, diagnostics } = {}) {
   const inputArticles = Array.isArray(articles) ? articles : [];
   const digitalIdentityGuardActive = shouldApplyDigitalIdentityProfessionalGuard();
   const biometricsGuardActive = shouldApplyBiometricsProfessionalGuardBooleanGate();
@@ -44894,6 +45473,15 @@ function resolveDiagnosticsReplayInput(result = {}) {
 }
 
 function replayFilterDiagnosticsStage({ result, diagnostics, activeFeedId, useBackendQuery } = {}) {
+  return measureFilterFunction("replayFilterDiagnosticsStage", () =>
+    replayFilterDiagnosticsStageMeasured({ result, diagnostics, activeFeedId, useBackendQuery }), {
+      executionPath: "diagnostics_replay",
+      logicalStage: "diagnostics_replay",
+      interest: "cross_domain",
+    });
+}
+
+function replayFilterDiagnosticsStageMeasured({ result, diagnostics, activeFeedId, useBackendQuery } = {}) {
   if (!diagnostics?.enabled || result?.pending) {
     recordFilterPipelineStages(diagnostics, []);
     return;
