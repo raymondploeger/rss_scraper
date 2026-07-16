@@ -163,6 +163,12 @@ function createFilterPerformanceCounters() {
     groupingInputCount: 0,
     renderedCardCount: 0,
     diagnosticsArticleCount: 0,
+    productionDecisionLedgerCreatedCount: 0,
+    productionDecisionLedgerFinalizedCount: 0,
+    productionDecisionLedgerSupersededCount: 0,
+    productionDecisionLedgerStageRecordCount: 0,
+    productionDecisionLedgerParityMatchCount: 0,
+    productionDecisionLedgerParityMismatchCount: 0,
   };
 }
 
@@ -1178,6 +1184,12 @@ function compactFilterPerformanceRun(run) {
     groupingInputCount: Number(counters.groupingInputCount) || 0,
     renderedCardCount: Number(counters.renderedCardCount) || 0,
     diagnosticsArticleCount: Number(counters.diagnosticsArticleCount) || 0,
+    productionDecisionLedgerCreatedCount: Number(counters.productionDecisionLedgerCreatedCount) || 0,
+    productionDecisionLedgerFinalizedCount: Number(counters.productionDecisionLedgerFinalizedCount) || 0,
+    productionDecisionLedgerSupersededCount: Number(counters.productionDecisionLedgerSupersededCount) || 0,
+    productionDecisionLedgerStageRecordCount: Number(counters.productionDecisionLedgerStageRecordCount) || 0,
+    productionDecisionLedgerParityMatchCount: Number(counters.productionDecisionLedgerParityMatchCount) || 0,
+    productionDecisionLedgerParityMismatchCount: Number(counters.productionDecisionLedgerParityMismatchCount) || 0,
     articleContextRequestPerArticle: run.articleContextRequestPerArticle,
     articleContextBuildsPerArticle: run.articleContextRequestPerArticle,
     evidenceBuildsPerArticle: run.evidenceBuildsPerArticle,
@@ -4473,6 +4485,8 @@ const runtime = {
   filterPipelineRenderId: 0,
   filterDecisionTraceMap: new Map(),
   personalDashboardScoreMap: new Map(),
+  activeProductionDecisionLedger: null,
+  latestProductionDecisionLedgerSummary: null,
   paginationContextKey: "",
   scheduledRenderFrame: 0,
   scheduledRenderTimeout: 0,
@@ -5362,6 +5376,7 @@ function normalizeCandidateProviderResult(resolved = {}) {
     diagnostics: resolved.diagnostics || {},
     backendRequestContributionRaw: resolved.backendRequestContributionRaw || null,
     backendRequestContributionDiagnostics: resolved.backendRequestContributionDiagnostics || null,
+    productionDecisionStageCounts: resolved.productionDecisionStageCounts || null,
     expectedTotal: Number.isFinite(Number(resolved.expectedTotal)) ? Number(resolved.expectedTotal) : null,
     partial: Boolean(resolved.partial),
     candidateSourceCount: candidateSource.length,
@@ -5935,6 +5950,7 @@ function validateNormalizedFilterStateParity(normalizedFilterState) {
 function createFilterPipelineDiagnostics(normalizedFilterState = createNormalizedFilterState()) {
   const enabled = isFilterPipelineDiagnosticsEnabled();
   const renderId = `render-${runtime.filterPipelineRenderId += 1}`;
+  const normalizedFilterStateKey = enabled ? getNormalizedFilterStateCacheKey(normalizedFilterState) : "";
   const candidatePoolContext = createCandidatePoolContext(normalizedFilterState);
   const candidateStrategy = resolveCandidateStrategy(normalizedFilterState, candidatePoolContext);
   const candidateSource = resolveCandidateSource(candidateStrategy, normalizedFilterState, candidatePoolContext);
@@ -5952,10 +5968,10 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
       backendCacheHit: false,
       groupedFeedCacheKey: "",
       groupedFeedCacheHit: false,
-      normalizedFilterStateKey: enabled ? getNormalizedFilterStateCacheKey(normalizedFilterState) : "",
+      normalizedFilterStateKey,
     },
     normalizedFilterState,
-    normalizedFilterStateKey: enabled ? getNormalizedFilterStateCacheKey(normalizedFilterState) : "",
+    normalizedFilterStateKey,
     normalizedFilterStateParity: enabled ? validateNormalizedFilterStateParity(normalizedFilterState) : null,
     candidateStrategy,
     candidateStrategyKey: candidateStrategy?.strategyKey || "",
@@ -5970,6 +5986,9 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     filterPipeline: null,
     filterPipelineStages: [],
     filterDecisionTraceMap: enabled ? new Map() : null,
+    productionDecisionLedger: enabled ? createProductionDecisionLedger(renderId, normalizedFilterStateKey) : null,
+    productionDecisionLedgerSummary: null,
+    productionDecisionLedgerParitySummary: null,
     diagnosticsPerformance: {
       enabled,
       heavyDiagnosticsLimit,
@@ -6336,6 +6355,420 @@ function getFilterDecisionTraceArticleId(article) {
     article?.title ||
     "";
   return String(rawId || "");
+}
+
+const PRODUCTION_DECISION_LEDGER_STAGE_NAMES = Object.freeze([
+  "candidate_pool",
+  "feed_scope",
+  "personal_dashboard",
+  "advanced_filters",
+  "identity_professional_relevance_guard",
+  "digital_identity_professional_guard",
+  "sorting",
+  "grouping",
+  "pagination",
+]);
+
+function createEmptyProductionDecisionLedgerStageCounts() {
+  return PRODUCTION_DECISION_LEDGER_STAGE_NAMES.reduce((stageCounts, stageName) => {
+    stageCounts[stageName] = {
+      inputCount: 0,
+      outputCount: 0,
+      recorded: false,
+      source: "",
+    };
+    return stageCounts;
+  }, {});
+}
+
+function createProductionDecisionLedger(renderId = "", normalizedFilterStateKey = "") {
+  const activeLedger = runtime.activeProductionDecisionLedger;
+  if (activeLedger && !activeLedger.finalized && !activeLedger.superseded) {
+    activeLedger.superseded = true;
+    activeLedger.parity = {
+      ...(activeLedger.parity || {}),
+      status: "superseded",
+      parityStatus: "superseded",
+    };
+    incrementFilterPerformanceCounter("productionDecisionLedgerSupersededCount");
+  }
+
+  const ledger = {
+    enabled: true,
+    renderId,
+    normalizedFilterStateKey,
+    stageCounts: createEmptyProductionDecisionLedgerStageCounts(),
+    membership: {
+      candidateArticleIds: [],
+      finalFilteredArticleIds: [],
+      sortedArticleIds: [],
+      groupedArticleIds: [],
+      renderedArticleIds: [],
+    },
+    parity: {
+      replayAvailable: false,
+      stageCountMatches: false,
+      matchingStageCount: 0,
+      mismatchingStageCount: 0,
+      mismatchedStages: [],
+      candidateIdentityMatch: null,
+      finalIdentityMatch: null,
+      groupedIdentityMatch: null,
+      renderedIdentityMatch: null,
+      status: "pending",
+      parityStatus: "pending",
+    },
+    counters: {
+      productionDecisionLedgerCreatedCount: 1,
+      productionDecisionLedgerFinalizedCount: 0,
+      productionDecisionLedgerSupersededCount: 0,
+      productionDecisionLedgerStageRecordCount: 0,
+      productionDecisionLedgerParityMatchCount: 0,
+      productionDecisionLedgerParityMismatchCount: 0,
+    },
+    finalized: false,
+    superseded: false,
+    parityCounted: false,
+    createdAt: new Date().toISOString(),
+    finalizedAt: "",
+  };
+  runtime.activeProductionDecisionLedger = ledger;
+  incrementFilterPerformanceCounter("productionDecisionLedgerCreatedCount");
+  return ledger;
+}
+
+function getProductionDecisionLedger(diagnostics) {
+  return diagnostics?.enabled && diagnostics.productionDecisionLedger?.enabled
+    ? diagnostics.productionDecisionLedger
+    : null;
+}
+
+function getProductionDecisionLedgerArticleIds(articles) {
+  return (Array.isArray(articles) ? articles : [])
+    .map((article) => getFilterDecisionTraceArticleId(article))
+    .filter(Boolean);
+}
+
+function recordProductionDecisionLedgerStage(diagnostics, stageName, inputArticlesOrCount, outputArticlesOrCount, source = "") {
+  const ledger = getProductionDecisionLedger(diagnostics);
+  if (!ledger || !Object.prototype.hasOwnProperty.call(ledger.stageCounts, stageName)) {
+    return;
+  }
+  const inputCount = Array.isArray(inputArticlesOrCount)
+    ? inputArticlesOrCount.length
+    : Number(inputArticlesOrCount) || 0;
+  const outputCount = Array.isArray(outputArticlesOrCount)
+    ? outputArticlesOrCount.length
+    : Number(outputArticlesOrCount) || 0;
+  ledger.stageCounts[stageName] = {
+    inputCount,
+    outputCount,
+    recorded: true,
+    source: source || "production_pipeline",
+  };
+  ledger.counters.productionDecisionLedgerStageRecordCount += 1;
+  incrementFilterPerformanceCounter("productionDecisionLedgerStageRecordCount");
+}
+
+function recordProductionDecisionLedgerMembership(diagnostics, membershipKey, articles) {
+  const ledger = getProductionDecisionLedger(diagnostics);
+  if (!ledger || !Object.prototype.hasOwnProperty.call(ledger.membership, membershipKey)) {
+    return;
+  }
+  ledger.membership[membershipKey] = getProductionDecisionLedgerArticleIds(articles);
+}
+
+function sortProductionDecisionLedgerIdentities(articleIds) {
+  return (Array.isArray(articleIds) ? articleIds : [])
+    .map((articleId) => String(articleId || ""))
+    .filter(Boolean)
+    .sort();
+}
+
+function compareProductionDecisionLedgerIdentityLists(productionIds, replayIds) {
+  const production = sortProductionDecisionLedgerIdentities(productionIds);
+  const replay = sortProductionDecisionLedgerIdentities(replayIds);
+  if (production.length !== replay.length) {
+    return false;
+  }
+  return production.every((articleId, index) => articleId === replay[index]);
+}
+
+function getReplayStageCountByName(diagnostics) {
+  const byName = new Map();
+  (Array.isArray(diagnostics?.filterPipelineStages) ? diagnostics.filterPipelineStages : []).forEach((stage) => {
+    const stageName = String(stage?.stage || "");
+    if (!stageName) {
+      return;
+    }
+    byName.set(stageName, {
+      inputCount: Number(stage.inputCount) || 0,
+      outputCount: Number(stage.outputCount) || 0,
+      source: "diagnostics_replay",
+    });
+  });
+  const candidateCount = Number(diagnostics?.counts?.candidatePool || diagnostics?.diagnosticsReplay?.candidatePoolInputCount) || 0;
+  if (candidateCount || diagnostics?.diagnosticsReplay) {
+    byName.set("candidate_pool", {
+      inputCount: candidateCount,
+      outputCount: candidateCount,
+      source: "diagnostics_replay",
+    });
+  }
+  return byName;
+}
+
+function getReplayTraceIdsByStage(diagnostics, stageName, predicate = null) {
+  const traceMap = diagnostics?.filterDecisionTraceMap;
+  if (!(traceMap instanceof Map)) {
+    return [];
+  }
+  const ids = [];
+  traceMap.forEach((trace) => {
+    const stages = Array.isArray(trace?.stages) ? trace.stages : [];
+    const matchedStage = stages.find((stage) => {
+      if (stage?.stage !== stageName) {
+        return false;
+      }
+      return typeof predicate === "function" ? predicate(stage, trace) : stage.result === "passed";
+    });
+    if (matchedStage && trace?.articleId) {
+      ids.push(trace.articleId);
+    }
+  });
+  return ids;
+}
+
+function getReplayCandidateTraceIds(diagnostics) {
+  const traceMap = diagnostics?.filterDecisionTraceMap;
+  return traceMap instanceof Map ? Array.from(traceMap.keys()).filter(Boolean) : [];
+}
+
+function compareProductionDecisionLedgerWithDiagnosticsReplay(diagnostics) {
+  const ledger = getProductionDecisionLedger(diagnostics);
+  if (!ledger) {
+    return null;
+  }
+  const replayStageCountsByName = getReplayStageCountByName(diagnostics);
+  const replayAvailable = Boolean(replayStageCountsByName.size || diagnostics?.filterDecisionTraceMap instanceof Map);
+  if (!replayAvailable) {
+    ledger.parity = {
+      ...ledger.parity,
+      replayAvailable: false,
+      status: ledger.superseded ? "superseded" : "replay_unavailable",
+      parityStatus: ledger.superseded ? "superseded" : "replay_unavailable",
+    };
+    return ledger.parity;
+  }
+
+  let matchingStageCount = 0;
+  const mismatchedStages = [];
+  const stageComparisonRows = PRODUCTION_DECISION_LEDGER_STAGE_NAMES.map((stageName) => {
+    const productionStage = ledger.stageCounts[stageName] || {};
+    const replayStage = replayStageCountsByName.get(stageName) || {};
+    const productionInput = Number(productionStage.inputCount) || 0;
+    const productionOutput = Number(productionStage.outputCount) || 0;
+    const replayInput = Number(replayStage.inputCount) || 0;
+    const replayOutput = Number(replayStage.outputCount) || 0;
+    const inputMatches = Boolean(productionStage.recorded && replayStageCountsByName.has(stageName) && productionInput === replayInput);
+    const outputMatches = Boolean(productionStage.recorded && replayStageCountsByName.has(stageName) && productionOutput === replayOutput);
+    if (inputMatches && outputMatches) {
+      matchingStageCount += 1;
+    } else {
+      mismatchedStages.push({
+        stage: stageName,
+        productionInput,
+        productionOutput,
+        replayInput,
+        replayOutput,
+        inputMatches,
+        outputMatches,
+        productionSource: productionStage.source || "",
+        replaySource: replayStage.source || "",
+      });
+    }
+    return {
+      stage: stageName,
+      productionInput,
+      productionOutput,
+      replayInput,
+      replayOutput,
+      inputMatches,
+      outputMatches,
+      productionSource: productionStage.source || "",
+      replaySource: replayStage.source || "",
+    };
+  });
+
+  const candidateIdentityMatch = compareProductionDecisionLedgerIdentityLists(
+    ledger.membership.candidateArticleIds,
+    getReplayCandidateTraceIds(diagnostics)
+  );
+  const finalIdentityMatch = compareProductionDecisionLedgerIdentityLists(
+    ledger.membership.finalFilteredArticleIds,
+    getReplayTraceIdsByStage(diagnostics, "sorting")
+  );
+  const groupedIdentityMatch = compareProductionDecisionLedgerIdentityLists(
+    ledger.membership.groupedArticleIds,
+    getReplayTraceIdsByStage(diagnostics, "grouping", (stage) => stage.result === "passed" && stage.metadata?.grouped !== false)
+  );
+  const renderedIdentityMatch = compareProductionDecisionLedgerIdentityLists(
+    ledger.membership.renderedArticleIds,
+    getReplayTraceIdsByStage(diagnostics, "pagination")
+  );
+  const identityMatches = [
+    candidateIdentityMatch,
+    finalIdentityMatch,
+    groupedIdentityMatch,
+    renderedIdentityMatch,
+  ];
+  const stageCountMatches = mismatchedStages.length === 0;
+  const allMembershipMatches = identityMatches.every((value) => value === true);
+  const parityStatus = ledger.superseded
+    ? "superseded"
+    : stageCountMatches && allMembershipMatches
+      ? "matched"
+      : "mismatched";
+  ledger.parity = {
+    replayAvailable: true,
+    stageCountMatches,
+    matchingStageCount,
+    mismatchingStageCount: mismatchedStages.length,
+    mismatchedStages,
+    stageComparisonRows,
+    candidateIdentityMatch,
+    finalIdentityMatch,
+    groupedIdentityMatch,
+    renderedIdentityMatch,
+    status: parityStatus,
+    parityStatus,
+  };
+  if (!ledger.parityCounted && parityStatus === "matched") {
+    ledger.counters.productionDecisionLedgerParityMatchCount += 1;
+    incrementFilterPerformanceCounter("productionDecisionLedgerParityMatchCount");
+    ledger.parityCounted = true;
+  } else if (!ledger.parityCounted && parityStatus === "mismatched") {
+    ledger.counters.productionDecisionLedgerParityMismatchCount += 1;
+    incrementFilterPerformanceCounter("productionDecisionLedgerParityMismatchCount");
+    ledger.parityCounted = true;
+  }
+  return ledger.parity;
+}
+
+function getProductionDecisionLedgerSummary(ledger) {
+  if (!ledger) {
+    return null;
+  }
+  const membership = ledger.membership || {};
+  return {
+    enabled: Boolean(ledger.enabled),
+    renderId: ledger.renderId || "",
+    normalizedFilterStateKey: ledger.normalizedFilterStateKey || "",
+    stageCounts: ledger.stageCounts || {},
+    membershipCounts: {
+      candidateArticleIds: Array.isArray(membership.candidateArticleIds) ? membership.candidateArticleIds.length : 0,
+      finalFilteredArticleIds: Array.isArray(membership.finalFilteredArticleIds) ? membership.finalFilteredArticleIds.length : 0,
+      sortedArticleIds: Array.isArray(membership.sortedArticleIds) ? membership.sortedArticleIds.length : 0,
+      groupedArticleIds: Array.isArray(membership.groupedArticleIds) ? membership.groupedArticleIds.length : 0,
+      renderedArticleIds: Array.isArray(membership.renderedArticleIds) ? membership.renderedArticleIds.length : 0,
+    },
+    membership: {
+      candidateArticleIds: Array.isArray(membership.candidateArticleIds) ? membership.candidateArticleIds.slice() : [],
+      finalFilteredArticleIds: Array.isArray(membership.finalFilteredArticleIds) ? membership.finalFilteredArticleIds.slice() : [],
+      sortedArticleIds: Array.isArray(membership.sortedArticleIds) ? membership.sortedArticleIds.slice() : [],
+      groupedArticleIds: Array.isArray(membership.groupedArticleIds) ? membership.groupedArticleIds.slice() : [],
+      renderedArticleIds: Array.isArray(membership.renderedArticleIds) ? membership.renderedArticleIds.slice() : [],
+    },
+    parity: ledger.parity || null,
+    counters: ledger.counters || {},
+    finalized: Boolean(ledger.finalized),
+    superseded: Boolean(ledger.superseded),
+    parityCounted: Boolean(ledger.parityCounted),
+    createdAt: ledger.createdAt || "",
+    finalizedAt: ledger.finalizedAt || "",
+  };
+}
+
+function buildProductionDecisionLedgerParitySummary(diagnostics) {
+  const ledger = getProductionDecisionLedger(diagnostics);
+  if (!ledger) {
+    return {
+      enabled: false,
+      parityStatus: "disabled",
+    };
+  }
+  const parity = compareProductionDecisionLedgerWithDiagnosticsReplay(diagnostics) || ledger.parity || {};
+  return {
+    enabled: true,
+    renderId: ledger.renderId || "",
+    normalizedFilterStateKey: ledger.normalizedFilterStateKey || "",
+    productionStageCounts: ledger.stageCounts || {},
+    replayStageCounts: Object.fromEntries(getReplayStageCountByName(diagnostics)),
+    matchingStageCount: Number(parity.matchingStageCount) || 0,
+    mismatchingStageCount: Number(parity.mismatchingStageCount) || 0,
+    mismatchedStages: Array.isArray(parity.mismatchedStages) ? parity.mismatchedStages.slice() : [],
+    stageComparisonRows: Array.isArray(parity.stageComparisonRows) ? parity.stageComparisonRows.slice() : [],
+    candidateIdentityMatch: parity.candidateIdentityMatch,
+    finalIdentityMatch: parity.finalIdentityMatch,
+    groupedIdentityMatch: parity.groupedIdentityMatch,
+    renderedIdentityMatch: parity.renderedIdentityMatch,
+    parityStatus: parity.parityStatus || parity.status || "pending",
+  };
+}
+
+function finalizeProductionDecisionLedger(diagnostics) {
+  const ledger = getProductionDecisionLedger(diagnostics);
+  if (!ledger || ledger.finalized) {
+    return;
+  }
+  ledger.finalized = true;
+  ledger.finalizedAt = new Date().toISOString();
+  ledger.counters.productionDecisionLedgerFinalizedCount += 1;
+  incrementFilterPerformanceCounter("productionDecisionLedgerFinalizedCount");
+  diagnostics.productionDecisionLedgerSummary = getProductionDecisionLedgerSummary(ledger);
+  diagnostics.productionDecisionLedgerParitySummary = buildProductionDecisionLedgerParitySummary(diagnostics);
+  runtime.latestProductionDecisionLedgerSummary = diagnostics.productionDecisionLedgerSummary;
+}
+
+function getLatestProductionDecisionLedgerSummary() {
+  const activeDiagnostic = getActiveFilterPipelineDiagnostic();
+  return activeDiagnostic?.productionDecisionLedgerSummary ||
+    activeDiagnostic?.productionDecisionLedgerParitySummary ||
+    runtime.latestProductionDecisionLedgerSummary ||
+    null;
+}
+
+function compareProductionDecisionLedgerWithReplay() {
+  const activeDiagnostic = getActiveFilterPipelineDiagnostic();
+  const summary = activeDiagnostic?.productionDecisionLedgerParitySummary ||
+    buildProductionDecisionLedgerParitySummary(activeDiagnostic);
+  const rows = Array.isArray(summary?.stageComparisonRows) ? summary.stageComparisonRows : [];
+  if (typeof console !== "undefined" && typeof console.table === "function") {
+    console.table(rows.map((row) => ({
+      stage: row.stage,
+      "production input": row.productionInput,
+      "production output": row.productionOutput,
+      "replay input": row.replayInput,
+      "replay output": row.replayOutput,
+      "input matches": row.inputMatches,
+      "output matches": row.outputMatches,
+    })));
+  }
+  const membershipParity = {
+    candidateIdentityMatch: summary?.candidateIdentityMatch,
+    finalIdentityMatch: summary?.finalIdentityMatch,
+    groupedIdentityMatch: summary?.groupedIdentityMatch,
+    renderedIdentityMatch: summary?.renderedIdentityMatch,
+    parityStatus: summary?.parityStatus || "unavailable",
+  };
+  if (typeof console !== "undefined") {
+    console.info("Production decision ledger membership parity", membershipParity);
+  }
+  return {
+    summary,
+    stageRows: rows,
+    membershipParity,
+  };
 }
 
 function reserveHeavyDiagnosticsSlot(diagnostics) {
@@ -20253,6 +20686,8 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     pipelineDiagnosticsArchitecture: diagnostics.pipelineDiagnosticsArchitecture || null,
     diagnosticsReplay: diagnostics.diagnosticsReplay || null,
     filterPipelineStages: diagnostics.filterPipelineStages || [],
+    productionDecisionLedgerSummary: diagnostics.productionDecisionLedgerSummary || null,
+    productionDecisionLedgerParitySummary: diagnostics.productionDecisionLedgerParitySummary || null,
     diagnosticsPerformance: diagnostics.diagnosticsPerformance || null,
     frontendPerformanceDiagnostics: diagnostics.frontendPerformanceDiagnostics || getFrontendPerformanceDiagnosticsForExport(10),
     identityTravelNoiseAssessmentDiagnostics: diagnostics.identityTravelNoiseAssessmentDiagnostics || getIdentityTravelNoiseAssessmentDiagnostics(),
@@ -20752,6 +21187,7 @@ function exportFilterPerformanceDiagnostics() {
     functionTimingProfilerSummary: getLatestFunctionTimingProfilerSummary(),
     professionalGuardRunLocalReuseSummary: getProfessionalGuardRunLocalReuseSummary(),
     identityDocumentParityDiagnosticsStatus: getIdentityDocumentParityDiagnosticsStatus(),
+    productionDecisionLedgerSummary: getLatestProductionDecisionLedgerSummary(),
     backendRequestContributionDiagnostics: backendRequestContributionDiagnostics
       ? {
           generatedRequestCount: backendRequestContributionDiagnostics.generatedRequestCount,
@@ -20930,6 +21366,14 @@ function ensureFilterPipelineDiagnosticsExportTools() {
 
   if (typeof window.getEvidenceBuilderPerformanceGuardSummary !== "function") {
     window.getEvidenceBuilderPerformanceGuardSummary = () => getEvidenceBuilderPerformanceGuardSummary();
+  }
+
+  if (typeof window.getLatestProductionDecisionLedgerSummary !== "function") {
+    window.getLatestProductionDecisionLedgerSummary = () => getLatestProductionDecisionLedgerSummary();
+  }
+
+  if (typeof window.compareProductionDecisionLedgerWithReplay !== "function") {
+    window.compareProductionDecisionLedgerWithReplay = () => compareProductionDecisionLedgerWithReplay();
   }
 
   if (typeof window.exportFilterPerformanceDiagnostics !== "function") {
@@ -21485,6 +21929,11 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.functionTimingProfilerSummary = getLatestFunctionTimingProfilerSummary();
   diagnostics.professionalGuardRunLocalReuseSummary = getProfessionalGuardRunLocalReuseSummary();
   diagnostics.frontendPerformanceDiagnostics = getFrontendPerformanceDiagnosticsForExport(10);
+  if (diagnostics.productionDecisionLedger) {
+    diagnostics.productionDecisionLedgerParitySummary = buildProductionDecisionLedgerParitySummary(diagnostics);
+    diagnostics.productionDecisionLedgerSummary = getProductionDecisionLedgerSummary(diagnostics.productionDecisionLedger);
+    runtime.latestProductionDecisionLedgerSummary = diagnostics.productionDecisionLedgerSummary;
+  }
   publishFilterDecisionTraceDiagnostics(diagnostics);
   publishPersonalDashboardScores(diagnostics);
   storeFilterPipelineDiagnostics(diagnostics);
@@ -46133,6 +46582,7 @@ function applyLegacyFilterPipeline({
     groupedCount: Number(candidateBuilderResult?.groupedArticlesCount) || 0,
     backendRequestContributionRaw: candidateBuilderResult?.backendRequestContributionRaw || null,
     backendRequestContributionDiagnostics: candidateBuilderResult?.backendRequestContributionDiagnostics || null,
+    productionDecisionStageCounts: candidateBuilderResult?.productionDecisionStageCounts || null,
     pending: Boolean(candidateBuilderResult?.pending),
     warnings: Array.isArray(candidateBuilderResult?.warnings) ? candidateBuilderResult.warnings.slice() : [],
     notes: [
@@ -46146,6 +46596,67 @@ function applyLegacyFilterPipeline({
   };
 
   recordFilterPipelineResult(diagnostics, result);
+  recordProductionDecisionLedgerMembership(diagnostics, "candidateArticleIds", result.candidatePool);
+  recordProductionDecisionLedgerMembership(diagnostics, "finalFilteredArticleIds", result.filteredRawArticles);
+  recordProductionDecisionLedgerMembership(diagnostics, "sortedArticleIds", result.filteredRawArticles);
+  recordProductionDecisionLedgerMembership(diagnostics, "groupedArticleIds", result.groupedArticles);
+  const productionStageCounts = result.productionDecisionStageCounts || {};
+  recordProductionDecisionLedgerStage(
+    diagnostics,
+    "candidate_pool",
+    productionStageCounts.candidate_pool?.inputCount ?? result.candidatePool.length,
+    productionStageCounts.candidate_pool?.outputCount ?? result.candidatePool.length,
+    productionStageCounts.candidate_pool?.source || "legacy_filter_pipeline_candidate_builder_result"
+  );
+  recordProductionDecisionLedgerStage(
+    diagnostics,
+    "feed_scope",
+    productionStageCounts.feed_scope?.inputCount ?? result.candidatePool.length,
+    productionStageCounts.feed_scope?.outputCount ?? result.candidatePool.length,
+    productionStageCounts.feed_scope?.source || "legacy_filter_pipeline_no_separate_feed_scope"
+  );
+  recordProductionDecisionLedgerStage(
+    diagnostics,
+    "personal_dashboard",
+    productionStageCounts.personal_dashboard?.inputCount ?? result.candidatePool.length,
+    productionStageCounts.personal_dashboard?.outputCount ?? result.filteredRawArticles.length,
+    productionStageCounts.personal_dashboard?.source || "legacy_filter_pipeline_final_result_available"
+  );
+  recordProductionDecisionLedgerStage(
+    diagnostics,
+    "advanced_filters",
+    productionStageCounts.advanced_filters?.inputCount ?? result.filteredRawArticles.length,
+    productionStageCounts.advanced_filters?.outputCount ?? result.filteredRawArticles.length,
+    productionStageCounts.advanced_filters?.source || "legacy_filter_pipeline_final_result_available"
+  );
+  recordProductionDecisionLedgerStage(
+    diagnostics,
+    "identity_professional_relevance_guard",
+    productionStageCounts.identity_professional_relevance_guard?.inputCount ?? result.filteredRawArticles.length,
+    productionStageCounts.identity_professional_relevance_guard?.outputCount ?? result.filteredRawArticles.length,
+    productionStageCounts.identity_professional_relevance_guard?.source || "legacy_filter_pipeline_final_result_available"
+  );
+  recordProductionDecisionLedgerStage(
+    diagnostics,
+    "digital_identity_professional_guard",
+    productionStageCounts.digital_identity_professional_guard?.inputCount ?? result.filteredRawArticles.length,
+    productionStageCounts.digital_identity_professional_guard?.outputCount ?? result.filteredRawArticles.length,
+    productionStageCounts.digital_identity_professional_guard?.source || "legacy_filter_pipeline_final_result_available"
+  );
+  recordProductionDecisionLedgerStage(
+    diagnostics,
+    "sorting",
+    productionStageCounts.sorting?.inputCount ?? result.filteredRawArticles.length,
+    productionStageCounts.sorting?.outputCount ?? result.filteredRawArticles.length,
+    productionStageCounts.sorting?.source || "legacy_filter_pipeline_filtered_raw_articles"
+  );
+  recordProductionDecisionLedgerStage(
+    diagnostics,
+    "grouping",
+    productionStageCounts.grouping?.inputCount ?? result.filteredRawArticles.length,
+    productionStageCounts.grouping?.outputCount ?? result.groupedArticlesCount,
+    productionStageCounts.grouping?.source || "legacy_filter_pipeline_grouped_articles"
+  );
   try {
     withFilterPerformanceStage("diagnosticsMs", () => replayFilterDiagnosticsStage({
       result,
@@ -46447,6 +46958,13 @@ function executePaginationPipeline({
   }));
   recordPaginationDecisionTraces(diagnostics, filterPipelineResult.articles, paginationResult);
   recordPaginationPipelineResult(diagnostics, paginationResult);
+  recordProductionDecisionLedgerStage(
+    diagnostics,
+    "pagination",
+    filterPipelineResult.articles,
+    paginationResult?.items || [],
+    "pagination_pipeline_getPaginatedItems"
+  );
   return paginationResult;
 }
 
@@ -46469,6 +46987,8 @@ function executeRenderPreparationPipeline({
     paginationResult,
   });
   recordRenderDispatch(diagnostics, renderDispatch);
+  recordProductionDecisionLedgerMembership(diagnostics, "renderedArticleIds", renderModel.items || []);
+  finalizeProductionDecisionLedger(diagnostics);
 
   return {
     renderModel,
@@ -47049,6 +47569,48 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
       candidatePool,
       filteredRawArticles,
       groupedArticlesCount: groupedArticles.length,
+      productionDecisionStageCounts: {
+        candidate_pool: {
+          inputCount: candidatePool.length,
+          outputCount: candidatePool.length,
+          source: "backend_result_normalization",
+        },
+        feed_scope: {
+          inputCount: candidatePool.length,
+          outputCount: candidatePool.length,
+          source: "backend_result_normalization_no_separate_feed_scope",
+        },
+        personal_dashboard: {
+          inputCount: candidatePool.length,
+          outputCount: advancedFilteredBackendArticles.length,
+          source: "backend_result_normalization_combined_articleMatchesFilters",
+        },
+        advanced_filters: {
+          inputCount: advancedFilteredBackendArticles.length,
+          outputCount: advancedFilteredBackendArticles.length,
+          source: "backend_result_normalization_combined_articleMatchesFilters",
+        },
+        identity_professional_relevance_guard: {
+          inputCount: advancedFilteredBackendArticles.length,
+          outputCount: filteredBackendArticles.length,
+          source: "backend_result_normalization",
+        },
+        digital_identity_professional_guard: {
+          inputCount: filteredBackendArticles.length,
+          outputCount: digitalIdentityFilteredBackendArticles.length,
+          source: "backend_result_normalization",
+        },
+        sorting: {
+          inputCount: digitalIdentityFilteredBackendArticles.length,
+          outputCount: filteredRawArticles.length,
+          source: "backend_result_normalization",
+        },
+        grouping: {
+          inputCount: filteredRawArticles.length,
+          outputCount: groupedArticles.length,
+          source: "backend_result_normalization",
+        },
+      },
       branch: "backend-query",
       cacheKey: queryKey,
       cacheHit: true,
