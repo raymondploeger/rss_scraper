@@ -29284,7 +29284,8 @@ function getIdentityVerificationProfessionalGuardAssessmentUncached(article, opt
   const enabled = Boolean(options.forceEnabled) ||
     shouldApplyIdentityVerificationProfessionalGuard(selectedInterests);
   const sharedEvidence = getIdentityVerificationSourceTrustEvidence(article);
-  const semanticGate = getIdentityVerificationSemanticGate(article);
+  const semanticGate = sharedEvidence?.identityVerificationSemanticGate ||
+    getIdentityVerificationSemanticGate(article);
   const selectedIdentityVerificationAssessment = getDigitalSubgroupHybridAssessment(article, "identity_verification");
   const matchedStrongSignals = sharedEvidence.authoritativeVerificationSignals || [];
   const matchedUseCaseTerms = sharedEvidence.supportingIdentitySignals || [];
