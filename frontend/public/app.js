@@ -6478,6 +6478,17 @@ function recordProductionDecisionLedgerMembership(diagnostics, membershipKey, ar
   ledger.membership[membershipKey] = getProductionDecisionLedgerArticleIds(articles);
 }
 
+function recordProductionDecisionLedgerReplayMembership(diagnostics, membershipKey, articles) {
+  const ledger = getProductionDecisionLedger(diagnostics);
+  if (!ledger) {
+    return;
+  }
+  if (!ledger.replayMembership) {
+    ledger.replayMembership = {};
+  }
+  ledger.replayMembership[membershipKey] = getProductionDecisionLedgerArticleIds(articles);
+}
+
 function sortProductionDecisionLedgerIdentities(articleIds) {
   return (Array.isArray(articleIds) ? articleIds : [])
     .map((articleId) => String(articleId || ""))
@@ -6610,7 +6621,8 @@ function compareProductionDecisionLedgerWithDiagnosticsReplay(diagnostics) {
   );
   const groupedIdentityMatch = compareProductionDecisionLedgerIdentityLists(
     ledger.membership.groupedArticleIds,
-    getReplayTraceIdsByStage(diagnostics, "grouping", (stage) => stage.result === "passed" && stage.metadata?.grouped !== false)
+    ledger.replayMembership?.groupedArticleIds ||
+      getReplayTraceIdsByStage(diagnostics, "grouping", (stage) => stage.result === "passed" && stage.metadata?.grouped !== false)
   );
   const renderedIdentityMatch = compareProductionDecisionLedgerIdentityLists(
     ledger.membership.renderedArticleIds,
@@ -46513,6 +46525,11 @@ function replayFilterDiagnosticsStageMeasured({ result, diagnostics, activeFeedI
   const groupedArticlesAfterDigitalIdentityGuard = withFilterPerformanceStage("groupingMs", () => {
     return prepareDateFirstGroupedArticles(sortedArticlesAfterDigitalIdentityGuard);
   });
+  recordProductionDecisionLedgerReplayMembership(
+    diagnostics,
+    "groupedArticleIds",
+    groupedArticlesAfterDigitalIdentityGuard
+  );
 
   const sortingStage = withFilterPerformanceStage("sortingMs", () => applySortingStage({
     inputArticles: digitalIdentityProfessionalGuardStage.articles,
