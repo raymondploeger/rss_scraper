@@ -29028,6 +29028,18 @@ function shouldApplyIdentityVerificationProfessionalGuard(selectedInterests = no
 }
 
 function getIdentityVerificationProfessionalGuardAssessment(article, options = {}) {
+  return measureFilterFunction(
+    "getIdentityVerificationProfessionalGuardAssessment",
+    () => getIdentityVerificationProfessionalGuardAssessmentMeasured(article, options),
+    {
+      executionPath: getCurrentFilterExecutionPath(),
+      logicalStage: getCurrentFilterLogicalStage(),
+      interest: "identity_verification",
+    }
+  );
+}
+
+function getIdentityVerificationProfessionalGuardAssessmentMeasured(article, options = {}) {
   incrementFilterPerformanceCounter("professionalGuardAssessmentCount");
   incrementFilterPerformanceCounter("identityVerificationAssessmentCount");
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
