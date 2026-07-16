@@ -6635,18 +6635,29 @@ function compareProductionDecisionLedgerWithDiagnosticsReplay(diagnostics) {
     renderedIdentityMatch,
   ];
   const stageCountMatches = mismatchedStages.length === 0;
+  const paginationStageComparison = stageComparisonRows.find((row) => row.stage === "pagination") || null;
+  const paginationStageCountMatches = Boolean(
+    paginationStageComparison?.inputMatches && paginationStageComparison?.outputMatches
+  );
+  const nonPaginationMismatchedStages = mismatchedStages.filter((stage) => stage.stage !== "pagination");
+  const nonPaginationStageCountMatches = nonPaginationMismatchedStages.length === 0;
   const allMembershipMatches = identityMatches.every((value) => value === true);
   const parityStatus = ledger.superseded
     ? "superseded"
-    : stageCountMatches && allMembershipMatches
+    : allMembershipMatches
       ? "matched"
       : "mismatched";
   ledger.parity = {
     replayAvailable: true,
     stageCountMatches,
+    nonPaginationStageCountMatches,
+    paginationStageCountMatches,
     matchingStageCount,
     mismatchingStageCount: mismatchedStages.length,
     mismatchedStages,
+    nonPaginationMismatchedStages,
+    paginationStageComparison,
+    paginationDifferencesAffectParityStatus: false,
     stageComparisonRows,
     candidateIdentityMatch,
     finalIdentityMatch,
@@ -6719,6 +6730,13 @@ function buildProductionDecisionLedgerParitySummary(diagnostics) {
     matchingStageCount: Number(parity.matchingStageCount) || 0,
     mismatchingStageCount: Number(parity.mismatchingStageCount) || 0,
     mismatchedStages: Array.isArray(parity.mismatchedStages) ? parity.mismatchedStages.slice() : [],
+    nonPaginationStageCountMatches: parity.nonPaginationStageCountMatches,
+    nonPaginationMismatchedStages: Array.isArray(parity.nonPaginationMismatchedStages)
+      ? parity.nonPaginationMismatchedStages.slice()
+      : [],
+    paginationStageCountMatches: parity.paginationStageCountMatches,
+    paginationStageComparison: parity.paginationStageComparison || null,
+    paginationDifferencesAffectParityStatus: Boolean(parity.paginationDifferencesAffectParityStatus),
     stageComparisonRows: Array.isArray(parity.stageComparisonRows) ? parity.stageComparisonRows.slice() : [],
     candidateIdentityMatch: parity.candidateIdentityMatch,
     finalIdentityMatch: parity.finalIdentityMatch,
