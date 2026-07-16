@@ -153,12 +153,113 @@ function createFilterPerformanceCounters() {
     professionalGuardAssessmentCount: 0,
     identityVerificationAssessmentCount: 0,
     biometricsAssessmentCount: 0,
+    professionalGuardRunLocalRequestCount: 0,
+    professionalGuardRunLocalHitCount: 0,
+    professionalGuardRunLocalMissCount: 0,
+    professionalGuardRunLocalBuildCount: 0,
+    professionalGuardRunLocalBypassCount: 0,
     selectedInterestAssessmentCounts: {},
     textNormalizationCount: 0,
     groupingInputCount: 0,
     renderedCardCount: 0,
     diagnosticsArticleCount: 0,
   };
+}
+
+function createProfessionalGuardRunLocalTypeStats(assessmentType = "") {
+  return {
+    assessmentType,
+    requestCount: 0,
+    hitCount: 0,
+    missCount: 0,
+    buildCount: 0,
+    bypassCount: 0,
+  };
+}
+
+function createProfessionalGuardRunLocalReuseState(renderId = "") {
+  return {
+    enabled: true,
+    renderId,
+    store: new Map(),
+    requestCount: 0,
+    hitCount: 0,
+    missCount: 0,
+    buildCount: 0,
+    bypassCount: 0,
+    byAssessmentType: new Map(),
+    clearedAtRunEnd: false,
+    overlappingRunProtection: true,
+  };
+}
+
+function getProfessionalGuardRunLocalTypeStats(reuseState, assessmentType = "unknown") {
+  if (!reuseState?.byAssessmentType) {
+    return createProfessionalGuardRunLocalTypeStats(assessmentType);
+  }
+  const normalizedType = String(assessmentType || "unknown");
+  if (!reuseState.byAssessmentType.has(normalizedType)) {
+    reuseState.byAssessmentType.set(normalizedType, createProfessionalGuardRunLocalTypeStats(normalizedType));
+  }
+  return reuseState.byAssessmentType.get(normalizedType);
+}
+
+function incrementProfessionalGuardRunLocalReuseMetric(reuseState, assessmentType, metricName) {
+  if (!reuseState || !metricName) {
+    return;
+  }
+  const typeStats = getProfessionalGuardRunLocalTypeStats(reuseState, assessmentType);
+  reuseState[metricName] = (Number(reuseState[metricName]) || 0) + 1;
+  typeStats[metricName] = (Number(typeStats[metricName]) || 0) + 1;
+  const counterNameByMetric = {
+    requestCount: "professionalGuardRunLocalRequestCount",
+    hitCount: "professionalGuardRunLocalHitCount",
+    missCount: "professionalGuardRunLocalMissCount",
+    buildCount: "professionalGuardRunLocalBuildCount",
+    bypassCount: "professionalGuardRunLocalBypassCount",
+  };
+  const counterName = counterNameByMetric[metricName];
+  if (counterName) {
+    incrementFilterPerformanceCounter(counterName);
+  }
+}
+
+function getProfessionalGuardRunLocalArticleIdentity(article) {
+  const identity = article?.id ||
+    article?.articleId ||
+    article?._id ||
+    article?.canonicalLink ||
+    article?.link ||
+    article?.url ||
+    "";
+  return String(identity || "").trim();
+}
+
+function buildProfessionalGuardRunLocalOptionSignature(run, assessmentType, options = {}) {
+  return JSON.stringify({
+    assessmentType: String(assessmentType || ""),
+    renderId: run?.runId || "",
+    selectedMainDomains: Array.isArray(run?.selectedMainDomains) ? run.selectedMainDomains.slice().sort() : [],
+    selectedInterests: Array.isArray(run?.selectedInterests) ? run.selectedInterests.slice().sort() : [],
+    branch: String(options?.branch || ""),
+    forceEnabled: Boolean(options?.forceEnabled),
+    hasSharedEvidence: Object.prototype.hasOwnProperty.call(options || {}, "sharedEvidence"),
+    hasSemanticGate: Object.prototype.hasOwnProperty.call(options || {}, "semanticGate"),
+    hasHybridAssessment: Object.prototype.hasOwnProperty.call(options || {}, "hybridAssessment"),
+  });
+}
+
+function buildProfessionalGuardRunLocalCacheKey(run, assessmentType, article, options = {}) {
+  const articleIdentity = getProfessionalGuardRunLocalArticleIdentity(article);
+  if (!run?.runId || !articleIdentity) {
+    return "";
+  }
+  return [
+    run.runId,
+    String(assessmentType || "unknown"),
+    articleIdentity,
+    buildProfessionalGuardRunLocalOptionSignature(run, assessmentType, options),
+  ].join("|");
 }
 
 function createArticleContextAttributionState() {
@@ -216,6 +317,8 @@ function createFilterPerformanceRun(reason = "render") {
     articleContextAttributionState: createArticleContextAttributionState(),
     functionTimingProfiler: createFunctionTimingProfilerState(""),
     functionTimingProfilerSummary: null,
+    professionalGuardRunLocalReuseState: null,
+    professionalGuardRunLocalReuseSummary: null,
     currentExecutionPath: "production",
     currentLogicalStage: "other",
     activeRunId: "",
@@ -238,6 +341,7 @@ function createFilterPerformanceRun(reason = "render") {
   };
   run.activeRunId = run.runId;
   run.functionTimingProfiler.runId = run.runId;
+  run.professionalGuardRunLocalReuseState = createProfessionalGuardRunLocalReuseState(run.runId);
   runtime.activeFilterPerformanceRun = run;
   runtime.activeFilterPerformanceRunId = run.runId;
   return run;
@@ -298,6 +402,105 @@ function incrementFilterPerformanceCounter(name, amount = 1) {
     return;
   }
   run.operationCounters[name] = (Number(run.operationCounters[name]) || 0) + amount;
+}
+
+function getOrBuildRunLocalProfessionalGuardAssessment(assessmentType, article, options = {}, builder) {
+  if (typeof builder !== "function") {
+    return null;
+  }
+  const run = getActiveFilterPerformanceRun();
+  const reuseState = run?.professionalGuardRunLocalReuseState;
+  if (!run || !reuseState || reuseState.renderId !== run.runId || runtime.activeFilterPerformanceRunId !== run.runId) {
+    return builder();
+  }
+
+  incrementProfessionalGuardRunLocalReuseMetric(reuseState, assessmentType, "requestCount");
+  const cacheKey = buildProfessionalGuardRunLocalCacheKey(run, assessmentType, article, options);
+  if (!cacheKey) {
+    incrementProfessionalGuardRunLocalReuseMetric(reuseState, assessmentType, "bypassCount");
+    return builder();
+  }
+
+  if (reuseState.store.has(cacheKey)) {
+    incrementProfessionalGuardRunLocalReuseMetric(reuseState, assessmentType, "hitCount");
+    return reuseState.store.get(cacheKey);
+  }
+
+  incrementProfessionalGuardRunLocalReuseMetric(reuseState, assessmentType, "missCount");
+  const assessment = builder();
+  if (assessment && typeof assessment === "object") {
+    reuseState.store.set(cacheKey, assessment);
+    incrementProfessionalGuardRunLocalReuseMetric(reuseState, assessmentType, "buildCount");
+  } else {
+    incrementProfessionalGuardRunLocalReuseMetric(reuseState, assessmentType, "bypassCount");
+  }
+  return assessment;
+}
+
+function buildProfessionalGuardRunLocalReuseSummaryFromState(reuseState, options = {}) {
+  const requestCount = Number(reuseState?.requestCount) || 0;
+  const hitCount = Number(reuseState?.hitCount) || 0;
+  const byAssessmentType = Array.from(reuseState?.byAssessmentType?.values?.() || [])
+    .map((entry) => ({
+      assessmentType: entry.assessmentType || "unknown",
+      requestCount: Number(entry.requestCount) || 0,
+      hitCount: Number(entry.hitCount) || 0,
+      missCount: Number(entry.missCount) || 0,
+      buildCount: Number(entry.buildCount) || 0,
+      bypassCount: Number(entry.bypassCount) || 0,
+    }))
+    .sort((left, right) => right.requestCount - left.requestCount || left.assessmentType.localeCompare(right.assessmentType));
+  return {
+    enabled: Boolean(reuseState?.enabled),
+    renderId: reuseState?.renderId || "",
+    requestCount,
+    hitCount,
+    missCount: Number(reuseState?.missCount) || 0,
+    buildCount: Number(reuseState?.buildCount) || 0,
+    bypassCount: Number(reuseState?.bypassCount) || 0,
+    hitRatePercent: requestCount ? Math.round((hitCount / requestCount) * 1000) / 10 : 0,
+    byAssessmentType,
+    storeEntryCount: Number(reuseState?.store?.size) || 0,
+    clearedAtRunEnd: Boolean(options.clearedAtRunEnd ?? reuseState?.clearedAtRunEnd),
+    overlappingRunProtection: Boolean(reuseState?.overlappingRunProtection),
+  };
+}
+
+function buildUnavailableProfessionalGuardRunLocalReuseSummary() {
+  return {
+    enabled: false,
+    renderId: "",
+    requestCount: 0,
+    hitCount: 0,
+    missCount: 0,
+    buildCount: 0,
+    bypassCount: 0,
+    hitRatePercent: 0,
+    byAssessmentType: [],
+    storeEntryCount: 0,
+    clearedAtRunEnd: true,
+    overlappingRunProtection: true,
+  };
+}
+
+function getProfessionalGuardRunLocalReuseSummary() {
+  const activeRun = getActiveFilterPerformanceRun();
+  if (activeRun?.professionalGuardRunLocalReuseState) {
+    return buildProfessionalGuardRunLocalReuseSummaryFromState(activeRun.professionalGuardRunLocalReuseState);
+  }
+  return getLatestFilterPerformanceDiagnostics()?.professionalGuardRunLocalReuseSummary ||
+    buildUnavailableProfessionalGuardRunLocalReuseSummary();
+}
+
+function clearProfessionalGuardRunLocalReuseState(run) {
+  const reuseState = run?.professionalGuardRunLocalReuseState;
+  if (!reuseState) {
+    return;
+  }
+  reuseState.clearedAtRunEnd = true;
+  if (reuseState.store && typeof reuseState.store.clear === "function") {
+    reuseState.store.clear();
+  }
 }
 
 function getCurrentFilterExecutionPath() {
@@ -963,6 +1166,13 @@ function compactFilterPerformanceRun(run) {
     professionalGuardAssessmentCount: Number(counters.professionalGuardAssessmentCount) || 0,
     identityVerificationAssessmentCount: Number(counters.identityVerificationAssessmentCount) || 0,
     biometricsAssessmentCount: Number(counters.biometricsAssessmentCount) || 0,
+    professionalGuardRunLocalRequestCount: Number(counters.professionalGuardRunLocalRequestCount) || 0,
+    professionalGuardRunLocalHitCount: Number(counters.professionalGuardRunLocalHitCount) || 0,
+    professionalGuardRunLocalMissCount: Number(counters.professionalGuardRunLocalMissCount) || 0,
+    professionalGuardRunLocalBuildCount: Number(counters.professionalGuardRunLocalBuildCount) || 0,
+    professionalGuardRunLocalBypassCount: Number(counters.professionalGuardRunLocalBypassCount) || 0,
+    professionalGuardRunLocalReuseSummary: run.professionalGuardRunLocalReuseSummary ||
+      buildUnavailableProfessionalGuardRunLocalReuseSummary(),
     selectedInterestAssessmentCounts: { ...(counters.selectedInterestAssessmentCounts || {}) },
     textNormalizationCount: Number(counters.textNormalizationCount) || 0,
     groupingInputCount: Number(counters.groupingInputCount) || 0,
@@ -1046,11 +1256,17 @@ function completeFilterPerformanceRun(extra = {}) {
     run.articleContextRequestAttribution.actualBuilds
   );
   finalizeFunctionTimingProfilerForRun(run);
+  run.professionalGuardRunLocalReuseSummary = buildProfessionalGuardRunLocalReuseSummaryFromState(
+    run.professionalGuardRunLocalReuseState,
+    { clearedAtRunEnd: true }
+  );
+  clearProfessionalGuardRunLocalReuseState(run);
   run.interpretation = buildFilterPerformanceInterpretation(run);
   run.completed = true;
   run.operationMaps = null;
   run.articleContextAttributionState = null;
   run.functionTimingProfiler = null;
+  run.professionalGuardRunLocalReuseState = null;
   const compact = compactFilterPerformanceRun(run);
   runtime.filterPerformanceRuns.push(compact);
   runtime.filterPerformanceRuns = runtime.filterPerformanceRuns.slice(-20);
@@ -20046,6 +20262,8 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     articleContextInterestSummary: diagnostics.articleContextInterestSummary || [],
     articleContextDiagnosticsVsProductionSummary: diagnostics.articleContextDiagnosticsVsProductionSummary || null,
     functionTimingProfilerSummary: diagnostics.functionTimingProfilerSummary || getLatestFunctionTimingProfilerSummary(),
+    professionalGuardRunLocalReuseSummary: diagnostics.professionalGuardRunLocalReuseSummary ||
+      getProfessionalGuardRunLocalReuseSummary(),
     filterDecisionTraceSummary: diagnostics.filterDecisionTraceSummary || null,
     filterDecisionDebugTools: diagnostics.filterDecisionDebugTools || null,
     filterDecisionRichTrace: diagnostics.filterDecisionRichTrace || null,
@@ -20344,6 +20562,11 @@ function compareLatestFilterPerformanceRuns() {
     "professionalGuardAssessmentCount",
     "identityVerificationAssessmentCount",
     "biometricsAssessmentCount",
+    "professionalGuardRunLocalRequestCount",
+    "professionalGuardRunLocalHitCount",
+    "professionalGuardRunLocalMissCount",
+    "professionalGuardRunLocalBuildCount",
+    "professionalGuardRunLocalBypassCount",
     "textNormalizationCount",
     "groupingInputCount",
     "renderedCardCount",
@@ -20527,6 +20750,7 @@ function exportFilterPerformanceDiagnostics() {
     identityDocumentShadowDiagnosticsSummary: getLatestIdentityDocumentShadowDiagnosticsSummary(),
     evidenceBuilderPerformanceGuardSummary: getEvidenceBuilderPerformanceGuardSummary(),
     functionTimingProfilerSummary: getLatestFunctionTimingProfilerSummary(),
+    professionalGuardRunLocalReuseSummary: getProfessionalGuardRunLocalReuseSummary(),
     identityDocumentParityDiagnosticsStatus: getIdentityDocumentParityDiagnosticsStatus(),
     backendRequestContributionDiagnostics: backendRequestContributionDiagnostics
       ? {
@@ -20682,6 +20906,10 @@ function ensureFilterPipelineDiagnosticsExportTools() {
 
   if (typeof window.getLatestFunctionTimingProfilerSummary !== "function") {
     window.getLatestFunctionTimingProfilerSummary = () => getLatestFunctionTimingProfilerSummary();
+  }
+
+  if (typeof window.getProfessionalGuardRunLocalReuseSummary !== "function") {
+    window.getProfessionalGuardRunLocalReuseSummary = () => getProfessionalGuardRunLocalReuseSummary();
   }
 
   if (typeof window.listFilterFunctionTimings !== "function") {
@@ -21255,6 +21483,7 @@ function flushFilterPipelineDiagnostics(diagnostics) {
   diagnostics.articleContextDiagnosticsVsProductionSummary =
     latestPerformanceDiagnostics?.articleContextDiagnosticsVsProductionSummary || null;
   diagnostics.functionTimingProfilerSummary = getLatestFunctionTimingProfilerSummary();
+  diagnostics.professionalGuardRunLocalReuseSummary = getProfessionalGuardRunLocalReuseSummary();
   diagnostics.frontendPerformanceDiagnostics = getFrontendPerformanceDiagnosticsForExport(10);
   publishFilterDecisionTraceDiagnostics(diagnostics);
   publishPersonalDashboardScores(diagnostics);
@@ -29042,6 +29271,15 @@ function getIdentityVerificationProfessionalGuardAssessment(article, options = {
 function getIdentityVerificationProfessionalGuardAssessmentMeasured(article, options = {}) {
   incrementFilterPerformanceCounter("professionalGuardAssessmentCount");
   incrementFilterPerformanceCounter("identityVerificationAssessmentCount");
+  return getOrBuildRunLocalProfessionalGuardAssessment(
+    "identity_verification",
+    article,
+    options,
+    () => getIdentityVerificationProfessionalGuardAssessmentUncached(article, options)
+  );
+}
+
+function getIdentityVerificationProfessionalGuardAssessmentUncached(article, options = {}) {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const enabled = Boolean(options.forceEnabled) ||
     shouldApplyIdentityVerificationProfessionalGuard(selectedInterests);
@@ -29596,6 +29834,15 @@ function getBiometricsProfessionalGuardAssessment(article, options = {}) {
 function getBiometricsProfessionalGuardAssessmentMeasured(article, options = {}) {
   incrementFilterPerformanceCounter("professionalGuardAssessmentCount");
   incrementFilterPerformanceCounter("biometricsAssessmentCount");
+  return getOrBuildRunLocalProfessionalGuardAssessment(
+    "biometrics",
+    article,
+    options,
+    () => getBiometricsProfessionalGuardAssessmentUncached(article, options)
+  );
+}
+
+function getBiometricsProfessionalGuardAssessmentUncached(article, options = {}) {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const enabled = Boolean(options.forceEnabled) || shouldApplyBiometricsProfessionalGuardBooleanGate(selectedInterests);
   const context = getPersonalBoostContext(article, "getBiometricsProfessionalGuardAssessment", { interest: "biometrics" });
