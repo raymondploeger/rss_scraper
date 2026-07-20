@@ -3507,8 +3507,7 @@ const PERSONAL_DASHBOARD_GROUPS = [
       { id: "drivers_licenses", label: "Driver's licenses", strong: ["driver license", "driver's license", "driving licence"], weak: ["license card"] },
       { id: "visas", label: "Visas", strong: ["visa", "visas", "visa policy"], weak: ["travel authorization"], eventTypes: ["visa_policy", "etias_event"] },
       { id: "issuance", label: "Issuance", strong: ["issuance", "passport issuance", "passport renewal", "document issuance"], weak: ["issued", "renewal"], signalIds: ["regulations", "delay"] },
-      { id: "fraud", label: "Fraud", strong: ["fraud", "fake passport", "forged passport", "forged document", "document fraud"], weak: ["counterfeit document"], signalIds: ["fraud", "criminal-misuse", "identity-theft"] },
-      { id: "document_counterfeiting", label: "Counterfeiting", strong: ["counterfeit document", "counterfeit passport", "counterfeit id", "counterfeit identity document", "fake id", "fake passport"], weak: ["counterfeit"], signalIds: ["counterfeit", "fraud", "criminal-misuse"] },
+      { id: "fraud", label: "Fraud & Counterfeiting", strong: ["fraud", "fake passport", "forged passport", "forged document", "document fraud", "counterfeit document", "counterfeit passport", "counterfeit id", "counterfeit identity document", "fake id"], weak: ["counterfeit"], signalIds: ["counterfeit", "fraud", "criminal-misuse", "identity-theft"] },
       { id: "icao", label: "ICAO", strong: ["icao", "doc 9303", "mrz", "passport verification"], weak: ["travel document security"], signalIds: ["technology"] },
       { id: "border_control", label: "Border control", strong: ["border control", "border checks", "immigration control", "entry exit system"], weak: ["customs"], signalIds: ["border-control", "delay", "rollout"] },
     ],
@@ -3635,7 +3634,6 @@ const IDENTITY_DOCUMENT_OBJECT_INTEREST_IDS = new Set([
 const IDENTITY_DOCUMENT_INTELLIGENCE_INTEREST_IDS = new Set([
   "issuance",
   "fraud",
-  "document_counterfeiting",
   "icao",
   "border_control",
 ]);
@@ -22620,6 +22618,9 @@ function loadTheme() {
 
 function normalizePersonalDashboardInterestId(value) {
   const normalizedValue = String(value || "").trim().toLowerCase();
+  if (normalizedValue === "document_counterfeiting") {
+    return "fraud";
+  }
   return PERSONAL_DASHBOARD_INTEREST_MAP.has(normalizedValue) ? normalizedValue : "";
 }
 
@@ -24266,15 +24267,10 @@ function getPersonalDashboardBackendDomainPlan() {
           "fake identity document",
           "permit fraud",
           "document verification",
-        ]);
-      } else if (selectedSubinterest === "document_counterfeiting") {
-        addTerms([
           "counterfeit document",
           "counterfeit passport",
-          "counterfeit id",
           "counterfeit identity document",
           "fake id",
-          "fake passport",
           "forged identity document",
         ]);
       } else if (selectedSubinterest === "icao") {
@@ -24416,10 +24412,6 @@ function getPersonalDashboardBackendDomainPlan() {
         "document fraud",
         "forged document",
         "fake passport",
-      ]);
-    }
-    if (hasInterest("document_counterfeiting")) {
-      addTerms([
         "counterfeit document",
         "counterfeit passport",
         "counterfeit id",
@@ -26738,14 +26730,8 @@ function computePersonalInterestBoostMeasured(article, interestId) {
         score += Math.min(100, Math.round(signals.polycarbonateHits * 1.5));
         score -= Math.min(140, Math.round(signals.driverLicenseHits * 0.75));
       } else if (interestId === "fraud") {
-        score += Math.min(100, Math.round(signals.fraudHits * 1.45));
-        score -= Math.min(160, Math.round(signals.driverLicenseHits * 0.9));
-      } else if (interestId === "document_counterfeiting") {
         const counterfeitingAssessment = getIdentityDocumentCounterfeitingAssessment(article);
-        score += Math.min(140, Math.round(counterfeitingAssessment.score + (selectedIntent.score * 0.4)));
-        if (!counterfeitingAssessment.explicitDocumentCounterfeiting) {
-          score -= 500;
-        }
+        score += Math.min(125, Math.round((signals.fraudHits * 1.25) + (counterfeitingAssessment.score * 0.55)));
         score -= Math.min(160, Math.round(signals.driverLicenseHits * 0.9));
       } else if (interestId === "icao") {
         score += Math.min(120, Math.round((signals.icaoHits * 1.5) + (selectedIntent.score * 0.9)));
