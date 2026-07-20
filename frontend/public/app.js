@@ -22719,15 +22719,18 @@ function articleMatchesSelectedBanknoteTechniqueBridge(article, selectedInterest
   const primaryDomain = getArticleDominantDomain(article);
   const banknoteScore = computePersonalInterestBoost(article, "banknotes").score;
   const strongBanknoteSignals = getStrongBanknoteDomainSignalAssessment(article);
+  const explicitBanknoteBridgeContext = articleHasExplicitBanknoteBridgeObjectContext(article);
   const securityInksSelectedAndMatched =
     selectedSharedInterests.includes("security_inks") &&
     getSharedSecurityStandaloneAssessment(article, "security_inks").included;
 
   if (securityInksSelectedAndMatched) {
-    return primaryDomain === "banknotes" ||
+    return explicitBanknoteBridgeContext && (
+      primaryDomain === "banknotes" ||
       banknoteScore >= 18 ||
       strongBanknoteSignals.matched ||
-      articleHasExplicitBanknoteCurrencyContext(article);
+      articleHasExplicitBanknoteCurrencyContext(article)
+    );
   }
 
   const banknoteSignals = getBanknoteInterestSignals(article);
@@ -22738,10 +22741,12 @@ function articleMatchesSelectedBanknoteTechniqueBridge(article, selectedInterest
       (banknoteSignals.securityFeatureHits >= 3 || banknoteSignals.securityPrintingHits >= 3)
     );
 
-  return primaryDomain === "banknotes" ||
+  return explicitBanknoteBridgeContext && (
+    primaryDomain === "banknotes" ||
     banknoteScore >= 18 ||
     strongBanknoteSignals.matched ||
-    hasBanknoteAdjacentSecurityEvidence;
+    hasBanknoteAdjacentSecurityEvidence
+  );
 }
 
 function isSharedSecurityBridgePersonalSelection(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
@@ -23021,6 +23026,7 @@ function getSharedSecurityBridgeScoreRescueAssessment(article, options = {}) {
   const banknoteSignals = getBanknoteInterestSignals(article);
   const identityDomainContext = getPersonalDomainContextProfile(context, "identity_documents");
   const banknoteDomainContext = getPersonalDomainContextProfile(context, "banknote_intelligence");
+  const explicitBanknoteBridgeContext = articleHasExplicitBanknoteBridgeObjectContext(article);
   const identityInterestScores = selectedIdentityBaseInterests.map((interestId) => {
     let score = 0;
     if (interestId === "passports") score = Number(identitySignals.passportHits || 0);
@@ -23051,11 +23057,13 @@ function getSharedSecurityBridgeScoreRescueAssessment(article, options = {}) {
     Number(identitySignals.primaryContextHits || 0) > 0 ||
     identityInterestScores.some((entry) => entry.score > 0)
   );
-  const banknoteBaseEvidenceMatched = selectedMainDomains.includes("banknotes") && (
-    Number(banknoteDomainContext.score || 0) > 0 ||
-    Number(banknoteSignals.contextHits || 0) > 0 ||
-    banknoteInterestScores.some((entry) => entry.score > 0 || entry.matched)
-  );
+  const banknoteBaseEvidenceMatched = selectedMainDomains.includes("banknotes") &&
+    explicitBanknoteBridgeContext &&
+    (
+      Number(banknoteDomainContext.score || 0) > 0 ||
+      Number(banknoteSignals.contextHits || 0) > 0 ||
+      banknoteInterestScores.some((entry) => entry.score > 0 || entry.matched)
+    );
   const selectedMaterialTechniqueMatched = selectedBridgeTechniqueInterests.some((interestId) => {
     if (interestId === "polycarbonate") {
       return Number(identitySignals.polycarbonateHits || 0) > 0;
@@ -23081,6 +23089,7 @@ function getSharedSecurityBridgeScoreRescueAssessment(article, options = {}) {
     totalScore,
     identityBaseEvidenceMatched,
     banknoteBaseEvidenceMatched,
+    explicitBanknoteBridgeContext,
     baseEvidenceMatched: identityBaseEvidenceMatched || banknoteBaseEvidenceMatched,
     techniqueEvidenceMatched,
     selectedMaterialTechniqueMatched,
@@ -23188,6 +23197,7 @@ function getSharedSecurityBridgeDecision(article, selectedInterests = normalizeP
     "banknote_intelligence"
   );
   const banknoteInterestIds = banknoteInterestResolution.effectiveInterestIds;
+  const explicitBanknoteBridgeContext = articleHasExplicitBanknoteBridgeObjectContext(article);
   const banknoteInterestMatched = !banknoteInterestIds.length ||
     banknoteInterestIds.some((interestId) => {
       if (interestId === "banknotes") return Number(banknoteSignals.contextHits || 0) > 0;
@@ -23200,6 +23210,7 @@ function getSharedSecurityBridgeDecision(article, selectedInterests = normalizeP
     });
   const banknoteBaseMatched = selectedMainDomains.includes("banknotes") &&
     !isBanknoteContaminated(article) &&
+    explicitBanknoteBridgeContext &&
     (
       primaryDomain === "banknotes" ||
       isBanknotePrimary(article) ||
@@ -23272,6 +23283,7 @@ function getSharedSecurityBridgeDecision(article, selectedInterests = normalizeP
     strictBaseDomainMatched,
     identityBaseMatched,
     banknoteBaseMatched,
+    explicitBanknoteBridgeContext,
     sharedSecurityTechniqueMatched,
     directSharedSecurityTechniqueMatched,
     matchedSharedSecurityInterests: sharedSecurityTechniqueMatch.matchedInterests,
@@ -25917,6 +25929,39 @@ function articleHasExplicitBanknoteCurrencyContext(article) {
     "currency notes",
     "central bank",
   ].some((term) => textMatchesKeyword(haystack, term));
+}
+
+const BANKNOTE_SHARED_SECURITY_BRIDGE_OBJECT_CONTEXT_TERMS = [
+  "banknote",
+  "banknotes",
+  "currency note",
+  "currency notes",
+  "paper money",
+  "commemorative note",
+  "commemorative banknote",
+  "polymer note",
+  "polymer banknote",
+  "denomination",
+  "legal tender",
+  "central bank",
+  "monetary authority",
+  "issuing authority",
+];
+
+function articleHasExplicitBanknoteBridgeObjectContext(article) {
+  return getCachedArticleValue(article, "explicitBanknoteBridgeObjectContext", () => {
+    const context = getPersonalBoostContext(article, "articleHasExplicitBanknoteBridgeObjectContext", { interest: "banknotes" });
+    const haystack = [
+      context.titleText,
+      context.tagText,
+      context.metadataText,
+      context.bodyText,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    return BANKNOTE_SHARED_SECURITY_BRIDGE_OBJECT_CONTEXT_TERMS
+      .some((term) => textMatchesKeyword(haystack, term));
+  });
 }
 
 function getStrongBanknoteDomainSignalAssessment(article) {
