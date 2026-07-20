@@ -43182,6 +43182,7 @@ function extractDocumentSystems(article) {
       ["national-id", ["national id", "identity card", "national identity system"]],
       ["residence-permit", ["residence permit"]],
       ["document-verification", ["identity verification", "document verification", "nfc verification"]],
+      ["icao-pkd", ["icao pkd", "public key directory", "passport directory", "global trust network", "icao trust network", "icao directory"]],
     ];
 
     systemAliases.forEach(([key, keywords]) => {
@@ -43436,6 +43437,7 @@ const IDENTITY_SYSTEM_GROUPING_EVENT_TYPES = new Set([
   "biometric_border_check",
 ]);
 const IDENTITY_SYSTEM_GROUPING_SYSTEM_PRIORITY = [
+  "icao-pkd",
   "icao",
   "document-verification",
   "passport-issuance",
@@ -43471,16 +43473,26 @@ function getIdentitySystemGroupingEntity(article, normalizedEvent) {
 
 function getIdentitySystemGroupingSystem(article) {
   const systems = extractDocumentSystems(article);
+  if (systems.includes("icao-pkd") || systems.includes("icao")) {
+    return "icao-pkd";
+  }
   const prioritized = IDENTITY_SYSTEM_GROUPING_SYSTEM_PRIORITY.find((system) => systems.includes(system));
   return prioritized || systems[0] || "";
 }
 
-function getIdentitySystemGroupingKey(article) {
-  const topicFamily = getArticleGroupingTopicFamily(article);
-  if (topicFamily !== "identity_document" && topicFamily !== "travel_passport") {
-    return "";
+function getIdentitySystemGroupingEventType(canonicalEventType, system, documentType) {
+  if (
+    (system === "icao-pkd" || system === "icao") &&
+    (documentType === "passport" || documentType === "travel-document")
+  ) {
+    return "passport_trust_infrastructure";
   }
 
+  return canonicalEventType || "";
+}
+
+function getIdentitySystemGroupingKey(article) {
+  const topicFamily = getArticleGroupingTopicFamily(article);
   const normalizedEvent = normalizeIntelligenceEvent(article);
   const canonicalEventType = normalizedEvent?.canonicalEventType || getDetailedArticleEventType(article);
   if (!IDENTITY_SYSTEM_GROUPING_EVENT_TYPES.has(canonicalEventType)) {
@@ -43489,19 +43501,31 @@ function getIdentitySystemGroupingKey(article) {
 
   const system = getIdentitySystemGroupingSystem(article);
   const entity = getIdentitySystemGroupingEntity(article, normalizedEvent);
+  const documentType = normalizedEvent?.documentType || "";
   if (!system || !entity) {
     return "";
   }
 
-  const documentType = normalizedEvent?.documentType || "identity-document";
+  const groupingFamily =
+    (topicFamily === "identity_document" || topicFamily === "travel_passport")
+      ? topicFamily
+      : isIdentityLikeArticle(article)
+        ? "identity_document"
+        : "";
+  if (!groupingFamily) {
+    return "";
+  }
+
+  const groupedEventType = getIdentitySystemGroupingEventType(canonicalEventType, system, documentType);
+  const groupedDocumentType = documentType || "identity-document";
   const timeBucket = normalizedEvent?.timeBucket || getNormalizedEventTimeBucket(article) || "undated";
   return [
     "identity-system",
-    topicFamily,
-    canonicalEventType,
+    groupingFamily,
+    groupedEventType,
     entity,
     system,
-    documentType,
+    groupedDocumentType,
     timeBucket,
   ].join(":");
 }
@@ -44034,9 +44058,13 @@ function isSameIntelligenceEvent(leftArticle, rightArticle) {
       rightGroupingKey &&
       leftGroupingKey === rightGroupingKey &&
       leftGroupingKey.startsWith("identity-system:");
+    if (sameIdentitySystemGroupingKey) {
+      return true;
+    }
+
     const leftClusterKey = getEventClusterKey(leftArticle);
     const rightClusterKey = getEventClusterKey(rightArticle);
-    if (!sameIdentitySystemGroupingKey && leftClusterKey && rightClusterKey && leftClusterKey !== rightClusterKey) {
+    if (leftClusterKey && rightClusterKey && leftClusterKey !== rightClusterKey) {
       return false;
     }
 
@@ -44061,10 +44089,6 @@ function isSameIntelligenceEvent(leftArticle, rightArticle) {
       leftNormalizedEvent.canonicalEventType !== rightNormalizedEvent.canonicalEventType
     ) {
       return false;
-    }
-
-    if (sameIdentitySystemGroupingKey) {
-      return true;
     }
 
     const fingerprintMatch = getEventFingerprintMatch(leftArticle, rightArticle);
@@ -44202,6 +44226,14 @@ function getConflictReason(leftArticle, rightArticle) {
   if (leftEventKey === "identity_trump_passport_release" && rightEventKey === "identity_trump_passport_release") {
     return "";
   }
+  if (
+    leftEventKey &&
+    rightEventKey &&
+    leftEventKey === rightEventKey &&
+    leftEventKey.startsWith("identity-system:")
+  ) {
+    return "";
+  }
 
   const leftNormalizedEvent = normalizeIntelligenceEvent(leftArticle);
   const rightNormalizedEvent = normalizeIntelligenceEvent(rightArticle);
@@ -44278,14 +44310,6 @@ function getConflictReason(leftArticle, rightArticle) {
       return "different passport entity";
     }
 
-    if (
-      leftEventKey &&
-      rightEventKey &&
-      leftEventKey === rightEventKey &&
-      leftEventKey.startsWith("identity-system:")
-    ) {
-      return "";
-    }
   }
 
   if (leftTopicFamily === "banknote") {
