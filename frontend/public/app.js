@@ -20758,7 +20758,8 @@ function getIdentityDocumentResidencePermitAssessment(article) {
     const matchedServiceNoiseTerms = serviceNoiseTerms.filter((term) => textMatchesKeyword(contentHaystack, term));
     const matchedNonResidenceTerms = nonResidenceDocumentTerms.filter((term) => textMatchesKeyword(contentHaystack, term));
     const explicitResidencePermitEvidence = matchedContentTerms.length > 0;
-    const residencePermitFocused = matchedTitleTerms.length > 0 || matchedStrongFocusTerms.length > 0;
+    const residencePermitFocused = matchedTitleTerms.length > 0
+      || (matchedStrongFocusTerms.length >= 2 && matchedServiceNoiseTerms.length === 0);
     const noisyWithoutResidencePermitFocus = !residencePermitFocused
       && (matchedServiceNoiseTerms.length > 0 || matchedNonResidenceTerms.length > 0);
 
@@ -20800,7 +20801,17 @@ function getIdentityDocumentConjunctiveInterestAssessment(article, selectedInter
     }
     return interestScores.get(interestId);
   };
-  const getMatchedInterests = (interestIds) => interestIds.filter((interestId) => getScore(interestId) >= 18);
+  const interestPasses = (interestId) => {
+    if (interestId === "residence_permits") {
+      const residencePermitAssessment = getIdentityDocumentResidencePermitAssessment(article);
+      return getScore(interestId) >= 18
+        && residencePermitAssessment.explicitResidencePermitEvidence
+        && residencePermitAssessment.residencePermitFocused
+        && !residencePermitAssessment.noisyWithoutResidencePermitFocus;
+    }
+    return getScore(interestId) >= 18;
+  };
+  const getMatchedInterests = (interestIds) => interestIds.filter((interestId) => interestPasses(interestId));
   const matchedObjectInterests = getMatchedInterests(selectedObjectInterests);
   const matchedIntelligenceInterests = getMatchedInterests(selectedIntelligenceInterests);
   const idCardsBridgeMatched = Boolean(options.idCardsBridgeMatched)
@@ -20813,7 +20824,7 @@ function getIdentityDocumentConjunctiveInterestAssessment(article, selectedInter
     || matchedIntelligenceInterests.length > 0;
   const conjunctiveMode = selectedObjectInterests.length > 0 && selectedIntelligenceInterests.length > 0;
   const legacyOrMatched = !selectedIdentityInterests.length
-    || selectedIdentityInterests.some((interestId) => getScore(interestId) >= 18)
+    || selectedIdentityInterests.some((interestId) => interestPasses(interestId))
     || idCardsBridgeMatched;
   const passed = conjunctiveMode
     ? objectMatched && intelligenceMatched
