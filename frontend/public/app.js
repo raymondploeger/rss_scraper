@@ -3625,6 +3625,20 @@ const PERSONAL_DASHBOARD_INTEREST_MAP = new Map(
 const PERSONAL_DASHBOARD_PARENT_INTEREST_BY_GROUP = new Map([
   ["banknote_intelligence", "banknotes"],
 ]);
+const IDENTITY_DOCUMENT_OBJECT_INTEREST_IDS = new Set([
+  "passports",
+  "id_cards",
+  "residence_permits",
+  "drivers_licenses",
+  "visas",
+]);
+const IDENTITY_DOCUMENT_INTELLIGENCE_INTEREST_IDS = new Set([
+  "issuance",
+  "fraud",
+  "document_counterfeiting",
+  "icao",
+  "border_control",
+]);
 const DEFAULT_TAGS = [
   "identity",
   "identity verification",
@@ -20508,13 +20522,76 @@ function classifyFeedScopeRejection(article, activeFeedId) {
   };
 }
 
+function getSelectedIdentityDashboardInterests(selectedInterests) {
+  return selectedInterests.filter(
+    (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "identity_documents"
+  );
+}
+
+function getIdentityDocumentConjunctiveInterestAssessment(article, selectedInterests, options = {}) {
+  const selectedIdentityInterests = getSelectedIdentityDashboardInterests(selectedInterests);
+  const selectedSharedInterests = Array.isArray(options.selectedSharedInterests)
+    ? options.selectedSharedInterests
+    : getSelectedSharedSecuritySubinterests(selectedInterests);
+  const selectedObjectInterests = selectedIdentityInterests.filter((interestId) =>
+    IDENTITY_DOCUMENT_OBJECT_INTEREST_IDS.has(interestId)
+  );
+  const selectedIntelligenceInterests = selectedIdentityInterests.filter((interestId) =>
+    IDENTITY_DOCUMENT_INTELLIGENCE_INTEREST_IDS.has(interestId)
+  );
+  const interestScores = new Map();
+  const getScore = (interestId) => {
+    if (!interestScores.has(interestId)) {
+      interestScores.set(interestId, computePersonalInterestBoost(article, interestId).score);
+    }
+    return interestScores.get(interestId);
+  };
+  const getMatchedInterests = (interestIds) => interestIds.filter((interestId) => getScore(interestId) >= 18);
+  const matchedObjectInterests = getMatchedInterests(selectedObjectInterests);
+  const matchedIntelligenceInterests = getMatchedInterests(selectedIntelligenceInterests);
+  const idCardsBridgeMatched = Boolean(options.idCardsBridgeMatched)
+    && selectedObjectInterests.includes("id_cards")
+    && selectedSharedInterests.length > 0;
+  const objectMatched = !selectedObjectInterests.length
+    || matchedObjectInterests.length > 0
+    || idCardsBridgeMatched;
+  const intelligenceMatched = !selectedIntelligenceInterests.length
+    || matchedIntelligenceInterests.length > 0;
+  const conjunctiveMode = selectedObjectInterests.length > 0 && selectedIntelligenceInterests.length > 0;
+  const legacyOrMatched = !selectedIdentityInterests.length
+    || selectedIdentityInterests.some((interestId) => getScore(interestId) >= 18)
+    || idCardsBridgeMatched;
+  const passed = conjunctiveMode
+    ? objectMatched && intelligenceMatched
+    : legacyOrMatched;
+  const reason = passed
+    ? (conjunctiveMode
+      ? "selected identity document object and intelligence layer matched"
+      : "selected identity interest matched")
+    : (conjunctiveMode
+      ? (!objectMatched
+        ? "selected identity document object did not match"
+        : "selected identity intelligence layer did not match")
+      : "selected identity interest score below threshold");
+
+  return {
+    passed,
+    conjunctiveMode,
+    reason,
+    selectedIdentityInterests,
+    selectedObjectInterests,
+    selectedIntelligenceInterests,
+    matchedObjectInterests,
+    matchedIntelligenceInterests,
+    idCardsBridgeMatched,
+  };
+}
+
 function classifyPersonalDashboardRejection(article) {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const selectedMainDomains = getSelectedMainDomains(selectedInterests);
   const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
-  const selectedIdentityInterests = selectedInterests.filter(
-    (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "identity_documents"
-  );
+  const selectedIdentityInterests = getSelectedIdentityDashboardInterests(selectedInterests);
   const primaryDomain = getArticleDominantDomain(article);
 
   if (isSharedSecurityOnlyPersonalSelection(selectedInterests) && !matchesSelectedSharedSecurityTechnique(article, selectedInterests)) {
@@ -20583,13 +20660,18 @@ function classifyPersonalDashboardRejection(article) {
 
   if (primaryDomain === "identity_documents") {
     if (selectedIdentityInterests.length) {
-      const matchingScores = selectedIdentityInterests
-        .map((interestId) => computePersonalInterestBoost(article, interestId).score)
-        .filter((score) => score >= 18);
-      if (!matchingScores.length) {
+      const identityInterestAssessment = getIdentityDocumentConjunctiveInterestAssessment(article, selectedInterests, {
+        selectedSharedInterests,
+        idCardsBridgeMatched: matchesIdCardsHolographyOvdCombinationBridge(
+          article,
+          selectedIdentityInterests,
+          selectedSharedInterests
+        ),
+      });
+      if (!identityInterestAssessment.passed) {
         return {
-          category: "scoreTooLow",
-          reason: "selected identity interest score below threshold",
+          category: identityInterestAssessment.conjunctiveMode ? "identityObjectLayerMismatch" : "scoreTooLow",
+          reason: identityInterestAssessment.reason,
         };
       }
     }
@@ -24071,6 +24153,17 @@ function getPersonalDashboardBackendDomainPlan() {
         "fake passport",
       ]);
     }
+    if (hasInterest("document_counterfeiting")) {
+      addTerms([
+        "counterfeit document",
+        "counterfeit passport",
+        "counterfeit id",
+        "counterfeit identity document",
+        "fake id",
+        "fake passport",
+        "forged identity document",
+      ]);
+    }
     if (hasInterest("icao")) {
       addTerms([
         "icao",
@@ -26368,6 +26461,9 @@ function computePersonalInterestBoostMeasured(article, interestId) {
         score -= Math.min(140, Math.round(signals.driverLicenseHits * 0.75));
       } else if (interestId === "fraud") {
         score += Math.min(100, Math.round(signals.fraudHits * 1.45));
+        score -= Math.min(160, Math.round(signals.driverLicenseHits * 0.9));
+      } else if (interestId === "document_counterfeiting") {
+        score += Math.min(110, Math.round((signals.fraudHits * 1.35) + (selectedIntent.score * 1.1)));
         score -= Math.min(160, Math.round(signals.driverLicenseHits * 0.9));
       } else if (interestId === "icao") {
         score += Math.min(120, Math.round((signals.icaoHits * 1.5) + (selectedIntent.score * 0.9)));
@@ -34023,10 +34119,11 @@ function articleMatchesPersonalDashboardSelectionMeasured(article) {
       selectedIdentityInterests,
       selectedSharedInterests
     );
-    const identityScopeMatched = !selectedIdentityInterests.length
-      || selectedIdentityInterests.some((interestId) => computePersonalInterestBoost(article, interestId).score >= 18)
-      || idCardsHolographyOvdBridgeMatched;
-    return identityScopeMatched && sharedSecurityTechniqueMatched;
+    const identityScopeAssessment = getIdentityDocumentConjunctiveInterestAssessment(article, selectedInterests, {
+      selectedSharedInterests,
+      idCardsBridgeMatched: idCardsHolographyOvdBridgeMatched,
+    });
+    return identityScopeAssessment.passed && sharedSecurityTechniqueMatched;
   }
 
   if (primaryDomain === "digital_identity_biometrics") {
