@@ -23773,7 +23773,7 @@ function getPersonalDashboardBackendDomainPlan() {
 
   if (selectedMainDomains.length === 1 && selectedMainDomains[0] === "identity_documents") {
     const selectedIdentitySubinterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
-    const identitySearches = new Set(selectedIdentitySubinterests.length === 1 ? [] : [
+    const identitySearches = new Set(selectedIdentitySubinterests.length ? [] : [
       "passport issuance",
       "biometric passport",
       "passport verification",
