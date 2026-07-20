@@ -20686,6 +20686,7 @@ function getIdentityDocumentResidencePermitAssessment(article) {
       context.titleText,
       context.bodyText,
     ].join(" ");
+    const titleHaystack = context.titleText || "";
     const supportHaystack = [
       context.tagText,
       context.metadataText,
@@ -20709,6 +20710,21 @@ function getIdentityDocumentResidencePermitAssessment(article) {
       "residence document",
       "residence permit card",
       "permit card",
+    ];
+    const strongResidencePermitFocusTerms = [
+      "residence permit",
+      "residence permits",
+      "resident permit",
+      "resident permits",
+      "residence card",
+      "residence cards",
+      "resident card",
+      "resident cards",
+      "permanent resident card",
+      "permanent residence card",
+      "biometric residence permit",
+      "foreign resident card",
+      "residence permit card",
     ];
     const serviceNoiseTerms = [
       "public transport",
@@ -20735,23 +20751,32 @@ function getIdentityDocumentResidencePermitAssessment(article) {
       "id card",
       "identity card",
     ];
+    const matchedTitleTerms = explicitResidencePermitTerms.filter((term) => textMatchesKeyword(titleHaystack, term));
     const matchedContentTerms = explicitResidencePermitTerms.filter((term) => textMatchesKeyword(contentHaystack, term));
+    const matchedStrongFocusTerms = strongResidencePermitFocusTerms.filter((term) => textMatchesKeyword(contentHaystack, term));
     const matchedSupportTerms = explicitResidencePermitTerms.filter((term) => textMatchesKeyword(supportHaystack, term));
     const matchedServiceNoiseTerms = serviceNoiseTerms.filter((term) => textMatchesKeyword(contentHaystack, term));
     const matchedNonResidenceTerms = nonResidenceDocumentTerms.filter((term) => textMatchesKeyword(contentHaystack, term));
     const explicitResidencePermitEvidence = matchedContentTerms.length > 0;
+    const residencePermitFocused = matchedTitleTerms.length > 0 || matchedStrongFocusTerms.length > 0;
+    const noisyWithoutResidencePermitFocus = !residencePermitFocused
+      && (matchedServiceNoiseTerms.length > 0 || matchedNonResidenceTerms.length > 0);
 
     return {
       explicitResidencePermitEvidence,
+      residencePermitFocused,
+      noisyWithoutResidencePermitFocus,
       supportOnlyResidencePermitEvidence: !explicitResidencePermitEvidence && matchedSupportTerms.length > 0,
       serviceNoiseWithoutResidencePermitContent: !explicitResidencePermitEvidence && matchedServiceNoiseTerms.length > 0,
       nonResidenceDocumentDominant: !explicitResidencePermitEvidence && matchedNonResidenceTerms.length > 0,
+      matchedTitleTerms,
       matchedContentTerms,
+      matchedStrongFocusTerms,
       matchedSupportTerms,
       matchedServiceNoiseTerms,
       matchedNonResidenceTerms,
       score: explicitResidencePermitEvidence
-        ? 74 + (matchedContentTerms.length * 18) + Math.min(20, matchedSupportTerms.length * 4)
+        ? 74 + (matchedTitleTerms.length * 22) + (matchedStrongFocusTerms.length * 14) + Math.min(20, matchedSupportTerms.length * 4)
         : 0,
     };
   });
@@ -26692,6 +26717,8 @@ function computePersonalInterestBoostMeasured(article, interestId) {
           if (residencePermitAssessment.nonResidenceDocumentDominant) {
             score -= 160;
           }
+        } else if (residencePermitAssessment.noisyWithoutResidencePermitFocus) {
+          score -= 420;
         }
       } else if (interestId === "drivers_licenses") {
         score += Math.min(90, Math.round(signals.driverLicenseHits * 1.35));
