@@ -22923,7 +22923,7 @@ function getSharedSecurityMaterialBridgeEvidence(textBuckets = {}, matchedTerms 
 }
 
 function getSharedSecurityDashboardTechniqueMatch(article, selectedTechniqueInterests = []) {
-  const context = getPersonalBoostContext(article, "getSharedSecurityDashboardTechniqueMatch", { interest: interestId || "shared_security" });
+  const context = getPersonalBoostContext(article, "getSharedSecurityDashboardTechniqueMatch", { interest: "shared_security" });
   const textBuckets = {
     title: context.titleText,
     tags: context.tagText,
@@ -34001,16 +34001,13 @@ function articleMatchesPersonalDashboardSelectionMeasured(article) {
       return (isBanknotePrimary(article) || isBanknoteAdjacent(article)) && sharedSecurityTechniqueMatched;
     }
 
+    const banknoteInterestMatched = banknoteInterestIds.some((interestId) => matchesBanknoteInterest(article, interestId));
+
     if (banknoteInterestResolution.parentActsAsDomainGate) {
-      return banknoteInterestIds.some((interestId) => matchesBanknoteInterest(article, interestId))
-        && sharedSecurityTechniqueMatched;
+      return banknoteInterestMatched && sharedSecurityTechniqueMatched;
     }
 
-    return (
-      banknoteInterestIds.some((interestId) => matchesBanknoteInterest(article, interestId)) ||
-      banknoteTechniqueBridgeMatched
-    )
-      && sharedSecurityTechniqueMatched;
+    return banknoteInterestMatched && sharedSecurityTechniqueMatched;
   }
 
   if (primaryDomain === "identity_documents") {
