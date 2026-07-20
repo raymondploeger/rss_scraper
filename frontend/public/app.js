@@ -33962,7 +33962,7 @@ function articleMatchesPersonalDashboardSelectionMeasured(article) {
   const identityTechniqueBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, selectedInterests);
   const banknoteTechniqueBridgeMatched = articleMatchesSelectedBanknoteTechniqueBridge(article, selectedInterests);
   const sharedSecurityBridgeDecision = getSharedSecurityBridgeDecision(article, selectedInterests);
-  if (sharedSecurityBridgeDecision.applies) {
+  if (sharedSecurityBridgeDecision.applies && !isBanknotesOnlyPersonalSelection(selectedInterests)) {
     return sharedSecurityBridgeDecision.passed;
   }
   const primaryDomain = getArticleDominantDomain(article);
