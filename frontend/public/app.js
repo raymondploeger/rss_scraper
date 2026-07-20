@@ -20528,6 +20528,65 @@ function getSelectedIdentityDashboardInterests(selectedInterests) {
   );
 }
 
+function getIdentityDocumentCounterfeitingAssessment(article) {
+  const context = getPersonalBoostContext(article, "getIdentityDocumentCounterfeitingAssessment", { interest: "identity_documents" });
+  const haystack = [
+    context.titleText,
+    context.tagText,
+    context.metadataText,
+    context.bodyText,
+  ].join(" ");
+  const explicitCounterfeitDocumentTerms = [
+    "counterfeit document",
+    "counterfeit passport",
+    "counterfeit id",
+    "counterfeit identity document",
+    "fake id",
+    "fake passport",
+    "forged id",
+    "forged passport",
+    "forged document",
+    "forged identity document",
+    "document forgery",
+    "passport forgery",
+  ];
+  const counterfeitActionTerms = [
+    "counterfeit",
+    "counterfeiting",
+    "fake",
+    "forged",
+    "forgery",
+  ];
+  const identityDocumentObjectTerms = [
+    "passport",
+    "passports",
+    "identity document",
+    "identity documents",
+    "id card",
+    "id cards",
+    "identity card",
+    "identity cards",
+    "travel document",
+    "travel documents",
+    "document",
+  ];
+  const matchedExplicitTerms = explicitCounterfeitDocumentTerms.filter((term) => textMatchesKeyword(haystack, term));
+  const matchedActionTerms = counterfeitActionTerms.filter((term) => textMatchesKeyword(haystack, term));
+  const matchedObjectTerms = identityDocumentObjectTerms.filter((term) => textMatchesKeyword(haystack, term));
+  const explicitDocumentCounterfeiting = matchedExplicitTerms.length > 0
+    || (matchedActionTerms.length > 0 && matchedObjectTerms.length > 0);
+
+  return {
+    explicitDocumentCounterfeiting,
+    matchedExplicitTerms,
+    matchedActionTerms,
+    matchedObjectTerms,
+    score: explicitDocumentCounterfeiting
+      ? 70 + (matchedExplicitTerms.length * 18) + (matchedActionTerms.length * 8) + Math.min(24, matchedObjectTerms.length * 6)
+      : 0,
+  };
+}
+
 function getIdentityDocumentConjunctiveInterestAssessment(article, selectedInterests, options = {}) {
   const selectedIdentityInterests = getSelectedIdentityDashboardInterests(selectedInterests);
   const selectedSharedInterests = Array.isArray(options.selectedSharedInterests)
@@ -26463,7 +26522,11 @@ function computePersonalInterestBoostMeasured(article, interestId) {
         score += Math.min(100, Math.round(signals.fraudHits * 1.45));
         score -= Math.min(160, Math.round(signals.driverLicenseHits * 0.9));
       } else if (interestId === "document_counterfeiting") {
-        score += Math.min(110, Math.round((signals.fraudHits * 1.35) + (selectedIntent.score * 1.1)));
+        const counterfeitingAssessment = getIdentityDocumentCounterfeitingAssessment(article);
+        score += Math.min(140, Math.round(counterfeitingAssessment.score + (selectedIntent.score * 0.4)));
+        if (!counterfeitingAssessment.explicitDocumentCounterfeiting) {
+          score -= 500;
+        }
         score -= Math.min(160, Math.round(signals.driverLicenseHits * 0.9));
       } else if (interestId === "icao") {
         score += Math.min(120, Math.round((signals.icaoHits * 1.5) + (selectedIntent.score * 0.9)));
