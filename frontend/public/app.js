@@ -20679,6 +20679,84 @@ function getIdentityDocumentIdCardAssessment(article) {
   });
 }
 
+function getIdentityDocumentResidencePermitAssessment(article) {
+  return getCachedArticleValue(article, "identityDocumentResidencePermitAssessment", () => {
+    const context = getPersonalBoostContext(article, "getIdentityDocumentResidencePermitAssessment", { interest: "identity_documents" });
+    const contentHaystack = [
+      context.titleText,
+      context.bodyText,
+    ].join(" ");
+    const supportHaystack = [
+      context.tagText,
+      context.metadataText,
+    ].join(" ");
+    const explicitResidencePermitTerms = [
+      "residence permit",
+      "residence permits",
+      "resident permit",
+      "resident permits",
+      "residence card",
+      "residence cards",
+      "resident card",
+      "resident cards",
+      "permanent resident card",
+      "permanent residence card",
+      "temporary residence permit",
+      "permanent residence permit",
+      "biometric residence permit",
+      "foreign resident card",
+      "immigration residence card",
+      "residence document",
+      "residence permit card",
+      "permit card",
+    ];
+    const serviceNoiseTerms = [
+      "public transport",
+      "housing",
+      "status holders",
+      "status holder",
+      "travel to",
+      "visa-on-arrival",
+      "golden visa guide",
+      "updated guide",
+      "passport holders",
+      "fake passport",
+      "passport detained",
+    ];
+    const nonResidenceDocumentTerms = [
+      "passport",
+      "passports",
+      "fake passport",
+      "visa",
+      "visas",
+      "driver license",
+      "driver's license",
+      "driving licence",
+      "id card",
+      "identity card",
+    ];
+    const matchedContentTerms = explicitResidencePermitTerms.filter((term) => textMatchesKeyword(contentHaystack, term));
+    const matchedSupportTerms = explicitResidencePermitTerms.filter((term) => textMatchesKeyword(supportHaystack, term));
+    const matchedServiceNoiseTerms = serviceNoiseTerms.filter((term) => textMatchesKeyword(contentHaystack, term));
+    const matchedNonResidenceTerms = nonResidenceDocumentTerms.filter((term) => textMatchesKeyword(contentHaystack, term));
+    const explicitResidencePermitEvidence = matchedContentTerms.length > 0;
+
+    return {
+      explicitResidencePermitEvidence,
+      supportOnlyResidencePermitEvidence: !explicitResidencePermitEvidence && matchedSupportTerms.length > 0,
+      serviceNoiseWithoutResidencePermitContent: !explicitResidencePermitEvidence && matchedServiceNoiseTerms.length > 0,
+      nonResidenceDocumentDominant: !explicitResidencePermitEvidence && matchedNonResidenceTerms.length > 0,
+      matchedContentTerms,
+      matchedSupportTerms,
+      matchedServiceNoiseTerms,
+      matchedNonResidenceTerms,
+      score: explicitResidencePermitEvidence
+        ? 74 + (matchedContentTerms.length * 18) + Math.min(20, matchedSupportTerms.length * 4)
+        : 0,
+    };
+  });
+}
+
 function getIdentityDocumentConjunctiveInterestAssessment(article, selectedInterests, options = {}) {
   const selectedIdentityInterests = getSelectedIdentityDashboardInterests(selectedInterests);
   const selectedSharedInterests = Array.isArray(options.selectedSharedInterests)
@@ -26601,13 +26679,20 @@ function computePersonalInterestBoostMeasured(article, interestId) {
           score -= idCardAssessment.nonIdCardDocumentDominant ? 620 : 520;
         }
       } else if (interestId === "residence_permits") {
-        score += Math.min(110, Math.round((signals.residencePermitHits * 1.35) + (selectedIntent.score * 0.9)));
+        const residencePermitAssessment = getIdentityDocumentResidencePermitAssessment(article);
+        score += Math.min(135, Math.round(residencePermitAssessment.score + (signals.residencePermitHits * 0.35) + (selectedIntent.score * 0.35)));
         score += residencePermitIntentAdjustment.cardBoost;
         score += residencePermitIntentAdjustment.officialSourceBoost;
         score -= residencePermitIntentAdjustment.guidePenalty;
         score -= Math.min(45, Math.round(signals.passportHits * 0.3));
         score -= Math.min(180, Math.round(signals.driverLicenseHits * 1.0));
         score -= Math.min(60, Math.round(signals.visaHits * 0.3));
+        if (!residencePermitAssessment.explicitResidencePermitEvidence) {
+          score -= residencePermitAssessment.serviceNoiseWithoutResidencePermitContent ? 720 : 560;
+          if (residencePermitAssessment.nonResidenceDocumentDominant) {
+            score -= 160;
+          }
+        }
       } else if (interestId === "drivers_licenses") {
         score += Math.min(90, Math.round(signals.driverLicenseHits * 1.35));
         score -= Math.min(45, Math.round(signals.passportHits * 0.35));
