@@ -20587,6 +20587,98 @@ function getIdentityDocumentCounterfeitingAssessment(article) {
   };
 }
 
+function getIdentityDocumentIdCardAssessment(article) {
+  return getCachedArticleValue(article, "identityDocumentIdCardAssessment", () => {
+    const context = getPersonalBoostContext(article, "getIdentityDocumentIdCardAssessment", { interest: "identity_documents" });
+    const haystack = [
+      context.titleText,
+      context.tagText,
+      context.metadataText,
+      context.bodyText,
+      context.sourceText,
+      context.domainText,
+    ].join(" ");
+    const explicitIdCardTerms = [
+      "id card",
+      "id cards",
+      "identity card",
+      "identity cards",
+      "national id",
+      "national ids",
+      "national identity card",
+      "national identity cards",
+      "national id card",
+      "electronic identity card",
+      "electronic id card",
+      "eid card",
+      "e-id card",
+      "smart id",
+      "smart ids",
+      "smart id card",
+      "smart identity card",
+      "smart nicop",
+      "nicop",
+      "cnic",
+      "state id card",
+      "juvenile id card",
+      "polycarbonate id",
+      "polycarbonate id card",
+      "polycarbonate identity card",
+      "id card design",
+      "identity card design",
+      "id card issuance",
+      "identity card issuance",
+    ];
+    const genericIdentityTerms = [
+      "identity document",
+      "identity documents",
+      "id document",
+      "id documents",
+      "secure document",
+      "secure documents",
+      "document security",
+    ];
+    const nonIdCardDocumentTerms = [
+      "passport",
+      "passports",
+      "passport renewal",
+      "passport office",
+      "passport control",
+      "passport application",
+      "e-passport",
+      "epassport",
+      "biometric passport",
+      "residence permit",
+      "residence permits",
+      "driver license",
+      "driver's license",
+      "driving licence",
+      "visa",
+      "visas",
+      "ees delays",
+      "airport queue",
+      "border wait",
+      "border processing time",
+    ];
+    const matchedExplicitTerms = explicitIdCardTerms.filter((term) => textMatchesKeyword(haystack, term));
+    const matchedGenericTerms = genericIdentityTerms.filter((term) => textMatchesKeyword(haystack, term));
+    const matchedNonIdCardTerms = nonIdCardDocumentTerms.filter((term) => textMatchesKeyword(haystack, term));
+    const explicitIdCardEvidence = matchedExplicitTerms.length > 0;
+
+    return {
+      explicitIdCardEvidence,
+      genericIdentityOnly: !explicitIdCardEvidence && matchedGenericTerms.length > 0,
+      nonIdCardDocumentDominant: !explicitIdCardEvidence && matchedNonIdCardTerms.length > 0,
+      matchedExplicitTerms,
+      matchedGenericTerms,
+      matchedNonIdCardTerms,
+      score: explicitIdCardEvidence
+        ? 72 + (matchedExplicitTerms.length * 16) + Math.min(24, matchedGenericTerms.length * 4)
+        : 0,
+    };
+  });
+}
+
 function getIdentityDocumentConjunctiveInterestAssessment(article, selectedInterests, options = {}) {
   const selectedIdentityInterests = getSelectedIdentityDashboardInterests(selectedInterests);
   const selectedSharedInterests = Array.isArray(options.selectedSharedInterests)
@@ -26500,10 +26592,14 @@ function computePersonalInterestBoostMeasured(article, interestId) {
           score -= 500;
         }
       } else if (interestId === "id_cards") {
-        score += Math.min(90, Math.round(signals.idCardHits * 1.25));
-        score += Math.min(120, Math.round((selectedProfile?.score || 0) * 0.85));
+        const idCardAssessment = getIdentityDocumentIdCardAssessment(article);
+        score += Math.min(125, Math.round(idCardAssessment.score + (signals.idCardHits * 0.35)));
+        score += Math.min(80, Math.round((selectedProfile?.score || 0) * 0.45));
         score += Math.min(45, Math.round(signals.polycarbonateHits * 0.5));
         score -= Math.min(45, Math.round(signals.passportHits * 0.35));
+        if (!idCardAssessment.explicitIdCardEvidence) {
+          score -= idCardAssessment.nonIdCardDocumentDominant ? 620 : 520;
+        }
       } else if (interestId === "residence_permits") {
         score += Math.min(110, Math.round((signals.residencePermitHits * 1.35) + (selectedIntent.score * 0.9)));
         score += residencePermitIntentAdjustment.cardBoost;
@@ -31567,6 +31663,17 @@ function getIdentityDocumentInterestSignalsMeasured(article) {
       "id card",
       "national id",
       "electronic identity card",
+      "electronic id card",
+      "eid card",
+      "e-id card",
+      "smart id",
+      "smart id card",
+      "smart identity card",
+      "smart nicop",
+      "nicop",
+      "cnic",
+      "state id card",
+      "juvenile id card",
       "identity documents",
       "id documents",
       "physical identity documents",
