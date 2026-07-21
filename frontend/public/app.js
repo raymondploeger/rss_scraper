@@ -45028,9 +45028,11 @@ function getBanknoteEventCountry(article) {
 
 const BANKNOTE_DESIGN_GROUPING_EVENT_TYPES = new Set([
   "banknote_new_design",
+  "banknote_new_series",
   "banknote_redesign",
   "new_banknote_series",
   "commemorative_note",
+  "commemorative_issue",
 ]);
 
 const BANKNOTE_GROUPING_ISSUER_ALIAS_STOP_WORDS = new Set([
@@ -45219,6 +45221,12 @@ function getIdentityEventKey(article) {
     if (topicFamily === "banknote") {
       if (!eventType || eventType === "banknote_other" || eventType === "banknote_auction_noise") {
         return getArticleFingerprint(article) || "";
+      }
+
+      if (BANKNOTE_DESIGN_GROUPING_EVENT_TYPES.has(eventType)) {
+        const normalizedEvent = normalizeIntelligenceEvent(article);
+        const timeBucket = normalizedEvent?.timeBucket || getNormalizedEventTimeBucket(article) || "undated";
+        return `${topicFamily}-banknote_design-${timeBucket}`;
       }
 
       const banknoteTerms = eventType === "banknote_signature_change"
