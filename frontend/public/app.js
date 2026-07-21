@@ -44206,7 +44206,10 @@ function getCanonicalEventClusterKey(article) {
       || normalizedEvent.secondaryEntities.find((value) => value !== entity)
       || normalizedEvent.documentType
       || "generic";
-    const action = normalizedEvent.action || normalizedEvent.operationalContext || "generic";
+    let action = normalizedEvent.action || normalizedEvent.operationalContext || "generic";
+    if (normalizedEvent.domain === "banknote" && BANKNOTE_DESIGN_GROUPING_EVENT_TYPES.has(normalizedEvent.canonicalEventType)) {
+      action = "design";
+    }
     const timeBucket = normalizedEvent.timeBucket || "undated";
 
     return [
@@ -44493,6 +44496,9 @@ function isSameIntelligenceEvent(leftArticle, rightArticle) {
     }
 
     const fingerprintMatch = getEventFingerprintMatch(leftArticle, rightArticle);
+    if (shouldAllowBanknoteDesignNearGrouping(leftArticle, rightArticle, fingerprintMatch)) {
+      return true;
+    }
     return fingerprintMatch.grouped && fingerprintMatch.confidence === "high";
   });
 }
@@ -44758,6 +44764,13 @@ function getConflictReason(leftArticle, rightArticle) {
     return "missing strong event anchor";
   }
 
+  if (
+    leftTopicFamily === "banknote" &&
+    shouldAllowBanknoteDesignNearGrouping(leftArticle, rightArticle, fingerprintMatch)
+  ) {
+    return "";
+  }
+
   if (fingerprintMatch.confidence !== "high") {
     return `grouping confidence too low (${fingerprintMatch.confidence})`;
   }
@@ -44990,6 +45003,131 @@ function getBanknoteEventCountry(article) {
   );
 
   return matchedCountry ? matchedCountry[0] : "";
+}
+
+const BANKNOTE_DESIGN_GROUPING_EVENT_TYPES = new Set([
+  "banknote_new_design",
+  "banknote_redesign",
+  "new_banknote_series",
+  "commemorative_note",
+]);
+
+const BANKNOTE_GROUPING_ISSUER_ALIAS_STOP_WORDS = new Set([
+  "the",
+  "new",
+  "old",
+  "redesigned",
+  "redesign",
+  "featuring",
+  "honouring",
+  "honoring",
+  "including",
+  "actual",
+  "future",
+  "valuable",
+  "major",
+  "updated",
+]);
+
+function normalizeBanknoteGroupingIssuerAlias(value) {
+  const tokens = normalizeFilterTag(value || "")
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .filter((token) => !BANKNOTE_GROUPING_ISSUER_ALIAS_STOP_WORDS.has(token))
+    .filter((token) => !GROUPING_GENERIC_TOPIC_WORDS.has(token));
+  return tokens.join(" ").trim();
+}
+
+function getBanknoteGroupingIssuerAliases(article) {
+  return getCachedArticleValue(article, "banknoteGroupingIssuerAliases", () => {
+    const aliases = new Set();
+    const normalizedEvent = normalizeIntelligenceEvent(article);
+    const eventType = normalizedEvent?.canonicalEventType || getDetailedArticleEventType(article);
+    const text = getNormalizedGroupingText(article);
+    const rawText = [
+      article?.title || "",
+      article?.normalizedTitle || "",
+      article?.summary || "",
+      article?.source || "",
+      article?.sourceName || "",
+    ].join(" ");
+
+    extractAuthorities(article)
+      .map(normalizeBanknoteGroupingIssuerAlias)
+      .filter((alias) => alias.length >= 4)
+      .forEach((alias) => aliases.add(alias));
+
+    if (BANKNOTE_DESIGN_GROUPING_EVENT_TYPES.has(eventType)) {
+      const issuerMatches = Array.from(text.matchAll(/\b([a-z][a-z0-9&.'-]*(?:\s+[a-z0-9&.'-]+){0,5})\s+(?:banknote|banknotes|note|notes)\b/g));
+      issuerMatches.forEach((match) => {
+        const alias = normalizeBanknoteGroupingIssuerAlias(match[1] || "");
+        if (alias.length >= 4 && alias.split(/\s+/).length <= 4) {
+          aliases.add(alias);
+        }
+      });
+    }
+
+    if (textMatchesKeyword(text, "banknote") || textMatchesKeyword(text, "banknotes")) {
+      const acronymMatches = rawText.match(/\b[A-Z]{3,6}\b/g) || [];
+      acronymMatches
+        .map((value) => value.toLowerCase())
+        .filter((value) => !["www", "http", "https", "rss", "pdf"].includes(value))
+        .forEach((value) => aliases.add(value));
+    }
+
+    return Array.from(aliases);
+  });
+}
+
+function getSharedBanknoteGroupingIssuerAliases(leftArticle, rightArticle) {
+  const rightAliases = new Set(getBanknoteGroupingIssuerAliases(rightArticle));
+  return getBanknoteGroupingIssuerAliases(leftArticle).filter((alias) => rightAliases.has(alias));
+}
+
+function getComparableGroupingTitleTokens(article) {
+  return normalizeGroupingComparableTitle(article)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token && token.length > 3)
+    .filter((token) => !ARTICLE_FINGERPRINT_STOP_WORDS.has(token))
+    .filter((token) => !GROUPING_GENERIC_TOPIC_WORDS.has(token));
+}
+
+function getSharedComparableGroupingTitleTokens(leftArticle, rightArticle) {
+  const rightTokens = new Set(getComparableGroupingTitleTokens(rightArticle));
+  return Array.from(new Set(getComparableGroupingTitleTokens(leftArticle).filter((token) => rightTokens.has(token))));
+}
+
+function shouldAllowBanknoteDesignNearGrouping(leftArticle, rightArticle, fingerprintMatch = getEventFingerprintMatch(leftArticle, rightArticle)) {
+  const leftEvent = normalizeIntelligenceEvent(leftArticle);
+  const rightEvent = normalizeIntelligenceEvent(rightArticle);
+  const leftEventType = leftEvent?.canonicalEventType || getDetailedArticleEventType(leftArticle);
+  const rightEventType = rightEvent?.canonicalEventType || getDetailedArticleEventType(rightArticle);
+  if (
+    leftEvent?.domain !== "banknote" ||
+    rightEvent?.domain !== "banknote" ||
+    leftEventType !== rightEventType ||
+    !BANKNOTE_DESIGN_GROUPING_EVENT_TYPES.has(leftEventType)
+  ) {
+    return false;
+  }
+
+  const leftTimeBucket = leftEvent?.timeBucket || getNormalizedEventTimeBucket(leftArticle);
+  const rightTimeBucket = rightEvent?.timeBucket || getNormalizedEventTimeBucket(rightArticle);
+  if (leftTimeBucket && rightTimeBucket && leftTimeBucket !== rightTimeBucket) {
+    return false;
+  }
+
+  const sharedIssuerAliases = getSharedBanknoteGroupingIssuerAliases(leftArticle, rightArticle);
+  if (sharedIssuerAliases.length && fingerprintMatch.score >= 16) {
+    return true;
+  }
+
+  const sharedTitleTokens = getSharedComparableGroupingTitleTokens(leftArticle, rightArticle);
+  return fingerprintMatch.score >= 24 && sharedTitleTokens.length >= 3;
 }
 
 function getIdentityEventKey(article) {
