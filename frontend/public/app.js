@@ -43337,8 +43337,39 @@ const BANKNOTE_EVENT_TYPE_RULES = {
   ],
 };
 
+function normalizeGroupingComparableTitle(article) {
+  const rawTitle = String(article?.title || article?.normalizedTitle || "").trim();
+  if (!rawTitle) {
+    return "";
+  }
+
+  const sourceCandidates = [
+    article?.source,
+    article?.sourceName,
+    article?.feedTitle,
+  ]
+    .map((value) => normalizeFilterTag(value || ""))
+    .filter(Boolean);
+  const titleParts = rawTitle.split(/\s+(?:[-|–—])\s+/).map((part) => part.trim()).filter(Boolean);
+  if (titleParts.length < 2 || !sourceCandidates.length) {
+    return rawTitle;
+  }
+
+  const trailingPart = titleParts[titleParts.length - 1] || "";
+  const normalizedTrailingPart = normalizeFilterTag(trailingPart);
+  const sourceSuffixMatched = normalizedTrailingPart.length >= 4 && sourceCandidates.some((source) =>
+    normalizedTrailingPart === source ||
+    normalizedTrailingPart.includes(source) ||
+    (normalizedTrailingPart.length >= 6 && source.includes(normalizedTrailingPart))
+  );
+
+  return sourceSuffixMatched
+    ? titleParts.slice(0, -1).join(" - ")
+    : rawTitle;
+}
+
 function getArticleFingerprint(article) {
-  const normalizedTitle = String(article?.title || "")
+  const normalizedTitle = normalizeGroupingComparableTitle(article)
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, " ");
   const tokens = normalizedTitle
