@@ -5778,6 +5778,10 @@ function recordFilterPipelineResult(diagnostics, filterPipelineResult) {
   }
 
   diagnostics.filterPipeline = summarizeFilterPipelineResult(filterPipelineResult);
+  diagnostics.groupingMissDiagnosticsSummary = buildGroupingMissDiagnosticsSummary(
+    filterPipelineResult?.filteredRawArticles || [],
+    filterPipelineResult?.groupedArticles || []
+  );
 }
 
 function recordFilterPipelineStages(diagnostics, filterPipelineStages) {
@@ -6029,6 +6033,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     dominantDomainDiagnosticsSummary: null,
     identityDiagnosticsSummary: null,
     identityNoiseGuardDiagnosticsSummary: null,
+    groupingMissDiagnosticsSummary: null,
     identityProfessionalRelevanceGuardSummary: null,
     identityDocumentShadowDiagnosticsTracker: null,
     identityDocumentShadowDiagnosticsSummary: null,
@@ -7506,6 +7511,7 @@ function getFilterDecisionDebugToolsSummary(diagnostics) {
       "window.explainIdentityMatchByTitle(titlePart)",
       "window.listIdentityScoreTooLow(limit)",
       "window.listIdentityTechniqueBridgeMisses(limit)",
+      "window.listGroupingMissCandidates(limit)",
       "window.explainDominantDomainByTitle(titlePart)",
       "window.listDominantDomainMisses(limit)",
       "window.listLowConfidenceDominantDomains(limit)",
@@ -21093,6 +21099,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     dominantDomainDiagnosticsSummary: diagnostics.dominantDomainDiagnosticsSummary || null,
     identityDiagnosticsSummary: diagnostics.identityDiagnosticsSummary || null,
     identityNoiseGuardDiagnosticsSummary: diagnostics.identityNoiseGuardDiagnosticsSummary || null,
+    groupingMissDiagnosticsSummary: diagnostics.groupingMissDiagnosticsSummary || null,
     identityProfessionalRelevanceGuardSummary: diagnostics.identityProfessionalRelevanceGuardSummary || null,
     identityDocumentShadowDiagnosticsSummary: diagnostics.identityDocumentShadowDiagnosticsSummary || getIdentityDocumentShadowDiagnosticsSummary(diagnostics),
     evidenceBuilderDiagnosticsSummary: diagnostics.evidenceBuilderDiagnosticsSummary || null,
@@ -22042,6 +22049,10 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.listIdentitySharedSecurityGuardRescues = (limit) => listIdentitySharedSecurityGuardRescues(limit);
   }
 
+  if (typeof window.listGroupingMissCandidates !== "function") {
+    window.listGroupingMissCandidates = (limit) => listGroupingMissCandidates(limit);
+  }
+
   if (typeof window.explainDominantDomainByTitle !== "function") {
     window.explainDominantDomainByTitle = (titlePart) => explainDominantDomainByTitle(titlePart);
   }
@@ -22164,6 +22175,7 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.explainIdentityMatchByTitle(titlePart)",
         "window.listIdentityScoreTooLow(limit)",
         "window.listIdentityTechniqueBridgeMisses(limit)",
+        "window.listGroupingMissCandidates(limit)",
         "window.listNoisyIdentitySurvivors(limit)",
         "window.explainIdentityNoiseByTitle(titlePart)",
         "window.listIdentityProfessionalRelevanceRejects(limit)",
@@ -43498,7 +43510,10 @@ function extractAuthorities(article) {
     const authorities = new Set(getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_AGENCY_KEYWORDS));
     const authorityPatterns = [
       /\b(?:central|national|reserve) bank(?: of)? [a-z][a-z\s-]{2,50}\b/g,
+      /\b[a-z][a-z-]*(?:\s+[a-z][a-z-]*){0,5}\s+(?:central|national|reserve) bank\b/g,
       /\bbank of [a-z][a-z\s-]{2,50}\b/g,
+      /\bmonetary authority(?: of)? [a-z][a-z\s-]{2,50}\b/g,
+      /\b[a-z][a-z-]*(?:\s+[a-z][a-z-]*){0,5}\s+monetary authority\b/g,
       /\bministry of interior\b/g,
       /\bstate department\b/g,
       /\bpassport office\b/g,
@@ -45235,6 +45250,123 @@ function getGroupedArticleSources(article) {
 
     return true;
   });
+}
+
+function getGroupingMissArticleSummary(article) {
+  return {
+    articleId: getFilterDecisionTraceArticleId(article),
+    title: article?.title || "Untitled article",
+    source: article?.source || article?.sourceName || "",
+    pubDate: article?.pubDate || "",
+    topicFamily: getArticleGroupingTopicFamily(article),
+    eventType: normalizeIntelligenceEvent(article)?.canonicalEventType || getDetailedArticleEventType(article),
+    eventKey: getIdentityEventKey(article),
+    comparableTitle: normalizeGroupingComparableTitle(article),
+  };
+}
+
+function getGroupingMissBucketKey(article) {
+  const normalizedEvent = normalizeIntelligenceEvent(article);
+  const topicFamily = getArticleGroupingTopicFamily(article);
+  const eventType = normalizedEvent?.canonicalEventType || getDetailedArticleEventType(article) || "";
+  const entity = normalizedEvent?.primaryEntity ||
+    normalizedEvent?.country ||
+    normalizedEvent?.currency ||
+    getDetectedEventEntity(article) ||
+    "";
+  const timeBucket = normalizedEvent?.timeBucket || getNormalizedEventTimeBucket(article) || "";
+  return [topicFamily, eventType, entity, timeBucket].filter(Boolean).join(":");
+}
+
+function buildGroupingMissDiagnosticsSummary(filteredRawArticles = [], groupedArticles = []) {
+  const rawArticles = Array.isArray(filteredRawArticles) ? filteredRawArticles : [];
+  const representatives = (Array.isArray(groupedArticles) ? groupedArticles : [])
+    .filter((article) => article && Number(article.sourceCount || 1) <= 1);
+  const buckets = new Map();
+  representatives.slice(0, 300).forEach((article) => {
+    const key = getGroupingMissBucketKey(article);
+    if (!key) {
+      return;
+    }
+    if (!buckets.has(key)) {
+      buckets.set(key, []);
+    }
+    buckets.get(key).push(article);
+  });
+
+  const candidates = [];
+  let evaluatedPairs = 0;
+  buckets.forEach((bucketArticles, bucketKey) => {
+    if (bucketArticles.length < 2) {
+      return;
+    }
+    for (let leftIndex = 0; leftIndex < bucketArticles.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < bucketArticles.length; rightIndex += 1) {
+        evaluatedPairs += 1;
+        const leftArticle = bucketArticles[leftIndex];
+        const rightArticle = bucketArticles[rightIndex];
+        const conflictReason = getConflictReason(leftArticle, rightArticle);
+        const fingerprintMatch = getEventFingerprintMatch(leftArticle, rightArticle);
+        const sameEvent = !conflictReason && isSameIntelligenceEvent(leftArticle, rightArticle);
+        if (sameEvent) {
+          continue;
+        }
+        if (
+          conflictReason &&
+          !["no shared specific event terms", "grouping confidence too low (medium)", "event fingerprint mismatch"].includes(conflictReason)
+        ) {
+          continue;
+        }
+        if (fingerprintMatch.score < 8 && fingerprintMatch.confidence !== "medium") {
+          continue;
+        }
+        candidates.push({
+          bucketKey,
+          score: fingerprintMatch.score,
+          confidence: fingerprintMatch.confidence,
+          strongAnchorCount: fingerprintMatch.strongAnchorCount,
+          sharedKeywords: fingerprintMatch.sharedKeywords || [],
+          sharedCountries: fingerprintMatch.sharedCountries || [],
+          sharedAgencies: fingerprintMatch.sharedAgencies || [],
+          sharedSystems: fingerprintMatch.sharedSystems || [],
+          missReason: conflictReason || "same event threshold not met",
+          left: getGroupingMissArticleSummary(leftArticle),
+          right: getGroupingMissArticleSummary(rightArticle),
+        });
+      }
+    }
+  });
+
+  candidates.sort((left, right) =>
+    (right.score - left.score) ||
+    (right.strongAnchorCount - left.strongAnchorCount)
+  );
+
+  return {
+    enabled: true,
+    evaluatedArticles: rawArticles.length,
+    groupedRepresentativesEvaluated: representatives.length,
+    evaluatedPairs,
+    likelyMissCount: candidates.length,
+    examples: candidates.slice(0, 25),
+    notes: [
+      "Grouping miss diagnostics are diagnostics-only",
+      "Candidates are near matches among ungrouped representatives sharing broad event anchors",
+      "Production grouping behavior remains authoritative",
+    ],
+  };
+}
+
+function listGroupingMissCandidates(limit = 25) {
+  const summary = getActiveFilterPipelineDiagnostic()?.groupingMissDiagnosticsSummary || null;
+  const normalizedLimit = Math.max(1, Math.min(Number(limit) || 25, 100));
+  return {
+    enabled: Boolean(summary?.enabled),
+    evaluatedArticles: summary?.evaluatedArticles || 0,
+    groupedRepresentativesEvaluated: summary?.groupedRepresentativesEvaluated || 0,
+    likelyMissCount: summary?.likelyMissCount || 0,
+    examples: (summary?.examples || []).slice(0, normalizedLimit),
+  };
 }
 
 function rerenderGroupedArticleCard(article) {
