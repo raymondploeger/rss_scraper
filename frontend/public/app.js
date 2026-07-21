@@ -22801,7 +22801,7 @@ function setPersonalDashboardInterest(interestId, enabled) {
   state.pagination.page = 1;
   savePersonalDashboardPreferences();
   renderPersonalDashboard();
-  clearFeedRenderCaches();
+  clearFeedRenderCaches({ preserveBackendArticleQueryCache: true });
   scheduleRenderArticles("personal-dashboard-boost", { mode: "frame" });
 }
 
@@ -35045,9 +35045,12 @@ function rebuildArticleFeedIndexes() {
   });
 }
 
-function clearFeedRenderCaches() {
+function clearFeedRenderCaches(options = {}) {
+  const preserveBackendArticleQueryCache = Boolean(options.preserveBackendArticleQueryCache);
   runtime.groupedFeedCache = new Map();
-  runtime.backendArticleQueryCache = new Map();
+  if (!preserveBackendArticleQueryCache) {
+    runtime.backendArticleQueryCache = new Map();
+  }
   runtime.selectedFeedFullPoolCache = new Map();
   runtime.selectedFeedFullPoolLoadingKeys = new Set();
 }
