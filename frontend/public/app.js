@@ -6372,6 +6372,32 @@ function recordDiagnosticsReplayMetadata(diagnostics, metadata = {}) {
   };
 }
 
+function scheduleAfterFirstRender(callback) {
+  if (typeof callback !== "function") {
+    return;
+  }
+  const runCallback = () => {
+    try {
+      callback();
+    } catch (error) {
+      console.warn("[post-render-diagnostics]", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+  if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(() => {
+      window.setTimeout(runCallback, 0);
+    });
+    return;
+  }
+  if (typeof window !== "undefined" && typeof window.setTimeout === "function") {
+    window.setTimeout(runCallback, 0);
+    return;
+  }
+  runCallback();
+}
+
 function getPipelineDiagnosticsArchitecture(diagnostics) {
   const branch = String(diagnostics?.branch || "");
   const backendQueryBranch = branch === "backend-query" || branch === "backend-query-loading";
@@ -46751,6 +46777,9 @@ function finalizeRenderDiagnostics(payload = {}) {
     },
   });
   completeFilterPerformanceRun({ renderedCardCount });
+  if (typeof payload.afterFirstRender === "function") {
+    scheduleAfterFirstRender(payload.afterFirstRender);
+  }
 }
 
 function startFilterPerformanceDomRender() {
@@ -47775,6 +47804,52 @@ function replayFilterDiagnosticsStageMeasured({ result, diagnostics, activeFeedI
   });
 }
 
+function runLegacyFilterDiagnosticsReplay({
+  result,
+  diagnostics,
+  activeFeedId,
+  useBackendQuery,
+} = {}) {
+  if (!diagnostics?.enabled) {
+    return;
+  }
+  try {
+    withFilterPerformanceStage("diagnosticsMs", () => replayFilterDiagnosticsStage({
+      result,
+      diagnostics,
+      activeFeedId,
+      useBackendQuery,
+    }));
+  } catch (error) {
+    const replayInput = resolveDiagnosticsReplayInput(result);
+    recordDiagnosticsReplayMetadata(diagnostics, {
+      enabled: true,
+      status: "failed",
+      diagnosticsInputSource: replayInput.source,
+      diagnosticsInputCount: replayInput.articles.length,
+      candidatePoolInputCount: replayInput.candidatePool.length,
+      filteredRawArticlesInputCount: replayInput.filteredRawArticles.length,
+      resultArticlesInputCount: replayInput.resultArticles.length,
+      groupedResultCount: Number(result.groupedArticlesCount) || 0,
+      summaryBuilderInputCount: getHeavyDiagnosticsTraces(diagnostics).length,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+    addFilterPipelineNote(diagnostics, "diagnostics replay failed; production filter result was preserved");
+    recordPipelineCount(diagnostics, "candidatePool", replayInput.articles.length);
+    recordPipelineCount(diagnostics, "afterSorting", result.filteredRawArticles.length);
+    recordPipelineCount(diagnostics, "afterGrouping", result.groupedArticlesCount);
+    recordFilterPipelineStages(diagnostics, [
+      createFilterPipelineStageResult(
+        "diagnostics_replay",
+        replayInput.articles.length,
+        getHeavyDiagnosticsTraces(diagnostics).length,
+        ["diagnostics replay failed; production filter result was preserved"],
+        [error instanceof Error ? error.message : String(error)]
+      ),
+    ]);
+  }
+}
+
 function applyLegacyFilterPipeline({
   candidateBuilderResult,
   diagnostics,
@@ -47881,40 +47956,19 @@ function applyLegacyFilterPipeline({
     productionStageCounts.grouping?.outputCount ?? result.groupedArticlesCount,
     productionStageCounts.grouping?.source || "legacy_filter_pipeline_grouped_articles"
   );
-  try {
-    withFilterPerformanceStage("diagnosticsMs", () => replayFilterDiagnosticsStage({
+  if (diagnostics?.enabled && !result.pending) {
+    recordDiagnosticsReplayMetadata(diagnostics, {
+      enabled: true,
+      status: "deferred_until_after_first_render",
+      summaryBuilderInputCount: getHeavyDiagnosticsTraces(diagnostics).length,
+    });
+    addFilterPipelineNote(diagnostics, "Diagnostics replay deferred until after first render");
+    result.deferredDiagnosticsReplay = () => runLegacyFilterDiagnosticsReplay({
       result,
       diagnostics,
       activeFeedId,
       useBackendQuery,
-    }));
-  } catch (error) {
-    const replayInput = resolveDiagnosticsReplayInput(result);
-    recordDiagnosticsReplayMetadata(diagnostics, {
-      enabled: true,
-      status: "failed",
-      diagnosticsInputSource: replayInput.source,
-      diagnosticsInputCount: replayInput.articles.length,
-      candidatePoolInputCount: replayInput.candidatePool.length,
-      filteredRawArticlesInputCount: replayInput.filteredRawArticles.length,
-      resultArticlesInputCount: replayInput.resultArticles.length,
-      groupedResultCount: Number(result.groupedArticlesCount) || 0,
-      summaryBuilderInputCount: getHeavyDiagnosticsTraces(diagnostics).length,
-      errorMessage: error instanceof Error ? error.message : String(error),
     });
-    addFilterPipelineNote(diagnostics, "diagnostics replay failed; production filter result was preserved");
-    recordPipelineCount(diagnostics, "candidatePool", replayInput.articles.length);
-    recordPipelineCount(diagnostics, "afterSorting", result.filteredRawArticles.length);
-    recordPipelineCount(diagnostics, "afterGrouping", result.groupedArticlesCount);
-    recordFilterPipelineStages(diagnostics, [
-      createFilterPipelineStageResult(
-        "diagnostics_replay",
-        replayInput.articles.length,
-        getHeavyDiagnosticsTraces(diagnostics).length,
-        ["diagnostics replay failed; production filter result was preserved"],
-        [error instanceof Error ? error.message : String(error)]
-      ),
-    ]);
   }
 
   markProductionLoadTiming("legacyFilterPipelineComplete", {
@@ -49153,6 +49207,7 @@ function renderArticles() {
   const renderReason = runtime.lastRenderedReason || "render";
   let pipelineDiagnostics = null;
   let pipelineDiagnosticsFlushed = false;
+  let pipelineDiagnosticsFlushDeferred = false;
   const filterPerformanceRun = createFilterPerformanceRun(renderReason);
   createProductionLoadTimingRun(renderReason);
   const flushPipelineDiagnosticsOnce = () => {
@@ -49178,9 +49233,15 @@ function renderArticles() {
         pipelineDiagnostics = diagnostics;
       },
     });
+    const deferredDiagnosticsReplay =
+      typeof pipelineResult?.filterPipelineResult?.deferredDiagnosticsReplay === "function"
+        ? pipelineResult.filterPipelineResult.deferredDiagnosticsReplay
+        : null;
+    pipelineDiagnosticsFlushDeferred = Boolean(deferredDiagnosticsReplay);
     markProductionLoadTiming("pipelineComplete", {
       pending: Boolean(pipelineResult.pending),
       branch: pipelineResult.branch || "",
+      diagnosticsReplayDeferred: Boolean(deferredDiagnosticsReplay),
     });
     if (filterPerformanceRun) {
       filterPerformanceRun.totalPipelineMs = Math.round((getPerformanceNow() - pipelineStartedAt) * 10) / 10;
@@ -49325,6 +49386,20 @@ function renderArticles() {
       page: articlePagination.currentPage,
       pageSize: articlePagination.pageSize,
       totalPages: articlePagination.totalPages,
+      afterFirstRender: deferredDiagnosticsReplay
+        ? () => {
+            markProductionLoadTiming("postRenderDiagnosticsStart", {
+              branch: pipelineResult.branch || "",
+            });
+            deferredDiagnosticsReplay();
+            markProductionLoadTiming("postRenderDiagnosticsComplete", {
+              status: pipelineDiagnostics?.diagnosticsReplay?.status || "",
+              traceStoreSize: pipelineDiagnostics?.diagnosticsReplay?.traceStoreSize || 0,
+              summaryBuilderInputCount: pipelineDiagnostics?.diagnosticsReplay?.summaryBuilderInputCount || 0,
+            });
+            flushPipelineDiagnosticsOnce();
+          }
+        : null,
     };
 
     if (renderDispatch?.renderMode === "selected_feed") {
@@ -49532,6 +49607,7 @@ function renderArticles() {
     renderDiagnostics.branchName = state.filters.feedId ? "feed-filter" : "default";
     finalizeRenderDiagnostics(renderDiagnostics);
   } catch (error) {
+    pipelineDiagnosticsFlushDeferred = false;
     renderArticlesFallback(error);
     completeProductionLoadTiming({
       branch: "render-error",
@@ -49543,7 +49619,9 @@ function renderArticles() {
       renderedCardCount: document.querySelectorAll(".article-card").length,
     });
   } finally {
-    flushPipelineDiagnosticsOnce();
+    if (!pipelineDiagnosticsFlushDeferred) {
+      flushPipelineDiagnosticsOnce();
+    }
     intelligenceTimeEnd("renderArticles");
     if (shouldDebugFeedRender) {
       const durationMs = Math.round(performance.now() - feedRenderStartedAt);
