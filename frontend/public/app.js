@@ -74,6 +74,83 @@ function getPerformanceNow() {
     : Date.now();
 }
 
+function createProductionLoadTimingRun(reason = "render") {
+  const now = getPerformanceNow();
+  const selectedInterests = getSelectedInterestIdsForPerformance();
+  const run = {
+    runId: `production-load-${++runtime.productionLoadTimingRunId}`,
+    startedAt: new Date().toISOString(),
+    startMs: now,
+    completed: false,
+    renderReason: reason,
+    selectedMainDomains: getSelectedMainDomains(selectedInterests),
+    selectedInterests,
+    timeFromSelectionChangeToRunStartMs: runtime.scheduledRenderRequestedAt
+      ? Math.max(0, Math.round((now - runtime.scheduledRenderRequestedAt) * 10) / 10)
+      : null,
+    milestones: {},
+    counts: {},
+    branch: "",
+    pending: false,
+    totalMs: null,
+  };
+  runtime.activeProductionLoadTimingRun = run;
+  return run;
+}
+
+function markProductionLoadTiming(name, metadata = {}) {
+  const run = runtime.activeProductionLoadTimingRun;
+  if (!run || run.completed || !name) {
+    return;
+  }
+  const now = getPerformanceNow();
+  run.milestones[name] = {
+    ms: Math.round((now - run.startMs) * 10) / 10,
+    ...metadata,
+  };
+}
+
+function completeProductionLoadTiming(extra = {}) {
+  const run = runtime.activeProductionLoadTimingRun;
+  if (!run || run.completed) {
+    return null;
+  }
+  const now = getPerformanceNow();
+  run.completed = true;
+  run.totalMs = Math.round((now - run.startMs) * 10) / 10;
+  run.counts = {
+    ...run.counts,
+    ...(extra.counts || {}),
+  };
+  run.branch = extra.branch || run.branch || "";
+  run.pending = Boolean(extra.pending);
+  runtime.productionLoadTimingRuns.push({
+    runId: run.runId,
+    startedAt: run.startedAt,
+    renderReason: run.renderReason,
+    selectedMainDomains: run.selectedMainDomains,
+    selectedInterests: run.selectedInterests,
+    timeFromSelectionChangeToRunStartMs: run.timeFromSelectionChangeToRunStartMs,
+    milestones: run.milestones,
+    counts: run.counts,
+    branch: run.branch,
+    pending: run.pending,
+    totalMs: run.totalMs,
+  });
+  runtime.productionLoadTimingRuns = runtime.productionLoadTimingRuns.slice(-20);
+  runtime.activeProductionLoadTimingRun = null;
+  return runtime.productionLoadTimingRuns[runtime.productionLoadTimingRuns.length - 1] || null;
+}
+
+function getLatestProductionLoadTiming() {
+  return runtime.productionLoadTimingRuns[runtime.productionLoadTimingRuns.length - 1] || null;
+}
+
+function listProductionLoadTimings(limit = 10) {
+  const normalizedLimit = Math.max(1, Math.min(Number(limit) || 10, 20));
+  return runtime.productionLoadTimingRuns.slice(-normalizedLimit).reverse();
+}
+
 const FILTER_PERFORMANCE_STAGE_FIELDS = Object.freeze([
   "backendResultNormalizationMs",
   "candidatePreparationMs",
@@ -1306,6 +1383,8 @@ function getFrontendPerformanceDiagnosticsForExport(limit = 10) {
     completedRunCount: runtime.filterPerformanceRuns.length,
     latestRun: recentRuns[recentRuns.length - 1] || null,
     recentRuns: recentRuns.slice(-10),
+    productionLoadTiming: getLatestProductionLoadTiming(),
+    productionLoadTimings: listProductionLoadTimings(Math.min(10, Number(limit) || 10)),
   };
 }
 
@@ -4516,6 +4595,9 @@ const runtime = {
   scheduledRenderReason: "",
   scheduledRenderRequestedAt: 0,
   lastRenderedReason: "",
+  productionLoadTimingRunId: 0,
+  activeProductionLoadTimingRun: null,
+  productionLoadTimingRuns: [],
   filterPerformanceRunId: 0,
   activeFilterPerformanceRun: null,
   activeFilterPerformanceRunId: "",
@@ -21697,6 +21779,14 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.getLatestFilterPerformanceDiagnostics = () => getLatestFilterPerformanceDiagnostics();
   }
 
+  if (typeof window.getLatestProductionLoadTiming !== "function") {
+    window.getLatestProductionLoadTiming = () => getLatestProductionLoadTiming();
+  }
+
+  if (typeof window.listProductionLoadTimings !== "function") {
+    window.listProductionLoadTimings = (limit) => listProductionLoadTimings(limit);
+  }
+
   if (typeof window.listFilterPerformanceRuns !== "function") {
     window.listFilterPerformanceRuns = (limit) => listFilterPerformanceRuns(limit);
   }
@@ -30995,6 +31085,9 @@ const SHARED_SECURITY_STANDALONE_RULES = {
       "phone records",
       "lawsuit settlement",
       "data breach",
+      "deepfake document",
+      "liveness video",
+      "identity check failures",
       "cybersecurity",
       "cloud security",
       "it security",
@@ -32043,6 +32136,16 @@ function getIdentityDocumentInterestSignalsMeasured(article) {
       "generic asylum news",
       "migration opinion",
       "nationality dispute",
+      "icao news in brief",
+      "civil aviation emissions",
+      "aviation emissions",
+      "corsia",
+      "air traffic surveillance",
+      "air traffic management",
+      "civil aviation organization convenes",
+      "drones increasingly threaten civil aviation",
+      "drone threat",
+      "restaurant week",
     ];
 
     return {
@@ -45885,14 +45988,12 @@ function renderArticleCard(article) {
     sourcePanel.className = "grouped-sources-inline";
     sourcePanel.hidden = !isGroupedSourcesExpanded;
     const hiddenExtraSources = [];
-
-    groupedSources.forEach((sourceArticle, index) => {
+    const createGroupedSourceRow = (sourceArticle, hidden = false) => {
       const row = document.createElement("div");
       row.className = "grouped-source-item";
-      if (index >= 2) {
+      if (hidden) {
         row.classList.add("is-extra-source");
         row.hidden = true;
-        hiddenExtraSources.push(row);
       }
 
       const header = document.createElement("div");
@@ -45921,18 +46022,35 @@ function renderArticleCard(article) {
         row.appendChild(openLink);
       }
 
-      sourcePanel.appendChild(row);
+      return row;
+    };
+
+    groupedSources.slice(0, 2).forEach((sourceArticle) => {
+      sourcePanel.appendChild(createGroupedSourceRow(sourceArticle));
     });
 
-    if (hiddenExtraSources.length) {
+    const extraGroupedSources = groupedSources.slice(2);
+    if (extraGroupedSources.length) {
+      const hydrateExtraGroupedSources = () => {
+        if (hiddenExtraSources.length) {
+          return;
+        }
+        extraGroupedSources.forEach((sourceArticle) => {
+          const row = createGroupedSourceRow(sourceArticle, true);
+          hiddenExtraSources.push(row);
+          sourcePanel.insertBefore(row, moreButton);
+        });
+      };
+
       const moreButton = document.createElement("button");
       moreButton.type = "button";
       moreButton.className = "grouped-sources-more";
-      moreButton.textContent = `Show ${hiddenExtraSources.length} more sources`;
+      moreButton.textContent = `Show ${extraGroupedSources.length} more sources`;
       moreButton.setAttribute("aria-expanded", "false");
       moreButton.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
+        hydrateExtraGroupedSources();
         const expanded = moreButton.getAttribute("aria-expanded") === "true";
         const nextExpanded = !expanded;
 
@@ -45943,7 +46061,7 @@ function renderArticleCard(article) {
         moreButton.setAttribute("aria-expanded", String(nextExpanded));
         moreButton.textContent = nextExpanded
           ? "Hide extra sources"
-          : `Show ${hiddenExtraSources.length} more sources`;
+          : `Show ${extraGroupedSources.length} more sources`;
 
         intelligenceDebug("[source-toggle]", {
           key: `${articleStateKey}:extra`,
@@ -45951,6 +46069,15 @@ function renderArticleCard(article) {
         });
       });
       sourcePanel.appendChild(moreButton);
+
+      if (isGroupedSourcesExpanded) {
+        hydrateExtraGroupedSources();
+        hiddenExtraSources.forEach((row) => {
+          row.hidden = false;
+        });
+        moreButton.setAttribute("aria-expanded", "true");
+        moreButton.textContent = "Hide extra sources";
+      }
     }
 
     card.appendChild(sourcePanel);
@@ -46606,10 +46733,28 @@ function finalizeRenderDiagnostics(payload = {}) {
     groupedFeedCacheSize: runtime.groupedFeedCache.size,
     domCardCount: renderedCardCount,
   });
+  markProductionLoadTiming("domRenderComplete", {
+    renderedCardCount,
+    totalCount: total,
+    page,
+    totalPages,
+    branch: branchName,
+  });
+  completeProductionLoadTiming({
+    branch: branchName,
+    counts: {
+      renderedCardCount,
+      total,
+      page,
+      pageSize,
+      totalPages,
+    },
+  });
   completeFilterPerformanceRun({ renderedCardCount });
 }
 
 function startFilterPerformanceDomRender() {
+  markProductionLoadTiming("domRenderStart");
   const run = getActiveFilterPerformanceRun();
   if (run && !run.domRenderStartedAt) {
     run.domRenderStartedAt = getPerformanceNow();
@@ -48907,6 +49052,7 @@ function renderArticles() {
   let pipelineDiagnostics = null;
   let pipelineDiagnosticsFlushed = false;
   const filterPerformanceRun = createFilterPerformanceRun(renderReason);
+  createProductionLoadTimingRun(renderReason);
   const flushPipelineDiagnosticsOnce = () => {
     if (pipelineDiagnosticsFlushed || !pipelineDiagnostics) {
       return;
@@ -48929,6 +49075,10 @@ function renderArticles() {
       onDiagnostics: (diagnostics) => {
         pipelineDiagnostics = diagnostics;
       },
+    });
+    markProductionLoadTiming("pipelineComplete", {
+      pending: Boolean(pipelineResult.pending),
+      branch: pipelineResult.branch || "",
     });
     if (filterPerformanceRun) {
       filterPerformanceRun.totalPipelineMs = Math.round((getPerformanceNow() - pipelineStartedAt) * 10) / 10;
@@ -48974,6 +49124,13 @@ function renderArticles() {
           });
       }
       completeFilterPerformanceRun({ renderedCardCount: 0 });
+      completeProductionLoadTiming({
+        pending: true,
+        branch: pipelineResult.branch || "pending",
+        counts: {
+          renderedCardCount: 0,
+        },
+      });
       flushPipelineDiagnosticsOnce();
       return;
     }
@@ -49005,6 +49162,12 @@ function renderArticles() {
     const articlesToRender = Array.isArray(renderModel?.items) ? renderModel.items : [];
     recordPipelineCount(pipelineDiagnostics, "afterPagination", Number(renderModel?.paginatedCount) || 0);
     recordPipelineCount(pipelineDiagnostics, "rendered", articlesToRender.length);
+    markProductionLoadTiming("renderModelReady", {
+      totalCount: Number(articlePagination?.totalCount) || 0,
+      renderedItemCount: articlesToRender.length,
+      groupedCount: groupedArticlesCount,
+      branch: renderDispatch?.renderMode || "",
+    });
 
     if (shouldDebugPersonalDashboard) {
       const advancedFilterOptions =
@@ -49268,6 +49431,12 @@ function renderArticles() {
     finalizeRenderDiagnostics(renderDiagnostics);
   } catch (error) {
     renderArticlesFallback(error);
+    completeProductionLoadTiming({
+      branch: "render-error",
+      counts: {
+        renderedCardCount: document.querySelectorAll(".article-card").length,
+      },
+    });
     completeFilterPerformanceRun({
       renderedCardCount: document.querySelectorAll(".article-card").length,
     });
