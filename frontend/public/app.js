@@ -48844,16 +48844,37 @@ function resolveBackendPendingStage({ cachedQuery, queryKey, backendRequests } =
 
 function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendRequests, diagnostics } = {}) {
   const candidatePool = cachedQuery.articles;
+  markProductionLoadTiming("backendNormalizationAdvancedFiltersStart", {
+    inputCount: candidatePool.length,
+  });
   const advancedFilteredBackendArticles = cachedQuery.articles
     .filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }));
+  markProductionLoadTiming("backendNormalizationAdvancedFiltersComplete", {
+    inputCount: candidatePool.length,
+    outputCount: advancedFilteredBackendArticles.length,
+  });
+  markProductionLoadTiming("backendNormalizationIdentityGuardStart", {
+    inputCount: advancedFilteredBackendArticles.length,
+  });
   const filteredBackendArticles = advancedFilteredBackendArticles
     .filter((article) => articlePassesLegacyIdentityProfessionalRelevance(article, { branch: "backend-query" }));
+  markProductionLoadTiming("backendNormalizationIdentityGuardComplete", {
+    inputCount: advancedFilteredBackendArticles.length,
+    outputCount: filteredBackendArticles.length,
+  });
+  markProductionLoadTiming("backendNormalizationDigitalGuardStart", {
+    inputCount: filteredBackendArticles.length,
+  });
   const digitalIdentityProfessionalGuardStage = applyDigitalIdentityProfessionalGuardStage({
     articles: filteredBackendArticles,
     branch: "backend-query",
     diagnostics,
   });
   const digitalIdentityFilteredBackendArticles = digitalIdentityProfessionalGuardStage.articles;
+  markProductionLoadTiming("backendNormalizationDigitalGuardComplete", {
+    inputCount: filteredBackendArticles.length,
+    outputCount: digitalIdentityFilteredBackendArticles.length,
+  });
   const guardRejectedCount = advancedFilteredBackendArticles.length - filteredBackendArticles.length;
   const digitalIdentityGuardRejectedCount = filteredBackendArticles.length - digitalIdentityFilteredBackendArticles.length;
   if (diagnostics?.enabled && shouldApplyIdentityProfessionalRelevanceGuard({ branch: "backend-query" })) {
@@ -48905,14 +48926,36 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
       addFilterPipelineNote(diagnostics, `Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness/AI/Identity Verification professional relevance guard rejected ${digitalIdentityGuardRejectedCount} backend-query article(s)`);
     }
   }
+  markProductionLoadTiming("backendNormalizationSortStart", {
+    inputCount: digitalIdentityFilteredBackendArticles.length,
+  });
   const filteredRawArticles = sortArticlesForCurrentDashboardMode(digitalIdentityFilteredBackendArticles);
+  markProductionLoadTiming("backendNormalizationSortComplete", {
+    inputCount: digitalIdentityFilteredBackendArticles.length,
+    outputCount: filteredRawArticles.length,
+  });
+  markProductionLoadTiming("backendNormalizationGroupingStart", {
+    inputCount: filteredRawArticles.length,
+  });
   const groupedArticles = prepareDateFirstGroupedArticles(filteredRawArticles);
+  markProductionLoadTiming("backendNormalizationGroupingComplete", {
+    inputCount: filteredRawArticles.length,
+    outputCount: groupedArticles.length,
+  });
   if (diagnostics?.enabled) {
+    markProductionLoadTiming("backendNormalizationDriverDiagnosticsStart", {
+      candidateCount: candidatePool.length,
+      filteredCount: filteredRawArticles.length,
+      groupedCount: groupedArticles.length,
+    });
     diagnostics.driverLicenseCandidateRetrievalDiagnostics = getDriverLicenseCandidateRetrievalDiagnostics({
       candidatePool,
       filteredRawArticles,
       groupedArticles,
       backendRequests,
+    });
+    markProductionLoadTiming("backendNormalizationDriverDiagnosticsComplete", {
+      active: Boolean(diagnostics.driverLicenseCandidateRetrievalDiagnostics),
     });
     if (diagnostics.driverLicenseCandidateRetrievalDiagnostics) {
       addFilterPipelineNote(diagnostics, "Driver License candidate retrieval diagnostics active");
