@@ -24260,21 +24260,15 @@ function getPersonalDashboardBackendDomainPlan() {
       } else if (selectedSubinterest === "icao") {
         addTerms([
           "icao",
+          "icao doc 9303",
           "doc 9303",
-          "mrtd",
-          "emrtd",
-          "epassport",
-          "e-passport",
-          "pkd",
-          "lds",
-          "pace",
-          "bac",
-          "sac",
+          "machine readable travel document",
+          "electronic machine readable travel document",
+          "icao pkd",
+          "public key directory",
           "active authentication",
           "chip authentication",
-          "dtc",
           "digital travel credential",
-          "mrz",
         ]);
       } else if (selectedSubinterest === "border_control") {
         addTerms([
@@ -24406,12 +24400,12 @@ function getPersonalDashboardBackendDomainPlan() {
     if (hasInterest("icao")) {
       addTerms([
         "icao",
+        "icao doc 9303",
         "doc 9303",
-        "mrz",
-        "emrtd",
-        "pkd",
-        "lds",
-        "dtc",
+        "machine readable travel document",
+        "icao pkd",
+        "public key directory",
+        "digital travel credential",
       ]);
     }
     if (hasInterest("border_control")) {
