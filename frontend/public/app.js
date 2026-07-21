@@ -47635,6 +47635,9 @@ function replayFilterDiagnosticsStageMeasured({ result, diagnostics, activeFeedI
     recordFilterPipelineStages(diagnostics, []);
     return;
   }
+  markProductionLoadTiming("diagnosticsReplayStart", {
+    branch: result.branch || diagnostics?.branch || "",
+  });
 
   const replayInput = resolveDiagnosticsReplayInput(result);
   const candidatePool = replayInput.candidatePool;
@@ -47765,6 +47768,11 @@ function replayFilterDiagnosticsStageMeasured({ result, diagnostics, activeFeedI
     summaryBuilderInputCount: getHeavyDiagnosticsTraces(diagnostics).length,
     stageCount: stageResults.length,
   });
+  markProductionLoadTiming("diagnosticsReplayComplete", {
+    diagnosticsInputCount: diagnosticReplayArticles.length,
+    summaryBuilderInputCount: getHeavyDiagnosticsTraces(diagnostics).length,
+    stageCount: stageResults.length,
+  });
 }
 
 function applyLegacyFilterPipeline({
@@ -47773,6 +47781,13 @@ function applyLegacyFilterPipeline({
   activeFeedId,
   useBackendQuery,
 } = {}) {
+  markProductionLoadTiming("legacyFilterPipelineStart", {
+    branch: candidateBuilderResult?.branch || "",
+    pending: Boolean(candidateBuilderResult?.pending),
+    candidateCount: Array.isArray(candidateBuilderResult?.candidatePool)
+      ? candidateBuilderResult.candidatePool.length
+      : 0,
+  });
   const result = {
     stage: "legacy_filter_pipeline",
     executionMode: "legacy",
@@ -47902,6 +47917,12 @@ function applyLegacyFilterPipeline({
     ]);
   }
 
+  markProductionLoadTiming("legacyFilterPipelineComplete", {
+    branch: result.branch || "",
+    pending: Boolean(result.pending),
+    filteredCount: result.filteredCount,
+    groupedCount: result.groupedCount,
+  });
   return result;
 }
 
@@ -48095,6 +48116,10 @@ function executeCandidateRetrievalPipeline({
   shouldIgnoreFeedIdForGrouping,
   useBackendQuery,
 } = {}) {
+  markProductionLoadTiming("candidatePreparationStart", {
+    useBackendQuery: Boolean(useBackendQuery),
+    provider: candidateProvider?.type || candidateProvider?.provider || candidateProvider?.name || "",
+  });
   const candidateBuilderResult = withFilterPerformanceStage("candidatePreparationMs", () => resolveArticleCandidatePool(candidatePoolContext, {
     activeFeedId,
     candidateSource,
@@ -48105,6 +48130,20 @@ function executeCandidateRetrievalPipeline({
     shouldIgnoreFeedIdForGrouping,
     useBackendQuery,
   }));
+  markProductionLoadTiming("candidatePreparationComplete", {
+    branch: candidateBuilderResult?.branch || "",
+    pending: Boolean(candidateBuilderResult?.pending),
+    candidateCount: Array.isArray(candidateBuilderResult?.candidatePool)
+      ? candidateBuilderResult.candidatePool.length
+      : Number(candidateBuilderResult?.candidateCount || candidateBuilderResult?.articleCount || 0),
+    filteredCount: Array.isArray(candidateBuilderResult?.filteredRawArticles)
+      ? candidateBuilderResult.filteredRawArticles.length
+      : null,
+    groupedCount: Number(candidateBuilderResult?.groupedArticlesCount) || 0,
+    backendRequestCount: Array.isArray(candidateBuilderResult?.backendRequests)
+      ? candidateBuilderResult.backendRequests.length
+      : null,
+  });
   const run = getActiveFilterPerformanceRun();
   if (run) {
     run.candidateCount = Array.isArray(candidateBuilderResult?.candidatePool)
@@ -48231,22 +48270,60 @@ function executeArticlePipeline({
   });
   const candidateBuilderResult = candidateRetrievalResult.candidateBuilderResult;
   const executedCandidateProvider = candidateRetrievalResult.candidateProvider;
+  markProductionLoadTiming("filterPipelineStart", {
+    branch: candidateBuilderResult?.branch || "",
+    pending: Boolean(candidateBuilderResult?.pending),
+    candidateCount: Array.isArray(candidateBuilderResult?.candidatePool)
+      ? candidateBuilderResult.candidatePool.length
+      : 0,
+  });
   const filterPipelineResult = executeFilteringPipeline({
     candidateBuilderResult,
     diagnostics,
     activeFeedId,
     useBackendQuery,
   });
+  markProductionLoadTiming("filterPipelineComplete", {
+    branch: filterPipelineResult?.branch || candidateBuilderResult?.branch || "",
+    pending: Boolean(filterPipelineResult?.pending),
+    filteredCount: Array.isArray(filterPipelineResult?.filteredRawArticles)
+      ? filterPipelineResult.filteredRawArticles.length
+      : 0,
+    groupedCount: Number(filterPipelineResult?.groupedArticlesCount) || 0,
+  });
+  markProductionLoadTiming("paginationStart", {
+    inputCount: Array.isArray(filterPipelineResult?.articles)
+      ? filterPipelineResult.articles.length
+      : 0,
+  });
   const paginationResult = executePaginationPipeline({
     filterPipelineResult,
     diagnostics,
     useBackendQuery,
+  });
+  markProductionLoadTiming("paginationComplete", {
+    totalCount: Number(paginationResult?.totalCount) || 0,
+    renderedItemCount: Array.isArray(paginationResult?.items) ? paginationResult.items.length : 0,
+    page: Number(paginationResult?.currentPage) || null,
+    totalPages: Number(paginationResult?.totalPages) || null,
+  });
+  markProductionLoadTiming("renderPreparationStart", {
+    sourceCount: Array.isArray(filterPipelineResult?.articles)
+      ? filterPipelineResult.articles.length
+      : 0,
   });
   const renderPreparationResult = executeRenderPreparationPipeline({
     candidateBuilderResult,
     filterPipelineResult,
     paginationResult,
     diagnostics,
+  });
+  markProductionLoadTiming("renderPreparationComplete", {
+    itemCount: Array.isArray(renderPreparationResult?.renderModel?.items)
+      ? renderPreparationResult.renderModel.items.length
+      : 0,
+    renderMode: renderPreparationResult?.renderDispatch?.renderMode || "",
+    renderer: renderPreparationResult?.renderDispatch?.renderer || "",
   });
   const renderModel = renderPreparationResult.renderModel;
   const renderDispatch = renderPreparationResult.renderDispatch;
@@ -48841,6 +48918,10 @@ function executeBackendQueryProvider(candidateProvider, normalizedFilterState, c
   const cacheLookupStage = readBackendCacheStage(queryKey);
   const cachedQuery = cacheLookupStage.cachedQuery;
   backendProviderStages.push(cacheLookupStage.stage);
+  markProductionLoadTiming("backendCacheLookupComplete", {
+    cacheHit: Boolean(cachedQuery),
+    cachedArticleCount: Array.isArray(cachedQuery?.articles) ? cachedQuery.articles.length : null,
+  });
 
   if (diagnostics?.enabled) {
     diagnostics.cache.backendQueryKey = queryKey;
@@ -48865,6 +48946,10 @@ function executeBackendQueryProvider(candidateProvider, normalizedFilterState, c
     backendRequests = requestPlanningStage.backendRequests;
     backendProviderStages.push(requestPlanningStage.stage);
   }
+  markProductionLoadTiming("backendRequestPlanningComplete", {
+    backendRequestCount: Array.isArray(backendRequests) ? backendRequests.length : 0,
+    usedCachedRequests: Boolean(cachedQuery?.backendRequests),
+  });
   if (diagnostics?.enabled) {
     diagnostics.backendRequests = backendRequests;
     updateCandidatePoolContext(diagnostics, {
@@ -48878,18 +48963,35 @@ function executeBackendQueryProvider(candidateProvider, normalizedFilterState, c
     backendRequests,
   });
   backendProviderStages.push(pendingStage.stage);
+  markProductionLoadTiming("backendPendingResolved", {
+    pending: Boolean(pendingStage.result),
+    backendRequestCount: Array.isArray(backendRequests) ? backendRequests.length : 0,
+  });
   if (pendingStage.result) {
     recordBackendProviderStages(diagnostics, backendProviderStages);
     return pendingStage.result;
   }
 
   setFilterPipelineBranch(diagnostics, "backend-query");
+  markProductionLoadTiming("backendResultNormalizationStart", {
+    cachedArticleCount: Array.isArray(cachedQuery?.articles) ? cachedQuery.articles.length : 0,
+    backendRequestCount: Array.isArray(backendRequests) ? backendRequests.length : 0,
+  });
   const normalizationStage = withFilterPerformanceStage("backendResultNormalizationMs", () => normalizeBackendProviderResultStage({
     cachedQuery,
     queryKey,
     backendRequests,
     diagnostics,
   }));
+  markProductionLoadTiming("backendResultNormalizationComplete", {
+    candidateCount: Array.isArray(normalizationStage?.result?.candidatePool)
+      ? normalizationStage.result.candidatePool.length
+      : 0,
+    filteredCount: Array.isArray(normalizationStage?.result?.filteredRawArticles)
+      ? normalizationStage.result.filteredRawArticles.length
+      : 0,
+    groupedCount: Number(normalizationStage?.result?.groupedArticlesCount) || 0,
+  });
   backendProviderStages.push(normalizationStage.stage);
   const run = getActiveFilterPerformanceRun();
   if (run) {
