@@ -44201,6 +44201,15 @@ function getCanonicalEventClusterKey(article) {
       return "";
     }
 
+    if (normalizedEvent.domain === "banknote" && BANKNOTE_DESIGN_GROUPING_EVENT_TYPES.has(normalizedEvent.canonicalEventType)) {
+      const timeBucket = normalizedEvent.timeBucket || "undated";
+      return [
+        normalizedEvent.domain,
+        "banknote_design",
+        timeBucket,
+      ].join(":");
+    }
+
     const entity = normalizedEvent.primaryEntity || normalizedEvent.country || normalizedEvent.currency || "generic";
     const anchor = normalizedEvent.authority
       || normalizedEvent.secondaryEntities.find((value) => value !== entity)
@@ -44490,7 +44499,13 @@ function isSameIntelligenceEvent(leftArticle, rightArticle) {
     if (
       leftNormalizedEvent.canonicalEventType &&
       rightNormalizedEvent.canonicalEventType &&
-      leftNormalizedEvent.canonicalEventType !== rightNormalizedEvent.canonicalEventType
+      leftNormalizedEvent.canonicalEventType !== rightNormalizedEvent.canonicalEventType &&
+      !(
+        leftNormalizedEvent.domain === "banknote" &&
+        rightNormalizedEvent.domain === "banknote" &&
+        BANKNOTE_DESIGN_GROUPING_EVENT_TYPES.has(leftNormalizedEvent.canonicalEventType) &&
+        BANKNOTE_DESIGN_GROUPING_EVENT_TYPES.has(rightNormalizedEvent.canonicalEventType)
+      )
     ) {
       return false;
     }
@@ -44648,11 +44663,17 @@ function getConflictReason(leftArticle, rightArticle) {
     return "different normalized domain";
   }
 
-  if (leftNormalizedEvent.canonicalEventType !== rightNormalizedEvent.canonicalEventType) {
+  const sameBanknoteDesignFamily =
+    leftNormalizedEvent.domain === "banknote" &&
+    rightNormalizedEvent.domain === "banknote" &&
+    BANKNOTE_DESIGN_GROUPING_EVENT_TYPES.has(leftNormalizedEvent.canonicalEventType) &&
+    BANKNOTE_DESIGN_GROUPING_EVENT_TYPES.has(rightNormalizedEvent.canonicalEventType);
+
+  if (leftNormalizedEvent.canonicalEventType !== rightNormalizedEvent.canonicalEventType && !sameBanknoteDesignFamily) {
     return "different canonical event type";
   }
 
-  if (leftNormalizedEvent.action && rightNormalizedEvent.action && leftNormalizedEvent.action !== rightNormalizedEvent.action) {
+  if (leftNormalizedEvent.action && rightNormalizedEvent.action && leftNormalizedEvent.action !== rightNormalizedEvent.action && !sameBanknoteDesignFamily) {
     return "different normalized action";
   }
 
@@ -44664,7 +44685,7 @@ function getConflictReason(leftArticle, rightArticle) {
 
   const leftEventType = leftNormalizedEvent.canonicalEventType || getDetailedArticleEventType(leftArticle);
   const rightEventType = rightNormalizedEvent.canonicalEventType || getDetailedArticleEventType(rightArticle);
-  if (leftEventType !== rightEventType) {
+  if (leftEventType !== rightEventType && !sameBanknoteDesignFamily) {
     return "different event type";
   }
 
@@ -45109,8 +45130,8 @@ function shouldAllowBanknoteDesignNearGrouping(leftArticle, rightArticle, finger
   if (
     leftEvent?.domain !== "banknote" ||
     rightEvent?.domain !== "banknote" ||
-    leftEventType !== rightEventType ||
-    !BANKNOTE_DESIGN_GROUPING_EVENT_TYPES.has(leftEventType)
+    !BANKNOTE_DESIGN_GROUPING_EVENT_TYPES.has(leftEventType) ||
+    !BANKNOTE_DESIGN_GROUPING_EVENT_TYPES.has(rightEventType)
   ) {
     return false;
   }
