@@ -110,6 +110,21 @@ function markProductionLoadTiming(name, metadata = {}) {
   };
 }
 
+function markCompletedProductionLoadTiming(runId, name, metadata = {}) {
+  if (!runId || !name) {
+    return;
+  }
+  const run = runtime.productionLoadTimingRuns.find((entry) => entry.runId === runId);
+  if (!run || !run.startMs) {
+    return;
+  }
+  const now = getPerformanceNow();
+  run.milestones[name] = {
+    ms: Math.round((now - run.startMs) * 10) / 10,
+    ...metadata,
+  };
+}
+
 function completeProductionLoadTiming(extra = {}) {
   const run = runtime.activeProductionLoadTimingRun;
   if (!run || run.completed) {
@@ -127,6 +142,7 @@ function completeProductionLoadTiming(extra = {}) {
   runtime.productionLoadTimingRuns.push({
     runId: run.runId,
     startedAt: run.startedAt,
+    startMs: run.startMs,
     renderReason: run.renderReason,
     selectedMainDomains: run.selectedMainDomains,
     selectedInterests: run.selectedInterests,
@@ -48258,7 +48274,14 @@ function executePaginationPipeline({
     articles: filterPipelineResult.articles,
     useBackendQuery,
   }));
-  recordPaginationDecisionTraces(diagnostics, filterPipelineResult.articles, paginationResult);
+  if (diagnostics?.enabled) {
+    paginationResult.deferredDecisionTraces = () => recordPaginationDecisionTraces(
+      diagnostics,
+      filterPipelineResult.articles,
+      paginationResult
+    );
+    addFilterPipelineNote(diagnostics, "Pagination decision traces deferred until after first render");
+  }
   recordPaginationPipelineResult(diagnostics, paginationResult);
   recordProductionDecisionLedgerStage(
     diagnostics,
@@ -49209,7 +49232,7 @@ function renderArticles() {
   let pipelineDiagnosticsFlushed = false;
   let pipelineDiagnosticsFlushDeferred = false;
   const filterPerformanceRun = createFilterPerformanceRun(renderReason);
-  createProductionLoadTimingRun(renderReason);
+  const productionLoadTimingRun = createProductionLoadTimingRun(renderReason);
   const flushPipelineDiagnosticsOnce = () => {
     if (pipelineDiagnosticsFlushed || !pipelineDiagnostics) {
       return;
@@ -49237,11 +49260,16 @@ function renderArticles() {
       typeof pipelineResult?.filterPipelineResult?.deferredDiagnosticsReplay === "function"
         ? pipelineResult.filterPipelineResult.deferredDiagnosticsReplay
         : null;
-    pipelineDiagnosticsFlushDeferred = Boolean(deferredDiagnosticsReplay);
+    const deferredPaginationDecisionTraces =
+      typeof pipelineResult?.paginationResult?.deferredDecisionTraces === "function"
+        ? pipelineResult.paginationResult.deferredDecisionTraces
+        : null;
+    pipelineDiagnosticsFlushDeferred = Boolean(deferredDiagnosticsReplay || deferredPaginationDecisionTraces);
     markProductionLoadTiming("pipelineComplete", {
       pending: Boolean(pipelineResult.pending),
       branch: pipelineResult.branch || "",
       diagnosticsReplayDeferred: Boolean(deferredDiagnosticsReplay),
+      paginationDecisionTracesDeferred: Boolean(deferredPaginationDecisionTraces),
     });
     if (filterPerformanceRun) {
       filterPerformanceRun.totalPipelineMs = Math.round((getPerformanceNow() - pipelineStartedAt) * 10) / 10;
@@ -49386,13 +49414,18 @@ function renderArticles() {
       page: articlePagination.currentPage,
       pageSize: articlePagination.pageSize,
       totalPages: articlePagination.totalPages,
-      afterFirstRender: deferredDiagnosticsReplay
+      afterFirstRender: deferredDiagnosticsReplay || deferredPaginationDecisionTraces
         ? () => {
-            markProductionLoadTiming("postRenderDiagnosticsStart", {
+            markCompletedProductionLoadTiming(productionLoadTimingRun.runId, "postRenderDiagnosticsStart", {
               branch: pipelineResult.branch || "",
             });
-            deferredDiagnosticsReplay();
-            markProductionLoadTiming("postRenderDiagnosticsComplete", {
+            if (deferredDiagnosticsReplay) {
+              deferredDiagnosticsReplay();
+            }
+            if (deferredPaginationDecisionTraces) {
+              deferredPaginationDecisionTraces();
+            }
+            markCompletedProductionLoadTiming(productionLoadTimingRun.runId, "postRenderDiagnosticsComplete", {
               status: pipelineDiagnostics?.diagnosticsReplay?.status || "",
               traceStoreSize: pipelineDiagnostics?.diagnosticsReplay?.traceStoreSize || 0,
               summaryBuilderInputCount: pipelineDiagnostics?.diagnosticsReplay?.summaryBuilderInputCount || 0,
