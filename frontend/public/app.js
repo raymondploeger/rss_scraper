@@ -40975,6 +40975,17 @@ function primeArticleIntelligence(article) {
 }
 
 const TEXT_MATCHES_KEYWORD_PATTERN_CACHE = new Map();
+const TEXT_MATCHES_KEYWORD_NORMALIZED_CACHE = new Map();
+
+function getTextMatchesNormalizedKeyword(keyword) {
+  const cacheKey = String(keyword || "");
+  if (TEXT_MATCHES_KEYWORD_NORMALIZED_CACHE.has(cacheKey)) {
+    return TEXT_MATCHES_KEYWORD_NORMALIZED_CACHE.get(cacheKey);
+  }
+  const normalizedKeyword = normalizeKeyword(keyword);
+  TEXT_MATCHES_KEYWORD_NORMALIZED_CACHE.set(cacheKey, normalizedKeyword);
+  return normalizedKeyword;
+}
 
 function getTextMatchesKeywordPattern(normalizedKeyword) {
   if (TEXT_MATCHES_KEYWORD_PATTERN_CACHE.has(normalizedKeyword)) {
@@ -40989,7 +41000,7 @@ function getTextMatchesKeywordPattern(normalizedKeyword) {
 }
 
 function textMatchesKeyword(text, keyword) {
-  const normalizedKeyword = normalizeKeyword(keyword);
+  const normalizedKeyword = getTextMatchesNormalizedKeyword(keyword);
   if (!normalizedKeyword) {
     return false;
   }
