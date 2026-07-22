@@ -20950,26 +20950,74 @@ function getIdentityDocumentResidencePermitAssessment(article) {
 }
 
 function getIdentityDocumentConjunctiveInterestAssessment(article, selectedInterests, options = {}) {
-  const selectedIdentityInterests = getSelectedIdentityDashboardInterests(selectedInterests);
+  const timingContext = typeof options.timingContext === "string" ? options.timingContext : "";
+  const timingEnabled = Boolean(timingContext && runtime.activeProductionLoadTimingRun);
+  const timingStartedAt = timingEnabled ? getPerformanceNow() : 0;
+  const measureConjunctiveSegment = (segment, callback) => {
+    if (!timingEnabled) {
+      return callback();
+    }
+    const segmentStartedAt = getPerformanceNow();
+    try {
+      return callback();
+    } finally {
+      recordProductionLoadTimingBreakdown(
+        "identityDocumentConjunctiveAssessment",
+        timingContext,
+        segment,
+        getPerformanceNow() - segmentStartedAt
+      );
+    }
+  };
+  const finishConjunctiveTiming = (assessment) => {
+    if (timingEnabled) {
+      recordProductionLoadTimingBreakdown(
+        "identityDocumentConjunctiveAssessment",
+        timingContext,
+        "total",
+        getPerformanceNow() - timingStartedAt,
+        {
+          result: assessment?.passed ? "passed" : "rejected",
+          reason: assessment?.reason || "",
+        }
+      );
+    }
+    return assessment;
+  };
+
+  const selectedIdentityInterests = measureConjunctiveSegment("selectedIdentityDashboardInterests", () =>
+    getSelectedIdentityDashboardInterests(selectedInterests)
+  );
   const selectedSharedInterests = Array.isArray(options.selectedSharedInterests)
     ? options.selectedSharedInterests
-    : getSelectedSharedSecuritySubinterests(selectedInterests);
-  const selectedObjectInterests = selectedIdentityInterests.filter((interestId) =>
-    IDENTITY_DOCUMENT_OBJECT_INTEREST_IDS.has(interestId)
+    : measureConjunctiveSegment("selectedSharedSecurityInterests", () =>
+      getSelectedSharedSecuritySubinterests(selectedInterests)
+    );
+  const selectedObjectInterests = measureConjunctiveSegment("selectedObjectInterests", () =>
+    selectedIdentityInterests.filter((interestId) =>
+      IDENTITY_DOCUMENT_OBJECT_INTEREST_IDS.has(interestId)
+    )
   );
-  const selectedIntelligenceInterests = selectedIdentityInterests.filter((interestId) =>
-    IDENTITY_DOCUMENT_INTELLIGENCE_INTEREST_IDS.has(interestId)
+  const selectedIntelligenceInterests = measureConjunctiveSegment("selectedIntelligenceInterests", () =>
+    selectedIdentityInterests.filter((interestId) =>
+      IDENTITY_DOCUMENT_INTELLIGENCE_INTEREST_IDS.has(interestId)
+    )
   );
   const interestScores = new Map();
   const getScore = (interestId) => {
     if (!interestScores.has(interestId)) {
-      interestScores.set(interestId, computePersonalInterestBoost(article, interestId).score);
+      const score = measureConjunctiveSegment(`computePersonalInterestBoost:${interestId}`, () =>
+        computePersonalInterestBoost(article, interestId).score
+      );
+      interestScores.set(interestId, score);
     }
     return interestScores.get(interestId);
   };
   const interestPasses = (interestId) => {
     if (interestId === "residence_permits") {
-      const residencePermitAssessment = getIdentityDocumentResidencePermitAssessment(article);
+      const residencePermitAssessment = measureConjunctiveSegment("residencePermitAssessment", () =>
+        getIdentityDocumentResidencePermitAssessment(article)
+      );
       return getScore(interestId) >= 18
         && residencePermitAssessment.explicitResidencePermitEvidence
         && residencePermitAssessment.residencePermitFocused
@@ -20977,9 +21025,15 @@ function getIdentityDocumentConjunctiveInterestAssessment(article, selectedInter
     }
     return getScore(interestId) >= 18;
   };
-  const getMatchedInterests = (interestIds) => interestIds.filter((interestId) => interestPasses(interestId));
-  const matchedObjectInterests = getMatchedInterests(selectedObjectInterests);
-  const matchedIntelligenceInterests = getMatchedInterests(selectedIntelligenceInterests);
+  const getMatchedInterests = (interestIds) => measureConjunctiveSegment("matchedInterests", () =>
+    interestIds.filter((interestId) => interestPasses(interestId))
+  );
+  const matchedObjectInterests = measureConjunctiveSegment("matchedObjectInterests", () =>
+    getMatchedInterests(selectedObjectInterests)
+  );
+  const matchedIntelligenceInterests = measureConjunctiveSegment("matchedIntelligenceInterests", () =>
+    getMatchedInterests(selectedIntelligenceInterests)
+  );
   const idCardsBridgeMatched = Boolean(options.idCardsBridgeMatched)
     && selectedObjectInterests.includes("id_cards")
     && selectedSharedInterests.length > 0;
@@ -20989,9 +21043,11 @@ function getIdentityDocumentConjunctiveInterestAssessment(article, selectedInter
   const intelligenceMatched = !selectedIntelligenceInterests.length
     || matchedIntelligenceInterests.length > 0;
   const conjunctiveMode = selectedObjectInterests.length > 0 && selectedIntelligenceInterests.length > 0;
-  const legacyOrMatched = !selectedIdentityInterests.length
-    || selectedIdentityInterests.some((interestId) => interestPasses(interestId))
-    || idCardsBridgeMatched;
+  const legacyOrMatched = measureConjunctiveSegment("legacyOrMatched", () =>
+    !selectedIdentityInterests.length
+      || selectedIdentityInterests.some((interestId) => interestPasses(interestId))
+      || idCardsBridgeMatched
+  );
   const passed = conjunctiveMode
     ? objectMatched && intelligenceMatched
     : legacyOrMatched;
@@ -21005,7 +21061,7 @@ function getIdentityDocumentConjunctiveInterestAssessment(article, selectedInter
         : "selected identity intelligence layer did not match")
       : "selected identity interest score below threshold");
 
-  return {
+  return finishConjunctiveTiming({
     passed,
     conjunctiveMode,
     reason,
@@ -21015,7 +21071,7 @@ function getIdentityDocumentConjunctiveInterestAssessment(article, selectedInter
     matchedObjectInterests,
     matchedIntelligenceInterests,
     idCardsBridgeMatched,
-  };
+  });
 }
 
 function classifyPersonalDashboardRejection(article) {
@@ -34758,6 +34814,7 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
       getIdentityDocumentConjunctiveInterestAssessment(article, selectedInterests, {
         selectedSharedInterests,
         idCardsBridgeMatched: idCardsHolographyOvdBridgeMatched,
+        timingContext: personalDashboardTimingContext,
       })
     );
     return finishPersonalDashboardTiming(
