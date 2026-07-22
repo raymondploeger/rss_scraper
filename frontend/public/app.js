@@ -33185,19 +33185,53 @@ function evaluateIdentityDocumentHardContextMeasured(article, profileId) {
   });
 }
 
-function calculateIdentityProfileScore(article, profileId) {
+function calculateIdentityProfileScore(article, profileId, options = {}) {
   return measureFilterFunction("calculateIdentityProfileScore", () =>
-    calculateIdentityProfileScoreMeasured(article, profileId), {
+    calculateIdentityProfileScoreMeasured(article, profileId, options), {
       logicalStage: "identity_documents",
       interest: "identity_documents",
     });
 }
 
-function calculateIdentityProfileScoreMeasured(article, profileId) {
+function calculateIdentityProfileScoreMeasured(article, profileId, options = {}) {
   return getCachedArticleValue(article, `identityProfileScore:${profileId}`, () => {
+    const timingContext = typeof options.timingContext === "string" ? options.timingContext : "";
+    const timingEnabled = Boolean(timingContext && runtime.activeProductionLoadTimingRun);
+    const timingStartedAt = timingEnabled ? getPerformanceNow() : 0;
+    const timingProfile = profileId || "unknown";
+    const measureProfileSegment = (segment, callback) => {
+      if (!timingEnabled) {
+        return callback();
+      }
+      const segmentStartedAt = getPerformanceNow();
+      try {
+        return callback();
+      } finally {
+        recordProductionLoadTimingBreakdown(
+          "calculateIdentityProfileScore",
+          timingContext,
+          `${timingProfile}:${segment}`,
+          getPerformanceNow() - segmentStartedAt
+        );
+      }
+    };
+    const finishProfileTiming = (result) => {
+      if (timingEnabled) {
+        recordProductionLoadTimingBreakdown(
+          "calculateIdentityProfileScore",
+          timingContext,
+          `${timingProfile}:total`,
+          getPerformanceNow() - timingStartedAt,
+          {
+            result: result?.score > 0 ? "passed" : "rejected",
+          }
+        );
+      }
+      return result;
+    };
     const profile = IDENTITY_INTELLIGENCE_PROFILES[profileId];
     if (!profile) {
-      return {
+      return finishProfileTiming({
         score: 0,
         authorityBoost: 0,
         matchedRequiredGroups: 0,
@@ -33206,12 +33240,14 @@ function calculateIdentityProfileScoreMeasured(article, profileId) {
         matchedWeak: [],
         matchedNegative: [],
         rejectionReasons: [],
-      };
+      });
     }
 
-    const context = getPersonalBoostContext(article, "calculateIdentityProfileScore", { interest: profileId || "identity_documents" });
+    const context = measureProfileSegment("personalBoostContext", () =>
+      getPersonalBoostContext(article, "calculateIdentityProfileScore", { interest: profileId || "identity_documents" })
+    );
     const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
-    const hardContext = evaluateIdentityDocumentHardContext(article, profileId);
+    const hardContext = measureProfileSegment("hardContext", () => evaluateIdentityDocumentHardContext(article, profileId));
     const scoreMatches = (terms = [], weights) => {
       const matched = [];
       let titleHits = 0;
@@ -33239,22 +33275,32 @@ function calculateIdentityProfileScoreMeasured(article, profileId) {
       return { matched, score };
     };
 
-    const strong = scoreMatches(profile.strongPositive, { title: 16, tag: 9, meta: 8, body: 6 });
-    const medium = scoreMatches(profile.mediumPositive, { title: 10, tag: 6, meta: 5, body: 3 });
-    const weak = scoreMatches(profile.weakPositive, { title: 4, tag: 2, meta: 2, body: 1 });
-    const negative = scoreMatches(profile.strongNegative, { title: 18, tag: 10, meta: 8, body: 6 });
+    const strong = measureProfileSegment("scoreMatches:strong", () =>
+      scoreMatches(profile.strongPositive, { title: 16, tag: 9, meta: 8, body: 6 })
+    );
+    const medium = measureProfileSegment("scoreMatches:medium", () =>
+      scoreMatches(profile.mediumPositive, { title: 10, tag: 6, meta: 5, body: 3 })
+    );
+    const weak = measureProfileSegment("scoreMatches:weak", () =>
+      scoreMatches(profile.weakPositive, { title: 4, tag: 2, meta: 2, body: 1 })
+    );
+    const negative = measureProfileSegment("scoreMatches:negative", () =>
+      scoreMatches(profile.strongNegative, { title: 18, tag: 10, meta: 8, body: 6 })
+    );
 
-    const matchedRequiredGroups = (Array.isArray(profile.requiredContextGroups) ? profile.requiredContextGroups : []).reduce(
-      (count, group) => {
-        const hasGroupMatch = Array.isArray(group) && group.some((term) =>
-          textMatchesKeyword(context.titleText, term) ||
-          textMatchesKeyword(context.tagText, term) ||
-          textMatchesKeyword(context.metadataText, term) ||
-          textMatchesKeyword(context.bodyText, term)
-        );
-        return hasGroupMatch ? count + 1 : count;
-      },
-      0
+    const matchedRequiredGroups = measureProfileSegment("requiredContextGroups", () =>
+      (Array.isArray(profile.requiredContextGroups) ? profile.requiredContextGroups : []).reduce(
+        (count, group) => {
+          const hasGroupMatch = Array.isArray(group) && group.some((term) =>
+            textMatchesKeyword(context.titleText, term) ||
+            textMatchesKeyword(context.tagText, term) ||
+            textMatchesKeyword(context.metadataText, term) ||
+            textMatchesKeyword(context.bodyText, term)
+          );
+          return hasGroupMatch ? count + 1 : count;
+        },
+        0
+      )
     );
 
     let score = strong.score + medium.score + weak.score - negative.score;
@@ -33269,10 +33315,12 @@ function calculateIdentityProfileScoreMeasured(article, profileId) {
       rejectionReasons.push("missing_required_context");
     }
 
-    const authorityBoost = Array.isArray(profile.authorityBoostSources) &&
-      profile.authorityBoostSources.some((value) => textMatchesKeyword(sourceFingerprint, value))
-      ? 30
-      : 0;
+    const authorityBoost = measureProfileSegment("authorityBoost", () =>
+      Array.isArray(profile.authorityBoostSources) &&
+        profile.authorityBoostSources.some((value) => textMatchesKeyword(sourceFingerprint, value))
+        ? 30
+        : 0
+    );
     if (score > 10) {
       score += authorityBoost;
     }
@@ -33332,7 +33380,7 @@ function calculateIdentityProfileScoreMeasured(article, profileId) {
       profileScore: Math.round(score),
     });
 
-    return {
+    return finishProfileTiming({
       score: Math.round(score),
       authorityBoost,
       matchedRequiredGroups,
@@ -33342,7 +33390,7 @@ function calculateIdentityProfileScoreMeasured(article, profileId) {
       matchedNegative: negative.matched,
       rejectionReasons,
       hardContextMatched: hardContext.matched,
-    };
+    });
   });
 }
 
@@ -33514,14 +33562,14 @@ function getIdentityDocumentSubinterestScoreMeasured(article, selectedInterests 
     const signals = measureSubinterestSegment("identitySignals", () => getIdentityDocumentInterestSignals(article));
     const intentByInterest = measureSubinterestSegment("intentBreakdown", () => getIdentityDocumentIntentBreakdown(article));
     const profileByInterest = {
-      id_cards: measureSubinterestSegment("profile:id_cards", () => calculateIdentityProfileScore(article, "id_cards")),
-      passports: measureSubinterestSegment("profile:passports", () => calculateIdentityProfileScore(article, "passports")),
-      visas: measureSubinterestSegment("profile:visas", () => calculateIdentityProfileScore(article, "visas")),
-      residence_permits: measureSubinterestSegment("profile:residence_permits", () => calculateIdentityProfileScore(article, "residence_permits")),
-      border_control: measureSubinterestSegment("profile:border_control", () => calculateIdentityProfileScore(article, "border_control")),
-      icao: measureSubinterestSegment("profile:icao", () => calculateIdentityProfileScore(article, "icao")),
-      issuance: measureSubinterestSegment("profile:issuance", () => calculateIdentityProfileScore(article, "issuance")),
-      fraud: measureSubinterestSegment("profile:fraud", () => calculateIdentityProfileScore(article, "fraud")),
+      id_cards: measureSubinterestSegment("profile:id_cards", () => calculateIdentityProfileScore(article, "id_cards", { timingContext })),
+      passports: measureSubinterestSegment("profile:passports", () => calculateIdentityProfileScore(article, "passports", { timingContext })),
+      visas: measureSubinterestSegment("profile:visas", () => calculateIdentityProfileScore(article, "visas", { timingContext })),
+      residence_permits: measureSubinterestSegment("profile:residence_permits", () => calculateIdentityProfileScore(article, "residence_permits", { timingContext })),
+      border_control: measureSubinterestSegment("profile:border_control", () => calculateIdentityProfileScore(article, "border_control", { timingContext })),
+      icao: measureSubinterestSegment("profile:icao", () => calculateIdentityProfileScore(article, "icao", { timingContext })),
+      issuance: measureSubinterestSegment("profile:issuance", () => calculateIdentityProfileScore(article, "issuance", { timingContext })),
+      fraud: measureSubinterestSegment("profile:fraud", () => calculateIdentityProfileScore(article, "fraud", { timingContext })),
     };
     const travelNoiseArticle = measureSubinterestSegment("identityTravelNoiseArticle", () => isIdentityTravelNoiseArticle(article));
     const scoreByInterest = {
