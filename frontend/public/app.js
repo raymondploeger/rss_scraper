@@ -88,6 +88,7 @@ function createProductionLoadTimingRun(reason = "render") {
     timeFromSelectionChangeToRunStartMs: runtime.scheduledRenderRequestedAt
       ? Math.max(0, Math.round((now - runtime.scheduledRenderRequestedAt) * 10) / 10)
       : null,
+    breakdownsEnabled: isFilterPerformanceDiagnosticsEnabled(),
     milestones: {},
     breakdowns: {},
     counts: {},
@@ -113,7 +114,7 @@ function markProductionLoadTiming(name, metadata = {}) {
 
 function recordProductionLoadTimingBreakdown(section, context, segment, durationMs, metadata = {}) {
   const run = runtime.activeProductionLoadTimingRun;
-  if (!run || run.completed || !section || !segment) {
+  if (!run || run.completed || !run.breakdownsEnabled || !section || !segment) {
     return;
   }
   const normalizedContext = context || "default";
@@ -184,6 +185,7 @@ function completeProductionLoadTiming(extra = {}) {
     selectedMainDomains: run.selectedMainDomains,
     selectedInterests: run.selectedInterests,
     timeFromSelectionChangeToRunStartMs: run.timeFromSelectionChangeToRunStartMs,
+    breakdownsEnabled: Boolean(run.breakdownsEnabled),
     milestones: run.milestones,
     breakdowns: run.breakdowns,
     counts: run.counts,
