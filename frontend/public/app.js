@@ -30392,7 +30392,8 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
   const matchedDeviceSoftwareNoiseTerms = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_DEVICE_SOFTWARE_NOISE_TERMS);
   const matchedPaymentNoiseTerms = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_PAYMENT_NOISE_TERMS);
   const selectedAuthenticationAssessment = getDigitalSubgroupHybridAssessment(article, "authentication");
-  const hasAuthenticationSignal = matchedAuthenticationSignals.length > 0 || selectedAuthenticationAssessment.included;
+  const legacyAuthenticationScoreIncluded = Boolean(selectedAuthenticationAssessment.included);
+  const hasAuthenticationSignal = matchedAuthenticationSignals.length > 0;
   const hasProfessionalIdentityContext = matchedProfessionalContextTerms.length > 0;
   const hasVendorIdentityContext = matchedVendorSignals.length > 0 && matchedVendorContextTerms.length > 0;
   const hasDocumentAuthenticationSignal = matchedAuthenticationSignals.some((term) => [
@@ -30407,16 +30408,34 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
     "digital signature validation",
     "pki validation",
   ].includes(term));
+  const broadAuthenticationOnly = !hasDocumentAuthenticationSignal &&
+    matchedAuthenticationSignals.length > 0 &&
+    matchedAuthenticationSignals.every((term) => [
+      "strong authentication",
+      "multi-factor authentication",
+      "multifactor authentication",
+      "two-factor authentication",
+      "2fa",
+      "fido",
+      "fido2",
+      "passkey",
+      "passkeys",
+      "passwordless",
+      "verified authorization",
+    ].includes(term)) &&
+    !hasProfessionalIdentityContext &&
+    !hasVendorIdentityContext;
   const professionalAuthenticationMatched = hasAuthenticationSignal &&
     (hasProfessionalIdentityContext || hasVendorIdentityContext || hasDocumentAuthenticationSignal);
-  const passkeyWithoutIdentityContext = matchedPasskeyNoiseTerms.length > 0 && !professionalAuthenticationMatched;
-  const genericLoginAuthentication = matchedGenericLoginNoiseTerms.length > 0 && !professionalAuthenticationMatched;
-  const cybersecurityAuthenticationNoise = matchedCybersecurityNoiseTerms.length > 0 && !professionalAuthenticationMatched;
-  const deviceSoftwareAuthenticationNoise = matchedDeviceSoftwareNoiseTerms.length > 0 && !professionalAuthenticationMatched;
-  const paymentAuthenticationNoise = matchedPaymentNoiseTerms.length > 0 && !professionalAuthenticationMatched;
+  const passkeyWithoutIdentityContext = matchedPasskeyNoiseTerms.length > 0 && (!professionalAuthenticationMatched || broadAuthenticationOnly);
+  const genericLoginAuthentication = matchedGenericLoginNoiseTerms.length > 0 && (!professionalAuthenticationMatched || broadAuthenticationOnly);
+  const cybersecurityAuthenticationNoise = matchedCybersecurityNoiseTerms.length > 0 && (!professionalAuthenticationMatched || broadAuthenticationOnly);
+  const deviceSoftwareAuthenticationNoise = matchedDeviceSoftwareNoiseTerms.length > 0 && (!professionalAuthenticationMatched || broadAuthenticationOnly);
+  const paymentAuthenticationNoise = matchedPaymentNoiseTerms.length > 0 && (!professionalAuthenticationMatched || broadAuthenticationOnly);
   const passed = !enabled ||
     (
       professionalAuthenticationMatched &&
+      !broadAuthenticationOnly &&
       !genericLoginAuthentication &&
       !cybersecurityAuthenticationNoise &&
       !deviceSoftwareAuthenticationNoise &&
@@ -30450,9 +30469,11 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
     rejectionReason,
     rejectionCategory: rejectionReason ? "authentication_professional_relevance" : "",
     hasAuthenticationSignal,
+    legacyAuthenticationScoreIncluded,
     hasProfessionalIdentityContext,
     hasVendorIdentityContext,
     hasDocumentAuthenticationSignal,
+    broadAuthenticationOnly,
     professionalAuthenticationMatched,
     passkeyWithoutIdentityContext,
     genericLoginAuthentication,
