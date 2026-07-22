@@ -33213,16 +33213,24 @@ function calculateIdentityProfileScoreMeasured(article, profileId) {
     const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
     const hardContext = evaluateIdentityDocumentHardContext(article, profileId);
     const scoreMatches = (terms = [], weights) => {
-      const matched = terms.filter((term) =>
-        textMatchesKeyword(context.titleText, term) ||
-        textMatchesKeyword(context.tagText, term) ||
-        textMatchesKeyword(context.metadataText, term) ||
-        textMatchesKeyword(context.bodyText, term)
-      );
-      const titleHits = matched.filter((term) => textMatchesKeyword(context.titleText, term)).length;
-      const tagHits = matched.filter((term) => textMatchesKeyword(context.tagText, term)).length;
-      const metaHits = matched.filter((term) => textMatchesKeyword(context.metadataText, term)).length;
-      const bodyHits = matched.filter((term) => textMatchesKeyword(context.bodyText, term)).length;
+      const matched = [];
+      let titleHits = 0;
+      let tagHits = 0;
+      let metaHits = 0;
+      let bodyHits = 0;
+      terms.forEach((term) => {
+        const titleMatched = textMatchesKeyword(context.titleText, term);
+        const tagMatched = textMatchesKeyword(context.tagText, term);
+        const metaMatched = textMatchesKeyword(context.metadataText, term);
+        const bodyMatched = textMatchesKeyword(context.bodyText, term);
+        if (titleMatched || tagMatched || metaMatched || bodyMatched) {
+          matched.push(term);
+        }
+        if (titleMatched) titleHits += 1;
+        if (tagMatched) tagHits += 1;
+        if (metaMatched) metaHits += 1;
+        if (bodyMatched) bodyHits += 1;
+      });
       const score =
         (titleHits * weights.title) +
         (tagHits * weights.tag) +
