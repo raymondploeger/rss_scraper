@@ -30583,8 +30583,37 @@ function getIdentityVerificationProfessionalGuardAssessmentUncached(article, opt
   const genericVerificationNoise = matchedGenericVerificationNoiseTerms.length > 0 && !specificityGatePassed;
   const wrongDomainNoise = (matchedWrongDomainNoiseTerms.length > 0 || voiceThreatNoise) && !specificityGatePassed;
   const hardNegativeSignals = sharedEvidence.noiseVerificationSignals || [];
+  const titleProfessionalRescueSignals = [
+    ...matchedVendorSignals,
+    ...matchedEventContextTerms,
+    ...matchedUseCaseTerms.filter((signal) => [
+      "government",
+      "government services",
+      "fraud prevention",
+      "synthetic identity fraud",
+      "document fraud",
+      "digital identity",
+      "biometrics",
+      "biometric",
+      "credentials",
+      "identity platform",
+      "infrastructure",
+    ].includes(signal)),
+  ];
+  const titleProfessionalRescueBlocked = matchedTutorialNoiseTerms.length > 0 ||
+    matchedWrongDomainNoiseTerms.length > 0 ||
+    matchedAiAgentNoiseTerms.length > 0 ||
+    matchedVoiceThreatNoiseTerms.length > 0 ||
+    matchedAuthenticationNoiseTerms.length > 1;
+  const identityVerificationProfessionalTitleRescue = Boolean(
+    sharedEvidence.titleIdentityVerificationMatched &&
+    sharedEvidence.verificationFlowMatched &&
+    !semanticGate.missingIdentityObject &&
+    titleProfessionalRescueSignals.length > 0 &&
+    !titleProfessionalRescueBlocked
+  );
   const semanticProfessionalGatePassed = Boolean(sharedEvidence.verificationFlowMatched) &&
-    Boolean(semanticGate.semanticGatePassed);
+    (Boolean(semanticGate.semanticGatePassed) || identityVerificationProfessionalTitleRescue);
   const semanticProfessionalGateRejected = Boolean(enabled && sharedEvidence.passed && !semanticProfessionalGatePassed);
   const rejectionReason = enabled
     ? sharedEvidence.rejectionReason || (semanticProfessionalGateRejected
@@ -30594,7 +30623,9 @@ function getIdentityVerificationProfessionalGuardAssessmentUncached(article, opt
   const passed = !enabled || (sharedEvidence.passed && semanticProfessionalGatePassed);
   const passReason = !passed
     ? ""
-    : sharedEvidence.passReason || "authoritative_verification_evidence";
+    : identityVerificationProfessionalTitleRescue
+      ? "identity_verification_professional_title_rescue"
+      : sharedEvidence.passReason || "authoritative_verification_evidence";
   const stageResult = passed ? "passed" : "rejected";
   const verificationFlowSignals = Object.freeze([
     ...matchedStrongSignals,
@@ -30613,6 +30644,9 @@ function getIdentityVerificationProfessionalGuardAssessmentUncached(article, opt
     specificityGatePassed,
     semanticProfessionalGatePassed,
     semanticProfessionalGateRejected,
+    identityVerificationProfessionalTitleRescue,
+    titleProfessionalRescueSignals: Object.freeze(titleProfessionalRescueSignals.slice(0, 12)),
+    titleProfessionalRescueBlocked,
     verificationFlowSignals,
     specificitySignals: verificationFlowSignals,
     genericContextSignals,
@@ -30654,6 +30688,9 @@ function getIdentityVerificationProfessionalGuardAssessmentUncached(article, opt
     specificityGatePassed,
     semanticProfessionalGatePassed,
     semanticProfessionalGateRejected,
+    identityVerificationProfessionalTitleRescue,
+    titleProfessionalRescueSignals: Object.freeze(titleProfessionalRescueSignals.slice(0, 12)),
+    titleProfessionalRescueBlocked,
     vendorRescueApproved,
     vendorRescueBlocked,
     genericRescueAttempted,
