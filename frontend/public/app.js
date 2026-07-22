@@ -44640,6 +44640,15 @@ const IDENTITY_SYSTEM_GROUPING_SYSTEM_ENTITIES = new Set([
   "border-authority",
   "immigration-agency",
 ]);
+const BROAD_IDENTITY_SYSTEM_GROUPING_SYSTEMS = new Set([
+  "digital-id",
+  "document-verification",
+]);
+
+function isBroadIdentitySystemGroupingKey(groupingKey = "") {
+  const parts = String(groupingKey || "").split(":");
+  return parts[0] === "identity-system" && BROAD_IDENTITY_SYSTEM_GROUPING_SYSTEMS.has(parts[4]);
+}
 
 function getIdentitySystemGroupingEntity(article, normalizedEvent) {
   const candidates = [
@@ -45252,7 +45261,7 @@ function isSameIntelligenceEvent(leftArticle, rightArticle) {
       rightGroupingKey &&
       leftGroupingKey === rightGroupingKey &&
       leftGroupingKey.startsWith("identity-system:");
-    if (sameIdentitySystemGroupingKey) {
+    if (sameIdentitySystemGroupingKey && !isBroadIdentitySystemGroupingKey(leftGroupingKey)) {
       return true;
     }
 
@@ -45433,7 +45442,8 @@ function getConflictReason(leftArticle, rightArticle) {
     leftEventKey &&
     rightEventKey &&
     leftEventKey === rightEventKey &&
-    leftEventKey.startsWith("identity-system:")
+    leftEventKey.startsWith("identity-system:") &&
+    !isBroadIdentitySystemGroupingKey(leftEventKey)
   ) {
     return "";
   }
