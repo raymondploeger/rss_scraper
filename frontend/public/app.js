@@ -3625,8 +3625,7 @@ const PERSONAL_DASHBOARD_GROUPS = [
     interests: [
       { id: "banknotes", label: "Banknotes", strong: ["banknote", "banknotes", "currency note", "commemorative note", "note issuance"], weak: ["cash", "payment"], topicSignals: ["banknotes"], tagSignals: ["banknotes"], eventTypes: ["banknote_withdrawal", "new_banknote_series", "banknote_redesign", "commemorative_issue"] },
       { id: "redesign", label: "Designs", strong: ["redesign", "new design", "new family", "new portrait", "new artwork"], weak: ["design refresh"], signalIds: ["redesign"] },
-      { id: "rollout", label: "Issuance", strong: ["new banknote launch", "banknote rollout", "circulation rollout", "new series launch"], weak: ["rollout", "launch", "introduction"], signalIds: ["rollout", "new-releases"] },
-      { id: "release", label: "New releases", strong: ["release", "issued", "issue", "commemorative note issue", "new banknote released"], weak: ["launch"], signalIds: ["new-releases", "commemorative"] },
+      { id: "rollout", label: "Issuance & new releases", strong: ["new banknote launch", "banknote rollout", "circulation rollout", "new series launch", "release", "issued", "issue", "commemorative note issue", "new banknote released"], weak: ["rollout", "launch", "introduction"], signalIds: ["rollout", "new-releases", "commemorative"] },
       { id: "withdrawal", label: "Withdrawal", strong: ["withdrawn from circulation", "withdrawal", "demonetisation", "demonetization", "legal tender deadline"], weak: ["withdrawn", "retired"], eventTypes: ["banknote_withdrawal", "demonetisation"], signalIds: ["withdrawal"] },
       { id: "counterfeit", label: "Counterfeit", strong: ["counterfeit", "counterfeit notes", "counterfeit banknote", "fake note", "forged banknote"], weak: ["forged note"], eventTypes: ["counterfeit_banknotes", "central_bank_warning"], signalIds: ["counterfeit"] },
       { id: "central_bank", label: "Central bank", strong: ["central bank", "national bank", "reserve bank", "issuer bank", "bank of england", "ecb", "rbi"], weak: ["bank notice"], eventTypes: ["central_bank_warning", "banknote_withdrawal", "new_banknote_series"] },
@@ -22861,6 +22860,9 @@ function normalizePersonalDashboardInterestId(value) {
   if (normalizedValue === "document_counterfeiting") {
     return "fraud";
   }
+  if (normalizedValue === "release") {
+    return "rollout";
+  }
   return PERSONAL_DASHBOARD_INTEREST_MAP.has(normalizedValue) ? normalizedValue : "";
 }
 
@@ -34275,7 +34277,9 @@ function matchesBanknoteInterest(article, interestId) {
       return signals.contextHits >= 3 && signals.releaseHits >= 3;
     }
     if (interestId === "withdrawal") {
-      return signals.contextHits >= 3 && signals.withdrawalHits >= 3;
+      return signals.contextHits >= 3 &&
+        signals.withdrawalHits >= 3 &&
+        signals.withdrawalHits >= signals.counterfeitHits;
     }
     if (interestId === "counterfeit") {
       return signals.counterfeitHits >= 3;
