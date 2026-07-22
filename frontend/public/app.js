@@ -26819,7 +26819,9 @@ function computePersonalInterestBoostMeasured(article, interestId, options = {})
     if (groupId === "identity_documents") {
       const signals = measureBoostSegment("identitySignals", () => getIdentityDocumentInterestSignals(article));
       const authority = measureBoostSegment("identitySourceAuthority", () => getIdentityDocumentSourceAuthority(article));
-      const subinterestScore = measureBoostSegment("identitySubinterestScore", () => getIdentityDocumentSubinterestScore(article));
+      const subinterestScore = measureBoostSegment("identitySubinterestScore", () =>
+        getIdentityDocumentSubinterestScore(article, undefined, { timingContext })
+      );
       const selectedIdentityInterests = measureBoostSegment("selectedIdentitySubinterests", () => getSelectedIdentityDocumentSubinterests());
       const selectedSubinterest = selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : "";
       const borderAuthorityAdjustment = selectedSubinterest === "border_control"
@@ -33444,42 +33446,76 @@ function hasIdentityTravelNoise(article, terms = []) {
   return normalizeKeywordList(terms).some((term) => textMatchesKeyword(haystack, term));
 }
 
-function getIdentityDocumentSubinterestScore(article, selectedInterests) {
+function getIdentityDocumentSubinterestScore(article, selectedInterests, options = {}) {
   return measureFilterFunction("getIdentityDocumentSubinterestScore", () =>
-    getIdentityDocumentSubinterestScoreMeasured(article, selectedInterests), {
+    getIdentityDocumentSubinterestScoreMeasured(article, selectedInterests, options), {
       logicalStage: "identity_documents",
       interest: "identity_documents",
     });
 }
 
-function getIdentityDocumentSubinterestScoreMeasured(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+function getIdentityDocumentSubinterestScoreMeasured(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests), options = {}) {
   const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
   const signature = selectedIdentityInterests.slice().sort().join("|");
   const cacheKey = `identityDocumentSubinterestScore:${signature}`;
 
   return getCachedArticleValue(article, cacheKey, () => {
+    const timingContext = typeof options.timingContext === "string" ? options.timingContext : "";
+    const timingEnabled = Boolean(timingContext && runtime.activeProductionLoadTimingRun);
+    const timingStartedAt = timingEnabled ? getPerformanceNow() : 0;
+    const timingInterest = signature || "none";
+    const measureSubinterestSegment = (segment, callback) => {
+      if (!timingEnabled) {
+        return callback();
+      }
+      const segmentStartedAt = getPerformanceNow();
+      try {
+        return callback();
+      } finally {
+        recordProductionLoadTimingBreakdown(
+          "identityDocumentSubinterestScore",
+          timingContext,
+          `${timingInterest}:${segment}`,
+          getPerformanceNow() - segmentStartedAt
+        );
+      }
+    };
+    const finishSubinterestTiming = (result) => {
+      if (timingEnabled) {
+        recordProductionLoadTimingBreakdown(
+          "identityDocumentSubinterestScore",
+          timingContext,
+          `${timingInterest}:total`,
+          getPerformanceNow() - timingStartedAt,
+          {
+            result: result?.score > 0 ? "passed" : "rejected",
+          }
+        );
+      }
+      return result;
+    };
     if (!selectedIdentityInterests.length) {
-      return {
+      return finishSubinterestTiming({
         score: 0,
         mismatchPenalty: 0,
         selectedSubinterest: "",
         matchedSubinterest: "",
-      };
+      });
     }
 
-    const signals = getIdentityDocumentInterestSignals(article);
-    const intentByInterest = getIdentityDocumentIntentBreakdown(article);
+    const signals = measureSubinterestSegment("identitySignals", () => getIdentityDocumentInterestSignals(article));
+    const intentByInterest = measureSubinterestSegment("intentBreakdown", () => getIdentityDocumentIntentBreakdown(article));
     const profileByInterest = {
-      id_cards: calculateIdentityProfileScore(article, "id_cards"),
-      passports: calculateIdentityProfileScore(article, "passports"),
-      visas: calculateIdentityProfileScore(article, "visas"),
-      residence_permits: calculateIdentityProfileScore(article, "residence_permits"),
-      border_control: calculateIdentityProfileScore(article, "border_control"),
-      icao: calculateIdentityProfileScore(article, "icao"),
-      issuance: calculateIdentityProfileScore(article, "issuance"),
-      fraud: calculateIdentityProfileScore(article, "fraud"),
+      id_cards: measureSubinterestSegment("profile:id_cards", () => calculateIdentityProfileScore(article, "id_cards")),
+      passports: measureSubinterestSegment("profile:passports", () => calculateIdentityProfileScore(article, "passports")),
+      visas: measureSubinterestSegment("profile:visas", () => calculateIdentityProfileScore(article, "visas")),
+      residence_permits: measureSubinterestSegment("profile:residence_permits", () => calculateIdentityProfileScore(article, "residence_permits")),
+      border_control: measureSubinterestSegment("profile:border_control", () => calculateIdentityProfileScore(article, "border_control")),
+      icao: measureSubinterestSegment("profile:icao", () => calculateIdentityProfileScore(article, "icao")),
+      issuance: measureSubinterestSegment("profile:issuance", () => calculateIdentityProfileScore(article, "issuance")),
+      fraud: measureSubinterestSegment("profile:fraud", () => calculateIdentityProfileScore(article, "fraud")),
     };
-    const travelNoiseArticle = isIdentityTravelNoiseArticle(article);
+    const travelNoiseArticle = measureSubinterestSegment("identityTravelNoiseArticle", () => isIdentityTravelNoiseArticle(article));
     const scoreByInterest = {
       passports:
         (signals.passportHits * 0.7) +
@@ -33562,7 +33598,7 @@ function getIdentityDocumentSubinterestScoreMeasured(article, selectedInterests 
     };
     const selectedInterestSet = new Set(selectedIdentityInterests);
 
-    const selectedScores = selectedIdentityInterests.map((interestId) => {
+    const selectedScores = measureSubinterestSegment("selectedScores", () => selectedIdentityInterests.map((interestId) => {
       const intent = intentByInterest[interestId] || {
         score: 0,
         matchedStrong: [],
@@ -33578,11 +33614,11 @@ function getIdentityDocumentSubinterestScoreMeasured(article, selectedInterests 
         interestId,
         score,
       };
-    });
+    }));
     selectedScores.sort((left, right) => right.score - left.score);
 
     const bestSelected = selectedScores[0] || { interestId: "", score: 0 };
-    const nonSelectedScores = Object.entries(scoreByInterest)
+    const nonSelectedScores = measureSubinterestSegment("nonSelectedScores", () => Object.entries(scoreByInterest)
       .filter(([interestId]) => !selectedInterestSet.has(interestId))
       .map(([interestId, score]) => {
         const intent = intentByInterest[interestId] || {
@@ -33598,11 +33634,11 @@ function getIdentityDocumentSubinterestScoreMeasured(article, selectedInterests 
         }
         return { interestId, score: nonSelectedScore };
       })
-      .sort((left, right) => right.score - left.score);
+      .sort((left, right) => right.score - left.score));
     const strongestMismatch = nonSelectedScores[0] || { interestId: "", score: 0 };
     const mismatchPenalty = Math.max(0, strongestMismatch.score - bestSelected.score);
 
-      return {
+      return finishSubinterestTiming({
         score: Math.round(bestSelected.score - (mismatchPenalty * 0.9)),
         bestSelectedScore: Math.round(bestSelected.score),
         mismatchPenalty: Math.round(mismatchPenalty),
@@ -33611,7 +33647,7 @@ function getIdentityDocumentSubinterestScoreMeasured(article, selectedInterests 
         intentByInterest,
         profileByInterest,
         travelNoiseArticle,
-      };
+      });
   });
 }
 
