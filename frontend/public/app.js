@@ -21007,7 +21007,7 @@ function getIdentityDocumentConjunctiveInterestAssessment(article, selectedInter
   const getScore = (interestId) => {
     if (!interestScores.has(interestId)) {
       const score = measureConjunctiveSegment(`computePersonalInterestBoost:${interestId}`, () =>
-        computePersonalInterestBoost(article, interestId).score
+        computePersonalInterestBoost(article, interestId, { timingContext }).score
       );
       interestScores.set(interestId, score);
     }
@@ -26695,24 +26695,61 @@ function getPersonalDomainContextProfile(context, groupId) {
   };
 }
 
-function computePersonalInterestBoost(article, interestId) {
+function computePersonalInterestBoost(article, interestId, options = {}) {
   return measureFilterFunction("computePersonalInterestBoost", () =>
-    computePersonalInterestBoostMeasured(article, interestId), {
+    computePersonalInterestBoostMeasured(article, interestId, options), {
       logicalStage: "personal_dashboard",
       interest: interestId,
     });
 }
 
-function computePersonalInterestBoostMeasured(article, interestId) {
+function computePersonalInterestBoostMeasured(article, interestId, options = {}) {
   return getCachedArticleValue(article, `personalInterestBoost:${interestId}`, () => {
+    const timingContext = typeof options.timingContext === "string" ? options.timingContext : "";
+    const timingEnabled = Boolean(timingContext && runtime.activeProductionLoadTimingRun);
+    const timingStartedAt = timingEnabled ? getPerformanceNow() : 0;
+    const measureBoostSegment = (segment, callback) => {
+      if (!timingEnabled) {
+        return callback();
+      }
+      const segmentStartedAt = getPerformanceNow();
+      try {
+        return callback();
+      } finally {
+        recordProductionLoadTimingBreakdown(
+          "computePersonalInterestBoost",
+          timingContext,
+          `${interestId}:${segment}`,
+          getPerformanceNow() - segmentStartedAt
+        );
+      }
+    };
+    const finishBoostTiming = (result) => {
+      if (timingEnabled) {
+        recordProductionLoadTimingBreakdown(
+          "computePersonalInterestBoost",
+          timingContext,
+          `${interestId}:total`,
+          getPerformanceNow() - timingStartedAt,
+          {
+            result: result?.matched ? "passed" : "rejected",
+          }
+        );
+      }
+      return result;
+    };
     const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
     if (!interest) {
-      return { score: 0, matched: false };
+      return finishBoostTiming({ score: 0, matched: false });
     }
 
     const groupId = interest.groupId;
-    const context = getPersonalBoostContext(article, "computePersonalInterestBoost", { interest: interestId });
-    const domainContext = getPersonalDomainContextProfile(context, groupId);
+    const context = measureBoostSegment("personalBoostContext", () =>
+      getPersonalBoostContext(article, "computePersonalInterestBoost", { interest: interestId })
+    );
+    const domainContext = measureBoostSegment("domainContextProfile", () =>
+      getPersonalDomainContextProfile(context, groupId)
+    );
     const strongKeywords = Array.isArray(interest.strong) ? interest.strong : [];
     const weakKeywords = Array.isArray(interest.weak) ? interest.weak : [];
     const titleStrongHits = countBoostKeywordMatches(context.titleText, strongKeywords);
@@ -26780,18 +26817,20 @@ function computePersonalInterestBoostMeasured(article, interestId) {
     }
 
     if (groupId === "identity_documents") {
-      const signals = getIdentityDocumentInterestSignals(article);
-      const authority = getIdentityDocumentSourceAuthority(article);
-      const subinterestScore = getIdentityDocumentSubinterestScore(article);
-      const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests();
+      const signals = measureBoostSegment("identitySignals", () => getIdentityDocumentInterestSignals(article));
+      const authority = measureBoostSegment("identitySourceAuthority", () => getIdentityDocumentSourceAuthority(article));
+      const subinterestScore = measureBoostSegment("identitySubinterestScore", () => getIdentityDocumentSubinterestScore(article));
+      const selectedIdentityInterests = measureBoostSegment("selectedIdentitySubinterests", () => getSelectedIdentityDocumentSubinterests());
       const selectedSubinterest = selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : "";
       const borderAuthorityAdjustment = selectedSubinterest === "border_control"
-        ? getBorderControlAuthorityAdjustment(article, authority)
+        ? measureBoostSegment("borderAuthorityAdjustment", () => getBorderControlAuthorityAdjustment(article, authority))
         : { multiplier: authority.multiplier, sourceBoostScale: 1 };
-      const genericDmvNoise = isGenericDmvNoise(article);
-      const requiredContext = selectedSubinterest ? hasRequiredContextCombo(article, selectedSubinterest) : { matched: false, matchedCombos: [] };
+      const genericDmvNoise = measureBoostSegment("genericDmvNoise", () => isGenericDmvNoise(article));
+      const requiredContext = selectedSubinterest
+        ? measureBoostSegment("requiredContextCombo", () => hasRequiredContextCombo(article, selectedSubinterest))
+        : { matched: false, matchedCombos: [] };
       const hardPenaltyBase = selectedSubinterest ? Number(IDENTITY_REQUIRED_CONTEXT_STRICT_PENALTIES[selectedSubinterest] || 0) : 0;
-      const travelNoiseAssessment = getIdentityTravelNoiseAssessment(article);
+      const travelNoiseAssessment = measureBoostSegment("identityTravelNoiseAssessment", () => getIdentityTravelNoiseAssessment(article));
       const borderTravelNoise = travelNoiseAssessment.borderTravelNoise;
       const borderTechContext = travelNoiseAssessment.borderTechContext;
       const passportLifestyleNoise = travelNoiseAssessment.passportLifestyleNoise;
@@ -26806,25 +26845,31 @@ function computePersonalInterestBoostMeasured(article, interestId) {
         })
         : { score: 0, matchedStrong: [], matchedWeak: [], matchedNegative: [] };
       const selectedProfileSourcePriority = selectedSubinterest
-        ? getIdentityProfileSourcePriorityBoost(article, selectedSubinterest)
+        ? measureBoostSegment("identityProfileSourcePriority", () =>
+          getIdentityProfileSourcePriorityBoost(article, selectedSubinterest)
+        )
         : { level: "none", boost: 0 };
       const selectedSoftNoise = selectedSubinterest
-        ? getIdentityProfileSoftNoiseAssessment(article, selectedSubinterest)
+        ? measureBoostSegment("identityProfileSoftNoise", () =>
+          getIdentityProfileSoftNoiseAssessment(article, selectedSubinterest)
+        )
         : { penalty: 0, hasNoise: false, hasStrongContext: false, matchedNoise: [], matchedStrongContext: [] };
       const borderMarketingPenalty = selectedSubinterest === "border_control"
-        ? getBorderControlMarketingPagePenalty(article)
+        ? measureBoostSegment("borderMarketingPenalty", () => getBorderControlMarketingPagePenalty(article))
         : { penalty: 0 };
       const borderNewsPriority = selectedSubinterest === "border_control"
-        ? getBorderControlNewsPriority(article)
+        ? measureBoostSegment("borderNewsPriority", () => getBorderControlNewsPriority(article))
         : { boost: 0, penalty: 0 };
       const residencePermitIntentAdjustment = selectedSubinterest === "residence_permits" || interestId === "residence_permits"
-        ? getResidencePermitIntentAdjustment(article)
+        ? measureBoostSegment("residencePermitIntentAdjustment", () => getResidencePermitIntentAdjustment(article))
         : { hasCardIntent: false, cardBoost: 0, officialSourceBoost: 0, guidePenalty: 0 };
-      const googleNewsArticle = isGoogleNewsArticle(article);
-      const visualQualityScore = getArticleVisualQualityScore(article);
+      const googleNewsArticle = measureBoostSegment("googleNewsArticle", () => isGoogleNewsArticle(article));
+      const visualQualityScore = measureBoostSegment("articleVisualQuality", () => getArticleVisualQualityScore(article));
       const activeIdentityProfile = selectedSubinterest || interestId || "";
-      const recencyAdjustment = getIdentityRecencyAdjustment(article);
-      const googleNewsPenalty = getIdentityGoogleNewsPenalty(article, activeIdentityProfile);
+      const recencyAdjustment = measureBoostSegment("identityRecencyAdjustment", () => getIdentityRecencyAdjustment(article));
+      const googleNewsPenalty = measureBoostSegment("identityGoogleNewsPenalty", () =>
+        getIdentityGoogleNewsPenalty(article, activeIdentityProfile)
+      );
       const selectedSubinterestHasStrongEvidence = Boolean(selectedSubinterest) && (
         subinterestScore.bestSelectedScore >= 18 ||
         selectedIntent.score >= 18 ||
@@ -26859,7 +26904,9 @@ function computePersonalInterestBoostMeasured(article, interestId) {
       }
       if (selectedSubinterest && ["passports", "residence_permits", "icao"].includes(selectedSubinterest)) {
         score += Math.min(120, Math.round(selectedIntent.score * 1.2));
-        score += getIdentityIntentAuthorityBoost(article, selectedIntent.score);
+        score += measureBoostSegment("identityIntentAuthorityBoost", () =>
+          getIdentityIntentAuthorityBoost(article, selectedIntent.score)
+        );
         if (subinterestScore.travelNoiseArticle) {
           score -= 300;
         }
@@ -26904,13 +26951,15 @@ function computePersonalInterestBoostMeasured(article, interestId) {
       }
 
       if (interestId === "passports") {
-        score += Math.min(90, Math.round((signals.passportHits * 0.7) + (selectedIntent.score * 1.1)));
-        score -= Math.min(40, Math.round((signals.idCardHits + signals.driverLicenseHits) * 0.25));
-        score -= Math.min(160, Math.round(signals.driverLicenseHits * 0.9));
-        score -= Math.min(80, Math.round(signals.visaHits * 0.35));
-        if (genericDmvNoise) {
-          score -= 500;
-        }
+        measureBoostSegment("interestSpecific:passports", () => {
+          score += Math.min(90, Math.round((signals.passportHits * 0.7) + (selectedIntent.score * 1.1)));
+          score -= Math.min(40, Math.round((signals.idCardHits + signals.driverLicenseHits) * 0.25));
+          score -= Math.min(160, Math.round(signals.driverLicenseHits * 0.9));
+          score -= Math.min(80, Math.round(signals.visaHits * 0.35));
+          if (genericDmvNoise) {
+            score -= 500;
+          }
+        });
       } else if (interestId === "id_cards") {
         const idCardAssessment = getIdentityDocumentIdCardAssessment(article);
         score += Math.min(125, Math.round(idCardAssessment.score + (signals.idCardHits * 0.35)));
@@ -26948,8 +26997,10 @@ function computePersonalInterestBoostMeasured(article, interestId) {
         score += Math.min(125, Math.round((signals.fraudHits * 1.25) + (counterfeitingAssessment.score * 0.55)));
         score -= Math.min(160, Math.round(signals.driverLicenseHits * 0.9));
       } else if (interestId === "icao") {
-        score += Math.min(120, Math.round((signals.icaoHits * 1.5) + (selectedIntent.score * 0.9)));
-        score -= Math.min(180, Math.round(signals.driverLicenseHits * 1.0));
+        measureBoostSegment("interestSpecific:icao", () => {
+          score += Math.min(120, Math.round((signals.icaoHits * 1.5) + (selectedIntent.score * 0.9)));
+          score -= Math.min(180, Math.round(signals.driverLicenseHits * 1.0));
+        });
       } else if (interestId === "border_control") {
         score += Math.min(220, Math.round((signals.borderHits * 0.7) + ((selectedProfile?.score || 0) * 1.2)));
         if (selectedProfile?.rejectionReasons?.length) {
@@ -26966,7 +27017,9 @@ function computePersonalInterestBoostMeasured(article, interestId) {
         score += Math.min(95, Math.round(signals.laminateHits * 1.5));
         score -= Math.min(140, Math.round(signals.driverLicenseHits * 0.7));
       }
-      score -= getStrongBanknoteDomainSignalAssessment(article).identityPenalty;
+      score -= measureBoostSegment("strongBanknoteIdentityPenalty", () =>
+        getStrongBanknoteDomainSignalAssessment(article).identityPenalty
+      );
 
       if (DEBUG_PERSONAL_DASHBOARD && selectedSubinterest) {
         const intentScore = selectedIntent || {
@@ -27023,13 +27076,13 @@ function computePersonalInterestBoostMeasured(article, interestId) {
     }
     score = Math.max(0, Math.round(score));
 
-    return {
+    return finishBoostTiming({
       score,
       matched: score > 0,
       ...(identityVerificationScoringAlignment
         ? { identityVerificationScoringAlignment }
         : {}),
-    };
+    });
   });
 }
 
