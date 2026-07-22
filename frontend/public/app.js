@@ -40974,16 +40974,27 @@ function primeArticleIntelligence(article) {
   }
 }
 
+const TEXT_MATCHES_KEYWORD_PATTERN_CACHE = new Map();
+
+function getTextMatchesKeywordPattern(normalizedKeyword) {
+  if (TEXT_MATCHES_KEYWORD_PATTERN_CACHE.has(normalizedKeyword)) {
+    return TEXT_MATCHES_KEYWORD_PATTERN_CACHE.get(normalizedKeyword);
+  }
+  const escapedKeyword = escapeRegExp(normalizedKeyword);
+  const pattern = /^[a-z0-9\s-]+$/i.test(normalizedKeyword)
+    ? new RegExp(`(^|[^a-z0-9])${escapedKeyword}([^a-z0-9]|$)`, "i")
+    : new RegExp(escapedKeyword, "i");
+  TEXT_MATCHES_KEYWORD_PATTERN_CACHE.set(normalizedKeyword, pattern);
+  return pattern;
+}
+
 function textMatchesKeyword(text, keyword) {
   const normalizedKeyword = normalizeKeyword(keyword);
   if (!normalizedKeyword) {
     return false;
   }
 
-  const escapedKeyword = escapeRegExp(normalizedKeyword);
-  const pattern = /^[a-z0-9\s-]+$/i.test(normalizedKeyword)
-    ? new RegExp(`(^|[^a-z0-9])${escapedKeyword}([^a-z0-9]|$)`, "i")
-    : new RegExp(escapedKeyword, "i");
+  const pattern = getTextMatchesKeywordPattern(normalizedKeyword);
   return pattern.test(text);
 }
 
