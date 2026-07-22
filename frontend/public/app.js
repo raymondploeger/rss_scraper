@@ -32097,11 +32097,22 @@ function getIdentityDocumentInterestSignals(article) {
 function getIdentityDocumentInterestSignalsMeasured(article) {
   return getCachedArticleValue(article, "identityDocumentInterestSignals", () => {
     const context = getPersonalBoostContext(article, "getIdentityDocumentInterestSignals", { interest: "identity_documents" });
-    const weightedHits = (terms = []) =>
-      (countBoostKeywordMatches(context.titleText, terms) * 5) +
-      (countBoostKeywordMatches(context.tagText, terms) * 2.5) +
-      (countBoostKeywordMatches(context.metadataText, terms) * 2.5) +
-      countBoostKeywordMatches(context.bodyText, terms);
+    const weightedHits = (terms = []) => terms.reduce((score, term) => {
+      let termScore = 0;
+      if (textMatchesKeyword(context.titleText, term)) {
+        termScore += 5;
+      }
+      if (textMatchesKeyword(context.tagText, term)) {
+        termScore += 2.5;
+      }
+      if (textMatchesKeyword(context.metadataText, term)) {
+        termScore += 2.5;
+      }
+      if (textMatchesKeyword(context.bodyText, term)) {
+        termScore += 1;
+      }
+      return score + termScore;
+    }, 0);
 
     const primaryContextTerms = [
       "passport rollout",
