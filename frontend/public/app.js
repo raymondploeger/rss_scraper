@@ -89,6 +89,7 @@ function createProductionLoadTimingRun(reason = "render") {
       ? Math.max(0, Math.round((now - runtime.scheduledRenderRequestedAt) * 10) / 10)
       : null,
     milestones: {},
+    breakdowns: {},
     counts: {},
     branch: "",
     pending: false,
@@ -108,6 +109,42 @@ function markProductionLoadTiming(name, metadata = {}) {
     ms: Math.round((now - run.startMs) * 10) / 10,
     ...metadata,
   };
+}
+
+function recordProductionLoadTimingBreakdown(section, context, segment, durationMs, metadata = {}) {
+  const run = runtime.activeProductionLoadTimingRun;
+  if (!run || run.completed || !section || !segment) {
+    return;
+  }
+  const normalizedContext = context || "default";
+  if (!run.breakdowns[section]) {
+    run.breakdowns[section] = {};
+  }
+  if (!run.breakdowns[section][normalizedContext]) {
+    run.breakdowns[section][normalizedContext] = {};
+  }
+  const bucket = run.breakdowns[section][normalizedContext];
+  const existing = bucket[segment] || {
+    count: 0,
+    totalMs: 0,
+    maxMs: 0,
+    passed: 0,
+    rejected: 0,
+    reasons: {},
+  };
+  const roundedDuration = Math.max(0, Math.round((Number(durationMs) || 0) * 10) / 10);
+  existing.count += 1;
+  existing.totalMs = Math.round((existing.totalMs + roundedDuration) * 10) / 10;
+  existing.maxMs = Math.max(existing.maxMs, roundedDuration);
+  if (metadata.result === "passed") {
+    existing.passed += 1;
+  } else if (metadata.result === "rejected") {
+    existing.rejected += 1;
+  }
+  if (metadata.reason) {
+    existing.reasons[metadata.reason] = (existing.reasons[metadata.reason] || 0) + 1;
+  }
+  bucket[segment] = existing;
 }
 
 function markCompletedProductionLoadTiming(runId, name, metadata = {}) {
@@ -148,6 +185,7 @@ function completeProductionLoadTiming(extra = {}) {
     selectedInterests: run.selectedInterests,
     timeFromSelectionChangeToRunStartMs: run.timeFromSelectionChangeToRunStartMs,
     milestones: run.milestones,
+    breakdowns: run.breakdowns,
     counts: run.counts,
     branch: run.branch,
     pending: run.pending,
@@ -42155,94 +42193,165 @@ function renderFeedList() {
 }
 
 function articleMatchesFilters(article, options = {}) {
-  if (isOfficialFallbackArticle(article)) {
-    return false;
+  const filterTimingContext = typeof options.timingContext === "string" ? options.timingContext : "";
+  const filterTimingEnabled = Boolean(filterTimingContext && runtime.activeProductionLoadTimingRun);
+  const filterTimingStartedAt = filterTimingEnabled ? getPerformanceNow() : 0;
+  const measureFilterSegment = (segment, callback) => {
+    if (!filterTimingEnabled) {
+      return callback();
+    }
+    const segmentStartedAt = getPerformanceNow();
+    try {
+      return callback();
+    } finally {
+      recordProductionLoadTimingBreakdown(
+        "articleMatchesFilters",
+        filterTimingContext,
+        segment,
+        getPerformanceNow() - segmentStartedAt
+      );
+    }
+  };
+  const finishFilterTiming = (passed, reason) => {
+    if (filterTimingEnabled) {
+      recordProductionLoadTimingBreakdown(
+        "articleMatchesFilters",
+        filterTimingContext,
+        "total",
+        getPerformanceNow() - filterTimingStartedAt,
+        {
+          result: passed ? "passed" : "rejected",
+          reason,
+        }
+      );
+    }
+    return passed;
+  };
+
+  if (measureFilterSegment("officialFallback", () => isOfficialFallbackArticle(article))) {
+    return finishFilterTiming(false, "official_fallback");
   }
 
   const ignoreFeedId = Boolean(options.ignoreFeedId);
   const ignorePersonalDashboard = Boolean(options.ignorePersonalDashboard);
 
-  const activeKeywordRule = getActiveTopicKeywordRule();
-  if (activeKeywordRule && isKeywordRuleFalsePositive(article, activeKeywordRule)) {
-    return false;
+  const activeKeywordRule = measureFilterSegment("activeKeywordRule", () => getActiveTopicKeywordRule());
+  if (
+    activeKeywordRule &&
+    measureFilterSegment("keywordRuleFalsePositive", () => isKeywordRuleFalsePositive(article, activeKeywordRule))
+  ) {
+    return finishFilterTiming(false, "keyword_rule_false_positive");
   }
 
   if (
     !activeKeywordRule &&
-    (isPassportFalsePositive(article) ||
+    measureFilterSegment("legacyFalsePositiveGuards", () =>
+      isPassportFalsePositive(article) ||
       isDriverLicenseMusicFalsePositive(article) ||
-      isCoinGamingFalsePositive(article))
+      isCoinGamingFalsePositive(article)
+    )
   ) {
-    return false;
+    return finishFilterTiming(false, "legacy_false_positive_guard");
   }
 
   const exactArticleIds = Array.isArray(state.filters.articleIds) ? state.filters.articleIds : [];
   if (exactArticleIds.length) {
-    return exactArticleIds.includes(article.id);
+    return finishFilterTiming(
+      measureFilterSegment("exactArticleIds", () => exactArticleIds.includes(article.id)),
+      "exact_article_ids"
+    );
   }
 
-  if (state.filters.signalCategory && !getArticleSignalCategories(article).includes(state.filters.signalCategory)) {
-    return false;
+  if (
+    state.filters.signalCategory &&
+    !measureFilterSegment("signalCategory", () =>
+      getArticleSignalCategories(article).includes(state.filters.signalCategory)
+    )
+  ) {
+    return finishFilterTiming(false, "signal_category");
   }
 
-  const selectedUsDmvEntry = getSelectedUsDmvCatalogEntry();
+  const selectedUsDmvEntry = measureFilterSegment("selectedUsDmvEntry", () => getSelectedUsDmvCatalogEntry());
   if (selectedUsDmvEntry) {
-    if (isUsLinkOnlyEntry(selectedUsDmvEntry)) {
-      return false;
+    if (measureFilterSegment("usLinkOnlyEntry", () => isUsLinkOnlyEntry(selectedUsDmvEntry))) {
+      return finishFilterTiming(false, "us_link_only_entry");
     }
 
-    const selectedUsFeed = getSelectedDmvFeed();
+    const selectedUsFeed = measureFilterSegment("selectedUsDmvFeed", () => getSelectedDmvFeed());
     if (!selectedUsFeed || article.feedId !== selectedUsFeed.id) {
-      return false;
+      return finishFilterTiming(false, "selected_us_dmv_feed");
     }
   }
 
   if (state.filters.topic && article.topic !== state.filters.topic) {
-    return false;
+    return finishFilterTiming(false, "topic");
   }
 
-  if (state.filters.tag && !getArticleFilterTags(article).includes(normalizeFilterTag(state.filters.tag))) {
-    return false;
+  if (
+    state.filters.tag &&
+    !measureFilterSegment("tag", () => getArticleFilterTags(article).includes(normalizeFilterTag(state.filters.tag)))
+  ) {
+    return finishFilterTiming(false, "tag");
   }
 
   if (state.filters.canadaDmvFeedPath) {
-    const selectedCanadaFeed = getSelectedCanadaFeed();
+    const selectedCanadaFeed = measureFilterSegment("selectedCanadaFeed", () => getSelectedCanadaFeed());
     if (!selectedCanadaFeed || article.feedId !== selectedCanadaFeed.id) {
-      return false;
+      return finishFilterTiming(false, "selected_canada_feed");
     }
   }
 
-  if (!ignoreFeedId && getActiveArticleFeedId() && !articleMatchesSelectedFeed(article, getActiveArticleFeedId())) {
-    return false;
+  const activeArticleFeedId = !ignoreFeedId
+    ? measureFilterSegment("activeArticleFeedId", () => getActiveArticleFeedId())
+    : "";
+  if (
+    !ignoreFeedId &&
+    activeArticleFeedId &&
+    !measureFilterSegment("selectedFeedMatch", () => articleMatchesSelectedFeed(article, activeArticleFeedId))
+  ) {
+    return finishFilterTiming(false, "selected_feed_match");
   }
 
-  if (!ignoreFeedId && !getActiveArticleFeedId() && state.filters.canadaDmvAll && !isCanadianDmvAbbr(
-    state.feeds.find((feed) => feed.id === article.feedId)?.dmvAbbr
-  )) {
-    return false;
+  if (
+    !ignoreFeedId &&
+    !activeArticleFeedId &&
+    state.filters.canadaDmvAll &&
+    !measureFilterSegment("canadaDmvAll", () => isCanadianDmvAbbr(
+      state.feeds.find((feed) => feed.id === article.feedId)?.dmvAbbr
+    ))
+  ) {
+    return finishFilterTiming(false, "canada_dmv_all");
   }
 
-  if (!ignoreFeedId && !getActiveArticleFeedId() && state.dashboardMode === "usa" && !isDmvFeedId(article.feedId)) {
-    return false;
+  if (
+    !ignoreFeedId &&
+    !activeArticleFeedId &&
+    state.dashboardMode === "usa" &&
+    !measureFilterSegment("usaDashboardDmvFeed", () => isDmvFeedId(article.feedId))
+  ) {
+    return finishFilterTiming(false, "usa_dashboard_dmv_feed");
   }
 
   if (state.filters.date && toDateInputValue(article.pubDate) !== state.filters.date) {
-    return false;
+    return finishFilterTiming(false, "date");
   }
 
   if (state.filters.search) {
-    const haystack = getArticleSearchText(article);
+    const haystack = measureFilterSegment("searchText", () => getArticleSearchText(article));
 
     if (!haystack.includes(state.filters.search.toLowerCase())) {
-      return false;
+      return finishFilterTiming(false, "search");
     }
   }
 
-  if (!ignorePersonalDashboard && !articleMatchesPersonalDashboardSelection(article)) {
-    return false;
+  if (
+    !ignorePersonalDashboard &&
+    !measureFilterSegment("personalDashboard", () => articleMatchesPersonalDashboardSelection(article))
+  ) {
+    return finishFilterTiming(false, "personal_dashboard");
   }
 
-  return true;
+  return finishFilterTiming(true, "passed");
 }
 
 function getVisibleArticles(options = {}) {
@@ -48848,7 +48957,10 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
     inputCount: candidatePool.length,
   });
   const advancedFilteredBackendArticles = cachedQuery.articles
-    .filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }));
+    .filter((article) => articleMatchesFilters(article, {
+      ignoreFeedId: true,
+      timingContext: "backend_normalization",
+    }));
   markProductionLoadTiming("backendNormalizationAdvancedFiltersComplete", {
     inputCount: candidatePool.length,
     outputCount: advancedFilteredBackendArticles.length,
