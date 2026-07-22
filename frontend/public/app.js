@@ -7666,6 +7666,8 @@ function getFilterDecisionDebugToolsSummary(diagnostics) {
       "window.explainLivenessDecisionByTitle(titlePart)",
       "window.listAiDiagnostics(limit)",
       "window.explainAiDecisionByTitle(titlePart)",
+      "window.listAuthenticationDiagnostics(limit)",
+      "window.explainAuthenticationDecisionByTitle(titlePart)",
       "window.listIdentityVerificationDiagnostics(limit)",
       "window.explainIdentityVerificationDecisionByTitle(titlePart)",
       "window.listIdentityVerificationAuthoritativePhrases(limit)",
@@ -17382,6 +17384,74 @@ function explainAiDecisionByTitle(titlePart) {
   };
 }
 
+function getAuthenticationDiagnosticsFromTrace(trace) {
+  const guardStage = getTraceDigitalIdentityProfessionalGuardStage(trace);
+  const assessment = guardStage?.metadata?.authenticationProfessionalGuard || null;
+  if (!assessment?.enabled) {
+    return null;
+  }
+  return {
+    articleId: trace.articleId,
+    title: trace.title,
+    stageResult: guardStage.result,
+    rejected: Boolean(assessment.rejected),
+    passed: Boolean(assessment.passed),
+    rejectionReason: assessment.rejectionReason || "",
+    hasAuthenticationSignal: Boolean(assessment.hasAuthenticationSignal),
+    hasProfessionalIdentityContext: Boolean(assessment.hasProfessionalIdentityContext),
+    hasVendorIdentityContext: Boolean(assessment.hasVendorIdentityContext),
+    hasDocumentAuthenticationSignal: Boolean(assessment.hasDocumentAuthenticationSignal),
+    professionalAuthenticationMatched: Boolean(assessment.professionalAuthenticationMatched),
+    matchedAuthenticationSignals: assessment.matchedAuthenticationSignals || [],
+    matchedProfessionalContextTerms: assessment.matchedProfessionalContextTerms || [],
+    matchedVendorSignals: assessment.matchedVendorSignals || [],
+    matchedVendorContextTerms: assessment.matchedVendorContextTerms || [],
+    matchedGenericLoginNoiseTerms: assessment.matchedGenericLoginNoiseTerms || [],
+    matchedPasskeyNoiseTerms: assessment.matchedPasskeyNoiseTerms || [],
+    matchedCybersecurityNoiseTerms: assessment.matchedCybersecurityNoiseTerms || [],
+    matchedDeviceSoftwareNoiseTerms: assessment.matchedDeviceSoftwareNoiseTerms || [],
+    matchedPaymentNoiseTerms: assessment.matchedPaymentNoiseTerms || [],
+    authenticationHybridAssessment: assessment.authenticationHybridAssessment || null,
+  };
+}
+
+function listAuthenticationDiagnostics(limit = 25) {
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!traceMap) {
+    return [];
+  }
+  const normalizedLimit = Math.max(1, Number(limit) || 25);
+  return Array.from(traceMap.values())
+    .map((trace) => getAuthenticationDiagnosticsFromTrace(trace))
+    .filter(Boolean)
+    .slice(0, normalizedLimit);
+}
+
+function explainAuthenticationDecisionByTitle(titlePart) {
+  const needle = String(titlePart || "").trim().toLowerCase();
+  const traceMap = getActiveFilterDecisionTraceMap();
+  if (!needle || !traceMap) {
+    return null;
+  }
+
+  const match = Array.from(traceMap.values()).find((trace) =>
+    String(trace?.title || "").toLowerCase().includes(needle)
+  );
+  if (!match) {
+    return null;
+  }
+  const diagnostics = getAuthenticationDiagnosticsFromTrace(match);
+  if (!diagnostics) {
+    return null;
+  }
+
+  return {
+    ...diagnostics,
+    personalDashboardScore: explainPersonalDashboardScore(match.articleId),
+    filterDecisionTrace: explainArticleDecision(match.articleId),
+  };
+}
+
 function getIdentityVerificationDiagnosticsFromTrace(trace) {
   const guardStage = getTraceDigitalIdentityProfessionalGuardStage(trace);
   const assessment = guardStage?.metadata?.identityVerificationProfessionalGuard || null;
@@ -22222,6 +22292,15 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.explainAiDecisionByTitle = (titlePart) => explainAiDecisionByTitle(titlePart);
   }
 
+  if (typeof window.listAuthenticationDiagnostics !== "function") {
+    window.listAuthenticationDiagnostics = (limit) => listAuthenticationDiagnostics(limit);
+  }
+
+  if (typeof window.explainAuthenticationDecisionByTitle !== "function") {
+    window.explainAuthenticationDecisionByTitle = (titlePart) =>
+      explainAuthenticationDecisionByTitle(titlePart);
+  }
+
   if (typeof window.listIdentityVerificationDiagnostics !== "function") {
     window.listIdentityVerificationDiagnostics = (limit) => listIdentityVerificationDiagnostics(limit);
   }
@@ -22394,6 +22473,8 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.explainLivenessDecisionByTitle(titlePart)",
         "window.listAiDiagnostics(limit)",
         "window.explainAiDecisionByTitle(titlePart)",
+        "window.listAuthenticationDiagnostics(limit)",
+        "window.explainAuthenticationDecisionByTitle(titlePart)",
         "window.listIdentityVerificationDiagnostics(limit)",
         "window.explainIdentityVerificationDecisionByTitle(titlePart)",
         "window.listIdentityVerificationAuthoritativePhrases(limit)",
@@ -30126,6 +30207,268 @@ function getAiProfessionalGuardAssessment(article, options = {}) {
     matchedCybersecurityNoiseTerms: Object.freeze(matchedCybersecurityNoiseTerms.slice(0, 12)),
     matchedHealthcareNoiseTerms: Object.freeze(matchedHealthcareNoiseTerms.slice(0, 12)),
     aiHybridAssessment: selectedAiAssessment,
+  });
+}
+
+const AUTHENTICATION_PROFESSIONAL_AUTH_SIGNALS = [
+  "document authentication",
+  "document authenticity",
+  "passport authentication",
+  "emrtd authentication",
+  "chip authentication",
+  "active authentication",
+  "passive authentication",
+  "biometric authentication",
+  "identity authentication",
+  "credential authentication",
+  "authentication against identity",
+  "strong authentication",
+  "multi-factor authentication",
+  "multifactor authentication",
+  "two-factor authentication",
+  "2fa",
+  "fido",
+  "fido2",
+  "passkey",
+  "passkeys",
+  "passwordless",
+  "verified authorization",
+  "certificate validation",
+  "digital signature validation",
+  "pki validation",
+];
+
+const AUTHENTICATION_PROFESSIONAL_CONTEXT_TERMS = [
+  "passport",
+  "passports",
+  "emrtd",
+  "travel document",
+  "identity document",
+  "id card",
+  "identity card",
+  "document security",
+  "secure document",
+  "digital identity",
+  "digital id",
+  "eid",
+  "identity verification",
+  "document verification",
+  "credential",
+  "credentials",
+  "wallet credential",
+  "digital credential",
+  "government identity",
+  "border",
+  "immigration",
+  "icao",
+  "icao pkd",
+  "public key directory",
+  "csca",
+  "biometric",
+  "biometrics",
+  "face authentication",
+  "facial authentication",
+  "fingerprint authentication",
+  "kyc",
+  "onboarding",
+];
+
+const AUTHENTICATION_PROFESSIONAL_VENDOR_TERMS = [
+  "yubico",
+  "yubikey",
+  "idemia",
+  "thales",
+  "entrust",
+  "regula",
+  "veriff",
+  "onfido",
+  "jumio",
+  "mitek",
+  "iproov",
+  "facephi",
+  "shufti",
+  "hid",
+  "veridos",
+  "in groupe",
+  "nec",
+];
+
+const AUTHENTICATION_PROFESSIONAL_VENDOR_CONTEXT_TERMS = [
+  "digital identity",
+  "identity verification",
+  "document authentication",
+  "biometric authentication",
+  "credential authentication",
+  "verified authorization",
+  "passport authentication",
+  "identity",
+  "credential",
+  "credentials",
+  "government",
+  "border",
+];
+
+const AUTHENTICATION_GENERIC_LOGIN_NOISE_TERMS = [
+  "login",
+  "account login",
+  "login security",
+  "account security",
+  "password security",
+  "password reset",
+  "authentication app",
+  "authenticator app",
+  "generic authentication",
+  "user authentication",
+];
+
+const AUTHENTICATION_PASSKEY_NOISE_TERMS = [
+  "passkey",
+  "passkeys",
+  "passwordless",
+  "fido",
+  "fido2",
+  "webauthn",
+];
+
+const AUTHENTICATION_CYBERSECURITY_NOISE_TERMS = [
+  "cybersecurity",
+  "cyber security",
+  "ransomware",
+  "malware",
+  "vulnerability",
+  "exploit",
+  "backdoor",
+  "oauth",
+  "entra",
+  "single sign-on",
+  "sso",
+  "iam",
+  "access management",
+  "cloud identity",
+  "machine identity",
+  "zero trust",
+];
+
+const AUTHENTICATION_DEVICE_SOFTWARE_NOISE_TERMS = [
+  "router",
+  "device authentication",
+  "api authentication",
+  "software authentication",
+  "developer",
+  "tutorial",
+  "how to",
+  "guide",
+  "setup",
+];
+
+const AUTHENTICATION_PAYMENT_NOISE_TERMS = [
+  "payment authentication",
+  "transaction authentication",
+  "banking authentication",
+  "card payment",
+  "payment security",
+  "shopping",
+];
+
+function shouldApplyAuthenticationProfessionalGuard(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
+  return selectedMainDomains.includes("digital_identity_biometrics") &&
+    normalizedInterests.includes("authentication");
+}
+
+function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
+  incrementFilterPerformanceCounter("professionalGuardAssessmentCount");
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const enabled = Boolean(options.forceEnabled) || shouldApplyAuthenticationProfessionalGuard(selectedInterests);
+  const context = getPersonalBoostContext(article, "getAuthenticationProfessionalGuardAssessment", { interest: "authentication" });
+  const matchedAuthenticationSignals = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_PROFESSIONAL_AUTH_SIGNALS);
+  const matchedProfessionalContextTerms = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_PROFESSIONAL_CONTEXT_TERMS);
+  const matchedVendorSignals = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_PROFESSIONAL_VENDOR_TERMS);
+  const matchedVendorContextTerms = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_PROFESSIONAL_VENDOR_CONTEXT_TERMS);
+  const matchedGenericLoginNoiseTerms = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_GENERIC_LOGIN_NOISE_TERMS);
+  const matchedPasskeyNoiseTerms = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_PASSKEY_NOISE_TERMS);
+  const matchedCybersecurityNoiseTerms = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_CYBERSECURITY_NOISE_TERMS);
+  const matchedDeviceSoftwareNoiseTerms = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_DEVICE_SOFTWARE_NOISE_TERMS);
+  const matchedPaymentNoiseTerms = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_PAYMENT_NOISE_TERMS);
+  const selectedAuthenticationAssessment = getDigitalSubgroupHybridAssessment(article, "authentication");
+  const hasAuthenticationSignal = matchedAuthenticationSignals.length > 0 || selectedAuthenticationAssessment.included;
+  const hasProfessionalIdentityContext = matchedProfessionalContextTerms.length > 0;
+  const hasVendorIdentityContext = matchedVendorSignals.length > 0 && matchedVendorContextTerms.length > 0;
+  const hasDocumentAuthenticationSignal = matchedAuthenticationSignals.some((term) => [
+    "document authentication",
+    "document authenticity",
+    "passport authentication",
+    "emrtd authentication",
+    "chip authentication",
+    "active authentication",
+    "passive authentication",
+    "certificate validation",
+    "digital signature validation",
+    "pki validation",
+  ].includes(term));
+  const professionalAuthenticationMatched = hasAuthenticationSignal &&
+    (hasProfessionalIdentityContext || hasVendorIdentityContext || hasDocumentAuthenticationSignal);
+  const passkeyWithoutIdentityContext = matchedPasskeyNoiseTerms.length > 0 && !professionalAuthenticationMatched;
+  const genericLoginAuthentication = matchedGenericLoginNoiseTerms.length > 0 && !professionalAuthenticationMatched;
+  const cybersecurityAuthenticationNoise = matchedCybersecurityNoiseTerms.length > 0 && !professionalAuthenticationMatched;
+  const deviceSoftwareAuthenticationNoise = matchedDeviceSoftwareNoiseTerms.length > 0 && !professionalAuthenticationMatched;
+  const paymentAuthenticationNoise = matchedPaymentNoiseTerms.length > 0 && !professionalAuthenticationMatched;
+  const passed = !enabled ||
+    (
+      professionalAuthenticationMatched &&
+      !genericLoginAuthentication &&
+      !cybersecurityAuthenticationNoise &&
+      !deviceSoftwareAuthenticationNoise &&
+      !paymentAuthenticationNoise
+    );
+  let rejectionReason = "";
+  if (enabled && !passed) {
+    if (passkeyWithoutIdentityContext) {
+      rejectionReason = "passkey_without_identity_credential_context";
+    } else if (genericLoginAuthentication) {
+      rejectionReason = "generic_login_authentication";
+    } else if (cybersecurityAuthenticationNoise) {
+      rejectionReason = "cybersecurity_authentication_noise";
+    } else if (deviceSoftwareAuthenticationNoise) {
+      rejectionReason = "device_or_software_authentication_noise";
+    } else if (paymentAuthenticationNoise) {
+      rejectionReason = "payment_authentication_noise";
+    } else {
+      rejectionReason = "authentication_without_identity_context";
+    }
+  }
+
+  return Object.freeze({
+    enabled,
+    branch: options.branch || "",
+    selectedInterests: Object.freeze(selectedInterests.slice()),
+    title: article?.title || "Untitled article",
+    source: getIdentityNoiseGuardSource(article),
+    passed,
+    rejected: enabled && !passed,
+    rejectionReason,
+    rejectionCategory: rejectionReason ? "authentication_professional_relevance" : "",
+    hasAuthenticationSignal,
+    hasProfessionalIdentityContext,
+    hasVendorIdentityContext,
+    hasDocumentAuthenticationSignal,
+    professionalAuthenticationMatched,
+    passkeyWithoutIdentityContext,
+    genericLoginAuthentication,
+    cybersecurityAuthenticationNoise,
+    deviceSoftwareAuthenticationNoise,
+    paymentAuthenticationNoise,
+    matchedAuthenticationSignals: Object.freeze(matchedAuthenticationSignals.slice(0, 12)),
+    matchedProfessionalContextTerms: Object.freeze(matchedProfessionalContextTerms.slice(0, 12)),
+    matchedVendorSignals: Object.freeze(matchedVendorSignals.slice(0, 12)),
+    matchedVendorContextTerms: Object.freeze(matchedVendorContextTerms.slice(0, 12)),
+    matchedGenericLoginNoiseTerms: Object.freeze(matchedGenericLoginNoiseTerms.slice(0, 12)),
+    matchedPasskeyNoiseTerms: Object.freeze(matchedPasskeyNoiseTerms.slice(0, 12)),
+    matchedCybersecurityNoiseTerms: Object.freeze(matchedCybersecurityNoiseTerms.slice(0, 12)),
+    matchedDeviceSoftwareNoiseTerms: Object.freeze(matchedDeviceSoftwareNoiseTerms.slice(0, 12)),
+    matchedPaymentNoiseTerms: Object.freeze(matchedPaymentNoiseTerms.slice(0, 12)),
+    authenticationHybridAssessment: selectedAuthenticationAssessment,
   });
 }
 
@@ -47884,15 +48227,16 @@ function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, 
   const onboardingGuardActive = shouldApplyOnboardingProfessionalGuard();
   const livenessGuardActive = shouldApplyLivenessProfessionalGuard();
   const aiGuardActive = shouldApplyAiProfessionalGuard();
+  const authenticationGuardActive = shouldApplyAuthenticationProfessionalGuard();
   const identityVerificationGuardActive = shouldApplyIdentityVerificationProfessionalGuard();
-  if (!digitalIdentityGuardActive && !biometricsGuardActive && !digitalWalletGuardActive && !kycGuardActive && !onboardingGuardActive && !livenessGuardActive && !aiGuardActive && !identityVerificationGuardActive) {
+  if (!digitalIdentityGuardActive && !biometricsGuardActive && !digitalWalletGuardActive && !kycGuardActive && !onboardingGuardActive && !livenessGuardActive && !aiGuardActive && !authenticationGuardActive && !identityVerificationGuardActive) {
     return {
       articles: inputArticles,
       stage: createFilterPipelineStageResult(
         "digital_identity_professional_guard",
         inputArticles.length,
         inputArticles.length,
-        ["Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness/AI/Identity Verification professional guard not active for this selection"]
+        ["Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness/AI/Authentication/Identity Verification professional guard not active for this selection"]
       ),
     };
   }
@@ -47919,6 +48263,9 @@ function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, 
       : null;
     const aiAssessment = aiGuardActive
       ? getAiProfessionalGuardAssessment(article, { branch, forceEnabled: true })
+      : null;
+    const authenticationAssessment = authenticationGuardActive
+      ? getAuthenticationProfessionalGuardAssessment(article, { branch, forceEnabled: true })
       : null;
     const identityVerificationAssessment = identityVerificationGuardActive
       ? getIdentityVerificationProfessionalGuardAssessment(article, { branch, forceEnabled: true })
@@ -47975,21 +48322,30 @@ function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, 
                       reason: "ai_professional_guard_rejected",
                       fallbackReason: "Artificial Intelligence professional relevance guard rejected article",
                     }
-                  : identityVerificationProductionDecision && !identityVerificationProductionDecision.passed
+                  : authenticationAssessment && !authenticationAssessment.passed
                     ? {
-                        type: "identity_verification",
-                        assessment: identityVerificationAssessment,
-                        reason: "identity_verification_professional_guard_rejected",
-                        fallbackReason: "Identity Verification professional relevance guard rejected article",
+                        type: "authentication",
+                        assessment: authenticationAssessment,
+                        reason: "authentication_professional_guard_rejected",
+                        fallbackReason: "Authentication professional relevance guard rejected article",
                       }
+                    : identityVerificationProductionDecision && !identityVerificationProductionDecision.passed
+                      ? {
+                          type: "identity_verification",
+                          assessment: identityVerificationAssessment,
+                          reason: "identity_verification_professional_guard_rejected",
+                          fallbackReason: "Identity Verification professional relevance guard rejected article",
+                        }
         : null;
 
     if (!rejectedAssessment) {
       recordFilterDecisionStage(diagnostics, article, {
         stage: "digital_identity_professional_guard",
         result: "passed",
-        reason: identityVerificationGuardActive && !digitalIdentityGuardActive && !biometricsGuardActive && !digitalWalletGuardActive && !kycGuardActive && !onboardingGuardActive && !livenessGuardActive && !aiGuardActive
+        reason: identityVerificationGuardActive && !digitalIdentityGuardActive && !biometricsGuardActive && !digitalWalletGuardActive && !kycGuardActive && !onboardingGuardActive && !livenessGuardActive && !aiGuardActive && !authenticationGuardActive
           ? "identity_verification_professional_guard_passed"
+          : authenticationGuardActive && !digitalIdentityGuardActive && !biometricsGuardActive && !digitalWalletGuardActive && !kycGuardActive && !onboardingGuardActive && !livenessGuardActive && !aiGuardActive
+          ? "authentication_professional_guard_passed"
           : aiGuardActive && !digitalIdentityGuardActive && !biometricsGuardActive && !digitalWalletGuardActive && !kycGuardActive && !onboardingGuardActive && !livenessGuardActive
           ? "ai_professional_guard_passed"
           : livenessGuardActive && !digitalIdentityGuardActive && !biometricsGuardActive && !digitalWalletGuardActive && !kycGuardActive && !onboardingGuardActive
@@ -48002,15 +48358,16 @@ function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, 
           ? "article passed Digital Wallet professional relevance guard"
           : biometricsGuardActive && !digitalIdentityGuardActive
           ? "article passed Biometrics professional relevance guard"
-          : "article passed Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness/AI/Identity Verification professional relevance guard",
+          : "article passed Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness/AI/Authentication/Identity Verification professional relevance guard",
         notes: [
-          "Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness/AI/Identity Verification professional relevance guard active",
+          "Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness/AI/Authentication/Identity Verification professional relevance guard active",
           "Biometrics guard is scoped to Biometrics interest only",
           "Digital Wallet guard is scoped to Digital Wallet interest only",
           "KYC guard is scoped to KYC interest only",
           "Onboarding guard is scoped to Onboarding interest only",
           "Liveness guard is scoped to Liveness interest only",
           "Artificial Intelligence guard is scoped to Artificial Intelligence interest only",
+          "Authentication guard is scoped to Authentication interest only",
           "Identity Verification guard is scoped to Identity Verification interest only",
         ],
         metadata: {
@@ -48022,6 +48379,7 @@ function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, 
           onboardingProfessionalGuard: onboardingAssessment,
           livenessProfessionalGuard: livenessAssessment,
           aiProfessionalGuard: aiAssessment,
+          authenticationProfessionalGuard: authenticationAssessment,
           identityVerificationProfessionalGuard: identityVerificationAssessment,
           identityVerificationProductionDecision,
         },
@@ -48035,7 +48393,7 @@ function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, 
       result: "rejected",
       reason: rejectedAssessment.reason,
       notes: [
-        "Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness/AI/Identity Verification professional relevance guard active",
+        "Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness/AI/Authentication/Identity Verification professional relevance guard active",
         rejectedAssessment.type === "biometrics"
           ? "Weak biometrics noise is filtered for Biometrics only"
           : rejectedAssessment.type === "digital_wallet"
@@ -48048,6 +48406,8 @@ function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, 
                   ? "Generic deepfake/audio/security noise is filtered for Liveness only"
                   : rejectedAssessment.type === "artificial_intelligence"
                     ? "Generic AI noise is filtered for Artificial Intelligence only"
+                    : rejectedAssessment.type === "authentication"
+                      ? "Generic login/passkey/cybersecurity authentication noise is filtered for Authentication only"
                     : rejectedAssessment.type === "identity_verification"
                       ? "Generic verification noise is filtered for Identity Verification only"
             : "Generic cyber/enterprise identity noise is filtered for Digital Identity only",
@@ -48061,6 +48421,7 @@ function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, 
         onboardingProfessionalGuard: onboardingAssessment,
         livenessProfessionalGuard: livenessAssessment,
         aiProfessionalGuard: aiAssessment,
+        authenticationProfessionalGuard: authenticationAssessment,
         identityVerificationProfessionalGuard: identityVerificationAssessment,
         identityVerificationProductionDecision,
         rejectionReason: rejectedAssessment.reason,
@@ -48076,6 +48437,8 @@ function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, 
                   ? "liveness_professional_guard"
                   : rejectedAssessment.type === "artificial_intelligence"
                     ? "artificial_intelligence_professional_guard"
+                    : rejectedAssessment.type === "authentication"
+                      ? "authentication_professional_guard"
                     : rejectedAssessment.type === "identity_verification"
                       ? "identity_verification_professional_guard"
           : "digitalIdentityProfessionalGuard",
@@ -48098,7 +48461,7 @@ function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, 
       inputArticles.length,
       outputArticles.length,
       [
-        "Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness/AI/Identity Verification professional relevance guard active",
+        "Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness/AI/Authentication/Identity Verification professional relevance guard active",
         "Digital Identity guard is scoped to Digital Identity interest only",
         "Biometrics guard is scoped to Biometrics interest only",
         "Digital Wallet guard is scoped to Digital Wallet interest only",
@@ -48106,6 +48469,7 @@ function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, 
         "Onboarding guard is scoped to Onboarding interest only",
         "Liveness guard is scoped to Liveness interest only",
         "Artificial Intelligence guard is scoped to Artificial Intelligence interest only",
+        "Authentication guard is scoped to Authentication interest only",
         "Identity Verification guard is scoped to Identity Verification interest only",
       ]
     ),
@@ -49433,9 +49797,10 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
   const onboardingProfessionalGuardActive = shouldApplyOnboardingProfessionalGuard();
   const livenessProfessionalGuardActive = shouldApplyLivenessProfessionalGuard();
   const aiProfessionalGuardActive = shouldApplyAiProfessionalGuard();
+  const authenticationProfessionalGuardActive = shouldApplyAuthenticationProfessionalGuard();
   const identityVerificationProfessionalGuardActive = shouldApplyIdentityVerificationProfessionalGuard();
-  if (diagnostics?.enabled && (digitalIdentityProfessionalGuardActive || biometricsProfessionalGuardActive || digitalWalletProfessionalGuardActive || kycProfessionalGuardActive || onboardingProfessionalGuardActive || livenessProfessionalGuardActive || aiProfessionalGuardActive || identityVerificationProfessionalGuardActive)) {
-    addFilterPipelineNote(diagnostics, "Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness/AI/Identity Verification professional relevance guard active");
+  if (diagnostics?.enabled && (digitalIdentityProfessionalGuardActive || biometricsProfessionalGuardActive || digitalWalletProfessionalGuardActive || kycProfessionalGuardActive || onboardingProfessionalGuardActive || livenessProfessionalGuardActive || aiProfessionalGuardActive || authenticationProfessionalGuardActive || identityVerificationProfessionalGuardActive)) {
+    addFilterPipelineNote(diagnostics, "Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness/AI/Authentication/Identity Verification professional relevance guard active");
     if (digitalIdentityProfessionalGuardActive) {
       addFilterPipelineNote(diagnostics, "Digital Identity guard is scoped to Digital Identity interest only");
     }
@@ -49457,11 +49822,14 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
     if (aiProfessionalGuardActive) {
       addFilterPipelineNote(diagnostics, "Artificial Intelligence guard is scoped to Artificial Intelligence interest only");
     }
+    if (authenticationProfessionalGuardActive) {
+      addFilterPipelineNote(diagnostics, "Authentication guard is scoped to Authentication interest only");
+    }
     if (identityVerificationProfessionalGuardActive) {
       addFilterPipelineNote(diagnostics, "Identity Verification guard is scoped to Identity Verification interest only");
     }
     if (digitalIdentityGuardRejectedCount > 0) {
-      addFilterPipelineNote(diagnostics, `Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness/AI/Identity Verification professional relevance guard rejected ${digitalIdentityGuardRejectedCount} backend-query article(s)`);
+      addFilterPipelineNote(diagnostics, `Digital Identity/Biometrics/Wallet/KYC/Onboarding/Liveness/AI/Authentication/Identity Verification professional relevance guard rejected ${digitalIdentityGuardRejectedCount} backend-query article(s)`);
     }
   }
   markProductionLoadTiming("backendNormalizationSortStart", {
