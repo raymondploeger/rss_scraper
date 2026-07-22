@@ -30583,8 +30583,15 @@ function getIdentityVerificationProfessionalGuardAssessmentUncached(article, opt
   const genericVerificationNoise = matchedGenericVerificationNoiseTerms.length > 0 && !specificityGatePassed;
   const wrongDomainNoise = (matchedWrongDomainNoiseTerms.length > 0 || voiceThreatNoise) && !specificityGatePassed;
   const hardNegativeSignals = sharedEvidence.noiseVerificationSignals || [];
-  const rejectionReason = enabled ? sharedEvidence.rejectionReason : "";
-  const passed = !enabled || sharedEvidence.passed;
+  const semanticProfessionalGatePassed = Boolean(sharedEvidence.verificationFlowMatched) &&
+    Boolean(semanticGate.semanticGatePassed);
+  const semanticProfessionalGateRejected = Boolean(enabled && sharedEvidence.passed && !semanticProfessionalGatePassed);
+  const rejectionReason = enabled
+    ? sharedEvidence.rejectionReason || (semanticProfessionalGateRejected
+        ? "identity_verification_semantic_gate_failed"
+        : "")
+    : "";
+  const passed = !enabled || (sharedEvidence.passed && semanticProfessionalGatePassed);
   const passReason = !passed
     ? ""
     : sharedEvidence.passReason || "authoritative_verification_evidence";
@@ -30604,6 +30611,8 @@ function getIdentityVerificationProfessionalGuardAssessmentUncached(article, opt
     rejectionReason,
     verificationFlowMatched,
     specificityGatePassed,
+    semanticProfessionalGatePassed,
+    semanticProfessionalGateRejected,
     verificationFlowSignals,
     specificitySignals: verificationFlowSignals,
     genericContextSignals,
@@ -30643,6 +30652,8 @@ function getIdentityVerificationProfessionalGuardAssessmentUncached(article, opt
     hasAgeVerificationTechnology,
     verificationFlowMatched,
     specificityGatePassed,
+    semanticProfessionalGatePassed,
+    semanticProfessionalGateRejected,
     vendorRescueApproved,
     vendorRescueBlocked,
     genericRescueAttempted,
