@@ -33693,9 +33693,45 @@ function getIdentityDocumentSubinterestScoreMeasured(article, selectedInterests 
       .sort((left, right) => right.score - left.score));
     const strongestMismatch = nonSelectedScores[0] || { interestId: "", score: 0 };
     const mismatchPenalty = Math.max(0, strongestMismatch.score - bestSelected.score);
+    const finalSubinterestScore = Math.round(bestSelected.score - (mismatchPenalty * 0.9));
+    if (timingEnabled) {
+      const selectedWouldPass = bestSelected.score >= 18;
+      const finalPasses = finalSubinterestScore >= 18;
+      const mismatchChangedOutcome = selectedWouldPass && !finalPasses;
+      const mismatchMatchedButDidNotChangeOutcome = selectedWouldPass && finalPasses && mismatchPenalty > 0;
+      const noDecisionImpact = selectedWouldPass && finalPasses && mismatchPenalty === 0;
+      const fanoutReason = mismatchChangedOutcome
+        ? "selected_passed_mismatch_changed_outcome"
+        : mismatchMatchedButDidNotChangeOutcome
+          ? "selected_passed_mismatch_did_not_change_outcome"
+          : noDecisionImpact
+            ? "selected_passed_no_mismatch_penalty"
+            : selectedWouldPass
+              ? "selected_passed_other"
+              : "selected_score_below_threshold";
+      recordProductionLoadTimingBreakdown(
+        "identityDocumentSubinterestFanoutAudit",
+        timingContext,
+        `${timingInterest}:decisionImpact`,
+        0,
+        {
+          result: finalPasses ? "passed" : "rejected",
+          reason: fanoutReason,
+        }
+      );
+      recordProductionLoadTimingBreakdown(
+        "identityDocumentSubinterestFanoutAudit",
+        timingContext,
+        `${timingInterest}:strongestMismatch`,
+        0,
+        {
+          reason: strongestMismatch.interestId || "none",
+        }
+      );
+    }
 
       return finishSubinterestTiming({
-        score: Math.round(bestSelected.score - (mismatchPenalty * 0.9)),
+        score: finalSubinterestScore,
         bestSelectedScore: Math.round(bestSelected.score),
         mismatchPenalty: Math.round(mismatchPenalty),
         selectedSubinterest: selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : selectedIdentityInterests.join(","),
