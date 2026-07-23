@@ -26752,6 +26752,34 @@ function getSecurityPrintingTopLevelAdjustment(context) {
 }
 
 function getPersonalDomainContextProfile(context, groupId) {
+  if (context && typeof context === "object") {
+    let profileCache = context.__personalDomainContextProfileCache;
+    if (!profileCache) {
+      try {
+        Object.defineProperty(context, "__personalDomainContextProfileCache", {
+          value: new Map(),
+          enumerable: false,
+          configurable: false,
+        });
+        profileCache = context.__personalDomainContextProfileCache;
+      } catch (_) {
+        profileCache = null;
+      }
+    }
+    if (profileCache) {
+      const cacheKey = String(groupId || "");
+      if (profileCache.has(cacheKey)) {
+        return profileCache.get(cacheKey);
+      }
+      const profile = getPersonalDomainContextProfileUncached(context, groupId);
+      profileCache.set(cacheKey, profile);
+      return profile;
+    }
+  }
+  return getPersonalDomainContextProfileUncached(context, groupId);
+}
+
+function getPersonalDomainContextProfileUncached(context, groupId) {
   const config = PERSONAL_DASHBOARD_DOMAIN_CONTEXTS[groupId];
   if (!config) {
     return { score: 0, excludedHits: 0 };
