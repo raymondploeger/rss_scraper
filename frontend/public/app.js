@@ -5057,17 +5057,48 @@ function isFilterPipelineDiagnosticsEnabled() {
 
 const DEFAULT_FILTER_PIPELINE_HEAVY_DIAGNOSTICS_LIMIT = 100;
 
-function getFilterPipelineHeavyDiagnosticsLimit() {
+function getFilterPipelineHeavyDiagnosticsLimitSetting() {
   try {
     const query = new URLSearchParams(window.location.search || "");
-    const rawLimit = query.get("debugFilterPipelineLimit") || window.localStorage?.getItem("debugFilterPipelineLimit");
+    const queryLimit = query.get("debugFilterPipelineLimit");
+    const storedLimit = window.localStorage?.getItem("debugFilterPipelineLimit");
+    const rawLimit = queryLimit || storedLimit;
+    const explicit = rawLimit !== null && rawLimit !== undefined && rawLimit !== "";
     const parsedLimit = Number.parseInt(rawLimit || "", 10);
-    return Number.isFinite(parsedLimit) && parsedLimit >= 0
-      ? parsedLimit
-      : DEFAULT_FILTER_PIPELINE_HEAVY_DIAGNOSTICS_LIMIT;
+    if (explicit && Number.isFinite(parsedLimit) && parsedLimit >= 0) {
+      return {
+        limit: parsedLimit,
+        explicit: true,
+        executionMode: parsedLimit > 0 ? "forced" : "skipped_forced_zero",
+        reason: parsedLimit > 0 ? "explicit_debug_filter_pipeline_limit" : "explicit_zero_limit",
+      };
+    }
+    if (isFilterPerformanceDiagnosticsEnabled()) {
+      return {
+        limit: 0,
+        explicit: false,
+        executionMode: "skipped_for_performance_timing",
+        reason: "performance_diagnostics_mode",
+      };
+    }
+    return {
+      limit: DEFAULT_FILTER_PIPELINE_HEAVY_DIAGNOSTICS_LIMIT,
+      explicit: false,
+      executionMode: "default_sample",
+      reason: "default_debug_filter_pipeline_sample",
+    };
   } catch {
-    return DEFAULT_FILTER_PIPELINE_HEAVY_DIAGNOSTICS_LIMIT;
+    return {
+      limit: DEFAULT_FILTER_PIPELINE_HEAVY_DIAGNOSTICS_LIMIT,
+      explicit: false,
+      executionMode: "default_sample",
+      reason: "default_debug_filter_pipeline_sample",
+    };
   }
+}
+
+function getFilterPipelineHeavyDiagnosticsLimit() {
+  return getFilterPipelineHeavyDiagnosticsLimitSetting().limit;
 }
 
 function isSelectedFeedFullPoolEnabled() {
@@ -6120,7 +6151,15 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
   const candidateSource = resolveCandidateSource(candidateStrategy, normalizedFilterState, candidatePoolContext);
   const candidateProvider = resolveCandidateProvider(candidateStrategy, candidateSource, normalizedFilterState, candidatePoolContext);
   const strategyExecutionPlan = buildStrategyExecutionPlan(candidateStrategy, candidateProvider, normalizedFilterState, candidatePoolContext);
-  const heavyDiagnosticsLimit = enabled ? getFilterPipelineHeavyDiagnosticsLimit() : 0;
+  const heavyDiagnosticsLimitSetting = enabled
+    ? getFilterPipelineHeavyDiagnosticsLimitSetting()
+    : {
+        limit: 0,
+        explicit: false,
+        executionMode: "disabled",
+        reason: "filter_pipeline_diagnostics_disabled",
+      };
+  const heavyDiagnosticsLimit = enabled ? heavyDiagnosticsLimitSetting.limit : 0;
   return {
     enabled,
     timestamp: new Date().toISOString(),
@@ -6156,6 +6195,9 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     diagnosticsPerformance: {
       enabled,
       heavyDiagnosticsLimit,
+      heavyDiagnosticsLimitExplicit: Boolean(heavyDiagnosticsLimitSetting.explicit),
+      heavyDiagnosticsExecutionMode: heavyDiagnosticsLimitSetting.executionMode,
+      heavyDiagnosticsSkipReason: heavyDiagnosticsLimit > 0 ? "" : heavyDiagnosticsLimitSetting.reason,
       heavyDiagnosticsEvaluated: 0,
       heavyDiagnosticsSkipped: 0,
       fullCandidateCount: 0,
@@ -7100,15 +7142,19 @@ function buildEvidenceBuilderPerformanceGuardSummary(diagnostics) {
   return {
     enabled: true,
     mode: heavyLimit === 0 ? "lightweight" : "performance_guard",
+    executionMode: diagnostics.diagnosticsPerformance?.heavyDiagnosticsExecutionMode || (heavyLimit === 0 ? "lightweight" : "default_sample"),
     candidateCount,
     heavyLimit,
+    heavyDiagnosticsLimitExplicit: Boolean(diagnostics.diagnosticsPerformance?.heavyDiagnosticsLimitExplicit),
     fullEvidenceBuildCount,
     lightweightEvidenceCount,
     skippedEvidenceCount,
     duplicateFullEvidenceBuildCount: Number(tracker?.evidenceBuilderDuplicateBuildCount) || 0,
     onDemandEvidenceBuildCount,
     fullTraceEnabled: heavyLimit > 0 && heavyEvaluated >= traceStoreSize && traceStoreSize > 0,
-    skipReason: skippedEvidenceCount > 0 ? "performance_guard" : "",
+    skipReason: skippedEvidenceCount > 0
+      ? diagnostics.diagnosticsPerformance?.heavyDiagnosticsSkipReason || "performance_guard"
+      : "",
     evidenceBuilderFullBuildCount: fullEvidenceBuildCount,
     evidenceBuilderLightweightCount: lightweightEvidenceCount,
     evidenceBuilderSkippedCount: skippedEvidenceCount,
@@ -7306,6 +7352,7 @@ function getFilterDecisionTraceMeasured(diagnostics, article) {
 
   if (!diagnostics.filterDecisionTraceMap.has(articleId)) {
     const heavyDiagnosticsEnabled = reserveHeavyDiagnosticsSlot(diagnostics);
+    const heavyDiagnosticsSkipReason = diagnostics.diagnosticsPerformance?.heavyDiagnosticsSkipReason || "performance_guard";
     const identityDocumentShadowPolicy = getDiagnosticsDocumentScope({ diagnostics });
     const buildDocumentShadowDecision = (profileId, builder) => {
       const shouldBuild = shouldBuildIdentityDocumentShadowDiagnostics(profileId, {
@@ -7339,12 +7386,7 @@ function getFilterDecisionTraceMeasured(diagnostics, article) {
           diagnostics,
           identityDocumentShadowPolicy,
         })
-      : {
-          articleId,
-          skipped: true,
-          reason: "performance_guard",
-          evidence: {},
-        };
+      : getEvidenceBuilderSkippedDiagnostics(article, heavyDiagnosticsSkipReason);
     const evidenceParity = heavyDiagnosticsEnabled
       ? compareArticleEvidenceParity(article, {
           articleEvidence,
@@ -7355,7 +7397,7 @@ function getFilterDecisionTraceMeasured(diagnostics, article) {
           articleId,
           title: article?.title || "Untitled article",
           skipped: true,
-          reason: "performance_guard",
+          reason: heavyDiagnosticsSkipReason,
           parityWarnings: [],
           evidenceSummary: {},
         };
