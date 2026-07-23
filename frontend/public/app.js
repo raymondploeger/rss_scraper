@@ -45382,7 +45382,7 @@ function getIdentitySystemGroupingSystem(article) {
 function getIdentitySystemGroupingEventType(canonicalEventType, system, documentType) {
   if (
     (system === "icao-pkd" || system === "icao") &&
-    (documentType === "passport" || documentType === "travel-document")
+    (documentType === "passport" || documentType === "travel-document" || documentType === "identity-document")
   ) {
     return "passport_trust_infrastructure";
   }
@@ -45390,9 +45390,63 @@ function getIdentitySystemGroupingEventType(canonicalEventType, system, document
   return canonicalEventType || "";
 }
 
+function getIcaoPkdPassportGroupingKey(article, normalizedEvent) {
+  const text = getArticleSignalText(article);
+  const systems = extractDocumentSystems(article);
+  const hasPkdSystem = systems.includes("icao-pkd");
+  if (!hasPkdSystem) {
+    return "";
+  }
+
+  const hasPassportTrustContext = [
+    "passport",
+    "passports",
+    "e-passport",
+    "epassport",
+    "biometric passport",
+    "travel document",
+    "public key directory",
+    "passport directory",
+    "passport authentication",
+    "passport verification",
+    "global trust network",
+    "icao trust network",
+  ].some((term) => textMatchesKeyword(text, term));
+  if (!hasPassportTrustContext) {
+    return "";
+  }
+
+  const entity = getIdentitySystemGroupingEntity(article, normalizedEvent);
+  if (!entity) {
+    return "";
+  }
+
+  const topicFamily = getArticleGroupingTopicFamily(article);
+  const hasIdentityGroupingFamily = ["identity_document", "travel_passport"].includes(topicFamily) || isIdentityLikeArticle(article);
+  if (!hasIdentityGroupingFamily) {
+    return "";
+  }
+
+  const timeBucket = normalizedEvent?.timeBucket || getNormalizedEventTimeBucket(article) || "undated";
+  return [
+    "identity-system",
+    "travel_passport",
+    "passport_trust_infrastructure",
+    entity,
+    "icao-pkd",
+    "passport",
+    timeBucket,
+  ].join(":");
+}
+
 function getIdentitySystemGroupingKey(article) {
   const topicFamily = getArticleGroupingTopicFamily(article);
   const normalizedEvent = normalizeIntelligenceEvent(article);
+  const icaoPkdPassportGroupingKey = getIcaoPkdPassportGroupingKey(article, normalizedEvent);
+  if (icaoPkdPassportGroupingKey) {
+    return icaoPkdPassportGroupingKey;
+  }
+
   const canonicalEventType = normalizedEvent?.canonicalEventType || getDetailedArticleEventType(article);
   if (!IDENTITY_SYSTEM_GROUPING_EVENT_TYPES.has(canonicalEventType)) {
     return "";
@@ -45500,7 +45554,7 @@ function resolveIdentityCanonicalEventType(article, context) {
     return "identity_infrastructure";
   }
 
-  if (systems.includes("icao") || systems.includes("document-verification") || textMatchesKeyword(text, "mrz")) {
+  if (systems.includes("icao") || systems.includes("icao-pkd") || systems.includes("document-verification") || textMatchesKeyword(text, "mrz")) {
     return "document_security_technology";
   }
 
