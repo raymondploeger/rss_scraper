@@ -17399,11 +17399,16 @@ function getAuthenticationDiagnosticsFromTrace(trace) {
     rejectionReason: assessment.rejectionReason || "",
     hasAuthenticationSignal: Boolean(assessment.hasAuthenticationSignal),
     hasProfessionalIdentityContext: Boolean(assessment.hasProfessionalIdentityContext),
+    hasStrictIdentityContext: Boolean(assessment.hasStrictIdentityContext),
     hasVendorIdentityContext: Boolean(assessment.hasVendorIdentityContext),
     hasDocumentAuthenticationSignal: Boolean(assessment.hasDocumentAuthenticationSignal),
+    broadAuthenticationOnly: Boolean(assessment.broadAuthenticationOnly),
+    broadAuthenticationWithoutStrictIdentityContext: Boolean(assessment.broadAuthenticationWithoutStrictIdentityContext),
     professionalAuthenticationMatched: Boolean(assessment.professionalAuthenticationMatched),
     matchedAuthenticationSignals: assessment.matchedAuthenticationSignals || [],
     matchedProfessionalContextTerms: assessment.matchedProfessionalContextTerms || [],
+    matchedStrictIdentityContextTerms: assessment.matchedStrictIdentityContextTerms || [],
+    matchedBroadAuthenticationSignals: assessment.matchedBroadAuthenticationSignals || [],
     matchedVendorSignals: assessment.matchedVendorSignals || [],
     matchedVendorContextTerms: assessment.matchedVendorContextTerms || [],
     matchedGenericLoginNoiseTerms: assessment.matchedGenericLoginNoiseTerms || [],
@@ -30273,6 +30278,41 @@ const AUTHENTICATION_PROFESSIONAL_CONTEXT_TERMS = [
   "onboarding",
 ];
 
+const AUTHENTICATION_STRICT_IDENTITY_CONTEXT_TERMS = [
+  "passport",
+  "passports",
+  "emrtd",
+  "travel document",
+  "identity document",
+  "id card",
+  "identity card",
+  "document authentication",
+  "document verification",
+  "document security",
+  "digital identity wallet",
+  "identity wallet",
+  "wallet credential",
+  "digital credential",
+  "verifiable credential",
+  "credential authentication",
+  "identity verification",
+  "government identity",
+  "national digital id",
+  "government digital id",
+  "mobile id",
+  "mobile driving licence",
+  "mobile driver's license",
+  "mdl",
+  "border",
+  "immigration",
+  "icao",
+  "icao pkd",
+  "public key directory",
+  "csca",
+  "kyc",
+  "onboarding",
+];
+
 const AUTHENTICATION_PROFESSIONAL_VENDOR_TERMS = [
   "yubico",
   "yubikey",
@@ -30370,6 +30410,20 @@ const AUTHENTICATION_PAYMENT_NOISE_TERMS = [
   "shopping",
 ];
 
+const AUTHENTICATION_BROAD_AUTHENTICATION_TERMS = [
+  "strong authentication",
+  "multi-factor authentication",
+  "multifactor authentication",
+  "two-factor authentication",
+  "2fa",
+  "fido",
+  "fido2",
+  "passkey",
+  "passkeys",
+  "passwordless",
+  "verified authorization",
+];
+
 function shouldApplyAuthenticationProfessionalGuard(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
   const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
   const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
@@ -30384,6 +30438,7 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
   const context = getPersonalBoostContext(article, "getAuthenticationProfessionalGuardAssessment", { interest: "authentication" });
   const matchedAuthenticationSignals = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_PROFESSIONAL_AUTH_SIGNALS);
   const matchedProfessionalContextTerms = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_PROFESSIONAL_CONTEXT_TERMS);
+  const matchedStrictIdentityContextTerms = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_STRICT_IDENTITY_CONTEXT_TERMS);
   const matchedVendorSignals = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_PROFESSIONAL_VENDOR_TERMS);
   const matchedVendorContextTerms = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_PROFESSIONAL_VENDOR_CONTEXT_TERMS);
   const matchedGenericLoginNoiseTerms = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_GENERIC_LOGIN_NOISE_TERMS);
@@ -30395,6 +30450,7 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
   const legacyAuthenticationScoreIncluded = Boolean(selectedAuthenticationAssessment.included);
   const hasAuthenticationSignal = matchedAuthenticationSignals.length > 0;
   const hasProfessionalIdentityContext = matchedProfessionalContextTerms.length > 0;
+  const hasStrictIdentityContext = matchedStrictIdentityContextTerms.length > 0;
   const hasVendorIdentityContext = matchedVendorSignals.length > 0 && matchedVendorContextTerms.length > 0;
   const hasDocumentAuthenticationSignal = matchedAuthenticationSignals.some((term) => [
     "document authentication",
@@ -30408,34 +30464,30 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
     "digital signature validation",
     "pki validation",
   ].includes(term));
+  const matchedBroadAuthenticationSignals = matchedAuthenticationSignals.filter((term) =>
+    AUTHENTICATION_BROAD_AUTHENTICATION_TERMS.includes(term)
+  );
+  const hasBroadAuthenticationSignal = matchedBroadAuthenticationSignals.length > 0;
   const broadAuthenticationOnly = !hasDocumentAuthenticationSignal &&
-    matchedAuthenticationSignals.length > 0 &&
-    matchedAuthenticationSignals.every((term) => [
-      "strong authentication",
-      "multi-factor authentication",
-      "multifactor authentication",
-      "two-factor authentication",
-      "2fa",
-      "fido",
-      "fido2",
-      "passkey",
-      "passkeys",
-      "passwordless",
-      "verified authorization",
-    ].includes(term)) &&
-    !hasProfessionalIdentityContext &&
+    hasBroadAuthenticationSignal &&
+    matchedBroadAuthenticationSignals.length === matchedAuthenticationSignals.length &&
+    !hasStrictIdentityContext &&
     !hasVendorIdentityContext;
+  const broadAuthenticationWithoutStrictIdentityContext = hasBroadAuthenticationSignal &&
+    !hasDocumentAuthenticationSignal &&
+    !hasStrictIdentityContext;
   const professionalAuthenticationMatched = hasAuthenticationSignal &&
-    (hasProfessionalIdentityContext || hasVendorIdentityContext || hasDocumentAuthenticationSignal);
-  const passkeyWithoutIdentityContext = matchedPasskeyNoiseTerms.length > 0 && (!professionalAuthenticationMatched || broadAuthenticationOnly);
-  const genericLoginAuthentication = matchedGenericLoginNoiseTerms.length > 0 && (!professionalAuthenticationMatched || broadAuthenticationOnly);
-  const cybersecurityAuthenticationNoise = matchedCybersecurityNoiseTerms.length > 0 && (!professionalAuthenticationMatched || broadAuthenticationOnly);
-  const deviceSoftwareAuthenticationNoise = matchedDeviceSoftwareNoiseTerms.length > 0 && (!professionalAuthenticationMatched || broadAuthenticationOnly);
-  const paymentAuthenticationNoise = matchedPaymentNoiseTerms.length > 0 && (!professionalAuthenticationMatched || broadAuthenticationOnly);
+    (hasStrictIdentityContext || hasVendorIdentityContext || hasDocumentAuthenticationSignal);
+  const passkeyWithoutIdentityContext = matchedPasskeyNoiseTerms.length > 0 && (!professionalAuthenticationMatched || broadAuthenticationWithoutStrictIdentityContext);
+  const genericLoginAuthentication = matchedGenericLoginNoiseTerms.length > 0 && (!professionalAuthenticationMatched || broadAuthenticationWithoutStrictIdentityContext);
+  const cybersecurityAuthenticationNoise = matchedCybersecurityNoiseTerms.length > 0 && (!hasDocumentAuthenticationSignal && !hasStrictIdentityContext);
+  const deviceSoftwareAuthenticationNoise = matchedDeviceSoftwareNoiseTerms.length > 0 && (!hasDocumentAuthenticationSignal && !hasStrictIdentityContext);
+  const paymentAuthenticationNoise = matchedPaymentNoiseTerms.length > 0 && (!hasDocumentAuthenticationSignal && !hasStrictIdentityContext);
   const passed = !enabled ||
     (
       professionalAuthenticationMatched &&
       !broadAuthenticationOnly &&
+      !broadAuthenticationWithoutStrictIdentityContext &&
       !genericLoginAuthentication &&
       !cybersecurityAuthenticationNoise &&
       !deviceSoftwareAuthenticationNoise &&
@@ -30471,9 +30523,11 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
     hasAuthenticationSignal,
     legacyAuthenticationScoreIncluded,
     hasProfessionalIdentityContext,
+    hasStrictIdentityContext,
     hasVendorIdentityContext,
     hasDocumentAuthenticationSignal,
     broadAuthenticationOnly,
+    broadAuthenticationWithoutStrictIdentityContext,
     professionalAuthenticationMatched,
     passkeyWithoutIdentityContext,
     genericLoginAuthentication,
@@ -30482,6 +30536,8 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
     paymentAuthenticationNoise,
     matchedAuthenticationSignals: Object.freeze(matchedAuthenticationSignals.slice(0, 12)),
     matchedProfessionalContextTerms: Object.freeze(matchedProfessionalContextTerms.slice(0, 12)),
+    matchedStrictIdentityContextTerms: Object.freeze(matchedStrictIdentityContextTerms.slice(0, 12)),
+    matchedBroadAuthenticationSignals: Object.freeze(matchedBroadAuthenticationSignals.slice(0, 12)),
     matchedVendorSignals: Object.freeze(matchedVendorSignals.slice(0, 12)),
     matchedVendorContextTerms: Object.freeze(matchedVendorContextTerms.slice(0, 12)),
     matchedGenericLoginNoiseTerms: Object.freeze(matchedGenericLoginNoiseTerms.slice(0, 12)),
