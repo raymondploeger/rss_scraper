@@ -31867,6 +31867,27 @@ const SHARED_SECURITY_STANDALONE_RULES = {
       "deepfake document",
       "liveness video",
       "identity check failures",
+      "two-factor authentication",
+      "2fa",
+      "authentication platform",
+      "passkey",
+      "passkeys",
+      "identity verification",
+      "biometric onboarding",
+      "digital euro",
+      "eliminate cash",
+      "passport photo",
+      "attach a photo",
+      "photo to a passport",
+      "migration and climate",
+      "border management grants",
+      "prime minister",
+      "trillion dollars",
+      "consecutive unc",
+      "collector banknote",
+      "planetbanknote",
+      "facebook",
+      "instagram",
       "cybersecurity",
       "cloud security",
       "it security",
@@ -32358,6 +32379,43 @@ const SHARED_SECURITY_FEATURE_UMBRELLA_INTERESTS = [
   "personalization",
 ];
 
+const SHARED_SECURITY_FEATURE_UMBRELLA_DIRECT_TERM_EXCLUSIONS = new Set([
+  "document security",
+  "secure document",
+  "secure documents",
+  "security document",
+  "security documents",
+  "physical security document",
+  "physical security documents",
+  "physical document",
+  "physical documents",
+  "document protection",
+  "document",
+  "documents",
+  "passport",
+  "passports",
+  "id card",
+  "id cards",
+  "identity card",
+  "identity document",
+  "identity documents",
+  "banknote",
+  "banknotes",
+  "currency",
+  "currency note",
+  "currency notes",
+  "central bank",
+  "biometric",
+  "biometrics",
+  "biometric passport",
+  "biometric id",
+  "biometric data",
+  "facial image",
+  "fingerprint template",
+  "iris image",
+  "authentication feature",
+]);
+
 function getSecurityFeaturesUmbrellaKeywords(keywordType) {
   const keywords = [];
   SHARED_SECURITY_FEATURE_UMBRELLA_INTERESTS.forEach((interestId) => {
@@ -32368,7 +32426,15 @@ function getSecurityFeaturesUmbrellaKeywords(keywordType) {
       ...(Array.isArray(interest[keywordType]) ? interest[keywordType] : [])
     );
   });
-  return Array.from(new Set(keywords.map((term) => String(term || "").trim()).filter(Boolean)));
+  return Array.from(new Set(
+    keywords
+      .map((term) => String(term || "").trim())
+      .filter(Boolean)
+      .filter((term) =>
+        !["strong", "weak"].includes(keywordType) ||
+        !SHARED_SECURITY_FEATURE_UMBRELLA_DIRECT_TERM_EXCLUSIONS.has(term.toLowerCase())
+      )
+  ));
 }
 
 const SECURITY_PRINTING_TECHNIQUE_BRIDGE_KEYWORDS = [
