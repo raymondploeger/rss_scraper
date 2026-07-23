@@ -34156,6 +34156,7 @@ function getIdentityDocumentSubinterestScoreMeasured(article, selectedInterests 
     const intentByInterest = measureSubinterestSegment("intentBreakdown", () => getIdentityDocumentIntentBreakdown(article));
     const selectedInterestSet = new Set(selectedIdentityInterests);
     const selectedSingleIdentityInterest = selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : "";
+    let selectedFirstProfileReuse = null;
     if (selectedSingleIdentityInterest === "passports" || selectedSingleIdentityInterest === "icao") {
       const selectedIntent = intentByInterest[selectedSingleIdentityInterest] || {
         score: 0,
@@ -34166,6 +34167,10 @@ function getIdentityDocumentSubinterestScoreMeasured(article, selectedInterests 
       const selectedProfile = measureSubinterestSegment(`profile:${selectedSingleIdentityInterest}:selected_first`, () =>
         calculateIdentityProfileScore(article, selectedSingleIdentityInterest, { timingContext })
       );
+      selectedFirstProfileReuse = {
+        profileId: selectedSingleIdentityInterest,
+        profile: selectedProfile,
+      };
       const travelNoiseArticle = measureSubinterestSegment("identityTravelNoiseArticle:selected_first", () =>
         isIdentityTravelNoiseArticle(article)
       );
@@ -34292,15 +34297,23 @@ function getIdentityDocumentSubinterestScoreMeasured(article, selectedInterests 
         });
       }
     }
+    const getProfileByInterest = (profileId) => {
+      if (selectedFirstProfileReuse?.profileId === profileId) {
+        return selectedFirstProfileReuse.profile;
+      }
+      return measureSubinterestSegment(`profile:${profileId}`, () =>
+        calculateIdentityProfileScore(article, profileId, { timingContext })
+      );
+    };
     const profileByInterest = {
-      id_cards: measureSubinterestSegment("profile:id_cards", () => calculateIdentityProfileScore(article, "id_cards", { timingContext })),
-      passports: measureSubinterestSegment("profile:passports", () => calculateIdentityProfileScore(article, "passports", { timingContext })),
-      visas: measureSubinterestSegment("profile:visas", () => calculateIdentityProfileScore(article, "visas", { timingContext })),
-      residence_permits: measureSubinterestSegment("profile:residence_permits", () => calculateIdentityProfileScore(article, "residence_permits", { timingContext })),
-      border_control: measureSubinterestSegment("profile:border_control", () => calculateIdentityProfileScore(article, "border_control", { timingContext })),
-      icao: measureSubinterestSegment("profile:icao", () => calculateIdentityProfileScore(article, "icao", { timingContext })),
-      issuance: measureSubinterestSegment("profile:issuance", () => calculateIdentityProfileScore(article, "issuance", { timingContext })),
-      fraud: measureSubinterestSegment("profile:fraud", () => calculateIdentityProfileScore(article, "fraud", { timingContext })),
+      id_cards: getProfileByInterest("id_cards"),
+      passports: getProfileByInterest("passports"),
+      visas: getProfileByInterest("visas"),
+      residence_permits: getProfileByInterest("residence_permits"),
+      border_control: getProfileByInterest("border_control"),
+      icao: getProfileByInterest("icao"),
+      issuance: getProfileByInterest("issuance"),
+      fraud: getProfileByInterest("fraud"),
     };
     const travelNoiseArticle = measureSubinterestSegment("identityTravelNoiseArticle", () => isIdentityTravelNoiseArticle(article));
     const scoreByInterest = {
