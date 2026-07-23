@@ -32343,6 +32343,37 @@ const SHARED_SECURITY_STANDALONE_BODY_CONTEXT = {
   ],
 };
 
+const SHARED_SECURITY_FEATURE_UMBRELLA_INTERESTS = [
+  "security_printing",
+  "security_inks",
+  "micro_optics",
+  "holography",
+  "dovid",
+  "ovd",
+  "intaglio",
+  "polycarbonate",
+  "polymer",
+  "laminate",
+  "substrate",
+  "biometrics",
+  "anti_counterfeit",
+  "personalization",
+  "secure_documents",
+];
+
+function getSecurityFeaturesUmbrellaKeywords(keywordType) {
+  const keywords = [];
+  SHARED_SECURITY_FEATURE_UMBRELLA_INTERESTS.forEach((interestId) => {
+    const tunedRule = SHARED_SECURITY_STANDALONE_RULES[interestId] || {};
+    const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId) || {};
+    keywords.push(
+      ...(Array.isArray(tunedRule[keywordType]) ? tunedRule[keywordType] : []),
+      ...(Array.isArray(interest[keywordType]) ? interest[keywordType] : [])
+    );
+  });
+  return Array.from(new Set(keywords.map((term) => String(term || "").trim()).filter(Boolean)));
+}
+
 const SECURITY_PRINTING_TECHNIQUE_BRIDGE_KEYWORDS = [
   "holography",
   "holographic",
@@ -32430,10 +32461,26 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       ? String(context.metadataText || "").replace(/\bshared security printing\b/gi, " ").replace(/\s+/g, " ").trim()
       : context.metadataText;
     const tunedRule = SHARED_SECURITY_STANDALONE_RULES[interestId] || null;
-    const strongKeywords = Array.isArray(tunedRule?.strong) ? tunedRule.strong : Array.isArray(interest.strong) ? interest.strong : [];
-    const weakKeywords = Array.isArray(tunedRule?.weak) ? tunedRule.weak : Array.isArray(interest.weak) ? interest.weak : [];
-    const supportKeywords = Array.isArray(tunedRule?.support) ? tunedRule.support : [];
-    const negativeKeywords = Array.isArray(tunedRule?.negative) ? tunedRule.negative : [];
+    const strongKeywords = Array.from(new Set(
+      []
+        .concat(Array.isArray(tunedRule?.strong) ? tunedRule.strong : Array.isArray(interest.strong) ? interest.strong : [])
+        .concat(interestId === "security_features" ? getSecurityFeaturesUmbrellaKeywords("strong") : [])
+    ));
+    const weakKeywords = Array.from(new Set(
+      []
+        .concat(Array.isArray(tunedRule?.weak) ? tunedRule.weak : Array.isArray(interest.weak) ? interest.weak : [])
+        .concat(interestId === "security_features" ? getSecurityFeaturesUmbrellaKeywords("weak") : [])
+    ));
+    const supportKeywords = Array.from(new Set(
+      []
+        .concat(Array.isArray(tunedRule?.support) ? tunedRule.support : [])
+        .concat(interestId === "security_features" ? getSecurityFeaturesUmbrellaKeywords("support") : [])
+    ));
+    const negativeKeywords = Array.from(new Set(
+      []
+        .concat(Array.isArray(tunedRule?.negative) ? tunedRule.negative : [])
+        .concat(interestId === "security_features" ? getSecurityFeaturesUmbrellaKeywords("negative") : [])
+    ));
     const weakOnlyMinScore = Number(tunedRule?.weakOnlyMinScore || 22);
     const minimumBodyStrongHits = Number(tunedRule?.minimumBodyStrongHits || 2);
 
