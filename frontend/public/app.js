@@ -45390,6 +45390,39 @@ function getIdentitySystemGroupingEventType(canonicalEventType, system, document
   return canonicalEventType || "";
 }
 
+function getIcaoPkdPassportGroupingEntity(article, normalizedEvent) {
+  const entity = getIdentitySystemGroupingEntity(article, normalizedEvent);
+  if (entity) {
+    return entity;
+  }
+
+  const text = getArticleSignalText(article);
+  if (
+    ["nigeria", "nigerian", "nigeria immigration service", "nis", "federal government", "fg"].some((term) =>
+      textMatchesKeyword(text, term)
+    )
+  ) {
+    return "nigeria";
+  }
+
+  const hasGlobalPlatformContext = [
+    "passport verification platform",
+    "e-passport verification platform",
+    "epassport verification platform",
+    "next-generation pkd",
+    "next-gen pkd",
+    "next-generation public key directory",
+    "next-gen public key directory",
+    "next-generation passport verification",
+    "next-gen passport verification",
+  ].some((term) => textMatchesKeyword(text, term));
+  if (hasGlobalPlatformContext) {
+    return "global-icao";
+  }
+
+  return "";
+}
+
 function getIcaoPkdPassportGroupingKey(article, normalizedEvent) {
   const text = getArticleSignalText(article);
   const systems = extractDocumentSystems(article);
@@ -45416,7 +45449,7 @@ function getIcaoPkdPassportGroupingKey(article, normalizedEvent) {
     return "";
   }
 
-  const entity = getIdentitySystemGroupingEntity(article, normalizedEvent);
+  const entity = getIcaoPkdPassportGroupingEntity(article, normalizedEvent);
   if (!entity) {
     return "";
   }
