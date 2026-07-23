@@ -34154,6 +34154,147 @@ function getIdentityDocumentSubinterestScoreMeasured(article, selectedInterests 
 
     const signals = measureSubinterestSegment("identitySignals", () => getIdentityDocumentInterestSignals(article));
     const intentByInterest = measureSubinterestSegment("intentBreakdown", () => getIdentityDocumentIntentBreakdown(article));
+    const selectedInterestSet = new Set(selectedIdentityInterests);
+    if (selectedIdentityInterests.length === 1 && selectedIdentityInterests[0] === "icao") {
+      const selectedIntent = intentByInterest.icao || {
+        score: 0,
+        matchedStrong: [],
+        matchedWeak: [],
+        matchedNegative: [],
+      };
+      const selectedProfile = measureSubinterestSegment("profile:icao:selected_first", () =>
+        calculateIdentityProfileScore(article, "icao", { timingContext })
+      );
+      const travelNoiseArticle = measureSubinterestSegment("identityTravelNoiseArticle:selected_first", () =>
+        isIdentityTravelNoiseArticle(article)
+      );
+      let selectedScore =
+        (signals.icaoHits * 2.0) +
+        (signals.passportHits * 0.2) +
+        (signals.borderHits * 0.5) -
+        (signals.driverLicenseHits * 1.05) -
+        (signals.noisyHits * 0.85) +
+        (selectedProfile.score * 1.05) +
+        Number(selectedIntent.score || 0);
+      selectedScore += getIdentityIntentAuthorityBoost(article, selectedIntent.score);
+      if (travelNoiseArticle) {
+        selectedScore -= 300;
+      }
+      const cheapNonSelectedScores = {
+        passports:
+          (signals.passportHits * 0.7) +
+          (signals.icaoHits * 0.45) +
+          (signals.issuanceHits * 0.45) +
+          (signals.personalizationHits * 0.45) -
+          (signals.driverLicenseHits * 1.05) -
+          (signals.noisyHits * 0.9) -
+          (signals.visaHits * 0.2) +
+          Number(intentByInterest.passports?.score || 0),
+        id_cards:
+          (signals.idCardHits * 1.55) +
+          (signals.polycarbonateHits * 0.5) +
+          (signals.issuanceHits * 0.4) -
+          (signals.driverLicenseHits * 0.75) -
+          (signals.passportHits * 0.45) -
+          (signals.noisyHits * 0.4),
+        residence_permits:
+          (signals.residencePermitHits * 1.95) +
+          (signals.issuanceHits * 0.45) +
+          (signals.personalizationHits * 0.2) +
+          (signals.borderHits * 0.15) -
+          (signals.driverLicenseHits * 1.0) -
+          (signals.passportHits * 0.45) -
+          (signals.visaHits * 0.25) -
+          (signals.noisyHits * 0.55) +
+          Number(intentByInterest.residence_permits?.score || 0),
+        drivers_licenses:
+          (signals.driverLicenseHits * 1.8) +
+          (signals.issuanceHits * 0.4) -
+          (signals.passportHits * 0.35),
+        visas:
+          (signals.visaHits * 1.6) +
+          (signals.issuanceHits * 0.55) +
+          (signals.borderHits * 0.25) -
+          (signals.driverLicenseHits * 1.2) -
+          (signals.passportHits * 0.6) -
+          (signals.noisyHits * 0.75) +
+          Number(intentByInterest.visas?.score || 0),
+        polycarbonate:
+          (signals.polycarbonateHits * 1.85) +
+          (signals.idCardHits * 0.3) +
+          (signals.passportHits * 0.2) -
+          (signals.driverLicenseHits * 0.8),
+        fraud:
+          (signals.fraudHits * 1.8) +
+          (signals.primaryContextHits * 0.2) -
+          (signals.driverLicenseHits * 0.95) -
+          (signals.noisyHits * 0.45),
+        border_control:
+          (signals.borderHits * 1.85) +
+          (signals.icaoHits * 0.35) +
+          (signals.passportHits * 0.2) -
+          (signals.noisyHits * 0.6) +
+          Number(intentByInterest.border_control?.score || 0),
+        issuance:
+          (signals.issuanceHits * 1.75) +
+          (signals.passportHits * 0.2) +
+          (signals.idCardHits * 0.2) +
+          (signals.visaHits * 0.2) -
+          (signals.driverLicenseHits * 0.8) -
+          (signals.noisyHits * 0.35),
+        laminate:
+          (signals.laminateHits * 1.8) +
+          (signals.polycarbonateHits * 0.35) +
+          (signals.passportHits * 0.2) +
+          (signals.idCardHits * 0.2) -
+          (signals.driverLicenseHits * 0.8) -
+          (signals.noisyHits * 0.35),
+      };
+      const strongestCheapMismatch = Object.entries(cheapNonSelectedScores)
+        .filter(([interestId]) => !selectedInterestSet.has(interestId))
+        .map(([interestId, score]) => ({ interestId, score: Number(score) || 0 }))
+        .sort((left, right) => right.score - left.score)[0] || { interestId: "", score: 0 };
+      const selectedScoreClearlyAuthoritative = selectedScore >= 70;
+      const noNearbyCheapMismatch = strongestCheapMismatch.score <= 8;
+      if (selectedScoreClearlyAuthoritative && noNearbyCheapMismatch) {
+        const finalSubinterestScore = Math.round(selectedScore);
+        if (timingEnabled) {
+          recordProductionLoadTimingBreakdown(
+            "identityDocumentSubinterestFanoutAudit",
+            timingContext,
+            `${timingInterest}:decisionImpact`,
+            0,
+            {
+              result: finalSubinterestScore >= 18 ? "passed" : "rejected",
+              reason: "selected_first_icao_no_nearby_mismatch",
+            }
+          );
+          recordProductionLoadTimingBreakdown(
+            "identityDocumentSubinterestFanoutAudit",
+            timingContext,
+            `${timingInterest}:strongestMismatch`,
+            0,
+            {
+              reason: strongestCheapMismatch.interestId || "none",
+            }
+          );
+        }
+        return finishSubinterestTiming({
+          score: finalSubinterestScore,
+          bestSelectedScore: finalSubinterestScore,
+          mismatchPenalty: 0,
+          selectedSubinterest: "icao",
+          matchedSubinterest: "icao",
+          intentByInterest,
+          profileByInterest: {
+            icao: selectedProfile,
+          },
+          travelNoiseArticle,
+          fanoutOptimization: "selected_first_icao",
+          strongestCheapMismatch,
+        });
+      }
+    }
     const profileByInterest = {
       id_cards: measureSubinterestSegment("profile:id_cards", () => calculateIdentityProfileScore(article, "id_cards", { timingContext })),
       passports: measureSubinterestSegment("profile:passports", () => calculateIdentityProfileScore(article, "passports", { timingContext })),
@@ -34245,7 +34386,6 @@ function getIdentityDocumentSubinterestScoreMeasured(article, selectedInterests 
         (signals.driverLicenseHits * 0.8) -
         (signals.noisyHits * 0.35),
     };
-    const selectedInterestSet = new Set(selectedIdentityInterests);
 
     const selectedScores = measureSubinterestSegment("selectedScores", () => selectedIdentityInterests.map((interestId) => {
       const intent = intentByInterest[interestId] || {
