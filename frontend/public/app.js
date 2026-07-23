@@ -45426,7 +45426,21 @@ function getIcaoPkdPassportGroupingEntity(article, normalizedEvent) {
 function getIcaoPkdPassportGroupingKey(article, normalizedEvent) {
   const text = getArticleSignalText(article);
   const systems = extractDocumentSystems(article);
-  const hasPkdSystem = systems.includes("icao-pkd");
+  const hasPassportVerificationIcaoContext =
+    systems.includes("icao") &&
+    [
+      "passport verification system",
+      "passport authentication system",
+      "passport verification",
+      "passport authentication",
+      "icao integration",
+      "icao system",
+      "joins icao",
+      "joined icao",
+      "icao global network",
+      "global passport verification",
+    ].some((term) => textMatchesKeyword(text, term));
+  const hasPkdSystem = systems.includes("icao-pkd") || hasPassportVerificationIcaoContext;
   if (!hasPkdSystem) {
     return "";
   }
@@ -45442,8 +45456,12 @@ function getIcaoPkdPassportGroupingKey(article, normalizedEvent) {
     "passport directory",
     "passport authentication",
     "passport verification",
+    "passport verification system",
+    "passport authentication system",
     "global trust network",
     "icao trust network",
+    "icao integration",
+    "icao system",
   ].some((term) => textMatchesKeyword(text, term));
   if (!hasPassportTrustContext) {
     return "";
