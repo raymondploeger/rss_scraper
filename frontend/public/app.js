@@ -34155,32 +34155,23 @@ function getIdentityDocumentSubinterestScoreMeasured(article, selectedInterests 
     const signals = measureSubinterestSegment("identitySignals", () => getIdentityDocumentInterestSignals(article));
     const intentByInterest = measureSubinterestSegment("intentBreakdown", () => getIdentityDocumentIntentBreakdown(article));
     const selectedInterestSet = new Set(selectedIdentityInterests);
-    if (selectedIdentityInterests.length === 1 && selectedIdentityInterests[0] === "icao") {
-      const selectedIntent = intentByInterest.icao || {
+    const selectedSingleIdentityInterest = selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : "";
+    if (selectedSingleIdentityInterest === "passports" || selectedSingleIdentityInterest === "icao") {
+      const selectedIntent = intentByInterest[selectedSingleIdentityInterest] || {
         score: 0,
         matchedStrong: [],
         matchedWeak: [],
         matchedNegative: [],
       };
-      const selectedProfile = measureSubinterestSegment("profile:icao:selected_first", () =>
-        calculateIdentityProfileScore(article, "icao", { timingContext })
+      const selectedProfile = measureSubinterestSegment(`profile:${selectedSingleIdentityInterest}:selected_first`, () =>
+        calculateIdentityProfileScore(article, selectedSingleIdentityInterest, { timingContext })
       );
       const travelNoiseArticle = measureSubinterestSegment("identityTravelNoiseArticle:selected_first", () =>
         isIdentityTravelNoiseArticle(article)
       );
-      let selectedScore =
-        (signals.icaoHits * 2.0) +
-        (signals.passportHits * 0.2) +
-        (signals.borderHits * 0.5) -
-        (signals.driverLicenseHits * 1.05) -
-        (signals.noisyHits * 0.85) +
-        (selectedProfile.score * 1.05) +
-        Number(selectedIntent.score || 0);
-      selectedScore += getIdentityIntentAuthorityBoost(article, selectedIntent.score);
-      if (travelNoiseArticle) {
-        selectedScore -= 300;
-      }
-      const cheapNonSelectedScores = {
+      const selectedProfileScoreMultiplier = selectedSingleIdentityInterest === "passports" ? 1.1 : 1.05;
+      const selectedFirstPassThreshold = selectedSingleIdentityInterest === "passports" ? 85 : 70;
+      const cheapScoreByInterest = {
         passports:
           (signals.passportHits * 0.7) +
           (signals.icaoHits * 0.45) +
@@ -34250,11 +34241,17 @@ function getIdentityDocumentSubinterestScoreMeasured(article, selectedInterests 
           (signals.driverLicenseHits * 0.8) -
           (signals.noisyHits * 0.35),
       };
-      const strongestCheapMismatch = Object.entries(cheapNonSelectedScores)
+      let selectedScore = Number(cheapScoreByInterest[selectedSingleIdentityInterest] || 0) +
+        (selectedProfile.score * selectedProfileScoreMultiplier);
+      selectedScore += getIdentityIntentAuthorityBoost(article, selectedIntent.score);
+      if (travelNoiseArticle) {
+        selectedScore -= 300;
+      }
+      const strongestCheapMismatch = Object.entries(cheapScoreByInterest)
         .filter(([interestId]) => !selectedInterestSet.has(interestId))
         .map(([interestId, score]) => ({ interestId, score: Number(score) || 0 }))
         .sort((left, right) => right.score - left.score)[0] || { interestId: "", score: 0 };
-      const selectedScoreClearlyAuthoritative = selectedScore >= 70;
+      const selectedScoreClearlyAuthoritative = selectedScore >= selectedFirstPassThreshold;
       const noNearbyCheapMismatch = strongestCheapMismatch.score <= 8;
       if (selectedScoreClearlyAuthoritative && noNearbyCheapMismatch) {
         const finalSubinterestScore = Math.round(selectedScore);
@@ -34266,7 +34263,7 @@ function getIdentityDocumentSubinterestScoreMeasured(article, selectedInterests 
             0,
             {
               result: finalSubinterestScore >= 18 ? "passed" : "rejected",
-              reason: "selected_first_icao_no_nearby_mismatch",
+              reason: `selected_first_${selectedSingleIdentityInterest}_no_nearby_mismatch`,
             }
           );
           recordProductionLoadTimingBreakdown(
@@ -34283,14 +34280,14 @@ function getIdentityDocumentSubinterestScoreMeasured(article, selectedInterests 
           score: finalSubinterestScore,
           bestSelectedScore: finalSubinterestScore,
           mismatchPenalty: 0,
-          selectedSubinterest: "icao",
-          matchedSubinterest: "icao",
+          selectedSubinterest: selectedSingleIdentityInterest,
+          matchedSubinterest: selectedSingleIdentityInterest,
           intentByInterest,
           profileByInterest: {
-            icao: selectedProfile,
+            [selectedSingleIdentityInterest]: selectedProfile,
           },
           travelNoiseArticle,
-          fanoutOptimization: "selected_first_icao",
+          fanoutOptimization: `selected_first_${selectedSingleIdentityInterest}`,
           strongestCheapMismatch,
         });
       }
