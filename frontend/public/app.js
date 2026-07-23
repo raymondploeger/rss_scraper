@@ -30339,12 +30339,7 @@ const AUTHENTICATION_PROFESSIONAL_VENDOR_CONTEXT_TERMS = [
   "document authentication",
   "biometric authentication",
   "credential authentication",
-  "verified authorization",
   "passport authentication",
-  "identity",
-  "credential",
-  "credentials",
-  "government",
   "border",
 ];
 
@@ -30384,9 +30379,15 @@ const AUTHENTICATION_CYBERSECURITY_NOISE_TERMS = [
   "sso",
   "iam",
   "access management",
+  "cyber access",
+  "trusted cyber access",
   "cloud identity",
   "machine identity",
   "zero trust",
+  "workplace authentication",
+  "enterprise authentication",
+  "credential registration",
+  "credential parameter",
 ];
 
 const AUTHENTICATION_DEVICE_SOFTWARE_NOISE_TERMS = [
@@ -30451,7 +30452,6 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
   const hasAuthenticationSignal = matchedAuthenticationSignals.length > 0;
   const hasProfessionalIdentityContext = matchedProfessionalContextTerms.length > 0;
   const hasStrictIdentityContext = matchedStrictIdentityContextTerms.length > 0;
-  const hasVendorIdentityContext = matchedVendorSignals.length > 0 && matchedVendorContextTerms.length > 0;
   const hasDocumentAuthenticationSignal = matchedAuthenticationSignals.some((term) => [
     "document authentication",
     "document authenticity",
@@ -30464,6 +30464,8 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
     "digital signature validation",
     "pki validation",
   ].includes(term));
+  const hasVendorIdentityContext = matchedVendorSignals.length > 0 &&
+    (matchedVendorContextTerms.length > 0 || hasStrictIdentityContext || hasDocumentAuthenticationSignal);
   const matchedBroadAuthenticationSignals = matchedAuthenticationSignals.filter((term) =>
     AUTHENTICATION_BROAD_AUTHENTICATION_TERMS.includes(term)
   );
