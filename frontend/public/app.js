@@ -33936,7 +33936,9 @@ function calculateIdentityProfileScoreMeasured(article, profileId, options = {})
 
       if (
         hardContext.matched
-        && IDENTITY_DOCUMENT_SECURITY_INDUSTRY_SOURCES.some((value) => textMatchesKeyword(sourceFingerprint, value))
+        && IDENTITY_DOCUMENT_SECURITY_INDUSTRY_SOURCES.some((value) =>
+          getIdentityProfileTextMatch(article, context, "sourceFingerprint", value)
+        )
       ) {
         score += 24;
       }
