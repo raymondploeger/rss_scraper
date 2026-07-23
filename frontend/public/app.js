@@ -32352,13 +32352,10 @@ const SHARED_SECURITY_FEATURE_UMBRELLA_INTERESTS = [
   "ovd",
   "intaglio",
   "polycarbonate",
-  "polymer",
   "laminate",
   "substrate",
-  "biometrics",
   "anti_counterfeit",
   "personalization",
-  "secure_documents",
 ];
 
 function getSecurityFeaturesUmbrellaKeywords(keywordType) {
