@@ -33764,6 +33764,25 @@ function calculateIdentityProfileScore(article, profileId, options = {}) {
     });
 }
 
+function getIdentityProfileTextMatch(article, context, fieldName, term) {
+  const normalizedFieldName = String(fieldName || "").trim();
+  const normalizedTerm = String(term || "").trim().toLowerCase();
+  if (!normalizedFieldName || !normalizedTerm) {
+    return false;
+  }
+  const matchCache = getCachedArticleValue(article, "identityProfileTextMatchCache", () => new Map());
+  const cacheKey = `${normalizedFieldName}:${normalizedTerm}`;
+  if (matchCache.has(cacheKey)) {
+    return matchCache.get(cacheKey);
+  }
+  const text = normalizedFieldName === "sourceFingerprint"
+    ? `${context?.sourceText || ""} ${context?.domainText || ""} ${context?.metadataText || ""}`
+    : context?.[normalizedFieldName] || "";
+  const matched = textMatchesKeyword(text, term);
+  matchCache.set(cacheKey, matched);
+  return matched;
+}
+
 function calculateIdentityProfileScoreMeasured(article, profileId, options = {}) {
   return getCachedArticleValue(article, `identityProfileScore:${profileId}`, () => {
     const timingContext = typeof options.timingContext === "string" ? options.timingContext : "";
@@ -33817,7 +33836,6 @@ function calculateIdentityProfileScoreMeasured(article, profileId, options = {})
     const context = measureProfileSegment("personalBoostContext", () =>
       getPersonalBoostContext(article, "calculateIdentityProfileScore", { interest: profileId || "identity_documents" })
     );
-    const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
     const hardContext = measureProfileSegment("hardContext", () => evaluateIdentityDocumentHardContext(article, profileId));
     const scoreMatches = (terms = [], weights) => {
       const matched = [];
@@ -33826,10 +33844,10 @@ function calculateIdentityProfileScoreMeasured(article, profileId, options = {})
       let metaHits = 0;
       let bodyHits = 0;
       terms.forEach((term) => {
-        const titleMatched = textMatchesKeyword(context.titleText, term);
-        const tagMatched = textMatchesKeyword(context.tagText, term);
-        const metaMatched = textMatchesKeyword(context.metadataText, term);
-        const bodyMatched = textMatchesKeyword(context.bodyText, term);
+        const titleMatched = getIdentityProfileTextMatch(article, context, "titleText", term);
+        const tagMatched = getIdentityProfileTextMatch(article, context, "tagText", term);
+        const metaMatched = getIdentityProfileTextMatch(article, context, "metadataText", term);
+        const bodyMatched = getIdentityProfileTextMatch(article, context, "bodyText", term);
         if (titleMatched || tagMatched || metaMatched || bodyMatched) {
           matched.push(term);
         }
@@ -33863,10 +33881,10 @@ function calculateIdentityProfileScoreMeasured(article, profileId, options = {})
       (Array.isArray(profile.requiredContextGroups) ? profile.requiredContextGroups : []).reduce(
         (count, group) => {
           const hasGroupMatch = Array.isArray(group) && group.some((term) =>
-            textMatchesKeyword(context.titleText, term) ||
-            textMatchesKeyword(context.tagText, term) ||
-            textMatchesKeyword(context.metadataText, term) ||
-            textMatchesKeyword(context.bodyText, term)
+            getIdentityProfileTextMatch(article, context, "titleText", term) ||
+            getIdentityProfileTextMatch(article, context, "tagText", term) ||
+            getIdentityProfileTextMatch(article, context, "metadataText", term) ||
+            getIdentityProfileTextMatch(article, context, "bodyText", term)
           );
           return hasGroupMatch ? count + 1 : count;
         },
@@ -33888,7 +33906,9 @@ function calculateIdentityProfileScoreMeasured(article, profileId, options = {})
 
     const authorityBoost = measureProfileSegment("authorityBoost", () =>
       Array.isArray(profile.authorityBoostSources) &&
-        profile.authorityBoostSources.some((value) => textMatchesKeyword(sourceFingerprint, value))
+        profile.authorityBoostSources.some((value) =>
+          getIdentityProfileTextMatch(article, context, "sourceFingerprint", value)
+        )
         ? 30
         : 0
     );
