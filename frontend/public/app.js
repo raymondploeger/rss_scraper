@@ -1464,6 +1464,9 @@ function normalizeFeedSourceTypeValue(value) {
   return normalizedValue || "rss";
 }
 const APP_BUILD = "authentication-guard-return-path-v1";
+if (typeof window !== "undefined") {
+  window.APP_BUILD = APP_BUILD;
+}
 const SHOW_FEED_INSIGHTS = false;
 const SHOW_RECENT_ALERTS = false;
 const SHOW_ACTIVITY_LOG = false;
