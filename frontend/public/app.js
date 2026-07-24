@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "pagination-feed-debug-v1";
+const APP_BUILD = "authentication-guard-return-path-v1";
 const SHOW_FEED_INSIGHTS = false;
 const SHOW_RECENT_ALERTS = false;
 const SHOW_ACTIVITY_LOG = false;
