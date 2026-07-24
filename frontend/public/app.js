@@ -30650,11 +30650,23 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
       hasVendorIdentityContext ||
       (hasBroadAuthenticationStrictContext && !hasBroadAuthenticationSignal)
     );
-  const passkeyWithoutIdentityContext = matchedPasskeyNoiseTerms.length > 0 && (!professionalAuthenticationMatched || broadAuthenticationWithoutStrictIdentityContext);
+  const passkeyWithoutIdentityContext = matchedPasskeyNoiseTerms.length > 0 &&
+    !hasDocumentAuthenticationSignal &&
+    !hasCoreIdentityAuthenticationSignal &&
+    !hasVendorIdentityContext;
   const genericLoginAuthentication = matchedGenericLoginNoiseTerms.length > 0 && (!professionalAuthenticationMatched || broadAuthenticationWithoutStrictIdentityContext);
-  const cybersecurityAuthenticationNoise = matchedCybersecurityNoiseTerms.length > 0 && (!hasDocumentAuthenticationSignal && !hasStrictIdentityContext);
-  const deviceSoftwareAuthenticationNoise = matchedDeviceSoftwareNoiseTerms.length > 0 && (!hasDocumentAuthenticationSignal && !hasStrictIdentityContext);
-  const paymentAuthenticationNoise = matchedPaymentNoiseTerms.length > 0 && (!hasDocumentAuthenticationSignal && !hasStrictIdentityContext);
+  const cybersecurityAuthenticationNoise = matchedCybersecurityNoiseTerms.length > 0 &&
+    !hasDocumentAuthenticationSignal &&
+    !hasCoreIdentityAuthenticationSignal &&
+    !hasVendorIdentityContext;
+  const deviceSoftwareAuthenticationNoise = matchedDeviceSoftwareNoiseTerms.length > 0 &&
+    !hasDocumentAuthenticationSignal &&
+    !hasCoreIdentityAuthenticationSignal &&
+    !hasVendorIdentityContext;
+  const paymentAuthenticationNoise = matchedPaymentNoiseTerms.length > 0 &&
+    !hasDocumentAuthenticationSignal &&
+    !hasCoreIdentityAuthenticationSignal &&
+    !hasVendorIdentityContext;
   const passed = !enabled ||
     (
       professionalAuthenticationMatched &&
