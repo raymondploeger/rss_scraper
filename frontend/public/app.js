@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "shared-security-keyword-retrieval-v1";
+const APP_BUILD = "evidence-rescue-media-noise-v1";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -14781,6 +14781,16 @@ const EVIDENCE_BUILDER_RESCUE_NOISE_TERMS = [
   "app security",
   "password security",
   "account security",
+  "air force one",
+  "subpoena",
+  "subpoenas",
+  "new york times reporters",
+  "journalists' phone records",
+  "phone records",
+  "free speech",
+  "government devices",
+  "download tiktok",
+  "tiktok on government devices",
 ];
 
 const EVIDENCE_BUILDER_RESCUE_STRONG_NOISE_TERMS = [
