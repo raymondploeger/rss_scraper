@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "authentication-guard-noise-v4";
+const APP_BUILD = "dashboard-combination-diagnostics-v1";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -6179,6 +6179,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     normalizedFilterState,
     normalizedFilterStateKey,
     normalizedFilterStateParity: enabled ? validateNormalizedFilterStateParity(normalizedFilterState) : null,
+    dashboardCombinationDiagnostics: enabled ? getDashboardCombinationDiagnostics(normalizedFilterState) : null,
     candidateStrategy,
     candidateStrategyKey: candidateStrategy?.strategyKey || "",
     strategyExecutionPlan,
@@ -7669,6 +7670,7 @@ function getFilterDecisionDebugToolsSummary(diagnostics) {
       "window.explainArticleDecision(articleId)",
       "window.setFilterDiagnosticsLimit(limit)",
       "window.explainArticleDecisionByTitle(titlePart)",
+      "window.getDashboardCombinationDiagnostics()",
       "window.findTracedArticlesByKeyword(keyword)",
       "window.explainArticleEvidenceByTitle(titlePart)",
       "window.forceArticleEvidenceByTitle(titlePart)",
@@ -21411,6 +21413,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     branch: diagnostics.branch || "",
     normalizedFilterState: diagnostics.normalizedFilterState || null,
     normalizedFilterStateKey: diagnostics.normalizedFilterStateKey || "",
+    dashboardCombinationDiagnostics: diagnostics.dashboardCombinationDiagnostics || null,
     candidateStrategy: diagnostics.candidateStrategy || null,
     candidateStrategyKey: diagnostics.candidateStrategyKey || "",
     strategyExecutionPlan: diagnostics.strategyExecutionPlan || null,
@@ -22014,6 +22017,14 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     window.getActiveDashboardSelection = () => getActiveDashboardSelection();
   }
 
+  if (typeof window.getDashboardCombinationDiagnostics !== "function") {
+    window.getDashboardCombinationDiagnostics = () => {
+      const activeDiagnostic = getActiveFilterPipelineDiagnostic();
+      return activeDiagnostic?.dashboardCombinationDiagnostics
+        || getDashboardCombinationDiagnostics(createNormalizedFilterState());
+    };
+  }
+
   if (typeof window.copyFilterPipelineDiagnostics !== "function") {
     window.copyFilterPipelineDiagnostics = async () => {
       const payload = getFilterPipelineDiagnosticsExportPayload();
@@ -22455,6 +22466,7 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.exportLatestFilterPipelineDiagnostics()",
         "window.getActiveFilterPipelineDiagnostic()",
         "window.getActiveDashboardSelection()",
+        "window.getDashboardCombinationDiagnostics()",
         "window.copyFilterPipelineDiagnostics()",
         "window.setFilterDiagnosticsLimit(limit)",
         "window.enableFilterPerformanceDiagnostics()",
@@ -28405,6 +28417,84 @@ function getSelectedMainDomains(selectedInterests = normalizePersonalDashboardIn
   });
 
   return Array.from(mainDomains);
+}
+
+function getDashboardCombinationDiagnostics(normalizedFilterState = createNormalizedFilterState()) {
+  const dashboard = normalizedFilterState?.dashboard || {};
+  const filters = normalizedFilterState?.filters || {};
+  const keywords = normalizedFilterState?.keywords || {};
+  const selectedInterests = normalizePersonalDashboardInterests(dashboard.selectedInterests || []);
+  const selectedMainDomains = getSelectedMainDomains(selectedInterests);
+  const selectedSharedSecurityInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
+  const selectedBaseDomains = selectedMainDomains.filter((domainId) =>
+    ["banknotes", "identity_documents", "digital_identity_biometrics"].includes(domainId)
+  );
+  const selectedInterestLabels = selectedInterests.map((interestId) => ({
+    id: interestId,
+    label: PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.label || interestId,
+    groupId: PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId || "",
+  }));
+  const hasSearch = Boolean(filters.search);
+  const hasKeywordFilters = Boolean(keywords.include?.length || keywords.exclude?.length);
+  const hasAdvancedFilters = hasNormalizedAdvancedFilters(normalizedFilterState);
+  const sharedSecuritySelected = selectedSharedSecurityInterests.length > 0;
+  const baseDomainCount = selectedBaseDomains.length;
+  const dashboardCombinationMode = sharedSecuritySelected && baseDomainCount > 0
+    ? "base_domain_or_with_shared_security_and"
+    : baseDomainCount > 1
+      ? "base_domain_or"
+      : sharedSecuritySelected
+        ? "shared_security_only"
+        : baseDomainCount === 1
+          ? "single_base_domain"
+          : "none";
+  const baseDomainExpression = baseDomainCount > 1
+    ? `(${selectedBaseDomains.join(" OR ")})`
+    : selectedBaseDomains[0] || "";
+  const sharedSecurityExpression = selectedSharedSecurityInterests.length
+    ? `(${selectedSharedSecurityInterests.join(" OR ")})`
+    : "";
+  const expectedInterpretation = baseDomainExpression && sharedSecurityExpression
+    ? `${baseDomainExpression} AND ${sharedSecurityExpression}`
+    : baseDomainExpression || sharedSecurityExpression || "no personal dashboard selection";
+  const notes = [];
+
+  if (baseDomainCount > 1) {
+    notes.push("Multiple selected product domains should be interpreted as an OR union for dashboard matching.");
+  }
+  if (sharedSecuritySelected && baseDomainCount > 0) {
+    notes.push("Shared Security selections act as an AND technique refinement over the selected base-domain union.");
+  }
+  if (hasSearch) {
+    notes.push("Search text currently acts as both a backend request parameter where applicable and a frontend hard filter.");
+  }
+  if (hasKeywordFilters) {
+    notes.push("Include/exclude keyword filters remain additional hard filters after dashboard matching.");
+  }
+
+  return {
+    enabled: Boolean(dashboard.enabled),
+    dashboardCombinationMode,
+    selectedInterests,
+    selectedInterestLabels,
+    selectedMainDomains,
+    selectedBaseDomains,
+    selectedSharedSecurityInterests,
+    baseDomainLogic: baseDomainCount > 1 ? "OR" : baseDomainCount === 1 ? "single" : "none",
+    sharedSecurityLogic: sharedSecuritySelected
+      ? (baseDomainCount > 0 ? "AND_refinement" : "standalone_shared_security_match")
+      : "not_selected",
+    expectedInterpretation,
+    searchRefinementActive: hasSearch,
+    searchQuery: filters.search || "",
+    searchLogic: hasSearch
+      ? "backend_request_parameter_where_applicable_plus_frontend_hard_filter"
+      : "inactive",
+    advancedFiltersActive: hasAdvancedFilters,
+    keywordFiltersActive: hasKeywordFilters,
+    diagnosticsOnly: true,
+    notes,
+  };
 }
 
 function resolvePersonalDashboardParentChildInterests(selectedInterests, groupId) {
