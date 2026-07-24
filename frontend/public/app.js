@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "evidence-rescue-media-noise-v1";
+const APP_BUILD = "dashboard-search-diagnostics-v1";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -6180,6 +6180,7 @@ function createFilterPipelineDiagnostics(normalizedFilterState = createNormalize
     normalizedFilterStateKey,
     normalizedFilterStateParity: enabled ? validateNormalizedFilterStateParity(normalizedFilterState) : null,
     dashboardCombinationDiagnostics: enabled ? getDashboardCombinationDiagnostics(normalizedFilterState) : null,
+    dashboardSearchDiagnostics: enabled ? getDashboardSearchDiagnostics(normalizedFilterState) : null,
     candidateStrategy,
     candidateStrategyKey: candidateStrategy?.strategyKey || "",
     strategyExecutionPlan,
@@ -7671,6 +7672,7 @@ function getFilterDecisionDebugToolsSummary(diagnostics) {
       "window.setFilterDiagnosticsLimit(limit)",
       "window.explainArticleDecisionByTitle(titlePart)",
       "window.getDashboardCombinationDiagnostics()",
+      "window.getDashboardSearchDiagnostics()",
       "window.findTracedArticlesByKeyword(keyword)",
       "window.explainArticleEvidenceByTitle(titlePart)",
       "window.forceArticleEvidenceByTitle(titlePart)",
@@ -21424,6 +21426,7 @@ function getSerializableFilterPipelineDiagnostics(diagnostics) {
     normalizedFilterState: diagnostics.normalizedFilterState || null,
     normalizedFilterStateKey: diagnostics.normalizedFilterStateKey || "",
     dashboardCombinationDiagnostics: diagnostics.dashboardCombinationDiagnostics || null,
+    dashboardSearchDiagnostics: getDashboardSearchDiagnostics(diagnostics.normalizedFilterState, diagnostics),
     candidateStrategy: diagnostics.candidateStrategy || null,
     candidateStrategyKey: diagnostics.candidateStrategyKey || "",
     strategyExecutionPlan: diagnostics.strategyExecutionPlan || null,
@@ -22035,6 +22038,16 @@ function ensureFilterPipelineDiagnosticsExportTools() {
     };
   }
 
+  if (typeof window.getDashboardSearchDiagnostics !== "function") {
+    window.getDashboardSearchDiagnostics = () => {
+      const activeDiagnostic = getActiveFilterPipelineDiagnostic();
+      return getDashboardSearchDiagnostics(
+        activeDiagnostic?.normalizedFilterState || createNormalizedFilterState(),
+        activeDiagnostic
+      );
+    };
+  }
+
   if (typeof window.copyFilterPipelineDiagnostics !== "function") {
     window.copyFilterPipelineDiagnostics = async () => {
       const payload = getFilterPipelineDiagnosticsExportPayload();
@@ -22477,6 +22490,7 @@ function ensureFilterPipelineDiagnosticsExportTools() {
         "window.getActiveFilterPipelineDiagnostic()",
         "window.getActiveDashboardSelection()",
         "window.getDashboardCombinationDiagnostics()",
+        "window.getDashboardSearchDiagnostics()",
         "window.copyFilterPipelineDiagnostics()",
         "window.setFilterDiagnosticsLimit(limit)",
         "window.enableFilterPerformanceDiagnostics()",
@@ -28710,6 +28724,81 @@ function getDashboardCombinationDiagnostics(normalizedFilterState = createNormal
     keywordFiltersActive: hasKeywordFilters,
     diagnosticsOnly: true,
     notes,
+  };
+}
+
+function getDashboardSearchDiagnostics(normalizedFilterState = createNormalizedFilterState(), diagnostics = null) {
+  const dashboard = normalizedFilterState?.dashboard || {};
+  const filters = normalizedFilterState?.filters || {};
+  const searchQuery = String(filters.search || "").trim();
+  const normalizedSearchQuery = searchQuery.toLowerCase();
+  const backendRequests = Array.isArray(diagnostics?.backendRequests) ? diagnostics.backendRequests : [];
+  const backendSearchTerms = backendRequests
+    .map((request) => String(request?.search || "").trim())
+    .filter(Boolean);
+  const backendRequestsWithUserSearch = normalizedSearchQuery
+    ? backendSearchTerms.filter((term) => term.toLowerCase() === normalizedSearchQuery)
+    : [];
+  const backendRequestsWithDifferentSearch = normalizedSearchQuery
+    ? backendSearchTerms.filter((term) => term.toLowerCase() !== normalizedSearchQuery)
+    : [];
+  const filterStages = Array.isArray(diagnostics?.filterPipelineStages) ? diagnostics.filterPipelineStages : [];
+  const personalDashboardStage = filterStages.find((stage) => stage?.stage === "personal_dashboard") || null;
+  const advancedFiltersStage = filterStages.find((stage) => stage?.stage === "advanced_filters") || null;
+  const searchRejectedCount = Number(diagnostics?.rejections?.advancedFilters?.search) || 0;
+  let backendSearchMode = "inactive";
+
+  if (searchQuery && !backendRequests.length) {
+    backendSearchMode = "no_backend_requests_recorded_yet";
+  } else if (searchQuery && backendRequestsWithUserSearch.length && backendRequestsWithDifferentSearch.length) {
+    backendSearchMode = "mixed_user_search_and_dashboard_terms";
+  } else if (searchQuery && backendRequestsWithUserSearch.length) {
+    backendSearchMode = "user_search_present_in_backend_requests";
+  } else if (searchQuery && dashboard.enabled && backendSearchTerms.length) {
+    backendSearchMode = "dashboard_terms_present_without_user_search";
+  } else if (searchQuery) {
+    backendSearchMode = "search_not_present_in_backend_requests";
+  }
+
+  return {
+    enabled: Boolean(dashboard.enabled || searchQuery),
+    diagnosticsOnly: true,
+    searchQuery,
+    searchActive: Boolean(searchQuery),
+    dashboardEnabled: Boolean(dashboard.enabled),
+    selectedInterests: normalizePersonalDashboardInterests(dashboard.selectedInterests || []),
+    selectedMainDomains: getSelectedMainDomains(dashboard.selectedInterests || []),
+    selectedSharedSecurityInterests: getSelectedSharedSecuritySubinterests(dashboard.selectedInterests || []),
+    backendRequestCount: backendRequests.length,
+    backendSearchTerms: backendSearchTerms.slice(0, 50),
+    backendRequestsWithUserSearchCount: backendRequestsWithUserSearch.length,
+    backendRequestsWithDifferentSearchCount: backendRequestsWithDifferentSearch.length,
+    backendSearchMode,
+    frontendHardSearchFilterActive: Boolean(searchQuery),
+    frontendSearchRejectedCount: searchRejectedCount,
+    personalDashboardInputCount: Number(personalDashboardStage?.inputCount) || 0,
+    personalDashboardOutputCount: Number(personalDashboardStage?.outputCount) || 0,
+    advancedFiltersInputCount: Number(advancedFiltersStage?.inputCount) || 0,
+    advancedFiltersOutputCount: Number(advancedFiltersStage?.outputCount) || 0,
+    searchDoubleApplied: Boolean(searchQuery && backendRequestsWithUserSearch.length > 0),
+    searchRelationship: searchQuery
+      ? backendRequestsWithUserSearch.length
+        ? "backend_search_and_frontend_hard_filter"
+        : dashboard.enabled && backendSearchTerms.length
+          ? "dashboard_backend_terms_plus_frontend_hard_search_filter"
+          : "frontend_hard_search_filter_only_or_pending_backend_metadata"
+      : "inactive",
+    notes: [
+      ...(searchQuery
+        ? ["Search is currently evaluated as a frontend hard filter in articleMatchesFilters()."]
+        : []),
+      ...(searchQuery && backendRequestsWithUserSearch.length
+        ? ["The same user search appears in backendRequests, so search may narrow both retrieval and local filtering."]
+        : []),
+      ...(searchQuery && dashboard.enabled && backendSearchTerms.length && !backendRequestsWithUserSearch.length
+        ? ["Dashboard backend request terms are present, but the user search is not present as an exact backend request search term."]
+        : []),
+    ],
   };
 }
 
