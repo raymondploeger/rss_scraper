@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "dashboard-multidomain-retrieval-v1";
+const APP_BUILD = "shared-security-keyword-retrieval-v1";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -24367,6 +24367,29 @@ const DIGITAL_IDENTITY_BACKEND_RETRIEVAL_BASE_SEARCH_TERMS = [
 ];
 
 const SHARED_SECURITY_BACKEND_RETRIEVAL_SEARCH_TERMS = {
+  security_features: [
+    "security feature",
+    "security features",
+    "security thread",
+    "watermark",
+    "hologram",
+    "holographic security feature",
+    "optically variable feature",
+    "banknote security",
+    "passport security features",
+    "id card security features",
+    "document security features",
+  ],
+  security_printing: [
+    "security printing",
+    "secure printing",
+    "security printer",
+    "banknote printing",
+    "passport printing",
+    "secure document printing",
+    "document security printing",
+    "security printworks",
+  ],
   holography: [
     "hologram",
     "holograms",
