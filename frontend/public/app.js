@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "dashboard-combination-diagnostics-v1";
+const APP_BUILD = "dashboard-multidomain-retrieval-v1";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -24850,6 +24850,189 @@ function getPersonalDashboardBackendDomainPlan() {
       domain: "digital_identity_biometrics",
       topic: "Digital Identity & Verification",
       searches: Array.from(digitalIdentitySearches),
+    };
+  }
+
+  if (selectedMainDomains.length > 1) {
+    const multiDomainSearches = new Set();
+    const addMultiTerms = (terms = []) => {
+      terms.forEach((term) => multiDomainSearches.add(term));
+    };
+
+    if (selectedMainDomains.includes("banknotes")) {
+      const banknoteSearches = new Set(
+        selectedBanknoteInterests.length === 1 ? [] : BANKNOTE_BACKEND_RETRIEVAL_BASE_SEARCH_TERMS
+      );
+      selectedBanknoteInterests.forEach((interestId) => {
+        (BANKNOTE_BACKEND_RETRIEVAL_SEARCH_TERMS[interestId] || [])
+          .forEach((term) => banknoteSearches.add(term));
+      });
+      if (!banknoteSearches.size) {
+        BANKNOTE_BACKEND_RETRIEVAL_BASE_SEARCH_TERMS.forEach((term) => banknoteSearches.add(term));
+      }
+      addMultiTerms(Array.from(banknoteSearches));
+    }
+
+    if (selectedMainDomains.includes("identity_documents")) {
+      const identitySearches = new Set(selectedIdentityInterests.length ? [] : [
+        "passport issuance",
+        "biometric passport",
+        "passport verification",
+        "passport security",
+        "residence permit card",
+        "biometric residence permit",
+        "visa issuance",
+        "evisa",
+        "secure document",
+        "document security",
+        "polycarbonate",
+        "icao",
+        "doc 9303",
+        "mrtd",
+        "emrtd",
+        "border control",
+        "document inspection",
+        "automated border control",
+      ]);
+      const addIdentityTerms = (terms = []) => {
+        terms.forEach((term) => identitySearches.add(term));
+      };
+
+      if (hasInterest("passports")) {
+        addIdentityTerms([
+          "passport issuance",
+          "passport renewal",
+          "biometric passport",
+          "epassport",
+          "e-passport",
+          "passport verification",
+          "passport security",
+          "passport fraud",
+          "passport production",
+        ]);
+      }
+      if (hasInterest("id_cards")) {
+        addIdentityTerms([
+          "identity card",
+          "id card",
+          "electronic identity card",
+          "smart id",
+          "nicop",
+          "cnic",
+          "national identity guard",
+          "card issuance",
+          "polycarbonate id",
+        ]);
+      }
+      if (hasInterest("residence_permits")) {
+        addIdentityTerms([
+          "residence permit",
+          "residence permit card",
+          "biometric residence permit",
+          "resident card",
+          "permit issuance",
+          "permit renewal",
+        ]);
+      }
+      if (hasInterest("drivers_licenses")) {
+        addIdentityTerms([
+          "driver license",
+          "driver's license",
+          "driving licence",
+        ]);
+      }
+      if (hasInterest("visas")) {
+        addIdentityTerms([
+          "visa issuance",
+          "evisa",
+          "digital visa",
+          "visa processing",
+          "consular systems",
+          "immigration systems",
+        ]);
+      }
+      if (hasInterest("issuance")) {
+        addIdentityTerms([
+          "document issuance",
+          "passport issuance",
+          "secure issuance",
+        ]);
+      }
+      if (hasInterest("fraud")) {
+        addIdentityTerms([
+          "document fraud",
+          "forged document",
+          "fake passport",
+          "counterfeit document",
+          "counterfeit passport",
+          "counterfeit id",
+          "counterfeit identity document",
+          "fake id",
+          "forged identity document",
+        ]);
+      }
+      if (hasInterest("icao")) {
+        addIdentityTerms([
+          "icao",
+          "icao doc 9303",
+          "doc 9303",
+          "machine readable travel document",
+          "icao pkd",
+          "public key directory",
+          "digital travel credential",
+        ]);
+      }
+      if (hasInterest("border_control")) {
+        addIdentityTerms([
+          "border control",
+          "passport control",
+          "automated border control",
+          "entry/exit system",
+          "ees",
+          "etias",
+          "document inspection",
+        ]);
+      }
+      if (!identitySearches.size) {
+        [
+          "passport issuance",
+          "biometric passport",
+          "passport verification",
+          "secure document",
+          "document security",
+        ].forEach((term) => identitySearches.add(term));
+      }
+      addMultiTerms(Array.from(identitySearches));
+    }
+
+    if (selectedMainDomains.includes("digital_identity_biometrics")) {
+      const digitalIdentitySearches = new Set(
+        selectedDigitalIdentityInterests.length === 1 ? [] : DIGITAL_IDENTITY_BACKEND_RETRIEVAL_BASE_SEARCH_TERMS
+      );
+      selectedDigitalIdentityInterests.forEach((interestId) => {
+        (DIGITAL_IDENTITY_BACKEND_RETRIEVAL_SEARCH_TERMS[interestId] || [])
+          .forEach((term) => digitalIdentitySearches.add(term));
+      });
+      if (!digitalIdentitySearches.size) {
+        DIGITAL_IDENTITY_BACKEND_RETRIEVAL_BASE_SEARCH_TERMS.forEach((term) => digitalIdentitySearches.add(term));
+      }
+      addMultiTerms(Array.from(digitalIdentitySearches));
+    }
+
+    if (selectedSharedSecurityInterests.length) {
+      selectedSharedSecurityInterests.forEach((interestId) => {
+        (SHARED_SECURITY_BACKEND_RETRIEVAL_SEARCH_TERMS[interestId] || [])
+          .forEach((term) => multiDomainSearches.add(term));
+      });
+    }
+
+    return {
+      domain: selectedMainDomains.slice().sort().join("+"),
+      topic: "",
+      includeTopicBaseline: false,
+      searches: Array.from(multiDomainSearches),
+      multiDomainOrPlan: true,
+      selectedBaseDomains: selectedMainDomains.slice(),
     };
   }
 
