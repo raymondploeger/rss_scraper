@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "authentication-guard-return-path-v1";
+const APP_BUILD = "authentication-guard-activation-v2";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -30588,9 +30588,7 @@ const AUTHENTICATION_BROAD_AUTHENTICATION_TERMS = [
 
 function shouldApplyAuthenticationProfessionalGuard(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
   const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
-  const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
-  return selectedMainDomains.includes("digital_identity_biometrics") &&
-    normalizedInterests.includes("authentication");
+  return normalizedInterests.includes("authentication");
 }
 
 function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
