@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "authentication-guard-activation-v2";
+const APP_BUILD = "authentication-guard-noise-v3";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -30653,21 +30653,17 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
     );
   const passkeyWithoutIdentityContext = matchedPasskeyNoiseTerms.length > 0 &&
     !hasDocumentAuthenticationSignal &&
-    !hasCoreIdentityAuthenticationSignal &&
-    !hasVendorIdentityContext;
+    !hasCoreIdentityAuthenticationSignal;
   const genericLoginAuthentication = matchedGenericLoginNoiseTerms.length > 0 && (!professionalAuthenticationMatched || broadAuthenticationWithoutStrictIdentityContext);
   const cybersecurityAuthenticationNoise = matchedCybersecurityNoiseTerms.length > 0 &&
     !hasDocumentAuthenticationSignal &&
-    !hasCoreIdentityAuthenticationSignal &&
-    !hasVendorIdentityContext;
+    !hasCoreIdentityAuthenticationSignal;
   const deviceSoftwareAuthenticationNoise = matchedDeviceSoftwareNoiseTerms.length > 0 &&
     !hasDocumentAuthenticationSignal &&
-    !hasCoreIdentityAuthenticationSignal &&
-    !hasVendorIdentityContext;
+    !hasCoreIdentityAuthenticationSignal;
   const paymentAuthenticationNoise = matchedPaymentNoiseTerms.length > 0 &&
     !hasDocumentAuthenticationSignal &&
-    !hasCoreIdentityAuthenticationSignal &&
-    !hasVendorIdentityContext;
+    !hasCoreIdentityAuthenticationSignal;
   const passed = !enabled ||
     (
       professionalAuthenticationMatched &&
