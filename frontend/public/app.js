@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "passport-icao-primary-gate-v1";
+const APP_BUILD = "passport-icao-representative-v1";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4836,15 +4836,67 @@ function sortArticlesByPublicationDate(articles) {
   return Array.isArray(articles) ? articles.slice().sort(compareArticlesByPublicationDate) : [];
 }
 
+function shouldUseIcaoDashboardRepresentativeSelection() {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const selectedIdentityInterests = getSelectedIdentityDashboardInterests(selectedInterests);
+  return selectedIdentityInterests.includes("passports") && selectedIdentityInterests.includes("icao");
+}
+
+function getIcaoDashboardRepresentativeScore(article) {
+  const assessment = getIdentityDocumentIcaoStandardsAssessment(article);
+  const title = String(article?.title || "");
+  let score = 0;
+
+  if (assessment.passed) {
+    score += 10000;
+  }
+  score += (assessment.matchedPrimaryStrongStandardsTerms?.length || 0) * 900;
+  score += (assessment.matchedPrimaryIcaoAnchorTerms?.length || 0) * 450;
+  score += (assessment.matchedPrimaryPassportDocumentContextTerms?.length || 0) * 350;
+  score += (assessment.matchedPrimaryDocumentTechnologyContextTerms?.length || 0) * 300;
+  score += (assessment.matchedStrongStandardsTerms?.length || 0) * 120;
+  score -= (assessment.matchedPassportServiceNoiseTerms?.length || 0) * 1200;
+  score -= (assessment.matchedAviationNoiseTerms?.length || 0) * 900;
+
+  if (textMatchesKeyword(title, "icao") || textMatchesKeyword(title, "doc 9303") || textMatchesKeyword(title, "pkd")) {
+    score += 700;
+  }
+  if (textMatchesKeyword(title, "passport") || textMatchesKeyword(title, "epassport") || textMatchesKeyword(title, "travel document")) {
+    score += 450;
+  }
+
+  return score;
+}
+
+function selectDashboardRepresentativeArticle(sources) {
+  const sortedSources = sortArticlesByPublicationDate(sources);
+  if (!shouldUseIcaoDashboardRepresentativeSelection()) {
+    return sortedSources[0] || null;
+  }
+
+  return sortedSources
+    .map((sourceArticle, index) => ({
+      sourceArticle,
+      index,
+      score: getIcaoDashboardRepresentativeScore(sourceArticle),
+    }))
+    .sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score;
+      }
+      return left.index - right.index;
+    })[0]?.sourceArticle || sortedSources[0] || null;
+}
+
 function promoteNewestArticleInSelectedFeedGroup(article) {
   const sources = Array.isArray(article?.sources) && article.sources.length
     ? sortArticlesByPublicationDate(article.sources)
     : [article].filter(Boolean);
-  const newest = sources[0] || article;
+  const representative = selectDashboardRepresentativeArticle(sources) || article;
 
   return {
     ...article,
-    ...newest,
+    ...representative,
     sources,
     sourceCount: Number(article?.sourceCount) || sources.length,
     groupedArticlesCount: Number(article?.groupedArticlesCount) || Math.max(0, sources.length - 1),
