@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "passport-icao-representative-v1";
+const APP_BUILD = "passport-icao-article-context-v1";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -21160,6 +21160,11 @@ function getIdentityDocumentIcaoStandardsAssessment(article) {
       context.sourceText,
       context.domainText,
     ].filter(Boolean).join(" ");
+    const articleHaystack = [
+      context.titleText,
+      context.tagText,
+      context.bodyText,
+    ].filter(Boolean).join(" ");
     const contentHaystack = [
       context.titleText,
       context.tagText,
@@ -21290,6 +21295,7 @@ function getIdentityDocumentIcaoStandardsAssessment(article) {
     const matchedPrimaryIcaoAnchorTerms = icaoAnchorTerms.filter((term) => textMatchesKeyword(primaryHaystack, term));
     const matchedPrimaryPassportDocumentContextTerms = passportDocumentContextTerms.filter((term) => textMatchesKeyword(primaryHaystack, term));
     const matchedPrimaryDocumentTechnologyContextTerms = documentTechnologyContextTerms.filter((term) => textMatchesKeyword(primaryHaystack, term));
+    const matchedArticlePassportDocumentContextTerms = passportDocumentContextTerms.filter((term) => textMatchesKeyword(articleHaystack, term));
     const hasStrongStandardsEvidence = matchedStrongStandardsTerms.length > 0;
     const hasPrimaryStrongStandardsEvidence = matchedPrimaryStrongStandardsTerms.length > 0;
     const hasPassportDocumentContext = matchedPassportDocumentContextTerms.length > 0;
@@ -21298,21 +21304,26 @@ function getIdentityDocumentIcaoStandardsAssessment(article) {
     const hasPrimaryIcaoAnchor = matchedPrimaryIcaoAnchorTerms.length > 0;
     const hasPrimaryPassportDocumentContext = matchedPrimaryPassportDocumentContextTerms.length > 0;
     const hasPrimaryDocumentTechnologyContext = matchedPrimaryDocumentTechnologyContextTerms.length > 0;
+    const hasArticlePassportDocumentContext = matchedArticlePassportDocumentContextTerms.length > 0;
     const hasNoise = matchedAviationNoiseTerms.length > 0 || matchedPassportServiceNoiseTerms.length > 0;
-    const passed = (hasPrimaryStrongStandardsEvidence && (hasPassportDocumentContext || hasDocumentTechnologyContext || matchedTitleStrongTerms.length > 0))
-      || (hasPrimaryIcaoAnchor && hasPrimaryPassportDocumentContext && (hasPrimaryDocumentTechnologyContext || hasDocumentTechnologyContext) && !hasNoise);
+    const passed = hasArticlePassportDocumentContext && (
+      (hasPrimaryStrongStandardsEvidence && (hasPassportDocumentContext || hasDocumentTechnologyContext || matchedTitleStrongTerms.length > 0))
+      || (hasPrimaryIcaoAnchor && hasPrimaryPassportDocumentContext && (hasPrimaryDocumentTechnologyContext || hasDocumentTechnologyContext) && !hasNoise)
+    );
 
     return {
       passed,
       reason: passed
         ? "primary ICAO document standards evidence matched"
+        : (!hasArticlePassportDocumentContext
+          ? "missing article-level passport or travel document context"
         : (!hasPrimaryIcaoAnchor && !hasPrimaryStrongStandardsEvidence
           ? "missing primary ICAO document standards evidence"
           : (!hasPassportDocumentContext
             ? "missing passport or travel document context"
             : (!hasDocumentTechnologyContext
               ? "missing passport standards or verification technology context"
-              : "ICAO/passport service or aviation noise without primary document standards context"))),
+              : "ICAO/passport service or aviation noise without primary document standards context")))),
       matchedStrongStandardsTerms,
       matchedIcaoAnchorTerms,
       matchedPassportDocumentContextTerms,
@@ -21323,6 +21334,7 @@ function getIdentityDocumentIcaoStandardsAssessment(article) {
       matchedPrimaryIcaoAnchorTerms,
       matchedPrimaryPassportDocumentContextTerms,
       matchedPrimaryDocumentTechnologyContextTerms,
+      matchedArticlePassportDocumentContextTerms,
     };
   });
 }
