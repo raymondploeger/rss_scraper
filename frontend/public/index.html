@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>IN Security Document Scraper</title>
     <link rel="icon" type="image/png" href="/images/in-group-logo.png" />
-    <link rel="stylesheet" href="/styles.css?v=20260725-dashboard-ia-1" />
+    <link rel="stylesheet" href="/styles.css?v=20260725-advanced-filters-1" />
   </head>
   <body>
     <div id="notification-region" class="notification-region" aria-live="polite" aria-label="Notifications"></div>
@@ -63,11 +63,16 @@
             </section>
 
             <div class="panel-subhead">
-              <span class="panel-subhead-title">Advanced filters</span>
-              <p class="panel-subhead-copy">Use the existing search and dropdown filters for deeper refinement.</p>
+              <div>
+                <span class="panel-subhead-title">Advanced filters</span>
+                <p class="panel-subhead-copy">Use search and dropdown filters for deeper refinement.</p>
+              </div>
+              <button id="advanced-filters-toggle" class="ghost-button advanced-filters-toggle" type="button" aria-expanded="false">
+                Show filters
+              </button>
             </div>
 
-            <div class="filter-grid">
+            <div id="advanced-filters-content" class="filter-grid" hidden>
               <label class="field field-full" data-filter-field="search">
                 <span>Search</span>
                 <input id="search-filter" type="search" placeholder="Search title, source, topic" />
@@ -337,6 +342,6 @@
       </article>
     </template>
 
-    <script type="module" src="/app.js?v=20260725-dashboard-ia-1"></script>
+    <script type="module" src="/app.js?v=20260725-advanced-filters-1"></script>
   </body>
 </html>

@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "dashboard-ia-cleanup-v1";
+const APP_BUILD = "advanced-filters-collapsed-v1";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4704,6 +4704,8 @@ const elements = {
   personalDashboardGroups: document.getElementById("personal-dashboard-groups"),
   personalDashboardInterests: document.getElementById("personal-dashboard-interests"),
   personalDashboardClear: document.getElementById("personal-dashboard-clear"),
+  advancedFiltersToggle: document.getElementById("advanced-filters-toggle"),
+  advancedFiltersContent: document.getElementById("advanced-filters-content"),
   feedFilter: document.getElementById("feed-filter"),
   dmvFeedFilter: document.getElementById("dmv-feed-filter"),
   canadaDmvFilter: document.getElementById("canada-dmv-filter"),
@@ -40062,6 +40064,16 @@ function syncNoiseKeywordVisibility() {
   elements.keywordToggle.textContent = state.noiseKeywordsExpanded ? "Hide ▴" : "Manage ▾";
 }
 
+function syncAdvancedFiltersVisibility(expanded = false) {
+  if (!elements.advancedFiltersContent || !elements.advancedFiltersToggle) {
+    return;
+  }
+
+  elements.advancedFiltersContent.hidden = !expanded;
+  elements.advancedFiltersToggle.setAttribute("aria-expanded", String(expanded));
+  elements.advancedFiltersToggle.textContent = expanded ? "Hide filters" : "Show filters";
+}
+
 function applyKeywordInputs() {
   setKeywordFilters({
     include: parseKeywordInput(elements.includeKeywordsInput?.value, DEFAULT_KEYWORD_INCLUDES),
@@ -52798,6 +52810,15 @@ function bindEvents() {
     elements.addSourceToggle.addEventListener("click", () => {
       const expanded = elements.addSourceToggle.getAttribute("aria-expanded") === "true";
       syncAddSourcePanel(!expanded);
+    });
+  }
+
+  if (elements.advancedFiltersToggle && elements.advancedFiltersContent) {
+    syncAdvancedFiltersVisibility(false);
+
+    elements.advancedFiltersToggle.addEventListener("click", () => {
+      const expanded = elements.advancedFiltersToggle.getAttribute("aria-expanded") === "true";
+      syncAdvancedFiltersVisibility(!expanded);
     });
   }
 

@@ -374,8 +374,10 @@ img {
 }
 
 .panel-subhead {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
   margin: 0 0 12px;
 }
 
@@ -390,6 +392,11 @@ img {
   color: var(--muted);
   font-size: 0.74rem;
   line-height: 1.35;
+}
+
+.advanced-filters-toggle {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .eyebrow {
