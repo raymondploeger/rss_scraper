@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "collapsed-panels-default-v1";
+const APP_BUILD = "passport-icao-gate-v1";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -21098,6 +21098,163 @@ function getIdentityDocumentResidencePermitAssessment(article) {
   });
 }
 
+function getIdentityDocumentIcaoStandardsAssessment(article) {
+  return getCachedArticleValue(article, "identityDocumentIcaoStandardsAssessment", () => {
+    const context = getPersonalBoostContext(article, "getIdentityDocumentIcaoStandardsAssessment", { interest: "icao" });
+    const titleHaystack = context.titleText || "";
+    const contentHaystack = [
+      context.titleText,
+      context.tagText,
+      context.metadataText,
+      context.bodyText,
+      context.sourceText,
+      context.domainText,
+    ].filter(Boolean).join(" ");
+    const strongStandardsTerms = [
+      "icao doc 9303",
+      "doc 9303",
+      "machine readable travel document",
+      "machine-readable travel document",
+      "electronic machine readable travel document",
+      "electronic machine-readable travel document",
+      "mrtd",
+      "emrtd",
+      "icao pkd",
+      "public key directory",
+      "csca",
+      "document signer certificate",
+      "mrz",
+      "digital travel credential",
+      "dtc",
+      "lds",
+      "lds2",
+      "passport chip",
+      "chip authentication",
+      "active authentication",
+      "passive authentication",
+      "icao compliance",
+      "icao standard",
+      "icao standards",
+      "travel document standard",
+      "travel document standards",
+      "passport standard",
+      "passport standards",
+    ];
+    const icaoAnchorTerms = [
+      "icao",
+      "international civil aviation organization",
+      "doc 9303",
+      "mrtd",
+      "emrtd",
+      "pkd",
+      "public key directory",
+    ];
+    const passportDocumentContextTerms = [
+      "passport",
+      "passports",
+      "biometric passport",
+      "biometric passports",
+      "epassport",
+      "e-passport",
+      "travel document",
+      "travel documents",
+      "identity document",
+      "identity documents",
+      "document security",
+      "secure document",
+      "secure documents",
+    ];
+    const documentTechnologyContextTerms = [
+      "biometric passport",
+      "biometric passports",
+      "passport chip",
+      "chip",
+      "nfc",
+      "mrz",
+      "machine readable",
+      "machine-readable",
+      "verification",
+      "authentication",
+      "document inspection",
+      "document authentication",
+      "document verification",
+      "international standard",
+      "international standards",
+      "security standard",
+      "security standards",
+    ];
+    const aviationNoiseTerms = [
+      "air transport",
+      "aviation safety",
+      "air navigation",
+      "aviation leaders",
+      "global air transport plan",
+      "civil aviation",
+      "airport safety",
+      "flight safety",
+      "airline",
+      "airlines",
+      "aircraft",
+      "aviation assembly",
+      "extraordinary assembly",
+    ];
+    const passportServiceNoiseTerms = [
+      "passport renewal campaign",
+      "passport renewal reminder",
+      "passport service centre",
+      "passport service centres",
+      "passport service center",
+      "passport service centers",
+      "passport office",
+      "passport appointment",
+      "appointment availability",
+      "how to book",
+      "fees",
+      "fee increase",
+      "processing delay",
+      "processing delays",
+      "wait time",
+      "wait times",
+      "opening hours",
+      "temporary outsourcing",
+      "consular services transition",
+    ];
+    const matchedStrongStandardsTerms = strongStandardsTerms.filter((term) => textMatchesKeyword(contentHaystack, term));
+    const matchedIcaoAnchorTerms = icaoAnchorTerms.filter((term) => textMatchesKeyword(contentHaystack, term));
+    const matchedPassportDocumentContextTerms = passportDocumentContextTerms.filter((term) => textMatchesKeyword(contentHaystack, term));
+    const matchedDocumentTechnologyContextTerms = documentTechnologyContextTerms.filter((term) => textMatchesKeyword(contentHaystack, term));
+    const matchedAviationNoiseTerms = aviationNoiseTerms.filter((term) => textMatchesKeyword(contentHaystack, term));
+    const matchedPassportServiceNoiseTerms = passportServiceNoiseTerms.filter((term) => textMatchesKeyword(contentHaystack, term));
+    const matchedTitleStrongTerms = strongStandardsTerms.filter((term) => textMatchesKeyword(titleHaystack, term));
+    const hasStrongStandardsEvidence = matchedStrongStandardsTerms.length > 0;
+    const hasPassportDocumentContext = matchedPassportDocumentContextTerms.length > 0;
+    const hasDocumentTechnologyContext = matchedDocumentTechnologyContextTerms.length > 0;
+    const hasIcaoAnchor = matchedIcaoAnchorTerms.length > 0;
+    const hasNoise = matchedAviationNoiseTerms.length > 0 || matchedPassportServiceNoiseTerms.length > 0;
+    const passed = (hasStrongStandardsEvidence && (hasPassportDocumentContext || hasDocumentTechnologyContext || matchedTitleStrongTerms.length > 0))
+      || (hasIcaoAnchor && hasPassportDocumentContext && hasDocumentTechnologyContext && !hasNoise);
+
+    return {
+      passed,
+      reason: passed
+        ? "ICAO document standards evidence matched"
+        : (!hasIcaoAnchor && !hasStrongStandardsEvidence
+          ? "missing ICAO document standards evidence"
+          : (!hasPassportDocumentContext
+            ? "missing passport or travel document context"
+            : (!hasDocumentTechnologyContext
+              ? "missing passport standards or verification technology context"
+              : "ICAO/passport service or aviation noise without document standards context"))),
+      matchedStrongStandardsTerms,
+      matchedIcaoAnchorTerms,
+      matchedPassportDocumentContextTerms,
+      matchedDocumentTechnologyContextTerms,
+      matchedAviationNoiseTerms,
+      matchedPassportServiceNoiseTerms,
+    };
+  });
+}
+
 function getIdentityDocumentConjunctiveInterestAssessment(article, selectedInterests, options = {}) {
   const timingContext = typeof options.timingContext === "string" ? options.timingContext : "";
   const timingEnabled = Boolean(timingContext && runtime.activeProductionLoadTimingRun);
@@ -21172,6 +21329,12 @@ function getIdentityDocumentConjunctiveInterestAssessment(article, selectedInter
         && residencePermitAssessment.residencePermitFocused
         && !residencePermitAssessment.noisyWithoutResidencePermitFocus;
     }
+    if (interestId === "icao") {
+      const icaoStandardsAssessment = measureConjunctiveSegment("icaoStandardsAssessment", () =>
+        getIdentityDocumentIcaoStandardsAssessment(article)
+      );
+      return getScore(interestId) >= 18 && icaoStandardsAssessment.passed;
+    }
     return getScore(interestId) >= 18;
   };
   const getMatchedInterests = (interestIds) => measureConjunctiveSegment("matchedInterests", () =>
@@ -21220,6 +21383,9 @@ function getIdentityDocumentConjunctiveInterestAssessment(article, selectedInter
     matchedObjectInterests,
     matchedIntelligenceInterests,
     idCardsBridgeMatched,
+    icaoStandardsAssessment: selectedIdentityInterests.includes("icao")
+      ? getIdentityDocumentIcaoStandardsAssessment(article)
+      : null,
   });
 }
 
