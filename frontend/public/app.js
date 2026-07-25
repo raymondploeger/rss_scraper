@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "passport-icao-gate-v1";
+const APP_BUILD = "passport-icao-primary-gate-v1";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -21102,6 +21102,12 @@ function getIdentityDocumentIcaoStandardsAssessment(article) {
   return getCachedArticleValue(article, "identityDocumentIcaoStandardsAssessment", () => {
     const context = getPersonalBoostContext(article, "getIdentityDocumentIcaoStandardsAssessment", { interest: "icao" });
     const titleHaystack = context.titleText || "";
+    const primaryHaystack = [
+      context.titleText,
+      context.metadataText,
+      context.sourceText,
+      context.domainText,
+    ].filter(Boolean).join(" ");
     const contentHaystack = [
       context.titleText,
       context.tagText,
@@ -21139,6 +21145,8 @@ function getIdentityDocumentIcaoStandardsAssessment(article) {
       "travel document standards",
       "passport standard",
       "passport standards",
+      "e-passport verification",
+      "epassport verification",
     ];
     const icaoAnchorTerms = [
       "icao",
@@ -21226,31 +21234,43 @@ function getIdentityDocumentIcaoStandardsAssessment(article) {
     const matchedAviationNoiseTerms = aviationNoiseTerms.filter((term) => textMatchesKeyword(contentHaystack, term));
     const matchedPassportServiceNoiseTerms = passportServiceNoiseTerms.filter((term) => textMatchesKeyword(contentHaystack, term));
     const matchedTitleStrongTerms = strongStandardsTerms.filter((term) => textMatchesKeyword(titleHaystack, term));
+    const matchedPrimaryStrongStandardsTerms = strongStandardsTerms.filter((term) => textMatchesKeyword(primaryHaystack, term));
+    const matchedPrimaryIcaoAnchorTerms = icaoAnchorTerms.filter((term) => textMatchesKeyword(primaryHaystack, term));
+    const matchedPrimaryPassportDocumentContextTerms = passportDocumentContextTerms.filter((term) => textMatchesKeyword(primaryHaystack, term));
+    const matchedPrimaryDocumentTechnologyContextTerms = documentTechnologyContextTerms.filter((term) => textMatchesKeyword(primaryHaystack, term));
     const hasStrongStandardsEvidence = matchedStrongStandardsTerms.length > 0;
+    const hasPrimaryStrongStandardsEvidence = matchedPrimaryStrongStandardsTerms.length > 0;
     const hasPassportDocumentContext = matchedPassportDocumentContextTerms.length > 0;
     const hasDocumentTechnologyContext = matchedDocumentTechnologyContextTerms.length > 0;
     const hasIcaoAnchor = matchedIcaoAnchorTerms.length > 0;
+    const hasPrimaryIcaoAnchor = matchedPrimaryIcaoAnchorTerms.length > 0;
+    const hasPrimaryPassportDocumentContext = matchedPrimaryPassportDocumentContextTerms.length > 0;
+    const hasPrimaryDocumentTechnologyContext = matchedPrimaryDocumentTechnologyContextTerms.length > 0;
     const hasNoise = matchedAviationNoiseTerms.length > 0 || matchedPassportServiceNoiseTerms.length > 0;
-    const passed = (hasStrongStandardsEvidence && (hasPassportDocumentContext || hasDocumentTechnologyContext || matchedTitleStrongTerms.length > 0))
-      || (hasIcaoAnchor && hasPassportDocumentContext && hasDocumentTechnologyContext && !hasNoise);
+    const passed = (hasPrimaryStrongStandardsEvidence && (hasPassportDocumentContext || hasDocumentTechnologyContext || matchedTitleStrongTerms.length > 0))
+      || (hasPrimaryIcaoAnchor && hasPrimaryPassportDocumentContext && (hasPrimaryDocumentTechnologyContext || hasDocumentTechnologyContext) && !hasNoise);
 
     return {
       passed,
       reason: passed
-        ? "ICAO document standards evidence matched"
-        : (!hasIcaoAnchor && !hasStrongStandardsEvidence
-          ? "missing ICAO document standards evidence"
+        ? "primary ICAO document standards evidence matched"
+        : (!hasPrimaryIcaoAnchor && !hasPrimaryStrongStandardsEvidence
+          ? "missing primary ICAO document standards evidence"
           : (!hasPassportDocumentContext
             ? "missing passport or travel document context"
             : (!hasDocumentTechnologyContext
               ? "missing passport standards or verification technology context"
-              : "ICAO/passport service or aviation noise without document standards context"))),
+              : "ICAO/passport service or aviation noise without primary document standards context"))),
       matchedStrongStandardsTerms,
       matchedIcaoAnchorTerms,
       matchedPassportDocumentContextTerms,
       matchedDocumentTechnologyContextTerms,
       matchedAviationNoiseTerms,
       matchedPassportServiceNoiseTerms,
+      matchedPrimaryStrongStandardsTerms,
+      matchedPrimaryIcaoAnchorTerms,
+      matchedPrimaryPassportDocumentContextTerms,
+      matchedPrimaryDocumentTechnologyContextTerms,
     };
   });
 }
