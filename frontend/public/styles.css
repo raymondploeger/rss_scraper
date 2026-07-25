@@ -1032,6 +1032,10 @@ h3 {
   gap: 13px;
 }
 
+#advanced-filters-content[hidden] {
+  display: none !important;
+}
+
 .feed-panel-content {
   display: grid;
   gap: 13px;

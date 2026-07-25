@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "advanced-filters-collapsed-v1";
+const APP_BUILD = "collapsed-panels-default-v1";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -36990,7 +36990,7 @@ function logDigitalIdentitySubgroupDiagnostics(articles) {
 }
 
 function isFeedPanelCollapsed() {
-  return window.localStorage.getItem(FEED_PANEL_COLLAPSED_STORAGE_KEY) === "true";
+  return true;
 }
 
 function getFeedName(feedId) {
@@ -52877,6 +52877,7 @@ async function init() {
     : 0;
   state.noiseKeywordsExpanded = isNoiseKeywordsExpanded();
   state.feedPanelCollapsed = isFeedPanelCollapsed();
+  window.localStorage.setItem(FEED_PANEL_COLLAPSED_STORAGE_KEY, "true");
   resetDashboardState();
   syncFeedFormMode();
   bindEvents();
