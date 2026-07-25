@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "dashboard-search-diagnostics-v1";
+const APP_BUILD = "dashboard-ia-cleanup-v1";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -3625,6 +3625,7 @@ const PERSONAL_DASHBOARD_GROUPS = [
   {
     id: "banknote_intelligence",
     label: "Banknote Intelligence",
+    description: "Cash, central banks, new issues, withdrawals and counterfeiting.",
     interests: [
       { id: "banknotes", label: "Banknotes", strong: ["banknote", "banknotes", "currency note", "commemorative note", "note issuance"], weak: ["cash", "payment"], topicSignals: ["banknotes"], tagSignals: ["banknotes"], eventTypes: ["banknote_withdrawal", "new_banknote_series", "banknote_redesign", "commemorative_issue"] },
       { id: "redesign", label: "Designs", strong: ["redesign", "new design", "new family", "new portrait", "new artwork"], weak: ["design refresh"], signalIds: ["redesign"] },
@@ -3637,6 +3638,7 @@ const PERSONAL_DASHBOARD_GROUPS = [
   {
     id: "identity_documents",
     label: "Identity Documents",
+    description: "Passports, ID cards, permits, visas, issuance, fraud and border use.",
     interests: [
       { id: "passports", label: "Passports", strong: ["passport", "passports", "travel document"], weak: ["passport office"], topicSignals: ["passport"], eventTypes: ["passport_issuance", "passport_renewal", "passport_revocation", "passport_fraud"] },
       { id: "id_cards", label: "ID cards", strong: ["id card", "identity card", "national id", "hybrid id documents", "national identity guard"], weak: ["id issuance", "identity documents", "id documents", "identity document protection", "id protection"], topicSignals: ["id card"] },
@@ -3652,13 +3654,14 @@ const PERSONAL_DASHBOARD_GROUPS = [
   {
     id: "digital_identity_biometrics",
     label: "Digital Identity & Verification",
+    description: "Digital ID, eID, wallets, verification, biometrics and authentication.",
     interests: [
-      { id: "digital_identity", label: "Digital identity", strong: ["digital identity", "digital id", "mobile id"], weak: ["identity platform"] },
-      { id: "eid", label: "eID", strong: ["eid", "e-id", "electronic identity"], weak: ["electronic id"] },
-      { id: "digital_wallet", label: "Digital wallet", strong: ["digital wallet", "identity wallet", "wallet framework"], weak: ["wallet"] },
+      { id: "digital_identity", label: "Digital identity infrastructure", strong: ["digital identity", "digital id", "mobile id"], weak: ["identity platform"] },
+      { id: "eid", label: "eID / national digital ID", strong: ["eid", "e-id", "electronic identity"], weak: ["electronic id"] },
+      { id: "digital_wallet", label: "Digital wallets / credentials", strong: ["digital wallet", "identity wallet", "wallet framework"], weak: ["wallet"] },
       {
         id: "biometric_verification",
-        label: "Biometric verification",
+        label: "Biometrics",
         strong: ["biometric verification", "biometric identity verification", "face verification", "facial verification", "fingerprint verification", "selfie verification", "face match", "face matching"],
         weak: ["biometric check", "face check"],
         signalIds: ["biometric"],
@@ -3684,7 +3687,7 @@ const PERSONAL_DASHBOARD_GROUPS = [
         weak: ["due diligence"],
       },
       { id: "onboarding", label: "Onboarding", hidden: true, strong: ["onboarding", "remote onboarding", "digital onboarding"], weak: ["identity onboarding"] },
-      { id: "liveness", label: "Liveness", strong: ["liveness", "liveness detection", "presentation attack"], weak: ["face match"] },
+      { id: "liveness", label: "Liveness / anti-spoofing", hidden: true, strong: ["liveness", "liveness detection", "presentation attack"], weak: ["face match"] },
       { id: "artificial_intelligence", label: "Artificial intelligence", strong: ["artificial intelligence", "ai identity", "ai-assisted identity"], weak: ["machine learning", "ai"] },
       {
         id: "identity_verification",
@@ -3726,13 +3729,14 @@ const PERSONAL_DASHBOARD_GROUPS = [
           "idv",
         ],
       },
-      { id: "authentication", label: "Authentication", strong: ["authentication", "login verification", "multi-factor authentication"], weak: ["authenticator"] },
+      { id: "authentication", label: "Authentication & trusted access", strong: ["authentication", "login verification", "multi-factor authentication"], weak: ["authenticator"] },
       { id: "age_verification", label: "Age verification", strong: ["age verification", "age assurance", "age estimation", "age check"], weak: ["minor safety", "age gate"] },
     ],
   },
   {
     id: "security_printing",
-    label: "Security Features",
+    label: "Security Features & Secure Printing",
+    description: "Printing, inks, holography, substrates, materials and anti-counterfeit features.",
     interests: [
       { id: "security_features", label: "Security features", strong: ["security feature", "security features", "security thread", "watermark", "hologram"], weak: ["uv feature"], signalIds: ["security-features", "counterfeit"] },
       { id: "security_printing", label: "Security printing", strong: ["security printing", "security printer", "banknote printing"], weak: ["secure print"], eventTypes: ["banknote_production", "security_feature_update"] },
@@ -3740,13 +3744,13 @@ const PERSONAL_DASHBOARD_GROUPS = [
       { id: "micro_optics", label: "Micro optics", strong: ["micro optics", "micro-optics", "micro optical"], weak: ["optical security"] },
       { id: "holography", label: "Holography", strong: ["holography", "holographic", "hologram"], weak: ["diffractive"] },
       { id: "dovid", label: "DOVID", strong: ["dovid", "diffractive optically variable image device", "diffractive feature"], weak: ["diffractive"] },
-      { id: "ovd", label: "Optical variable devices", strong: ["optically variable device", "optically variable feature"], weak: ["diffractive feature", "optical security feature"] },
+      { id: "ovd", label: "Optically variable features", strong: ["optically variable device", "optically variable feature"], weak: ["diffractive feature", "optical security feature"] },
       { id: "intaglio", label: "Intaglio", strong: ["intaglio", "engraved printing"], weak: ["engraved"] },
       { id: "polycarbonate", label: "Polycarbonate", strong: ["polycarbonate", "polycarbonate card", "polycarbonate cards", "polycarbonate id", "polycarbonate id card", "polycarbonate identity card", "polycarbonate data page", "polycarbonate datapage", "pc data page", "pc datapage", "laser engraved polycarbonate", "laser-engraved polycarbonate", "laser engraving", "laser engraved data page", "multilayer polycarbonate", "multi-layer polycarbonate", "fused polycarbonate", "polycarbonate substrate", "polycarbonate passport", "polycarbonate document"], weak: ["datapage", "card substrate"] },
       { id: "polymer", label: "Polymer", strong: ["polymer note", "polymer banknote", "polymer banknotes", "polymer substrate", "polymer document"], weak: ["polymer"], eventTypes: ["polymer_migration", "banknote_redesign"] },
       { id: "laminate", label: "Laminate", strong: ["laminate", "laminated", "lamination", "security laminate", "secure laminate", "passport laminate", "id card laminate", "identity card laminate", "protective laminate", "protective overlay", "security overlay", "secure overlay", "holographic laminate", "holographic overlay", "transparent overlay", "overlay film", "laminated data page", "laminated passport", "laminated identity document"], weak: ["laminated"] },
       { id: "substrate", label: "Substrates", strong: ["substrate", "polymer substrate", "paper substrate", "document substrate", "secure substrate"], weak: ["substrate migration"], eventTypes: ["polymer_migration", "security_feature_update"] },
-      { id: "biometrics", label: "Biometrics", strong: ["biometric", "biometrics", "facial image", "fingerprint template", "iris image", "biometric passport", "biometric id"], weak: ["biometric data"], signalIds: ["biometric"] },
+      { id: "biometrics", label: "Biometrics", hidden: true, strong: ["biometric", "biometrics", "facial image", "fingerprint template", "iris image", "biometric passport", "biometric id"], weak: ["biometric data"], signalIds: ["biometric"] },
       { id: "anti_counterfeit", label: "Anti-counterfeit", strong: ["anti-counterfeit", "anti counterfeit", "counterfeit prevention"], weak: ["authentication feature"] },
       { id: "personalization", label: "Personalization", strong: ["personalization", "secure personalization", "card personalization"], weak: ["document personalization"] },
       { id: "secure_documents", label: "Secure documents", strong: ["secure documents", "document security", "secure document"], weak: ["travel document security"] },
@@ -4573,7 +4577,7 @@ const state = {
   },
   personalDashboard: {
     interests: [],
-    expandedGroups: PERSONAL_DASHBOARD_GROUPS.map((group) => group.id),
+    expandedGroups: [],
     mode: "balanced",
   },
   filters: {
@@ -23136,8 +23140,13 @@ function renderPersonalDashboard() {
   }
 
   const activeInterests = new Set(normalizePersonalDashboardInterests(state.personalDashboard.interests));
-  if (!Array.isArray(state.personalDashboard.expandedGroups) || !state.personalDashboard.expandedGroups.length) {
-    state.personalDashboard.expandedGroups = PERSONAL_DASHBOARD_GROUPS.map((group) => group.id);
+  if (!Array.isArray(state.personalDashboard.expandedGroups)) {
+    state.personalDashboard.expandedGroups = [];
+  }
+  if (!state.personalDashboard.expandedGroups.length && activeInterests.size) {
+    state.personalDashboard.expandedGroups = PERSONAL_DASHBOARD_GROUPS
+      .filter((group) => group.interests.some((interest) => activeInterests.has(interest.id)))
+      .map((group) => group.id);
   }
 
   elements.personalDashboardGroups.innerHTML = PERSONAL_DASHBOARD_GROUPS.map((group) => {
@@ -23152,7 +23161,10 @@ function renderPersonalDashboard() {
           data-personal-group-toggle="${escapeHtml(group.id)}"
           aria-expanded="${expanded ? "true" : "false"}"
         >
-          <span>${escapeHtml(group.label)}</span>
+          <span class="personal-dashboard-group-summary">
+            <span>${escapeHtml(group.label)}</span>
+            ${group.description ? `<span class="personal-dashboard-group-description">${escapeHtml(group.description)}</span>` : ""}
+          </span>
           <span class="personal-dashboard-group-count">${selectedCount ? `${selectedCount} selected` : "Select interests"}</span>
         </button>
         <div class="personal-dashboard-group-options" ${expanded ? "" : "hidden"}>
@@ -23194,7 +23206,7 @@ function renderPersonalDashboard() {
       .join("");
   } else {
     elements.personalDashboardInterests.innerHTML =
-      `<p class="personal-dashboard-empty">No personal interests selected yet. Select interests to gently prioritize matching intelligence topics.</p>`;
+      `<p class="personal-dashboard-empty">Choose a domain, then refine by professional topic or technology.</p>`;
   }
 
   elements.personalDashboardClear.disabled = !activeInterests.size;

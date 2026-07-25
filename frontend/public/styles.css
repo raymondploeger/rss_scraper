@@ -280,6 +280,19 @@ img {
   font-weight: 600;
 }
 
+.personal-dashboard-group-summary {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.personal-dashboard-group-description {
+  color: var(--muted);
+  font-size: 0.69rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
 .personal-dashboard-group-options[hidden] {
   display: none !important;
 }
