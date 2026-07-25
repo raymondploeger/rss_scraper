@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "passport-icao-article-context-v1";
+const APP_BUILD = "authentication-article-context-v1";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -31279,7 +31279,16 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const enabled = Boolean(options.forceEnabled) || shouldApplyAuthenticationProfessionalGuard(selectedInterests);
   const context = getPersonalBoostContext(article, "getAuthenticationProfessionalGuardAssessment", { interest: "authentication" });
+  const articleContext = {
+    ...context,
+    metadataText: "",
+    sourceText: "",
+    domainText: "",
+  };
   const matchedAuthenticationSignals = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_PROFESSIONAL_AUTH_SIGNALS);
+  const matchedArticleAuthenticationSignals = getEidDiagnosticMatchedTerms(articleContext, AUTHENTICATION_PROFESSIONAL_AUTH_SIGNALS);
+  const matchedArticleCoreIdentityAuthSignals = getEidDiagnosticMatchedTerms(articleContext, AUTHENTICATION_CORE_IDENTITY_AUTH_SIGNALS);
+  const matchedArticleNoiseRescueSignals = getEidDiagnosticMatchedTerms(articleContext, AUTHENTICATION_NOISE_RESCUE_SIGNALS);
   const matchedCoreIdentityAuthSignals = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_CORE_IDENTITY_AUTH_SIGNALS);
   const matchedAuthenticationNoiseRescueSignals = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_NOISE_RESCUE_SIGNALS);
   const matchedProfessionalContextTerms = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_PROFESSIONAL_CONTEXT_TERMS);
@@ -31295,6 +31304,9 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
   const selectedAuthenticationAssessment = getDigitalSubgroupHybridAssessment(article, "authentication");
   const legacyAuthenticationScoreIncluded = Boolean(selectedAuthenticationAssessment.included);
   const hasAuthenticationSignal = matchedAuthenticationSignals.length > 0;
+  const hasArticleAuthenticationSignal = matchedArticleAuthenticationSignals.length > 0;
+  const hasArticleCoreIdentityAuthenticationSignal = matchedArticleCoreIdentityAuthSignals.length > 0;
+  const hasArticleAuthenticationNoiseRescueSignal = matchedArticleNoiseRescueSignals.length > 0;
   const hasProfessionalIdentityContext = matchedProfessionalContextTerms.length > 0;
   const hasStrictIdentityContext = matchedStrictIdentityContextTerms.length > 0;
   const hasBroadAuthenticationStrictContext = matchedBroadAuthenticationStrictContextTerms.length > 0;
@@ -31330,9 +31342,10 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
     !hasDocumentAuthenticationSignal &&
     !hasBroadAuthenticationStrictContext;
   const professionalAuthenticationMatched = hasAuthenticationSignal &&
+    hasArticleAuthenticationSignal &&
     (
-      hasDocumentAuthenticationSignal ||
-      hasCoreIdentityAuthenticationSignal ||
+      (hasDocumentAuthenticationSignal && (hasArticleCoreIdentityAuthenticationSignal || hasArticleAuthenticationNoiseRescueSignal)) ||
+      hasArticleCoreIdentityAuthenticationSignal ||
       hasVendorIdentityContext ||
       (hasBroadAuthenticationStrictContext && !hasBroadAuthenticationSignal)
     );
@@ -31371,6 +31384,8 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
       rejectionReason = "device_or_software_authentication_noise";
     } else if (paymentAuthenticationNoise) {
       rejectionReason = "payment_authentication_noise";
+    } else if (!hasArticleAuthenticationSignal) {
+      rejectionReason = "metadata_only_authentication_signal";
     } else {
       rejectionReason = "authentication_without_identity_context";
     }
@@ -31387,12 +31402,15 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
     rejectionReason,
     rejectionCategory: rejectionReason ? "authentication_professional_relevance" : "",
     hasAuthenticationSignal,
+    hasArticleAuthenticationSignal,
     legacyAuthenticationScoreIncluded,
     hasProfessionalIdentityContext,
     hasStrictIdentityContext,
     hasBroadAuthenticationStrictContext,
     hasCoreIdentityAuthenticationSignal,
+    hasArticleCoreIdentityAuthenticationSignal,
     hasAuthenticationNoiseRescueSignal,
+    hasArticleAuthenticationNoiseRescueSignal,
     hasVendorIdentityContext,
     hasExactDocumentAuthenticationSignal,
     hasContextualDocumentAuthenticationSignal,
@@ -31406,8 +31424,11 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
     deviceSoftwareAuthenticationNoise,
     paymentAuthenticationNoise,
     matchedAuthenticationSignals: Object.freeze(matchedAuthenticationSignals.slice(0, 12)),
+    matchedArticleAuthenticationSignals: Object.freeze(matchedArticleAuthenticationSignals.slice(0, 12)),
     matchedCoreIdentityAuthSignals: Object.freeze(matchedCoreIdentityAuthSignals.slice(0, 12)),
+    matchedArticleCoreIdentityAuthSignals: Object.freeze(matchedArticleCoreIdentityAuthSignals.slice(0, 12)),
     matchedAuthenticationNoiseRescueSignals: Object.freeze(matchedAuthenticationNoiseRescueSignals.slice(0, 12)),
+    matchedArticleNoiseRescueSignals: Object.freeze(matchedArticleNoiseRescueSignals.slice(0, 12)),
     matchedProfessionalContextTerms: Object.freeze(matchedProfessionalContextTerms.slice(0, 12)),
     matchedStrictIdentityContextTerms: Object.freeze(matchedStrictIdentityContextTerms.slice(0, 12)),
     matchedBroadAuthenticationStrictContextTerms: Object.freeze(matchedBroadAuthenticationStrictContextTerms.slice(0, 12)),
