@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "authentication-article-context-v1";
+const APP_BUILD = "authentication-primary-context-v1";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -17515,11 +17515,15 @@ function getAuthenticationDiagnosticsFromTrace(trace) {
     passed: Boolean(assessment.passed),
     rejectionReason: assessment.rejectionReason || "",
     hasAuthenticationSignal: Boolean(assessment.hasAuthenticationSignal),
+    hasArticleAuthenticationSignal: Boolean(assessment.hasArticleAuthenticationSignal),
+    hasPrimaryArticleAuthenticationSignal: Boolean(assessment.hasPrimaryArticleAuthenticationSignal),
     hasProfessionalIdentityContext: Boolean(assessment.hasProfessionalIdentityContext),
     hasStrictIdentityContext: Boolean(assessment.hasStrictIdentityContext),
     hasBroadAuthenticationStrictContext: Boolean(assessment.hasBroadAuthenticationStrictContext),
     hasVendorIdentityContext: Boolean(assessment.hasVendorIdentityContext),
     hasCoreIdentityAuthenticationSignal: Boolean(assessment.hasCoreIdentityAuthenticationSignal),
+    hasArticleCoreIdentityAuthenticationSignal: Boolean(assessment.hasArticleCoreIdentityAuthenticationSignal),
+    hasPrimaryArticleCoreIdentityAuthenticationSignal: Boolean(assessment.hasPrimaryArticleCoreIdentityAuthenticationSignal),
     hasAuthenticationNoiseRescueSignal: Boolean(assessment.hasAuthenticationNoiseRescueSignal),
     hasExactDocumentAuthenticationSignal: Boolean(assessment.hasExactDocumentAuthenticationSignal),
     hasContextualDocumentAuthenticationSignal: Boolean(assessment.hasContextualDocumentAuthenticationSignal),
@@ -17528,7 +17532,11 @@ function getAuthenticationDiagnosticsFromTrace(trace) {
     broadAuthenticationWithoutStrictIdentityContext: Boolean(assessment.broadAuthenticationWithoutStrictIdentityContext),
     professionalAuthenticationMatched: Boolean(assessment.professionalAuthenticationMatched),
     matchedAuthenticationSignals: assessment.matchedAuthenticationSignals || [],
+    matchedArticleAuthenticationSignals: assessment.matchedArticleAuthenticationSignals || [],
+    matchedPrimaryArticleAuthenticationSignals: assessment.matchedPrimaryArticleAuthenticationSignals || [],
     matchedCoreIdentityAuthSignals: assessment.matchedCoreIdentityAuthSignals || [],
+    matchedArticleCoreIdentityAuthSignals: assessment.matchedArticleCoreIdentityAuthSignals || [],
+    matchedPrimaryArticleCoreIdentityAuthSignals: assessment.matchedPrimaryArticleCoreIdentityAuthSignals || [],
     matchedAuthenticationNoiseRescueSignals: assessment.matchedAuthenticationNoiseRescueSignals || [],
     matchedProfessionalContextTerms: assessment.matchedProfessionalContextTerms || [],
     matchedStrictIdentityContextTerms: assessment.matchedStrictIdentityContextTerms || [],
@@ -31285,9 +31293,18 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
     sourceText: "",
     domainText: "",
   };
+  const primaryArticleContext = {
+    ...context,
+    metadataText: "",
+    sourceText: "",
+    domainText: "",
+    bodyText: "",
+  };
   const matchedAuthenticationSignals = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_PROFESSIONAL_AUTH_SIGNALS);
   const matchedArticleAuthenticationSignals = getEidDiagnosticMatchedTerms(articleContext, AUTHENTICATION_PROFESSIONAL_AUTH_SIGNALS);
+  const matchedPrimaryArticleAuthenticationSignals = getEidDiagnosticMatchedTerms(primaryArticleContext, AUTHENTICATION_PROFESSIONAL_AUTH_SIGNALS);
   const matchedArticleCoreIdentityAuthSignals = getEidDiagnosticMatchedTerms(articleContext, AUTHENTICATION_CORE_IDENTITY_AUTH_SIGNALS);
+  const matchedPrimaryArticleCoreIdentityAuthSignals = getEidDiagnosticMatchedTerms(primaryArticleContext, AUTHENTICATION_CORE_IDENTITY_AUTH_SIGNALS);
   const matchedArticleNoiseRescueSignals = getEidDiagnosticMatchedTerms(articleContext, AUTHENTICATION_NOISE_RESCUE_SIGNALS);
   const matchedCoreIdentityAuthSignals = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_CORE_IDENTITY_AUTH_SIGNALS);
   const matchedAuthenticationNoiseRescueSignals = getEidDiagnosticMatchedTerms(context, AUTHENTICATION_NOISE_RESCUE_SIGNALS);
@@ -31305,7 +31322,9 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
   const legacyAuthenticationScoreIncluded = Boolean(selectedAuthenticationAssessment.included);
   const hasAuthenticationSignal = matchedAuthenticationSignals.length > 0;
   const hasArticleAuthenticationSignal = matchedArticleAuthenticationSignals.length > 0;
+  const hasPrimaryArticleAuthenticationSignal = matchedPrimaryArticleAuthenticationSignals.length > 0;
   const hasArticleCoreIdentityAuthenticationSignal = matchedArticleCoreIdentityAuthSignals.length > 0;
+  const hasPrimaryArticleCoreIdentityAuthenticationSignal = matchedPrimaryArticleCoreIdentityAuthSignals.length > 0;
   const hasArticleAuthenticationNoiseRescueSignal = matchedArticleNoiseRescueSignals.length > 0;
   const hasProfessionalIdentityContext = matchedProfessionalContextTerms.length > 0;
   const hasStrictIdentityContext = matchedStrictIdentityContextTerms.length > 0;
@@ -31343,9 +31362,10 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
     !hasBroadAuthenticationStrictContext;
   const professionalAuthenticationMatched = hasAuthenticationSignal &&
     hasArticleAuthenticationSignal &&
+    hasPrimaryArticleAuthenticationSignal &&
     (
-      (hasDocumentAuthenticationSignal && (hasArticleCoreIdentityAuthenticationSignal || hasArticleAuthenticationNoiseRescueSignal)) ||
-      hasArticleCoreIdentityAuthenticationSignal ||
+      (hasDocumentAuthenticationSignal && (hasPrimaryArticleCoreIdentityAuthenticationSignal || hasArticleAuthenticationNoiseRescueSignal)) ||
+      hasPrimaryArticleCoreIdentityAuthenticationSignal ||
       hasVendorIdentityContext ||
       (hasBroadAuthenticationStrictContext && !hasBroadAuthenticationSignal)
     );
@@ -31386,6 +31406,8 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
       rejectionReason = "payment_authentication_noise";
     } else if (!hasArticleAuthenticationSignal) {
       rejectionReason = "metadata_only_authentication_signal";
+    } else if (!hasPrimaryArticleAuthenticationSignal) {
+      rejectionReason = "non_primary_authentication_signal";
     } else {
       rejectionReason = "authentication_without_identity_context";
     }
@@ -31403,12 +31425,14 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
     rejectionCategory: rejectionReason ? "authentication_professional_relevance" : "",
     hasAuthenticationSignal,
     hasArticleAuthenticationSignal,
+    hasPrimaryArticleAuthenticationSignal,
     legacyAuthenticationScoreIncluded,
     hasProfessionalIdentityContext,
     hasStrictIdentityContext,
     hasBroadAuthenticationStrictContext,
     hasCoreIdentityAuthenticationSignal,
     hasArticleCoreIdentityAuthenticationSignal,
+    hasPrimaryArticleCoreIdentityAuthenticationSignal,
     hasAuthenticationNoiseRescueSignal,
     hasArticleAuthenticationNoiseRescueSignal,
     hasVendorIdentityContext,
@@ -31425,8 +31449,10 @@ function getAuthenticationProfessionalGuardAssessment(article, options = {}) {
     paymentAuthenticationNoise,
     matchedAuthenticationSignals: Object.freeze(matchedAuthenticationSignals.slice(0, 12)),
     matchedArticleAuthenticationSignals: Object.freeze(matchedArticleAuthenticationSignals.slice(0, 12)),
+    matchedPrimaryArticleAuthenticationSignals: Object.freeze(matchedPrimaryArticleAuthenticationSignals.slice(0, 12)),
     matchedCoreIdentityAuthSignals: Object.freeze(matchedCoreIdentityAuthSignals.slice(0, 12)),
     matchedArticleCoreIdentityAuthSignals: Object.freeze(matchedArticleCoreIdentityAuthSignals.slice(0, 12)),
+    matchedPrimaryArticleCoreIdentityAuthSignals: Object.freeze(matchedPrimaryArticleCoreIdentityAuthSignals.slice(0, 12)),
     matchedAuthenticationNoiseRescueSignals: Object.freeze(matchedAuthenticationNoiseRescueSignals.slice(0, 12)),
     matchedArticleNoiseRescueSignals: Object.freeze(matchedArticleNoiseRescueSignals.slice(0, 12)),
     matchedProfessionalContextTerms: Object.freeze(matchedProfessionalContextTerms.slice(0, 12)),
