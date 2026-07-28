@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-8";
+const APP_BUILD = "intelligence-profile-ux-sprint-9";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1473,6 +1473,7 @@ const SHOW_ACTIVITY_LOG = false;
 const DASHBOARD_ALERT_LIMIT = 8;
 const ACTIVITY_LOG_LIMIT = 24;
 const LOW_VALUE_ARTICLE_THRESHOLD = 5;
+const BACKEND_ARTICLE_QUERY_CONCURRENCY_LIMIT = 4;
 const SUMMARY_METRICS = [
   { label: "Active feeds", key: "activeFeeds" },
   { label: "Tracked topics", key: "topics" },
@@ -48977,6 +48978,28 @@ function buildPersonalDashboardBackendQueryParamsList() {
   return requestParamsList;
 }
 
+async function mapBackendArticleQueryParamsWithConcurrency(queryParamsList = [], mapper, limit = BACKEND_ARTICLE_QUERY_CONCURRENCY_LIMIT) {
+  const items = Array.isArray(queryParamsList) ? queryParamsList : [];
+  if (!items.length) {
+    return [];
+  }
+
+  const workerCount = Math.max(1, Math.min(Number(limit) || 1, items.length));
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function runWorker() {
+    while (nextIndex < items.length) {
+      const requestIndex = nextIndex;
+      nextIndex += 1;
+      results[requestIndex] = await mapper(items[requestIndex], requestIndex);
+    }
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+  return results;
+}
+
 async function ensureBackendArticleQueryData() {
   if (!shouldUseBackendArticleQuery()) {
     runtime.backendArticleQueryLoading = false;
@@ -49019,8 +49042,9 @@ async function ensureBackendArticleQueryData() {
   const requestContributionPlans = contributionDiagnosticsEnabled
     ? buildBackendRequestContributionPlans(queryParamsList, personalDomainPlan)
     : [];
-  const responseEntries = await Promise.all(
-    queryParamsList.map(async (params, requestIndex) => {
+  const responseEntries = await mapBackendArticleQueryParamsWithConcurrency(
+    queryParamsList,
+    async (params, requestIndex) => {
       if (!contributionDiagnosticsEnabled) {
         return apiRequest(`/api/articles?${params.toString()}`);
       }
@@ -49035,7 +49059,7 @@ async function ensureBackendArticleQueryData() {
         statusCode: null,
         requestIndex,
       };
-    })
+    }
   );
   const responses = contributionDiagnosticsEnabled
     ? responseEntries.map((entry) => entry.response)
