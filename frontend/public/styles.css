@@ -261,15 +261,15 @@ img {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px;
+  padding: 13px 14px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  background: var(--bg-elevated);
+  background: var(--bg);
 }
 
 .personal-dashboard-summary.has-active-profile {
-  border-color: rgba(37, 99, 235, 0.22);
-  background: rgba(37, 99, 235, 0.06);
+  border-color: rgba(96, 165, 250, 0.26);
+  background: rgba(96, 165, 250, 0.08);
 }
 
 .personal-dashboard-summary-main {
