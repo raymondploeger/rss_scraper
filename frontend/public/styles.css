@@ -267,6 +267,24 @@ img {
   background: var(--bg);
 }
 
+.personal-dashboard-summary.has-active-profile {
+  position: relative;
+  border-color: rgba(37, 99, 235, 0.38);
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.12), var(--bg) 42%);
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.08);
+}
+
+.personal-dashboard-summary.has-active-profile::before {
+  content: "";
+  position: absolute;
+  top: 9px;
+  bottom: 9px;
+  left: 0;
+  width: 3px;
+  border-radius: 0 999px 999px 0;
+  background: var(--accent);
+}
+
 .personal-dashboard-summary-main {
   display: grid;
   gap: 5px;
@@ -286,6 +304,19 @@ img {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+}
+
+.personal-dashboard-summary-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .personal-dashboard-summary-row {

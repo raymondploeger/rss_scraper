@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-9";
+const APP_BUILD = "intelligence-profile-ux-sprint-10";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -23573,6 +23573,7 @@ function renderPersonalDashboard() {
   const summaryCollapsed = Boolean(selectedInterestCount && state.personalDashboard.summaryCollapsed);
 
   if (elements.personalDashboardSummary) {
+    elements.personalDashboardSummary.classList.toggle("has-active-profile", Boolean(selectedInterestCount));
     if (selectedInterestCount) {
       const summaryItems = getPersonalDashboardSummaryItems(selectedGroups);
       const domainMarkup = summaryItems.domainItems
@@ -23596,6 +23597,7 @@ function renderPersonalDashboard() {
         <div class="personal-dashboard-summary-main">
           <div class="personal-dashboard-summary-title-row">
             <span class="personal-dashboard-summary-label">Your profile</span>
+            <span class="personal-dashboard-summary-status">Active</span>
             <span class="personal-dashboard-summary-count">${selectedInterestCount} interest${selectedInterestCount === 1 ? "" : "s"} selected</span>
           </div>
           <div class="personal-dashboard-summary-row is-domains">
