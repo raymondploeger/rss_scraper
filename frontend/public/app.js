@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-4";
+const APP_BUILD = "intelligence-profile-ux-sprint-5";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -23413,27 +23413,23 @@ function getPersonalDashboardSelectedGroups(activeInterests) {
     .filter((group) => group.selectedInterests.length);
 }
 
-function getPersonalDashboardSummaryItems(selectedGroups, limit = 6) {
-  const items = [];
-  selectedGroups.forEach((group) => {
-    items.push({
-      id: group.id,
-      label: group.label,
-      type: "domain",
-    });
-    group.selectedInterests.forEach((interest) => {
-      items.push({
-        id: interest.id,
-        label: interest.label,
-        type: "interest",
-      });
-    });
-  });
+function getPersonalDashboardSummaryItems(selectedGroups, interestLimit = 5) {
+  const domainItems = selectedGroups.map((group) => ({
+    id: group.id,
+    label: group.label,
+  }));
+  const interestItems = selectedGroups.flatMap((group) =>
+    group.selectedInterests.map((interest) => ({
+      id: interest.id,
+      label: interest.label,
+    }))
+  );
 
   return {
-    visibleItems: items.slice(0, limit),
-    hiddenCount: Math.max(0, items.length - limit),
-    totalCount: items.length,
+    domainItems,
+    visibleInterestItems: interestItems.slice(0, interestLimit),
+    hiddenInterestCount: Math.max(0, interestItems.length - interestLimit),
+    totalInterestCount: interestItems.length,
   };
 }
 
@@ -23467,21 +23463,31 @@ function renderPersonalDashboard() {
   if (elements.personalDashboardSummary) {
     if (selectedInterestCount) {
       const summaryItems = getPersonalDashboardSummaryItems(selectedGroups);
-      const summaryItemMarkup = summaryItems.visibleItems
+      const domainMarkup = summaryItems.domainItems
         .map((item) => `
-          <span class="personal-dashboard-summary-chip is-${escapeHtml(item.type)}">
+          <span class="personal-dashboard-summary-chip is-domain">
             ${escapeHtml(item.label)}
           </span>
         `)
         .join("");
-      const moreMarkup = summaryItems.hiddenCount
-        ? `<span class="personal-dashboard-summary-more">+${summaryItems.hiddenCount} more</span>`
+      const interestMarkup = summaryItems.visibleInterestItems
+        .map((item) => `
+          <span class="personal-dashboard-summary-chip is-interest">
+            ${escapeHtml(item.label)}
+          </span>
+        `)
+        .join("");
+      const moreMarkup = summaryItems.hiddenInterestCount
+        ? `<span class="personal-dashboard-summary-more">+${summaryItems.hiddenInterestCount} more</span>`
         : "";
       elements.personalDashboardSummary.innerHTML = `
         <div class="personal-dashboard-summary-main">
           <span class="personal-dashboard-summary-label">Your profile</span>
-          <div class="personal-dashboard-summary-items">
-            ${summaryItemMarkup}${moreMarkup}
+          <div class="personal-dashboard-summary-row is-domains">
+            ${domainMarkup}
+          </div>
+          <div class="personal-dashboard-summary-row is-interests">
+            ${interestMarkup}${moreMarkup}
           </div>
           <span class="personal-dashboard-summary-count">${selectedInterestCount} interest${selectedInterestCount === 1 ? "" : "s"} selected</span>
         </div>

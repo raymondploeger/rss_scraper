@@ -259,10 +259,14 @@ img {
   letter-spacing: 0.03em;
 }
 
-.personal-dashboard-summary-items {
+.personal-dashboard-summary-row {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
+}
+
+.personal-dashboard-summary-row.is-interests {
+  gap: 4px;
 }
 
 .personal-dashboard-summary-chip,
