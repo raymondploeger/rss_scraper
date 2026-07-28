@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-5";
+const APP_BUILD = "intelligence-profile-ux-sprint-6";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -3762,6 +3762,103 @@ const PERSONAL_DASHBOARD_INTEREST_MAP = new Map(
     group.interests.map((interest) => [interest.id, { ...interest, groupId: group.id }])
   )
 );
+const PERSONAL_DASHBOARD_PROFILE_TEMPLATES = Object.freeze({
+  central_bank: Object.freeze({
+    label: "Central Bank",
+    interests: Object.freeze([
+      "banknotes",
+      "redesign",
+      "rollout",
+      "withdrawal",
+      "counterfeit",
+      "central_bank",
+      "security_features",
+      "security_printing",
+      "security_inks",
+      "polymer",
+      "substrate",
+    ]),
+  }),
+  passport_authority: Object.freeze({
+    label: "Passport Authority",
+    interests: Object.freeze([
+      "passports",
+      "issuance",
+      "fraud",
+      "icao",
+      "border_control",
+      "security_features",
+      "polycarbonate",
+      "laminate",
+      "personalization",
+      "secure_documents",
+    ]),
+  }),
+  border_control: Object.freeze({
+    label: "Border Control",
+    interests: Object.freeze([
+      "passports",
+      "visas",
+      "residence_permits",
+      "border_control",
+      "icao",
+      "digital_identity",
+      "eid",
+      "digital_wallet",
+      "biometric_verification",
+      "identity_verification",
+      "authentication",
+    ]),
+  }),
+  security_printer: Object.freeze({
+    label: "Security Printer",
+    interests: Object.freeze([
+      "security_features",
+      "security_printing",
+      "security_inks",
+      "micro_optics",
+      "holography",
+      "dovid",
+      "ovd",
+      "intaglio",
+      "polycarbonate",
+      "polymer",
+      "laminate",
+      "substrate",
+      "anti_counterfeit",
+      "personalization",
+      "secure_documents",
+    ]),
+  }),
+  identity_verification: Object.freeze({
+    label: "Identity Verification",
+    interests: Object.freeze([
+      "digital_identity",
+      "eid",
+      "digital_wallet",
+      "biometric_verification",
+      "identity_verification",
+      "authentication",
+      "age_verification",
+      "artificial_intelligence",
+    ]),
+  }),
+  researcher: Object.freeze({
+    label: "Researcher",
+    interests: Object.freeze([
+      "banknotes",
+      "passports",
+      "id_cards",
+      "fraud",
+      "icao",
+      "digital_identity",
+      "identity_verification",
+      "security_features",
+      "security_printing",
+      "anti_counterfeit",
+    ]),
+  }),
+});
 const PERSONAL_DASHBOARD_PARENT_INTEREST_BY_GROUP = new Map([
   ["banknote_intelligence", "banknotes"],
 ]);
@@ -4701,6 +4798,7 @@ const elements = {
   tagManagerContent: document.getElementById("tag-manager-content"),
   tagManagerList: document.getElementById("tag-manager-list"),
   personalDashboard: document.getElementById("personal-dashboard"),
+  personalDashboardTemplateSelect: document.getElementById("personal-dashboard-template-select"),
   personalDashboardSummary: document.getElementById("personal-dashboard-summary"),
   personalDashboardGroups: document.getElementById("personal-dashboard-groups"),
   personalDashboardInterests: document.getElementById("personal-dashboard-interests"),
@@ -23594,6 +23692,22 @@ function setPersonalDashboardInterest(interestId, enabled) {
   renderPersonalDashboard();
   clearFeedRenderCaches({ preserveBackendArticleQueryCache: true });
   scheduleRenderArticles("personal-dashboard-boost", { mode: "frame" });
+}
+
+function applyPersonalDashboardTemplate(templateId) {
+  const template = PERSONAL_DASHBOARD_PROFILE_TEMPLATES[templateId];
+  if (!template) {
+    return;
+  }
+
+  state.personalDashboard.interests = normalizePersonalDashboardInterests(template.interests);
+  state.personalDashboard.expandedGroups = [];
+  ensurePaginationState();
+  state.pagination.page = 1;
+  savePersonalDashboardPreferences();
+  renderPersonalDashboard();
+  clearFeedRenderCaches({ preserveBackendArticleQueryCache: true });
+  scheduleRenderArticles("personal-dashboard-template", { mode: "frame" });
 }
 
 function hasPersonalDashboardSelections() {
@@ -52626,6 +52740,16 @@ function bindEvents() {
       }
 
       openFirstSelectedPersonalDashboardGroup();
+    });
+  }
+
+  if (elements.personalDashboardTemplateSelect) {
+    elements.personalDashboardTemplateSelect.addEventListener("change", (event) => {
+      const templateId = String(event.target.value || "").trim();
+      if (templateId && templateId !== "custom") {
+        applyPersonalDashboardTemplate(templateId);
+      }
+      event.target.value = "";
     });
   }
 

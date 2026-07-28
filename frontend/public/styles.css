@@ -234,6 +234,28 @@ img {
   white-space: nowrap;
 }
 
+.personal-dashboard-template {
+  display: grid;
+  gap: 6px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.personal-dashboard-template span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.personal-dashboard-template select {
+  width: 100%;
+  min-width: 0;
+}
+
 .personal-dashboard-summary {
   display: flex;
   align-items: center;
