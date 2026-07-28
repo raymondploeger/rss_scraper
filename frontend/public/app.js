@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "authentication-primary-context-v1";
+const APP_BUILD = "intelligence-profile-ux-sprint-1";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -40368,7 +40368,7 @@ function syncAdvancedFiltersVisibility(expanded = false) {
 
   elements.advancedFiltersContent.hidden = !expanded;
   elements.advancedFiltersToggle.setAttribute("aria-expanded", String(expanded));
-  elements.advancedFiltersToggle.textContent = expanded ? "Hide filters" : "Show filters";
+  elements.advancedFiltersToggle.textContent = expanded ? "Hide search" : "Show search";
 }
 
 function applyKeywordInputs() {
@@ -43438,9 +43438,9 @@ function syncFilterUx() {
   elements.clearFilters.textContent = hasActiveFilters ? "Clear active" : "Reset";
   elements.clearFilters.setAttribute(
     "aria-label",
-    hasActiveFilters ? "Clear all active filters" : "Reset filters"
+    hasActiveFilters ? "Clear all active search/profile selections" : "Reset search and profile"
   );
-  elements.clearFilters.title = hasActiveFilters ? "Clear all active filters" : "Reset filters";
+  elements.clearFilters.title = hasActiveFilters ? "Clear all active search/profile selections" : "Reset search and profile";
 }
 
 function clearActiveFilter(filterKey) {
