@@ -273,6 +273,13 @@ img {
   min-width: 0;
 }
 
+.personal-dashboard-summary-title-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .personal-dashboard-summary-label {
   color: var(--muted);
   font-size: 0.68rem;
@@ -323,7 +330,15 @@ img {
   font-size: 0.72rem;
 }
 
-.personal-dashboard-summary-edit {
+.personal-dashboard-summary-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.personal-dashboard-summary-edit,
+.personal-dashboard-summary-toggle {
   flex: 0 0 auto;
   white-space: nowrap;
 }

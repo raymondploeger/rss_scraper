@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-6";
+const APP_BUILD = "intelligence-profile-ux-sprint-7";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4675,6 +4675,7 @@ const state = {
   personalDashboard: {
     interests: [],
     expandedGroups: [],
+    summaryCollapsed: true,
     mode: "balanced",
   },
   filters: {
@@ -23543,6 +23544,11 @@ function openFirstSelectedPersonalDashboardGroup() {
     ?.focus();
 }
 
+function togglePersonalDashboardSummary() {
+  state.personalDashboard.summaryCollapsed = !state.personalDashboard.summaryCollapsed;
+  renderPersonalDashboard();
+}
+
 function renderPersonalDashboard() {
   if (!ensurePersonalDashboardElements()) {
     return;
@@ -23557,6 +23563,7 @@ function renderPersonalDashboard() {
     .slice(0, 1);
   const selectedGroups = getPersonalDashboardSelectedGroups(activeInterests);
   const selectedInterestCount = activeInterests.size;
+  const summaryCollapsed = Boolean(selectedInterestCount && state.personalDashboard.summaryCollapsed);
 
   if (elements.personalDashboardSummary) {
     if (selectedInterestCount) {
@@ -23580,18 +23587,30 @@ function renderPersonalDashboard() {
         : "";
       elements.personalDashboardSummary.innerHTML = `
         <div class="personal-dashboard-summary-main">
-          <span class="personal-dashboard-summary-label">Your profile</span>
+          <div class="personal-dashboard-summary-title-row">
+            <span class="personal-dashboard-summary-label">Your profile</span>
+            <span class="personal-dashboard-summary-count">${selectedInterestCount} interest${selectedInterestCount === 1 ? "" : "s"} selected</span>
+          </div>
           <div class="personal-dashboard-summary-row is-domains">
             ${domainMarkup}
           </div>
-          <div class="personal-dashboard-summary-row is-interests">
+          <div class="personal-dashboard-summary-row is-interests" ${summaryCollapsed ? "hidden" : ""}>
             ${interestMarkup}${moreMarkup}
           </div>
-          <span class="personal-dashboard-summary-count">${selectedInterestCount} interest${selectedInterestCount === 1 ? "" : "s"} selected</span>
         </div>
-        <button class="ghost-button personal-dashboard-summary-edit" type="button" data-edit-personal-profile>
-          Edit Profile
-        </button>
+        <div class="personal-dashboard-summary-actions">
+          <button
+            class="ghost-button personal-dashboard-summary-toggle"
+            type="button"
+            data-toggle-personal-profile-summary
+            aria-expanded="${summaryCollapsed ? "false" : "true"}"
+          >
+            ${summaryCollapsed ? "Show" : "Hide"}
+          </button>
+          <button class="ghost-button personal-dashboard-summary-edit" type="button" data-edit-personal-profile ${summaryCollapsed ? "hidden" : ""}>
+            Edit Profile
+          </button>
+        </div>
       `;
     } else {
       elements.personalDashboardSummary.innerHTML = `
@@ -52732,6 +52751,14 @@ function bindEvents() {
 
   if (elements.personalDashboardSummary) {
     elements.personalDashboardSummary.addEventListener("click", (event) => {
+      const toggleButton = event.target instanceof Element
+        ? event.target.closest("[data-toggle-personal-profile-summary]")
+        : null;
+      if (toggleButton) {
+        togglePersonalDashboardSummary();
+        return;
+      }
+
       const editButton = event.target instanceof Element
         ? event.target.closest("[data-edit-personal-profile]")
         : null;
