@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-1";
+const APP_BUILD = "intelligence-profile-ux-sprint-2";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -23384,13 +23384,9 @@ function isPersonalDashboardGroupExpanded(groupId) {
 }
 
 function togglePersonalDashboardGroup(groupId) {
-  const nextExpandedGroups = new Set(state.personalDashboard.expandedGroups || []);
-  if (nextExpandedGroups.has(groupId)) {
-    nextExpandedGroups.delete(groupId);
-  } else {
-    nextExpandedGroups.add(groupId);
-  }
-  state.personalDashboard.expandedGroups = Array.from(nextExpandedGroups);
+  const normalizedGroupId = PERSONAL_DASHBOARD_GROUPS.some((group) => group.id === groupId) ? groupId : "";
+  const currentlyExpanded = normalizedGroupId && isPersonalDashboardGroupExpanded(normalizedGroupId);
+  state.personalDashboard.expandedGroups = currentlyExpanded || !normalizedGroupId ? [] : [normalizedGroupId];
   renderPersonalDashboard();
 }
 
@@ -23403,18 +23399,16 @@ function renderPersonalDashboard() {
   if (!Array.isArray(state.personalDashboard.expandedGroups)) {
     state.personalDashboard.expandedGroups = [];
   }
-  if (!state.personalDashboard.expandedGroups.length && activeInterests.size) {
-    state.personalDashboard.expandedGroups = PERSONAL_DASHBOARD_GROUPS
-      .filter((group) => group.interests.some((interest) => activeInterests.has(interest.id)))
-      .map((group) => group.id);
-  }
+  state.personalDashboard.expandedGroups = state.personalDashboard.expandedGroups
+    .filter((groupId) => PERSONAL_DASHBOARD_GROUPS.some((group) => group.id === groupId))
+    .slice(0, 1);
 
   elements.personalDashboardGroups.innerHTML = PERSONAL_DASHBOARD_GROUPS.map((group) => {
     const expanded = isPersonalDashboardGroupExpanded(group.id);
     const visibleInterests = group.interests.filter((interest) => !interest.hidden);
     const selectedCount = visibleInterests.filter((interest) => activeInterests.has(interest.id)).length;
     return `
-      <section class="personal-dashboard-group">
+      <section class="personal-dashboard-group" data-expanded="${expanded ? "true" : "false"}">
         <button
           type="button"
           class="personal-dashboard-group-toggle"
@@ -23425,7 +23419,10 @@ function renderPersonalDashboard() {
             <span>${escapeHtml(group.label)}</span>
             ${group.description ? `<span class="personal-dashboard-group-description">${escapeHtml(group.description)}</span>` : ""}
           </span>
-          <span class="personal-dashboard-group-count">${selectedCount ? `${selectedCount} selected` : "Select interests"}</span>
+          <span class="personal-dashboard-group-meta">
+            <span class="personal-dashboard-group-count">${selectedCount ? `${selectedCount} selected` : "Select interests"}</span>
+            <span class="personal-dashboard-group-chevron" aria-hidden="true">▾</span>
+          </span>
         </button>
         <div class="personal-dashboard-group-options" ${expanded ? "" : "hidden"}>
           ${visibleInterests.map((interest) => `

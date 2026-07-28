@@ -280,6 +280,24 @@ img {
   font-weight: 600;
 }
 
+.personal-dashboard-group-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.personal-dashboard-group-chevron {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1;
+  transition: transform 0.18s ease;
+}
+
+.personal-dashboard-group[data-expanded="true"] .personal-dashboard-group-chevron {
+  transform: rotate(180deg);
+}
+
 .personal-dashboard-group-summary {
   display: grid;
   gap: 3px;
@@ -301,6 +319,19 @@ img {
   display: grid;
   gap: 2px;
   padding: 0 10px 10px;
+  animation: profileAccordionIn 0.16s ease-out;
+  transform-origin: top;
+}
+
+@keyframes profileAccordionIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .personal-dashboard-checkbox {
