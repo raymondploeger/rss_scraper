@@ -259,25 +259,24 @@ img {
 .personal-dashboard-summary {
   display: grid;
   gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: 0;
   padding: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
+  border: 0;
+  border-radius: var(--radius-lg);
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.48);
+  background: transparent;
 }
 
 .personal-dashboard-summary.has-active-profile {
-  border-color: rgba(96, 165, 250, 0.22);
-  background: rgba(96, 165, 250, 0.07);
+  background: rgba(96, 165, 250, 0.06);
 }
 
 :root[data-theme="dark"] .personal-dashboard-summary {
-  background: rgba(255, 255, 255, 0.035);
+  background: transparent;
 }
 
 :root[data-theme="dark"] .personal-dashboard-summary.has-active-profile {
-  background: rgba(96, 165, 250, 0.075);
+  background: rgba(96, 165, 250, 0.065);
 }
 
 .personal-dashboard-summary-main {
@@ -688,6 +687,10 @@ h3 {
 
 .panel {
   padding: 22px;
+}
+
+.profile-summary-panel {
+  padding: 0;
 }
 
 .add-source-content {
