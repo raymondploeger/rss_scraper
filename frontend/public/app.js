@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-3";
+const APP_BUILD = "intelligence-profile-ux-sprint-4";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -23413,6 +23413,30 @@ function getPersonalDashboardSelectedGroups(activeInterests) {
     .filter((group) => group.selectedInterests.length);
 }
 
+function getPersonalDashboardSummaryItems(selectedGroups, limit = 6) {
+  const items = [];
+  selectedGroups.forEach((group) => {
+    items.push({
+      id: group.id,
+      label: group.label,
+      type: "domain",
+    });
+    group.selectedInterests.forEach((interest) => {
+      items.push({
+        id: interest.id,
+        label: interest.label,
+        type: "interest",
+      });
+    });
+  });
+
+  return {
+    visibleItems: items.slice(0, limit),
+    hiddenCount: Math.max(0, items.length - limit),
+    totalCount: items.length,
+  };
+}
+
 function openFirstSelectedPersonalDashboardGroup() {
   const activeInterests = new Set(normalizePersonalDashboardInterests(state.personalDashboard.interests));
   const firstSelectedGroup = getPersonalDashboardSelectedGroups(activeInterests)[0];
@@ -23442,12 +23466,22 @@ function renderPersonalDashboard() {
 
   if (elements.personalDashboardSummary) {
     if (selectedInterestCount) {
-      const groupLabels = selectedGroups.map((group) => escapeHtml(group.label)).join("</span><span>");
+      const summaryItems = getPersonalDashboardSummaryItems(selectedGroups);
+      const summaryItemMarkup = summaryItems.visibleItems
+        .map((item) => `
+          <span class="personal-dashboard-summary-chip is-${escapeHtml(item.type)}">
+            ${escapeHtml(item.label)}
+          </span>
+        `)
+        .join("");
+      const moreMarkup = summaryItems.hiddenCount
+        ? `<span class="personal-dashboard-summary-more">+${summaryItems.hiddenCount} more</span>`
+        : "";
       elements.personalDashboardSummary.innerHTML = `
         <div class="personal-dashboard-summary-main">
           <span class="personal-dashboard-summary-label">Your profile</span>
-          <div class="personal-dashboard-summary-domains">
-            <span>${groupLabels}</span>
+          <div class="personal-dashboard-summary-items">
+            ${summaryItemMarkup}${moreMarkup}
           </div>
           <span class="personal-dashboard-summary-count">${selectedInterestCount} interest${selectedInterestCount === 1 ? "" : "s"} selected</span>
         </div>

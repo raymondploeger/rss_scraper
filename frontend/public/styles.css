@@ -259,21 +259,36 @@ img {
   letter-spacing: 0.03em;
 }
 
-.personal-dashboard-summary-domains {
+.personal-dashboard-summary-items {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
 }
 
-.personal-dashboard-summary-domains span {
+.personal-dashboard-summary-chip,
+.personal-dashboard-summary-more {
   display: inline-flex;
   align-items: center;
   padding: 3px 7px;
   border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--text);
   font-size: 0.72rem;
   font-weight: 700;
+}
+
+.personal-dashboard-summary-chip.is-domain {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.personal-dashboard-summary-chip.is-interest,
+.personal-dashboard-summary-more {
+  background: rgba(100, 116, 139, 0.12);
+  color: var(--muted);
+}
+
+:root[data-theme="dark"] .personal-dashboard-summary-chip.is-interest,
+:root[data-theme="dark"] .personal-dashboard-summary-more {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .personal-dashboard-summary-count,
