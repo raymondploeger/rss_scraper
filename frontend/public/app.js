@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-17";
+const APP_BUILD = "intelligence-profile-ux-sprint-18";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -3872,6 +3872,13 @@ function getMatchingPersonalDashboardTemplateId(interests = state.personalDashbo
     return templateKey === normalizedKey;
   });
   return matchedTemplate?.[0] || "custom";
+}
+
+function updatePersonalDashboardTemplateSelection(interests = state.personalDashboard.interests) {
+  if (!elements.personalDashboardTemplateSelect) {
+    return;
+  }
+  elements.personalDashboardTemplateSelect.value = getMatchingPersonalDashboardTemplateId(interests);
 }
 
 const PERSONAL_DASHBOARD_PARENT_INTEREST_BY_GROUP = new Map([
@@ -23585,9 +23592,7 @@ function renderPersonalDashboard() {
   const selectedGroups = getPersonalDashboardSelectedGroups(activeInterests);
   const selectedInterestCount = activeInterests.size;
   const summaryCollapsed = Boolean(selectedInterestCount && state.personalDashboard.summaryCollapsed);
-  if (elements.personalDashboardTemplateSelect) {
-    elements.personalDashboardTemplateSelect.value = getMatchingPersonalDashboardTemplateId(Array.from(activeInterests));
-  }
+  updatePersonalDashboardTemplateSelection(Array.from(activeInterests));
 
   if (elements.personalDashboardSummary) {
     elements.personalDashboardSummary.classList.toggle("has-active-profile", Boolean(selectedInterestCount));
@@ -23745,6 +23750,7 @@ function setPersonalDashboardInterest(interestId, enabled) {
   }
 
   state.personalDashboard.interests = Array.from(nextInterests);
+  updatePersonalDashboardTemplateSelection(state.personalDashboard.interests);
   ensurePaginationState();
   state.pagination.page = 1;
   savePersonalDashboardPreferences();
