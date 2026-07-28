@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-2";
+const APP_BUILD = "intelligence-profile-ux-sprint-3";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4701,6 +4701,7 @@ const elements = {
   tagManagerContent: document.getElementById("tag-manager-content"),
   tagManagerList: document.getElementById("tag-manager-list"),
   personalDashboard: document.getElementById("personal-dashboard"),
+  personalDashboardSummary: document.getElementById("personal-dashboard-summary"),
   personalDashboardGroups: document.getElementById("personal-dashboard-groups"),
   personalDashboardInterests: document.getElementById("personal-dashboard-interests"),
   personalDashboardClear: document.getElementById("personal-dashboard-clear"),
@@ -23363,6 +23364,15 @@ function ensurePersonalDashboardElements() {
     elements.personalDashboardGroups = groups;
   }
 
+  if (!elements.personalDashboardSummary) {
+    const summary = document.createElement("div");
+    summary.id = "personal-dashboard-summary";
+    summary.className = "personal-dashboard-summary";
+    summary.setAttribute("aria-live", "polite");
+    elements.personalDashboard.insertBefore(summary, elements.personalDashboardGroups);
+    elements.personalDashboardSummary = summary;
+  }
+
   if (!elements.personalDashboardInterests) {
     const interests = document.createElement("div");
     interests.id = "personal-dashboard-interests";
@@ -23390,6 +23400,31 @@ function togglePersonalDashboardGroup(groupId) {
   renderPersonalDashboard();
 }
 
+function getPersonalDashboardSelectedGroups(activeInterests) {
+  return PERSONAL_DASHBOARD_GROUPS
+    .map((group) => {
+      const selectedInterests = group.interests
+        .filter((interest) => activeInterests.has(interest.id));
+      return {
+        ...group,
+        selectedInterests,
+      };
+    })
+    .filter((group) => group.selectedInterests.length);
+}
+
+function openFirstSelectedPersonalDashboardGroup() {
+  const activeInterests = new Set(normalizePersonalDashboardInterests(state.personalDashboard.interests));
+  const firstSelectedGroup = getPersonalDashboardSelectedGroups(activeInterests)[0];
+  const groupToOpen = firstSelectedGroup?.id || PERSONAL_DASHBOARD_GROUPS[0]?.id || "";
+  state.personalDashboard.expandedGroups = groupToOpen ? [groupToOpen] : [];
+  renderPersonalDashboard();
+  elements.personalDashboardGroups?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  elements.personalDashboardGroups
+    ?.querySelector(`[data-personal-group-toggle="${groupToOpen}"]`)
+    ?.focus();
+}
+
 function renderPersonalDashboard() {
   if (!ensurePersonalDashboardElements()) {
     return;
@@ -23402,6 +23437,36 @@ function renderPersonalDashboard() {
   state.personalDashboard.expandedGroups = state.personalDashboard.expandedGroups
     .filter((groupId) => PERSONAL_DASHBOARD_GROUPS.some((group) => group.id === groupId))
     .slice(0, 1);
+  const selectedGroups = getPersonalDashboardSelectedGroups(activeInterests);
+  const selectedInterestCount = activeInterests.size;
+
+  if (elements.personalDashboardSummary) {
+    if (selectedInterestCount) {
+      const groupLabels = selectedGroups.map((group) => escapeHtml(group.label)).join("</span><span>");
+      elements.personalDashboardSummary.innerHTML = `
+        <div class="personal-dashboard-summary-main">
+          <span class="personal-dashboard-summary-label">Your profile</span>
+          <div class="personal-dashboard-summary-domains">
+            <span>${groupLabels}</span>
+          </div>
+          <span class="personal-dashboard-summary-count">${selectedInterestCount} interest${selectedInterestCount === 1 ? "" : "s"} selected</span>
+        </div>
+        <button class="ghost-button personal-dashboard-summary-edit" type="button" data-edit-personal-profile>
+          Edit Profile
+        </button>
+      `;
+    } else {
+      elements.personalDashboardSummary.innerHTML = `
+        <div class="personal-dashboard-summary-main">
+          <span class="personal-dashboard-summary-label">Your profile</span>
+          <span class="personal-dashboard-summary-empty">No interests selected yet.</span>
+        </div>
+        <button class="ghost-button personal-dashboard-summary-edit" type="button" data-edit-personal-profile>
+          Start Profile
+        </button>
+      `;
+    }
+  }
 
   elements.personalDashboardGroups.innerHTML = PERSONAL_DASHBOARD_GROUPS.map((group) => {
     const expanded = isPersonalDashboardGroupExpanded(group.id);
@@ -52508,6 +52573,19 @@ function bindEvents() {
       }
 
       setPersonalDashboardInterest(checkbox.dataset.personalInterest || "", checkbox.checked);
+    });
+  }
+
+  if (elements.personalDashboardSummary) {
+    elements.personalDashboardSummary.addEventListener("click", (event) => {
+      const editButton = event.target instanceof Element
+        ? event.target.closest("[data-edit-personal-profile]")
+        : null;
+      if (!editButton) {
+        return;
+      }
+
+      openFirstSelectedPersonalDashboardGroup();
     });
   }
 
