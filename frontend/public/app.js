@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-16";
+const APP_BUILD = "intelligence-profile-ux-sprint-17";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -3860,6 +3860,20 @@ const PERSONAL_DASHBOARD_PROFILE_TEMPLATES = Object.freeze({
     ]),
   }),
 });
+
+function getMatchingPersonalDashboardTemplateId(interests = state.personalDashboard.interests) {
+  const normalizedInterests = normalizePersonalDashboardInterests(interests).slice().sort();
+  if (!normalizedInterests.length) {
+    return "";
+  }
+  const normalizedKey = normalizedInterests.join("|");
+  const matchedTemplate = Object.entries(PERSONAL_DASHBOARD_PROFILE_TEMPLATES).find(([, template]) => {
+    const templateKey = normalizePersonalDashboardInterests(template.interests).slice().sort().join("|");
+    return templateKey === normalizedKey;
+  });
+  return matchedTemplate?.[0] || "custom";
+}
+
 const PERSONAL_DASHBOARD_PARENT_INTEREST_BY_GROUP = new Map([
   ["banknote_intelligence", "banknotes"],
 ]);
@@ -23571,6 +23585,9 @@ function renderPersonalDashboard() {
   const selectedGroups = getPersonalDashboardSelectedGroups(activeInterests);
   const selectedInterestCount = activeInterests.size;
   const summaryCollapsed = Boolean(selectedInterestCount && state.personalDashboard.summaryCollapsed);
+  if (elements.personalDashboardTemplateSelect) {
+    elements.personalDashboardTemplateSelect.value = getMatchingPersonalDashboardTemplateId(Array.from(activeInterests));
+  }
 
   if (elements.personalDashboardSummary) {
     elements.personalDashboardSummary.classList.toggle("has-active-profile", Boolean(selectedInterestCount));
@@ -52822,7 +52839,6 @@ function bindEvents() {
       if (templateId && templateId !== "custom") {
         applyPersonalDashboardTemplate(templateId);
       }
-      event.target.value = "";
     });
   }
 

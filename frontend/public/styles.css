@@ -236,8 +236,8 @@ img {
 
 .personal-dashboard-template {
   display: grid;
-  gap: 6px;
-  padding: 9px 10px;
+  gap: 7px;
+  padding: 10px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--bg);
@@ -254,6 +254,12 @@ img {
 .personal-dashboard-template select {
   width: 100%;
   min-width: 0;
+}
+
+.personal-dashboard-template small {
+  color: var(--muted);
+  font-size: 0.69rem;
+  line-height: 1.35;
 }
 
 .personal-dashboard-summary {
