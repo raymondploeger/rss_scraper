@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-13";
+const APP_BUILD = "intelligence-profile-ux-sprint-14";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -23576,13 +23576,7 @@ function renderPersonalDashboard() {
     elements.personalDashboardSummary.classList.toggle("has-active-profile", Boolean(selectedInterestCount));
     if (selectedInterestCount) {
       const summaryItems = getPersonalDashboardSummaryItems(selectedGroups);
-      const domainMarkup = summaryItems.domainItems
-        .map((item) => `
-          <span class="personal-dashboard-summary-chip is-domain">
-            ${escapeHtml(item.label)}
-          </span>
-        `)
-        .join("");
+      const domainSummary = summaryItems.domainItems.map((item) => item.label).join(" + ") || "Custom profile";
       const interestMarkup = summaryItems.visibleInterestItems
         .map((item) => `
           <span class="personal-dashboard-summary-chip is-interest">
@@ -23597,12 +23591,12 @@ function renderPersonalDashboard() {
         <div class="personal-dashboard-summary-main">
           <div class="personal-dashboard-summary-title-row">
             <span class="personal-dashboard-summary-label">Your profile</span>
-            <span class="personal-dashboard-summary-count">${selectedInterestCount} interest${selectedInterestCount === 1 ? "" : "s"} selected</span>
           </div>
-          <div class="personal-dashboard-summary-row is-domains">
-            ${domainMarkup}
+          <div class="personal-dashboard-summary-overview">
+            <strong>${escapeHtml(domainSummary)}</strong>
+            <span>${selectedInterestCount} interest${selectedInterestCount === 1 ? "" : "s"} selected</span>
           </div>
-          <div class="personal-dashboard-summary-row is-interests" ${summaryCollapsed ? "hidden" : ""}>
+          <div class="personal-dashboard-summary-row is-interests" ${summaryCollapsed ? "hidden" : ""} aria-label="Selected profile interests">
             ${interestMarkup}${moreMarkup}
           </div>
         </div>
@@ -23613,7 +23607,7 @@ function renderPersonalDashboard() {
             data-toggle-personal-profile-summary
             aria-expanded="${summaryCollapsed ? "false" : "true"}"
           >
-            ${summaryCollapsed ? "Show" : "Hide"}
+            ${summaryCollapsed ? "Show details" : "Hide details"}
           </button>
           <button class="ghost-button personal-dashboard-summary-edit" type="button" data-edit-personal-profile ${summaryCollapsed ? "hidden" : ""}>
             Edit Profile
