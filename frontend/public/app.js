@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-10";
+const APP_BUILD = "intelligence-profile-ux-sprint-11";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -23597,7 +23597,6 @@ function renderPersonalDashboard() {
         <div class="personal-dashboard-summary-main">
           <div class="personal-dashboard-summary-title-row">
             <span class="personal-dashboard-summary-label">Your profile</span>
-            <span class="personal-dashboard-summary-status">Active</span>
             <span class="personal-dashboard-summary-count">${selectedInterestCount} interest${selectedInterestCount === 1 ? "" : "s"} selected</span>
           </div>
           <div class="personal-dashboard-summary-row is-domains">
