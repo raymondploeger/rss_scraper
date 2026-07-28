@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-7";
+const APP_BUILD = "intelligence-profile-ux-sprint-8";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4676,6 +4676,7 @@ const state = {
     interests: [],
     expandedGroups: [],
     summaryCollapsed: true,
+    selectedInterestsCollapsed: true,
     mode: "balanced",
   },
   filters: {
@@ -23549,6 +23550,11 @@ function togglePersonalDashboardSummary() {
   renderPersonalDashboard();
 }
 
+function togglePersonalDashboardSelectedInterests() {
+  state.personalDashboard.selectedInterestsCollapsed = !state.personalDashboard.selectedInterestsCollapsed;
+  renderPersonalDashboard();
+}
+
 function renderPersonalDashboard() {
   if (!ensurePersonalDashboardElements()) {
     return;
@@ -23663,7 +23669,8 @@ function renderPersonalDashboard() {
   }).join("");
 
   if (activeInterests.size) {
-    elements.personalDashboardInterests.innerHTML = Array.from(activeInterests)
+    const selectedInterestsCollapsed = Boolean(state.personalDashboard.selectedInterestsCollapsed);
+    const selectedInterestChips = Array.from(activeInterests)
       .map((interestId) => {
         const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
         if (!interest) {
@@ -23683,6 +23690,22 @@ function renderPersonalDashboard() {
       })
       .filter(Boolean)
       .join("");
+    elements.personalDashboardInterests.innerHTML = `
+      <div class="personal-dashboard-selected-head">
+        <span>Selected interests</span>
+        <button
+          type="button"
+          class="ghost-button personal-dashboard-selected-toggle"
+          data-toggle-personal-selected-interests
+          aria-expanded="${selectedInterestsCollapsed ? "false" : "true"}"
+        >
+          ${selectedInterestsCollapsed ? "Show" : "Hide"}
+        </button>
+      </div>
+      <div class="personal-dashboard-selected-list" ${selectedInterestsCollapsed ? "hidden" : ""}>
+        ${selectedInterestChips}
+      </div>
+    `;
   } else {
     elements.personalDashboardInterests.innerHTML =
       `<p class="personal-dashboard-empty">Choose a domain, then refine by professional topic or technology.</p>`;
@@ -52782,6 +52805,14 @@ function bindEvents() {
 
   if (elements.personalDashboardInterests) {
     elements.personalDashboardInterests.addEventListener("click", (event) => {
+      const toggleButton = event.target instanceof Element
+        ? event.target.closest("[data-toggle-personal-selected-interests]")
+        : null;
+      if (toggleButton) {
+        togglePersonalDashboardSelectedInterests();
+        return;
+      }
+
       const removeInterest = event.target instanceof Element
         ? event.target.closest("[data-remove-personal-interest]")
         : null;

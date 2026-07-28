@@ -477,6 +477,34 @@ img {
   gap: 8px;
 }
 
+.personal-dashboard-selected-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.personal-dashboard-selected-toggle {
+  flex: 0 0 auto;
+}
+
+.personal-dashboard-selected-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+
+.personal-dashboard-selected-list[hidden] {
+  display: none !important;
+}
+
 .personal-dashboard-interest {
   display: inline-flex;
   align-items: center;
