@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-14";
+const APP_BUILD = "intelligence-profile-ux-sprint-15";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -23588,10 +23588,25 @@ function renderPersonalDashboard() {
         ? `<span class="personal-dashboard-summary-more">+${summaryItems.hiddenInterestCount} more</span>`
         : "";
       elements.personalDashboardSummary.innerHTML = `
-        <div class="personal-dashboard-summary-main">
+        <div class="personal-dashboard-summary-header">
           <div class="personal-dashboard-summary-title-row">
             <span class="personal-dashboard-summary-label">Your profile</span>
           </div>
+          <div class="personal-dashboard-summary-actions">
+            <button
+              class="ghost-button personal-dashboard-summary-toggle"
+              type="button"
+              data-toggle-personal-profile-summary
+              aria-expanded="${summaryCollapsed ? "false" : "true"}"
+            >
+              ${summaryCollapsed ? "Show details" : "Hide details"}
+            </button>
+            <button class="ghost-button personal-dashboard-summary-edit" type="button" data-edit-personal-profile ${summaryCollapsed ? "hidden" : ""}>
+              Edit Profile
+            </button>
+          </div>
+        </div>
+        <div class="personal-dashboard-summary-main">
           <div class="personal-dashboard-summary-overview">
             <strong>${escapeHtml(domainSummary)}</strong>
             <span>${selectedInterestCount} interest${selectedInterestCount === 1 ? "" : "s"} selected</span>
@@ -23600,29 +23615,18 @@ function renderPersonalDashboard() {
             ${interestMarkup}${moreMarkup}
           </div>
         </div>
-        <div class="personal-dashboard-summary-actions">
-          <button
-            class="ghost-button personal-dashboard-summary-toggle"
-            type="button"
-            data-toggle-personal-profile-summary
-            aria-expanded="${summaryCollapsed ? "false" : "true"}"
-          >
-            ${summaryCollapsed ? "Show details" : "Hide details"}
-          </button>
-          <button class="ghost-button personal-dashboard-summary-edit" type="button" data-edit-personal-profile ${summaryCollapsed ? "hidden" : ""}>
-            Edit Profile
-          </button>
-        </div>
       `;
     } else {
       elements.personalDashboardSummary.innerHTML = `
-        <div class="personal-dashboard-summary-main">
+        <div class="personal-dashboard-summary-header">
           <span class="personal-dashboard-summary-label">Your profile</span>
+          <button class="ghost-button personal-dashboard-summary-edit" type="button" data-edit-personal-profile>
+            Start Profile
+          </button>
+        </div>
+        <div class="personal-dashboard-summary-main">
           <span class="personal-dashboard-summary-empty">No interests selected yet.</span>
         </div>
-        <button class="ghost-button personal-dashboard-summary-edit" type="button" data-edit-personal-profile>
-          Start Profile
-        </button>
       `;
     }
   }
