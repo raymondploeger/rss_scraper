@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-26";
+const APP_BUILD = "intelligence-profile-ux-sprint-27";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -36899,6 +36899,56 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
   const selectedSharedInterests = measurePersonalDashboardSegment("selectedSharedSecurityInterests", () =>
     getSelectedSharedSecuritySubinterests(selectedInterests)
   );
+
+  if (measurePersonalDashboardSegment("banknotesOnlySelection", () => isBanknotesOnlyPersonalSelection(selectedInterests))) {
+    if (measurePersonalDashboardSegment("banknoteContamination", () => isBanknoteContaminated(article))) {
+      return finishPersonalDashboardTiming(false, "banknote_contaminated");
+    }
+
+    const sharedSecurityTechniqueMatched = !selectedSharedInterests.length
+      || measurePersonalDashboardSegment("sharedSecurityTechniqueMatch", () => matchesSelectedSharedSecurityTechnique(article, selectedInterests))
+      || measurePersonalDashboardSegment("identityTechniqueBridge", () =>
+        articleMatchesSelectedIdentityTechniqueBridge(article, selectedInterests)
+      )
+      || measurePersonalDashboardSegment("banknoteTechniqueBridge", () =>
+        articleMatchesSelectedBanknoteTechniqueBridge(article, selectedInterests)
+      );
+
+    const banknoteInterestResolution = measurePersonalDashboardSegment("banknoteInterestResolution", () =>
+      resolvePersonalDashboardParentChildInterests(
+        selectedInterests,
+        "banknote_intelligence"
+      )
+    );
+    const banknoteInterestIds = banknoteInterestResolution.effectiveInterestIds;
+
+    if (!banknoteInterestIds.length) {
+      const banknoteDomainMatched = measurePersonalDashboardSegment("banknoteDomainMatch", () =>
+        isBanknotePrimary(article) || isBanknoteAdjacent(article)
+      );
+      return finishPersonalDashboardTiming(
+        banknoteDomainMatched && sharedSecurityTechniqueMatched,
+        banknoteDomainMatched && sharedSecurityTechniqueMatched ? "banknote_domain_passed" : "banknote_domain_rejected"
+      );
+    }
+
+    const banknoteInterestMatched = measurePersonalDashboardSegment("banknoteInterestMatch", () =>
+      banknoteInterestIds.some((interestId) => matchesBanknoteInterest(article, interestId))
+    );
+
+    if (banknoteInterestResolution.parentActsAsDomainGate) {
+      return finishPersonalDashboardTiming(
+        banknoteInterestMatched && sharedSecurityTechniqueMatched,
+        banknoteInterestMatched && sharedSecurityTechniqueMatched ? "banknote_parent_gate_passed" : "banknote_parent_gate_rejected"
+      );
+    }
+
+    return finishPersonalDashboardTiming(
+      banknoteInterestMatched && sharedSecurityTechniqueMatched,
+      banknoteInterestMatched && sharedSecurityTechniqueMatched ? "banknote_interest_passed" : "banknote_interest_rejected"
+    );
+  }
+
   const digitalIdentityProfessionalGuardAssessment = measurePersonalDashboardSegment("digitalIdentityProfessionalGuard", () =>
     getDigitalIdentityProfessionalGuardBooleanGateAssessment(article, selectedInterests)
   );
@@ -36947,46 +36997,6 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
     || measurePersonalDashboardSegment("sharedSecurityTechniqueMatch", () => matchesSelectedSharedSecurityTechnique(article, selectedInterests))
     || identityTechniqueBridgeMatched
     || banknoteTechniqueBridgeMatched;
-
-  if (measurePersonalDashboardSegment("banknotesOnlySelection", () => isBanknotesOnlyPersonalSelection(selectedInterests))) {
-    if (measurePersonalDashboardSegment("banknoteContamination", () => isBanknoteContaminated(article))) {
-      return finishPersonalDashboardTiming(false, "banknote_contaminated");
-    }
-
-    const banknoteInterestResolution = measurePersonalDashboardSegment("banknoteInterestResolution", () =>
-      resolvePersonalDashboardParentChildInterests(
-        selectedInterests,
-        "banknote_intelligence"
-      )
-    );
-    const banknoteInterestIds = banknoteInterestResolution.effectiveInterestIds;
-
-    if (!banknoteInterestIds.length) {
-      const banknoteDomainMatched = measurePersonalDashboardSegment("banknoteDomainMatch", () =>
-        isBanknotePrimary(article) || isBanknoteAdjacent(article)
-      );
-      return finishPersonalDashboardTiming(
-        banknoteDomainMatched && sharedSecurityTechniqueMatched,
-        banknoteDomainMatched && sharedSecurityTechniqueMatched ? "banknote_domain_passed" : "banknote_domain_rejected"
-      );
-    }
-
-    const banknoteInterestMatched = measurePersonalDashboardSegment("banknoteInterestMatch", () =>
-      banknoteInterestIds.some((interestId) => matchesBanknoteInterest(article, interestId))
-    );
-
-    if (banknoteInterestResolution.parentActsAsDomainGate) {
-      return finishPersonalDashboardTiming(
-        banknoteInterestMatched && sharedSecurityTechniqueMatched,
-        banknoteInterestMatched && sharedSecurityTechniqueMatched ? "banknote_parent_gate_passed" : "banknote_parent_gate_rejected"
-      );
-    }
-
-    return finishPersonalDashboardTiming(
-      banknoteInterestMatched && sharedSecurityTechniqueMatched,
-      banknoteInterestMatched && sharedSecurityTechniqueMatched ? "banknote_interest_passed" : "banknote_interest_rejected"
-    );
-  }
 
   if (primaryDomain === "identity_documents") {
     if (measurePersonalDashboardSegment("identityNavigationPage", () => isIdentityNavigationPageArticle(article))) {
