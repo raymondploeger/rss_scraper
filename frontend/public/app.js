@@ -189,6 +189,7 @@ function completeProductionLoadTiming(extra = {}) {
     milestones: run.milestones,
     breakdowns: run.breakdowns,
     counts: run.counts,
+    backendArticleQueryTimingDiagnostics: run.backendArticleQueryTimingDiagnostics || null,
     branch: run.branch,
     pending: run.pending,
     totalMs: run.totalMs,
@@ -471,6 +472,7 @@ function createFilterPerformanceRun(reason = "render") {
     timeFromRunStartToFirstRenderMs: null,
     backendRequestCount: null,
     backendRequestTotalMs: null,
+    backendArticleQueryTimingDiagnostics: null,
     cacheHit: null,
     candidateCountReturned: null,
     duplicateCandidateCountBeforeDeduplication: null,
@@ -1350,6 +1352,7 @@ function compactFilterPerformanceRun(run) {
     timeFromRunStartToFirstRenderMs: run.timeFromRunStartToFirstRenderMs,
     backendRequestCount: run.backendRequestCount,
     backendRequestTotalMs: run.backendRequestTotalMs,
+    backendArticleQueryTimingDiagnostics: run.backendArticleQueryTimingDiagnostics || null,
     cacheHit: run.cacheHit,
     candidateCountReturned: run.candidateCountReturned,
     duplicateCandidateCountBeforeDeduplication: run.duplicateCandidateCountBeforeDeduplication,
@@ -1463,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-27";
+const APP_BUILD = "intelligence-profile-ux-sprint-28";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -22339,6 +22342,7 @@ function exportFilterPerformanceDiagnostics() {
     professionalGuardRunLocalReuseSummary: getProfessionalGuardRunLocalReuseSummary(),
     identityDocumentParityDiagnosticsStatus: getIdentityDocumentParityDiagnosticsStatus(),
     productionDecisionLedgerSummary: getLatestProductionDecisionLedgerSummary(),
+    backendArticleQueryTimingDiagnostics: latestRun?.backendArticleQueryTimingDiagnostics || null,
     backendRequestContributionDiagnostics: backendRequestContributionDiagnostics
       ? {
           generatedRequestCount: backendRequestContributionDiagnostics.generatedRequestCount,
@@ -22571,6 +22575,14 @@ function ensureFilterPipelineDiagnosticsExportTools() {
 
   if (typeof window.compareSelectedVsBroadBaselineRequests !== "function") {
     window.compareSelectedVsBroadBaselineRequests = () => compareSelectedVsBroadBaselineRequests();
+  }
+
+  if (typeof window.getLatestBackendArticleQueryTimingDiagnostics !== "function") {
+    window.getLatestBackendArticleQueryTimingDiagnostics = () => getLatestBackendArticleQueryTimingDiagnostics();
+  }
+
+  if (typeof window.listBackendArticleQueryTimings !== "function") {
+    window.listBackendArticleQueryTimings = (limit) => listBackendArticleQueryTimings(limit);
   }
 
   if (typeof window.explainArticleDecision !== "function") {
@@ -25859,6 +25871,59 @@ function createBackendRequestContributionDiagnostics(requestPlans = [], response
   };
 }
 
+function createBackendArticleQueryTimingDiagnostics(requestPlans = [], responseEntries = [], options = {}) {
+  const plans = Array.isArray(requestPlans) ? requestPlans : [];
+  const entries = Array.isArray(responseEntries) ? responseEntries : [];
+  if (!plans.length) {
+    return null;
+  }
+
+  const rows = plans.map((plan) => {
+    const entry = entries[plan.requestIndex] || {};
+    const response = entry.response || null;
+    const items = Array.isArray(response?.items) ? response.items : Array.isArray(response?.articles) ? response.articles : [];
+    return {
+      requestIndex: plan.requestIndex,
+      requestKey: plan.requestKey,
+      requestType: plan.requestType,
+      requestOrigins: Array.isArray(plan.requestOrigins) ? plan.requestOrigins.slice() : [],
+      topic: plan.topic,
+      search: plan.search,
+      limit: plan.limit,
+      selectedInterests: Array.isArray(plan.selectedInterests) ? plan.selectedInterests.slice() : [],
+      sourceGroup: plan.sourceGroup,
+      startedAt: entry.startedAt || "",
+      durationMs: entry.durationMs ?? null,
+      requestSucceeded: entry.requestSucceeded !== false,
+      statusCode: entry.statusCode ?? null,
+      rawResponseCount: items.length,
+    };
+  });
+  const completedRows = rows.filter((row) => Number.isFinite(Number(row.durationMs)));
+  const totalDurationMs = completedRows.reduce((sum, row) => sum + Number(row.durationMs || 0), 0);
+  const slowestRequests = rows
+    .slice()
+    .sort((left, right) => Number(right.durationMs || 0) - Number(left.durationMs || 0))
+    .slice(0, 10);
+  return {
+    enabled: true,
+    mode: "compact_backend_request_timing",
+    generatedRequestCount: rows.length,
+    completedRequestCount: rows.filter((row) => row.requestSucceeded).length,
+    failedRequestCount: rows.filter((row) => !row.requestSucceeded).length,
+    backendRequestWallClockMs: Number.isFinite(Number(options.wallClockMs))
+      ? Math.round(Number(options.wallClockMs) * 10) / 10
+      : null,
+    totalRequestDurationMs: Math.round(totalDurationMs * 10) / 10,
+    averageRequestDurationMs: completedRows.length
+      ? Math.round((totalDurationMs / completedRows.length) * 10) / 10
+      : null,
+    slowestRequestDurationMs: slowestRequests.length ? slowestRequests[0].durationMs : null,
+    slowestRequests,
+    rows,
+  };
+}
+
 function getBackendContributionArticleIdSet(articles = []) {
   const ids = new Set();
   (Array.isArray(articles) ? articles : []).forEach((article) => {
@@ -26090,6 +26155,23 @@ function compareSelectedVsBroadBaselineRequests() {
     selectedInterestContribution: diagnostics.selectedInterestContribution,
     broadDigitalBaselineContribution: diagnostics.broadDigitalBaselineContribution,
   };
+}
+
+function getLatestBackendArticleQueryTimingDiagnostics() {
+  const latestRun = getLatestFilterPerformanceDiagnostics();
+  return latestRun?.backendArticleQueryTimingDiagnostics
+    || getLatestProductionLoadTiming()?.backendArticleQueryTimingDiagnostics
+    || null;
+}
+
+function listBackendArticleQueryTimings(limit = 25) {
+  const diagnostics = getLatestBackendArticleQueryTimingDiagnostics();
+  const rows = Array.isArray(diagnostics?.rows) ? diagnostics.rows : [];
+  const normalizedLimit = Math.max(1, Math.min(100, Number(limit) || 25));
+  return rows
+    .slice()
+    .sort((left, right) => Number(right.durationMs || 0) - Number(left.durationMs || 0))
+    .slice(0, normalizedLimit);
 }
 
 function buildArticleIntelligenceContext(article) {
@@ -49098,15 +49180,14 @@ async function ensureBackendArticleQueryData() {
       ? buildPersonalDashboardBackendQueryParamsList()
       : [getBackendArticleQueryParams()];
   const contributionDiagnosticsEnabled = isBackendRequestContributionDiagnosticsEnabled();
-  const requestContributionPlans = contributionDiagnosticsEnabled
-    ? buildBackendRequestContributionPlans(queryParamsList, personalDomainPlan)
-    : [];
+  const requestContributionPlans = buildBackendRequestContributionPlans(queryParamsList, personalDomainPlan);
+  const backendRequestTimingStartedMs = getPerformanceNow();
+  markProductionLoadTiming("backendNetworkRequestsStart", {
+    backendRequestCount: queryParamsList.length,
+  });
   const responseEntries = await mapBackendArticleQueryParamsWithConcurrency(
     queryParamsList,
     async (params, requestIndex) => {
-      if (!contributionDiagnosticsEnabled) {
-        return apiRequest(`/api/articles?${params.toString()}`);
-      }
       const startedAt = new Date().toISOString();
       const startedMs = getPerformanceNow();
       const response = await apiRequest(`/api/articles?${params.toString()}`);
@@ -49120,9 +49201,23 @@ async function ensureBackendArticleQueryData() {
       };
     }
   );
-  const responses = contributionDiagnosticsEnabled
-    ? responseEntries.map((entry) => entry.response)
-    : responseEntries;
+  const backendRequestWallClockMs = Math.round((getPerformanceNow() - backendRequestTimingStartedMs) * 10) / 10;
+  markProductionLoadTiming("backendNetworkRequestsComplete", {
+    backendRequestCount: queryParamsList.length,
+    backendRequestWallClockMs,
+  });
+  const backendArticleQueryTimingDiagnostics = createBackendArticleQueryTimingDiagnostics(
+    requestContributionPlans,
+    responseEntries,
+    { wallClockMs: backendRequestWallClockMs }
+  );
+  const activePerformanceRun = getActiveFilterPerformanceRun();
+  if (activePerformanceRun) {
+    activePerformanceRun.backendRequestCount = queryParamsList.length;
+    activePerformanceRun.backendRequestTotalMs = backendRequestWallClockMs;
+    activePerformanceRun.backendArticleQueryTimingDiagnostics = backendArticleQueryTimingDiagnostics;
+  }
+  const responses = responseEntries.map((entry) => entry.response);
   if (requestId !== runtime.backendArticleQueryActiveRequestId) {
     return null;
   }
@@ -49182,6 +49277,7 @@ async function ensureBackendArticleQueryData() {
     articles: normalizedArticles,
     totalCount,
     backendRequests: queryParamsList.map((params) => Object.fromEntries(params.entries())),
+    backendArticleQueryTimingDiagnostics,
     backendRequestContributionRaw: contributionDiagnosticsEnabled
       ? createBackendRequestContributionDiagnostics(requestContributionPlans, responseEntries)
       : null,
@@ -51743,6 +51839,7 @@ function executeBackendQueryProvider(candidateProvider, normalizedFilterState, c
   markProductionLoadTiming("backendCacheLookupComplete", {
     cacheHit: Boolean(cachedQuery),
     cachedArticleCount: Array.isArray(cachedQuery?.articles) ? cachedQuery.articles.length : null,
+    backendRequestWallClockMs: cachedQuery?.backendArticleQueryTimingDiagnostics?.backendRequestWallClockMs ?? null,
   });
 
   if (diagnostics?.enabled) {
@@ -51771,6 +51868,7 @@ function executeBackendQueryProvider(candidateProvider, normalizedFilterState, c
   markProductionLoadTiming("backendRequestPlanningComplete", {
     backendRequestCount: Array.isArray(backendRequests) ? backendRequests.length : 0,
     usedCachedRequests: Boolean(cachedQuery?.backendRequests),
+    backendRequestWallClockMs: cachedQuery?.backendArticleQueryTimingDiagnostics?.backendRequestWallClockMs ?? null,
   });
   if (diagnostics?.enabled) {
     diagnostics.backendRequests = backendRequests;
@@ -51818,6 +51916,8 @@ function executeBackendQueryProvider(candidateProvider, normalizedFilterState, c
   const run = getActiveFilterPerformanceRun();
   if (run) {
     run.backendRequestCount = Array.isArray(backendRequests) ? backendRequests.length : null;
+    run.backendRequestTotalMs = cachedQuery?.backendArticleQueryTimingDiagnostics?.backendRequestWallClockMs ?? null;
+    run.backendArticleQueryTimingDiagnostics = cachedQuery?.backendArticleQueryTimingDiagnostics || null;
     run.cacheHit = true;
     run.candidateCountReturned = Array.isArray(cachedQuery?.articles) ? cachedQuery.articles.length : null;
     run.duplicateCandidateCountBeforeDeduplication = Array.isArray(cachedQuery?.articles)
