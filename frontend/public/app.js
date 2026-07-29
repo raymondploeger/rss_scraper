@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-20";
+const APP_BUILD = "intelligence-profile-ux-sprint-21";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -3631,9 +3631,9 @@ const PERSONAL_DASHBOARD_GROUPS = [
     interests: [
       { id: "banknotes", label: "Banknotes", strong: ["banknote", "banknotes", "currency note", "commemorative note", "note issuance"], weak: ["cash", "payment"], topicSignals: ["banknotes"], tagSignals: ["banknotes"], eventTypes: ["banknote_withdrawal", "new_banknote_series", "banknote_redesign", "commemorative_issue"] },
       { id: "redesign", label: "Designs", strong: ["redesign", "new design", "new family", "new portrait", "new artwork"], weak: ["design refresh"], signalIds: ["redesign"] },
-      { id: "rollout", label: "Issuance & new releases", strong: ["new banknote launch", "banknote rollout", "circulation rollout", "new series launch", "release", "issued", "issue", "commemorative note issue", "new banknote released"], weak: ["rollout", "launch", "introduction"], signalIds: ["rollout", "new-releases", "commemorative"] },
+      { id: "rollout", label: "Issuance", strong: ["new banknote launch", "banknote rollout", "circulation rollout", "new series launch", "release", "issued", "issue", "commemorative note issue", "new banknote released"], weak: ["rollout", "launch", "introduction"], signalIds: ["rollout", "new-releases", "commemorative"] },
       { id: "withdrawal", label: "Withdrawal", strong: ["withdrawn from circulation", "withdrawal", "demonetisation", "demonetization", "legal tender deadline"], weak: ["withdrawn", "retired"], eventTypes: ["banknote_withdrawal", "demonetisation"], signalIds: ["withdrawal"] },
-      { id: "counterfeit", label: "Counterfeit", strong: ["counterfeit", "counterfeit notes", "counterfeit banknote", "fake note", "forged banknote"], weak: ["forged note"], eventTypes: ["counterfeit_banknotes", "central_bank_warning"], signalIds: ["counterfeit"] },
+      { id: "counterfeit", label: "Counterfeiting", strong: ["counterfeit", "counterfeit notes", "counterfeit banknote", "fake note", "forged banknote"], weak: ["forged note"], eventTypes: ["counterfeit_banknotes", "central_bank_warning"], signalIds: ["counterfeit"] },
       { id: "central_bank", label: "Central bank", strong: ["central bank", "national bank", "reserve bank", "issuer bank", "bank of england", "ecb", "rbi"], weak: ["bank notice"], eventTypes: ["central_bank_warning", "banknote_withdrawal", "new_banknote_series"] },
     ],
   },
@@ -3658,9 +3658,9 @@ const PERSONAL_DASHBOARD_GROUPS = [
     label: "Digital Identity & Verification",
     description: "Digital ID, wallets, verification, biometrics and authentication.",
     interests: [
-      { id: "digital_identity", label: "Digital identity infrastructure", strong: ["digital identity", "digital id", "mobile id"], weak: ["identity platform"] },
-      { id: "eid", label: "eID / national digital ID", strong: ["eid", "e-id", "electronic identity"], weak: ["electronic id"] },
-      { id: "digital_wallet", label: "Digital wallets / credentials", strong: ["digital wallet", "identity wallet", "wallet framework"], weak: ["wallet"] },
+      { id: "digital_identity", label: "Digital identity", strong: ["digital identity", "digital id", "mobile id"], weak: ["identity platform"] },
+      { id: "eid", label: "eID", strong: ["eid", "e-id", "electronic identity"], weak: ["electronic id"] },
+      { id: "digital_wallet", label: "Digital wallets", strong: ["digital wallet", "identity wallet", "wallet framework"], weak: ["wallet"] },
       {
         id: "biometric_verification",
         label: "Biometrics",
@@ -3731,7 +3731,7 @@ const PERSONAL_DASHBOARD_GROUPS = [
           "idv",
         ],
       },
-      { id: "authentication", label: "Authentication & trusted access", strong: ["authentication", "login verification", "multi-factor authentication"], weak: ["authenticator"] },
+      { id: "authentication", label: "Authentication", strong: ["authentication", "login verification", "multi-factor authentication"], weak: ["authenticator"] },
       { id: "age_verification", label: "Age verification", strong: ["age verification", "age assurance", "age estimation", "age check"], weak: ["minor safety", "age gate"] },
     ],
   },
@@ -3753,7 +3753,7 @@ const PERSONAL_DASHBOARD_GROUPS = [
       { id: "laminate", label: "Laminate", strong: ["laminate", "laminated", "lamination", "security laminate", "secure laminate", "passport laminate", "id card laminate", "identity card laminate", "protective laminate", "protective overlay", "security overlay", "secure overlay", "holographic laminate", "holographic overlay", "transparent overlay", "overlay film", "laminated data page", "laminated passport", "laminated identity document"], weak: ["laminated"] },
       { id: "substrate", label: "Substrates", strong: ["substrate", "polymer substrate", "paper substrate", "document substrate", "secure substrate"], weak: ["substrate migration"], eventTypes: ["polymer_migration", "security_feature_update"] },
       { id: "biometrics", label: "Biometrics", hidden: true, strong: ["biometric", "biometrics", "facial image", "fingerprint template", "iris image", "biometric passport", "biometric id"], weak: ["biometric data"], signalIds: ["biometric"] },
-      { id: "anti_counterfeit", label: "Anti-counterfeit", strong: ["anti-counterfeit", "anti counterfeit", "counterfeit prevention"], weak: ["authentication feature"] },
+      { id: "anti_counterfeit", label: "Anti-counterfeiting", strong: ["anti-counterfeit", "anti counterfeit", "counterfeit prevention"], weak: ["authentication feature"] },
       { id: "personalization", label: "Personalization", strong: ["personalization", "secure personalization", "card personalization"], weak: ["document personalization"] },
       { id: "secure_documents", label: "Secure documents", strong: ["secure documents", "document security", "secure document"], weak: ["travel document security"] },
     ],
