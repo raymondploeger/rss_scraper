@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-24";
+const APP_BUILD = "intelligence-profile-ux-sprint-25";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1473,7 +1473,7 @@ const SHOW_ACTIVITY_LOG = false;
 const DASHBOARD_ALERT_LIMIT = 8;
 const ACTIVITY_LOG_LIMIT = 24;
 const LOW_VALUE_ARTICLE_THRESHOLD = 5;
-const BACKEND_ARTICLE_QUERY_CONCURRENCY_LIMIT = 4;
+const BACKEND_ARTICLE_QUERY_CONCURRENCY_LIMIT = 8;
 const SUMMARY_METRICS = [
   { label: "Active feeds", key: "activeFeeds" },
   { label: "Tracked topics", key: "topics" },
