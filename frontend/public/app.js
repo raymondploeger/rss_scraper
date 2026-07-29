@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-25";
+const APP_BUILD = "intelligence-profile-ux-sprint-26";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1474,6 +1474,7 @@ const DASHBOARD_ALERT_LIMIT = 8;
 const ACTIVITY_LOG_LIMIT = 24;
 const LOW_VALUE_ARTICLE_THRESHOLD = 5;
 const BACKEND_ARTICLE_QUERY_CONCURRENCY_LIMIT = 8;
+const PERSONAL_DASHBOARD_BACKEND_SEARCH_LIMIT = 16;
 const SUMMARY_METRICS = [
   { label: "Active feeds", key: "activeFeeds" },
   { label: "Tracked topics", key: "topics" },
@@ -25069,6 +25070,13 @@ const SHARED_SECURITY_BACKEND_RETRIEVAL_SEARCH_TERMS = {
   ],
 };
 
+function limitPersonalDashboardBackendSearches(searches = []) {
+  const normalizedSearches = Array.from(new Set((Array.isArray(searches) ? searches : [])
+    .map((term) => String(term || "").trim())
+    .filter(Boolean)));
+  return normalizedSearches.slice(0, PERSONAL_DASHBOARD_BACKEND_SEARCH_LIMIT);
+}
+
 function getPersonalDashboardBackendDomainPlan() {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const selectedMainDomains = getSelectedMainDomains(selectedInterests);
@@ -25098,7 +25106,7 @@ function getPersonalDashboardBackendDomainPlan() {
       return {
         domain: "shared_security",
         includeTopicBaseline: false,
-        searches: Array.from(sharedSecuritySearches),
+        searches: limitPersonalDashboardBackendSearches(Array.from(sharedSecuritySearches)),
       };
     }
   }
@@ -25127,7 +25135,7 @@ function getPersonalDashboardBackendDomainPlan() {
     return {
       domain: "banknotes",
       topic: "Banknotes",
-      searches: Array.from(banknoteSearches),
+      searches: limitPersonalDashboardBackendSearches(Array.from(banknoteSearches)),
     };
   }
 
@@ -25450,7 +25458,7 @@ function getPersonalDashboardBackendDomainPlan() {
       domain: "identity_documents",
       topic: "Identity Documents",
       includeTopicBaseline: false,
-      searches: Array.from(identitySearches),
+      searches: limitPersonalDashboardBackendSearches(Array.from(identitySearches)),
     };
   }
 
@@ -25468,7 +25476,7 @@ function getPersonalDashboardBackendDomainPlan() {
     return {
       domain: "digital_identity_biometrics",
       topic: "Digital Identity & Verification",
-      searches: Array.from(digitalIdentitySearches),
+      searches: limitPersonalDashboardBackendSearches(Array.from(digitalIdentitySearches)),
     };
   }
 
@@ -25649,7 +25657,7 @@ function getPersonalDashboardBackendDomainPlan() {
       domain: selectedMainDomains.slice().sort().join("+"),
       topic: "",
       includeTopicBaseline: false,
-      searches: Array.from(multiDomainSearches),
+      searches: limitPersonalDashboardBackendSearches(Array.from(multiDomainSearches)),
       multiDomainOrPlan: true,
       selectedBaseDomains: selectedMainDomains.slice(),
     };
