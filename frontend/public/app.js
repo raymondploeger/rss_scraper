@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-28";
+const APP_BUILD = "intelligence-profile-ux-sprint-29";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -36987,7 +36987,7 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
       return finishPersonalDashboardTiming(false, "banknote_contaminated");
     }
 
-    const sharedSecurityTechniqueMatched = !selectedSharedInterests.length
+    const getBanknoteSharedSecurityTechniqueMatched = () => !selectedSharedInterests.length
       || measurePersonalDashboardSegment("sharedSecurityTechniqueMatch", () => matchesSelectedSharedSecurityTechnique(article, selectedInterests))
       || measurePersonalDashboardSegment("identityTechniqueBridge", () =>
         articleMatchesSelectedIdentityTechniqueBridge(article, selectedInterests)
@@ -37008,6 +37008,10 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
       const banknoteDomainMatched = measurePersonalDashboardSegment("banknoteDomainMatch", () =>
         isBanknotePrimary(article) || isBanknoteAdjacent(article)
       );
+      if (!banknoteDomainMatched) {
+        return finishPersonalDashboardTiming(false, "banknote_domain_rejected");
+      }
+      const sharedSecurityTechniqueMatched = getBanknoteSharedSecurityTechniqueMatched();
       return finishPersonalDashboardTiming(
         banknoteDomainMatched && sharedSecurityTechniqueMatched,
         banknoteDomainMatched && sharedSecurityTechniqueMatched ? "banknote_domain_passed" : "banknote_domain_rejected"
@@ -37019,12 +37023,20 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
     );
 
     if (banknoteInterestResolution.parentActsAsDomainGate) {
+      if (!banknoteInterestMatched) {
+        return finishPersonalDashboardTiming(false, "banknote_parent_gate_rejected");
+      }
+      const sharedSecurityTechniqueMatched = getBanknoteSharedSecurityTechniqueMatched();
       return finishPersonalDashboardTiming(
         banknoteInterestMatched && sharedSecurityTechniqueMatched,
         banknoteInterestMatched && sharedSecurityTechniqueMatched ? "banknote_parent_gate_passed" : "banknote_parent_gate_rejected"
       );
     }
 
+    if (!banknoteInterestMatched) {
+      return finishPersonalDashboardTiming(false, "banknote_interest_rejected");
+    }
+    const sharedSecurityTechniqueMatched = getBanknoteSharedSecurityTechniqueMatched();
     return finishPersonalDashboardTiming(
       banknoteInterestMatched && sharedSecurityTechniqueMatched,
       banknoteInterestMatched && sharedSecurityTechniqueMatched ? "banknote_interest_passed" : "banknote_interest_rejected"
