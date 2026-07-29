@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-22";
+const APP_BUILD = "intelligence-profile-ux-sprint-23";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -23577,7 +23577,11 @@ function openFirstSelectedPersonalDashboardGroup() {
 }
 
 function togglePersonalDashboardSummary() {
-  state.personalDashboard.summaryCollapsed = !state.personalDashboard.summaryCollapsed;
+  const nextCollapsed = !state.personalDashboard.summaryCollapsed;
+  state.personalDashboard.summaryCollapsed = nextCollapsed;
+  if (nextCollapsed) {
+    state.personalDashboard.expandedGroups = [];
+  }
   renderPersonalDashboard();
 }
 
