@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-21";
+const APP_BUILD = "intelligence-profile-ux-sprint-22";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -3690,7 +3690,7 @@ const PERSONAL_DASHBOARD_GROUPS = [
       },
       { id: "onboarding", label: "Onboarding", hidden: true, strong: ["onboarding", "remote onboarding", "digital onboarding"], weak: ["identity onboarding"] },
       { id: "liveness", label: "Liveness / anti-spoofing", hidden: true, strong: ["liveness", "liveness detection", "presentation attack"], weak: ["face match"] },
-      { id: "artificial_intelligence", label: "Artificial intelligence", strong: ["artificial intelligence", "ai identity", "ai-assisted identity"], weak: ["machine learning", "ai"] },
+      { id: "artificial_intelligence", label: "AI for identity", strong: ["artificial intelligence", "ai identity", "ai-assisted identity"], weak: ["machine learning", "ai"] },
       {
         id: "identity_verification",
         label: "Identity verification",
@@ -3732,7 +3732,7 @@ const PERSONAL_DASHBOARD_GROUPS = [
         ],
       },
       { id: "authentication", label: "Authentication", strong: ["authentication", "login verification", "multi-factor authentication"], weak: ["authenticator"] },
-      { id: "age_verification", label: "Age verification", strong: ["age verification", "age assurance", "age estimation", "age check"], weak: ["minor safety", "age gate"] },
+      { id: "age_verification", label: "Age assurance", strong: ["age verification", "age assurance", "age estimation", "age check"], weak: ["minor safety", "age gate"] },
     ],
   },
   {
