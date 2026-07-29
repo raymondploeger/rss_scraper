@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-18";
+const APP_BUILD = "intelligence-profile-ux-sprint-19";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1487,6 +1487,7 @@ const TAG_LIST_STORAGE_KEY = "dashboardTagList";
 const KEYWORD_FILTER_STORAGE_KEY = "dashboardKeywordFilters";
 const PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY = "personalDashboardInterests";
 const PERSONAL_DASHBOARD_MODE_STORAGE_KEY = "personalDashboardMode";
+const PERSONAL_DASHBOARD_LAST_SAVED_STORAGE_KEY = "personalDashboardLastSavedAt";
 const DEFAULT_PERSONAL_DASHBOARD_SORT = "newest";
 const NOISE_KEYWORDS_EXPANDED_STORAGE_KEY = "noiseKeywordsExpanded";
 const PERSONAL_DASHBOARD_MODES = {
@@ -3879,6 +3880,12 @@ function updatePersonalDashboardTemplateSelection(interests = state.personalDash
     return;
   }
   elements.personalDashboardTemplateSelect.value = getMatchingPersonalDashboardTemplateId(interests);
+}
+
+function getPersonalDashboardLocalSaveLabel(selectedInterestCount = 0) {
+  return selectedInterestCount
+    ? "Saved on this device"
+    : "Selections save automatically here";
 }
 
 const PERSONAL_DASHBOARD_PARENT_INTEREST_BY_GROUP = new Map([
@@ -23463,6 +23470,7 @@ function savePersonalDashboardPreferences() {
     PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY,
     JSON.stringify(state.personalDashboard.interests)
   );
+  window.localStorage.setItem(PERSONAL_DASHBOARD_LAST_SAVED_STORAGE_KEY, new Date().toISOString());
 }
 
 function clearPersonalDashboardPreferences() {
@@ -23470,6 +23478,7 @@ function clearPersonalDashboardPreferences() {
   state.personalDashboard.mode = "balanced";
   window.localStorage.removeItem(PERSONAL_DASHBOARD_MODE_STORAGE_KEY);
   window.localStorage.removeItem(PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY);
+  window.localStorage.removeItem(PERSONAL_DASHBOARD_LAST_SAVED_STORAGE_KEY);
 }
 
 function ensurePersonalDashboardElements() {
@@ -23599,6 +23608,7 @@ function renderPersonalDashboard() {
     if (selectedInterestCount) {
       const summaryItems = getPersonalDashboardSummaryItems(selectedGroups);
       const domainSummary = summaryItems.domainItems.map((item) => item.label).join(" + ") || "Custom profile";
+      const localSaveLabel = getPersonalDashboardLocalSaveLabel(selectedInterestCount);
       const interestMarkup = summaryItems.visibleInterestItems
         .map((item) => `
           <span class="personal-dashboard-summary-chip is-interest">
@@ -23613,6 +23623,7 @@ function renderPersonalDashboard() {
         <div class="personal-dashboard-summary-header">
           <div class="personal-dashboard-summary-title-row">
             <span class="personal-dashboard-summary-label">Your profile</span>
+            <span class="personal-dashboard-summary-save-state">${escapeHtml(localSaveLabel)}</span>
           </div>
           <div class="personal-dashboard-summary-actions">
             <button
@@ -23639,9 +23650,13 @@ function renderPersonalDashboard() {
         </div>
       `;
     } else {
+      const localSaveLabel = getPersonalDashboardLocalSaveLabel(0);
       elements.personalDashboardSummary.innerHTML = `
         <div class="personal-dashboard-summary-header">
-          <span class="personal-dashboard-summary-label">Your profile</span>
+          <div class="personal-dashboard-summary-title-row">
+            <span class="personal-dashboard-summary-label">Your profile</span>
+            <span class="personal-dashboard-summary-save-state">${escapeHtml(localSaveLabel)}</span>
+          </div>
           <button class="ghost-button personal-dashboard-summary-edit" type="button" data-edit-personal-profile>
             Start Profile
           </button>

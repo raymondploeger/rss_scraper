@@ -317,6 +317,12 @@ img {
   letter-spacing: 0.03em;
 }
 
+.personal-dashboard-summary-save-state {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 600;
+}
+
 .personal-dashboard-summary-overview {
   display: grid;
   gap: 2px;
