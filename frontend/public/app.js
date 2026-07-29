@@ -1463,7 +1463,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-19";
+const APP_BUILD = "intelligence-profile-ux-sprint-20";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -3627,7 +3627,7 @@ const PERSONAL_DASHBOARD_GROUPS = [
   {
     id: "banknote_intelligence",
     label: "Banknote Intelligence",
-    description: "Cash, central banks, new issues, withdrawals and counterfeiting.",
+    description: "Cash, central banks, issuance, withdrawals and counterfeiting.",
     interests: [
       { id: "banknotes", label: "Banknotes", strong: ["banknote", "banknotes", "currency note", "commemorative note", "note issuance"], weak: ["cash", "payment"], topicSignals: ["banknotes"], tagSignals: ["banknotes"], eventTypes: ["banknote_withdrawal", "new_banknote_series", "banknote_redesign", "commemorative_issue"] },
       { id: "redesign", label: "Designs", strong: ["redesign", "new design", "new family", "new portrait", "new artwork"], weak: ["design refresh"], signalIds: ["redesign"] },
@@ -3640,7 +3640,7 @@ const PERSONAL_DASHBOARD_GROUPS = [
   {
     id: "identity_documents",
     label: "Identity Documents",
-    description: "Passports, ID cards, permits, visas, issuance, fraud and border use.",
+    description: "Passports, ID cards, visas, issuance, fraud and border use.",
     interests: [
       { id: "passports", label: "Passports", strong: ["passport", "passports", "travel document"], weak: ["passport office"], topicSignals: ["passport"], eventTypes: ["passport_issuance", "passport_renewal", "passport_revocation", "passport_fraud"] },
       { id: "id_cards", label: "ID cards", strong: ["id card", "identity card", "national id", "hybrid id documents", "national identity guard"], weak: ["id issuance", "identity documents", "id documents", "identity document protection", "id protection"], topicSignals: ["id card"] },
@@ -3656,7 +3656,7 @@ const PERSONAL_DASHBOARD_GROUPS = [
   {
     id: "digital_identity_biometrics",
     label: "Digital Identity & Verification",
-    description: "Digital ID, eID, wallets, verification, biometrics and authentication.",
+    description: "Digital ID, wallets, verification, biometrics and authentication.",
     interests: [
       { id: "digital_identity", label: "Digital identity infrastructure", strong: ["digital identity", "digital id", "mobile id"], weak: ["identity platform"] },
       { id: "eid", label: "eID / national digital ID", strong: ["eid", "e-id", "electronic identity"], weak: ["electronic id"] },
@@ -3737,7 +3737,7 @@ const PERSONAL_DASHBOARD_GROUPS = [
   },
   {
     id: "security_printing",
-    label: "Security Features & Secure Printing",
+    label: "Security Features",
     description: "Printing, inks, holography, substrates, materials and anti-counterfeit features.",
     interests: [
       { id: "security_features", label: "Security features", strong: ["security feature", "security features", "security thread", "watermark", "hologram"], weak: ["uv feature"], signalIds: ["security-features", "counterfeit"] },
