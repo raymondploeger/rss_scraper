@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-45";
+const APP_BUILD = "intelligence-profile-ux-sprint-46";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -35957,7 +35957,8 @@ function getIdentityDocumentSubinterestScoreMeasured(article, selectedInterests 
       })
       .sort((left, right) => right.score - left.score));
     const strongestMismatch = nonSelectedScores[0] || { interestId: "", score: 0 };
-    const mismatchPenalty = Math.max(0, strongestMismatch.score - bestSelected.score);
+    const identityDocumentOrMode = selectedIdentityInterests.length > 1;
+    const mismatchPenalty = identityDocumentOrMode ? 0 : Math.max(0, strongestMismatch.score - bestSelected.score);
     const finalSubinterestScore = Math.round(bestSelected.score - (mismatchPenalty * 0.9));
     if (timingEnabled) {
       const selectedWouldPass = bestSelected.score >= 18;
@@ -36004,6 +36005,7 @@ function getIdentityDocumentSubinterestScoreMeasured(article, selectedInterests 
         intentByInterest,
         profileByInterest,
         travelNoiseArticle,
+        identityDocumentOrMode,
       });
   });
 }
