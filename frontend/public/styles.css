@@ -533,6 +533,42 @@ img {
   transform-origin: top;
 }
 
+.personal-dashboard-interest-section {
+  display: grid;
+  gap: 4px;
+  padding: 8px 0;
+}
+
+.personal-dashboard-interest-section + .personal-dashboard-interest-section {
+  border-top: 1px solid var(--line);
+}
+
+.personal-dashboard-interest-section-header {
+  display: grid;
+  gap: 2px;
+  padding: 0 8px 3px;
+}
+
+.personal-dashboard-interest-section-title {
+  color: var(--text);
+  font-size: 0.71rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.personal-dashboard-interest-section-description {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.personal-dashboard-interest-section-options {
+  display: grid;
+  gap: 2px;
+}
+
 @keyframes profileAccordionIn {
   from {
     opacity: 0;

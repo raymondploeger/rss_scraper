@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-51";
+const APP_BUILD = "intelligence-profile-ux-sprint-52";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -3646,7 +3646,7 @@ const PERSONAL_DASHBOARD_GROUPS = [
   {
     id: "identity_documents",
     label: "Identity Documents",
-    description: "Passports, ID cards, visas, issuance, fraud and border use.",
+    description: "Document types broaden your feed. Themes refine it.",
     interests: [
       { id: "passports", label: "Passports", strong: ["passport", "passports", "travel document"], weak: ["passport office"], topicSignals: ["passport"], eventTypes: ["passport_issuance", "passport_renewal", "passport_revocation", "passport_fraud"] },
       { id: "id_cards", label: "ID cards", strong: ["id card", "identity card", "national id", "hybrid id documents", "national identity guard"], weak: ["id issuance", "identity documents", "id documents", "identity document protection", "id protection"], topicSignals: ["id card"] },
@@ -3770,6 +3770,19 @@ const PERSONAL_DASHBOARD_INTEREST_MAP = new Map(
     group.interests.map((interest) => [interest.id, { ...interest, groupId: group.id }])
   )
 );
+const IDENTITY_DOCUMENT_TYPE_INTEREST_IDS = new Set([
+  "passports",
+  "id_cards",
+  "visas",
+  "residence_permits",
+  "drivers_licenses",
+]);
+const IDENTITY_DOCUMENT_THEME_INTEREST_IDS = new Set([
+  "fraud",
+  "issuance",
+  "icao",
+  "border_control",
+]);
 const PERSONAL_DASHBOARD_PROFILE_TEMPLATES = Object.freeze({
   central_bank: Object.freeze({
     label: "Central Bank",
@@ -23634,6 +23647,73 @@ function isPersonalDashboardGroupExpanded(groupId) {
   return (state.personalDashboard.expandedGroups || []).includes(groupId);
 }
 
+function renderPersonalDashboardInterestCheckbox(interest, activeInterests) {
+  return `
+    <label class="personal-dashboard-checkbox">
+      <input
+        type="checkbox"
+        data-personal-interest="${escapeHtml(interest.id)}"
+        ${activeInterests.has(interest.id) ? "checked" : ""}
+      />
+      <span class="personal-dashboard-checkbox-label">${escapeHtml(interest.label)}</span>
+    </label>
+  `;
+}
+
+function renderPersonalDashboardInterestSection(title, description, interests, activeInterests) {
+  if (!interests.length) {
+    return "";
+  }
+  return `
+    <div class="personal-dashboard-interest-section">
+      ${title || description ? `
+        <div class="personal-dashboard-interest-section-header">
+          ${title ? `<span class="personal-dashboard-interest-section-title">${escapeHtml(title)}</span>` : ""}
+          ${description ? `<span class="personal-dashboard-interest-section-description">${escapeHtml(description)}</span>` : ""}
+        </div>
+      ` : ""}
+      <div class="personal-dashboard-interest-section-options">
+        ${interests.map((interest) => renderPersonalDashboardInterestCheckbox(interest, activeInterests)).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderPersonalDashboardGroupOptions(group, visibleInterests, activeInterests) {
+  if (group.id !== "identity_documents") {
+    return visibleInterests
+      .map((interest) => renderPersonalDashboardInterestCheckbox(interest, activeInterests))
+      .join("");
+  }
+
+  const documentTypeInterests = visibleInterests.filter((interest) =>
+    IDENTITY_DOCUMENT_TYPE_INTEREST_IDS.has(interest.id)
+  );
+  const themeInterests = visibleInterests.filter((interest) =>
+    IDENTITY_DOCUMENT_THEME_INTEREST_IDS.has(interest.id)
+  );
+  const otherInterests = visibleInterests.filter((interest) =>
+    !IDENTITY_DOCUMENT_TYPE_INTEREST_IDS.has(interest.id) &&
+    !IDENTITY_DOCUMENT_THEME_INTEREST_IDS.has(interest.id)
+  );
+
+  return [
+    renderPersonalDashboardInterestSection(
+      "Document types",
+      "Broaden your feed across identity-document products.",
+      documentTypeInterests,
+      activeInterests
+    ),
+    renderPersonalDashboardInterestSection(
+      "Refine by intelligence theme",
+      "Narrow results to a professional topic such as ICAO, fraud or issuance.",
+      themeInterests,
+      activeInterests
+    ),
+    renderPersonalDashboardInterestSection("", "", otherInterests, activeInterests),
+  ].join("");
+}
+
 function togglePersonalDashboardGroup(groupId) {
   const normalizedGroupId = PERSONAL_DASHBOARD_GROUPS.some((group) => group.id === groupId) ? groupId : "";
   const currentlyExpanded = normalizedGroupId && isPersonalDashboardGroupExpanded(normalizedGroupId);
@@ -23804,16 +23884,7 @@ function renderPersonalDashboard() {
           </span>
         </button>
         <div class="personal-dashboard-group-options" ${expanded ? "" : "hidden"}>
-          ${visibleInterests.map((interest) => `
-            <label class="personal-dashboard-checkbox">
-              <input
-                type="checkbox"
-                data-personal-interest="${escapeHtml(interest.id)}"
-                ${activeInterests.has(interest.id) ? "checked" : ""}
-              />
-              <span class="personal-dashboard-checkbox-label">${escapeHtml(interest.label)}</span>
-            </label>
-          `).join("")}
+          ${renderPersonalDashboardGroupOptions(group, visibleInterests, activeInterests)}
         </div>
       </section>
     `;
