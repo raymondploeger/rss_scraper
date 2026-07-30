@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-30";
+const APP_BUILD = "intelligence-profile-ux-sprint-31";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -23821,6 +23821,19 @@ function getSelectedSharedSecuritySubinterests(selectedInterests = normalizePers
     .filter((interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === PERSONAL_DASHBOARD_SHARED_GROUP_ID);
 }
 
+function getSelectedDigitalIdentitySubinterests(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  return normalizePersonalDashboardInterests(selectedInterests)
+    .filter((interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "digital_identity_biometrics");
+}
+
+function isMultiDigitalIdentityProfileSelection(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
+  return selectedMainDomains.length === 1 &&
+    selectedMainDomains[0] === "digital_identity_biometrics" &&
+    getSelectedDigitalIdentitySubinterests(normalizedInterests).length > 1;
+}
+
 function isSharedSecurityOnlyPersonalSelection(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
   return !getSelectedMainDomains(selectedInterests).length && getSelectedSharedSecuritySubinterests(selectedInterests).length > 0;
 }
@@ -36981,6 +36994,9 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
   const selectedSharedInterests = measurePersonalDashboardSegment("selectedSharedSecurityInterests", () =>
     getSelectedSharedSecuritySubinterests(selectedInterests)
   );
+  const multiDigitalIdentityProfileSelection = measurePersonalDashboardSegment("multiDigitalIdentityProfileSelection", () =>
+    isMultiDigitalIdentityProfileSelection(selectedInterests)
+  );
 
   if (measurePersonalDashboardSegment("banknotesOnlySelection", () => isBanknotesOnlyPersonalSelection(selectedInterests))) {
     if (measurePersonalDashboardSegment("banknoteContamination", () => isBanknoteContaminated(article))) {
@@ -37043,17 +37059,19 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
     );
   }
 
-  const digitalIdentityProfessionalGuardAssessment = measurePersonalDashboardSegment("digitalIdentityProfessionalGuard", () =>
-    getDigitalIdentityProfessionalGuardBooleanGateAssessment(article, selectedInterests)
-  );
-  if (digitalIdentityProfessionalGuardAssessment && !digitalIdentityProfessionalGuardAssessment.passed) {
-    return finishPersonalDashboardTiming(false, "digital_identity_professional_guard");
-  }
-  const authenticationProfessionalGuardAssessment = measurePersonalDashboardSegment("authenticationProfessionalGuard", () =>
-    getAuthenticationProfessionalGuardBooleanGateAssessment(article, selectedInterests)
-  );
-  if (authenticationProfessionalGuardAssessment && !authenticationProfessionalGuardAssessment.passed) {
-    return finishPersonalDashboardTiming(false, "authentication_professional_guard");
+  if (!multiDigitalIdentityProfileSelection) {
+    const digitalIdentityProfessionalGuardAssessment = measurePersonalDashboardSegment("digitalIdentityProfessionalGuard", () =>
+      getDigitalIdentityProfessionalGuardBooleanGateAssessment(article, selectedInterests)
+    );
+    if (digitalIdentityProfessionalGuardAssessment && !digitalIdentityProfessionalGuardAssessment.passed) {
+      return finishPersonalDashboardTiming(false, "digital_identity_professional_guard");
+    }
+    const authenticationProfessionalGuardAssessment = measurePersonalDashboardSegment("authenticationProfessionalGuard", () =>
+      getAuthenticationProfessionalGuardBooleanGateAssessment(article, selectedInterests)
+    );
+    if (authenticationProfessionalGuardAssessment && !authenticationProfessionalGuardAssessment.passed) {
+      return finishPersonalDashboardTiming(false, "authentication_professional_guard");
+    }
   }
 
   const identityTechniqueBridgeMatched = measurePersonalDashboardSegment("identityTechniqueBridge", () =>
@@ -49885,10 +49903,68 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
       }
     }
     const legacyDashboardPassed = articleMatchesPersonalDashboardSelection(article);
-    const dashboardPassed = legacyDashboardPassed &&
-      (!digitalIdentityGuardBooleanAssessment || digitalIdentityGuardBooleanAssessment.passed) &&
-      (!eidGuardBooleanAssessment || eidGuardBooleanAssessment.passed) &&
-      (!authenticationGuardBooleanAssessment || authenticationGuardBooleanAssessment.passed);
+    const booleanGuardAssessments = [
+      digitalIdentityGuardBooleanAssessment
+        ? {
+            type: "digital_identity",
+            assessment: digitalIdentityGuardBooleanAssessment,
+            passed: digitalIdentityGuardBooleanAssessment.passed,
+            category: getDigitalIdentityProfessionalGuardRejectionCategory(digitalIdentityGuardBooleanAssessment),
+            rejectedCategory: "digitalIdentityProfessionalGuard",
+            reason: "digital_identity_professional_guard_rejected",
+          }
+        : null,
+      biometricsGuardBooleanAssessment
+        ? {
+            type: "biometrics",
+            assessment: biometricsGuardBooleanAssessment,
+            passed: biometricsGuardBooleanAssessment.passed,
+            category: getBiometricsProfessionalGuardRejectionCategory(biometricsGuardBooleanAssessment),
+            rejectedCategory: "biometricsProfessionalGuard",
+            reason: "biometrics_professional_guard_rejected",
+          }
+        : null,
+      eidGuardBooleanAssessment
+        ? {
+            type: "eid",
+            assessment: eidGuardBooleanAssessment,
+            passed: eidGuardBooleanAssessment.passed,
+            category: getEidProfessionalGuardRejectionCategory(eidGuardBooleanAssessment),
+            rejectedCategory: "eidProfessionalGuard",
+            reason: "eid_professional_guard_rejected",
+          }
+        : null,
+      authenticationGuardBooleanAssessment
+        ? {
+            type: "authentication",
+            assessment: authenticationGuardBooleanAssessment,
+            passed: authenticationGuardBooleanAssessment.passed,
+            category: "authentication_professional_guard",
+            rejectedCategory: "authenticationProfessionalGuard",
+            reason: "authentication_professional_guard_rejected",
+          }
+        : null,
+    ].filter(Boolean);
+    const multiDigitalIdentityProfileSelection = isMultiDigitalIdentityProfileSelection();
+    const booleanGuardPassed = multiDigitalIdentityProfileSelection && booleanGuardAssessments.length > 1
+      ? booleanGuardAssessments.some((entry) => entry.passed)
+      : (
+        (!digitalIdentityGuardBooleanAssessment || digitalIdentityGuardBooleanAssessment.passed) &&
+        (!eidGuardBooleanAssessment || eidGuardBooleanAssessment.passed) &&
+        (!authenticationGuardBooleanAssessment || authenticationGuardBooleanAssessment.passed)
+      );
+    const dashboardPassed = legacyDashboardPassed && booleanGuardPassed;
+    const professionalGuardDecisionSource = multiDigitalIdentityProfileSelection && booleanGuardAssessments.length > 1
+      ? "legacy-pass-fail+digital-profile-professional-guard-any"
+      : digitalIdentityGuardBooleanAssessment
+        ? "legacy-pass-fail+digital-identity-professional-guard"
+      : eidGuardBooleanAssessment
+        ? "legacy-pass-fail+eid-professional-guard"
+      : authenticationGuardBooleanAssessment
+        ? "legacy-pass-fail+authentication-professional-guard"
+      : biometricsGuardBooleanAssessment
+        ? "legacy-pass-fail+biometrics-professional-guard"
+      : null;
     const sharedSecurityBridgeDiagnostics = diagnostics?.enabled
       ? getSharedSecurityBridgeDecision(article)
       : null;
@@ -49896,17 +49972,10 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
       const personalDashboardScore = buildPersonalDashboardScore(article, {
         passed: true,
         branch: diagnostics?.branch || "",
-        decisionSource: digitalIdentityGuardBooleanAssessment
-          ? "legacy-pass-fail+digital-identity-professional-guard"
-          : eidGuardBooleanAssessment
-            ? "legacy-pass-fail+eid-professional-guard"
-          : authenticationGuardBooleanAssessment
-            ? "legacy-pass-fail+authentication-professional-guard"
-          : biometricsGuardBooleanAssessment
-            ? "legacy-pass-fail+biometrics-professional-guard"
-          : sharedSecurityBridgeDiagnostics?.sharedSecurityBridgeScorePass
+        decisionSource: professionalGuardDecisionSource ||
+          (sharedSecurityBridgeDiagnostics?.sharedSecurityBridgeScorePass
           ? "legacy-pass-fail+shared-security-bridge-pass"
-          : "legacy-pass-fail",
+          : "legacy-pass-fail"),
       });
       recordEidDiagnostics(diagnostics, article, { passed: true });
       recordPersonalDashboardScore(diagnostics, article, personalDashboardScore);
@@ -49918,6 +49987,12 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
         metadata: {
           ...getPersonalDashboardTraceMetadata(article, null, personalDashboardScore),
           sharedSecurityBridgeDiagnostics,
+          digitalIdentityProfessionalGuardCombinationMode: multiDigitalIdentityProfileSelection && booleanGuardAssessments.length > 1
+            ? "any_selected_guard_passes"
+            : "single_selected_guard",
+          passedProfessionalGuardTypes: booleanGuardAssessments
+            .filter((entry) => entry.passed)
+            .map((entry) => entry.type),
           digitalIdentityProfessionalGuard: digitalIdentityGuardBooleanAssessment,
           biometricsProfessionalGuard: biometricsGuardBooleanAssessment,
           eidProfessionalGuard: eidGuardBooleanAssessment,
@@ -49927,35 +50002,24 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
       outputArticles.push(article);
       return;
     }
-    const digitalIdentityGuardRejected = Boolean(digitalIdentityGuardBooleanAssessment && !digitalIdentityGuardBooleanAssessment.passed);
-    const eidGuardRejected = Boolean(eidGuardBooleanAssessment && !eidGuardBooleanAssessment.passed);
-    const authenticationGuardRejected = Boolean(authenticationGuardBooleanAssessment && !authenticationGuardBooleanAssessment.passed);
-    const rejection = digitalIdentityGuardRejected
+    const rejectedBooleanGuard = !legacyDashboardPassed || booleanGuardPassed
+      ? null
+      : booleanGuardAssessments.find((entry) => !entry.passed) || null;
+    const digitalIdentityGuardRejected = rejectedBooleanGuard?.type === "digital_identity";
+    const eidGuardRejected = rejectedBooleanGuard?.type === "eid";
+    const authenticationGuardRejected = rejectedBooleanGuard?.type === "authentication";
+    const rejection = rejectedBooleanGuard
       ? {
-          category: getDigitalIdentityProfessionalGuardRejectionCategory(digitalIdentityGuardBooleanAssessment),
-          reason: "digital_identity_professional_guard_rejected",
+          category: rejectedBooleanGuard.category,
+          reason: rejectedBooleanGuard.reason,
         }
-      : eidGuardRejected
-        ? {
-            category: getEidProfessionalGuardRejectionCategory(eidGuardBooleanAssessment),
-            reason: "eid_professional_guard_rejected",
-          }
-      : authenticationGuardRejected
-        ? {
-            category: "authentication_professional_guard",
-            reason: "authentication_professional_guard_rejected",
-          }
       : classifyPersonalDashboardRejection(article);
     const personalDashboardScore = buildPersonalDashboardScore(article, {
       passed: false,
       rejection,
       branch: diagnostics?.branch || "",
-      decisionSource: digitalIdentityGuardRejected
-        ? "legacy-pass-fail+digital-identity-professional-guard"
-        : eidGuardRejected
-          ? "legacy-pass-fail+eid-professional-guard"
-        : authenticationGuardRejected
-          ? "legacy-pass-fail+authentication-professional-guard"
+      decisionSource: rejectedBooleanGuard && professionalGuardDecisionSource
+        ? professionalGuardDecisionSource
         : "legacy-pass-fail",
     });
     recordEidDiagnostics(diagnostics, article, { passed: false, rejection });
@@ -49968,6 +50032,12 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
       metadata: {
         ...getPersonalDashboardTraceMetadata(article, rejection, personalDashboardScore),
         sharedSecurityBridgeDiagnostics,
+        digitalIdentityProfessionalGuardCombinationMode: multiDigitalIdentityProfileSelection && booleanGuardAssessments.length > 1
+          ? "any_selected_guard_passes"
+          : "single_selected_guard",
+        passedProfessionalGuardTypes: booleanGuardAssessments
+          .filter((entry) => entry.passed)
+          .map((entry) => entry.type),
         digitalIdentityProfessionalGuard: digitalIdentityGuardBooleanAssessment,
         biometricsProfessionalGuard: biometricsGuardBooleanAssessment,
         eidProfessionalGuard: eidGuardBooleanAssessment,
@@ -49980,7 +50050,7 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
             ? "eidProfessionalGuard"
           : authenticationGuardRejected
             ? "authenticationProfessionalGuard"
-          : rejection.category,
+          : rejectedBooleanGuard?.rejectedCategory || rejection.category,
         finalReason: rejection.reason,
       },
     });
