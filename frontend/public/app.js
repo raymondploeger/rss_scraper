@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-47";
+const APP_BUILD = "intelligence-profile-ux-sprint-48";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -27939,7 +27939,14 @@ function computePersonalInterestBoost(article, interestId, options = {}) {
 }
 
 function computePersonalInterestBoostMeasured(article, interestId, options = {}) {
-  return getCachedArticleValue(article, `personalInterestBoost:${interestId}`, () => {
+  const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
+  const identitySelectionSignature = interest?.groupId === "identity_documents"
+    ? getSelectedIdentityDocumentSubinterests().slice().sort().join("|")
+    : "";
+  const cacheKey = identitySelectionSignature
+    ? `personalInterestBoost:${interestId}:${identitySelectionSignature}`
+    : `personalInterestBoost:${interestId}`;
+  return getCachedArticleValue(article, cacheKey, () => {
     const timingContext = typeof options.timingContext === "string" ? options.timingContext : "";
     const timingEnabled = Boolean(timingContext && runtime.activeProductionLoadTimingRun);
     const timingStartedAt = timingEnabled ? getPerformanceNow() : 0;
@@ -27973,7 +27980,6 @@ function computePersonalInterestBoostMeasured(article, interestId, options = {})
       }
       return result;
     };
-    const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
     if (!interest) {
       return finishBoostTiming({ score: 0, matched: false });
     }
