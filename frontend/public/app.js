@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-55";
+const APP_BUILD = "intelligence-profile-ux-sprint-56";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -5067,17 +5067,26 @@ function selectDashboardRepresentativeArticle(sources) {
 }
 
 function promoteNewestArticleInSelectedFeedGroup(article) {
-  const sources = Array.isArray(article?.sources) && article.sources.length
+  const originalSources = Array.isArray(article?.sources) && article.sources.length
     ? sortArticlesByPublicationDate(article.sources)
     : [article].filter(Boolean);
-  const representative = selectDashboardRepresentativeArticle(sources) || article;
+  const centralBankProfileActive = isCentralBankProfileActive();
+  const sources = centralBankProfileActive
+    ? originalSources.filter((sourceArticle) =>
+      getCentralBankProfileProfessionalAssessment(sourceArticle).passed
+    )
+    : originalSources;
+  const safeSources = sources.length ? sources : originalSources.slice(0, 1);
+  const representative = selectDashboardRepresentativeArticle(safeSources) || article;
 
   return {
     ...article,
     ...representative,
-    sources,
-    sourceCount: Number(article?.sourceCount) || sources.length,
-    groupedArticlesCount: Number(article?.groupedArticlesCount) || Math.max(0, sources.length - 1),
+    sources: safeSources,
+    sourceCount: centralBankProfileActive ? safeSources.length : (Number(article?.sourceCount) || safeSources.length),
+    groupedArticlesCount: centralBankProfileActive
+      ? Math.max(0, safeSources.length - 1)
+      : (Number(article?.groupedArticlesCount) || Math.max(0, safeSources.length - 1)),
   };
 }
 
@@ -36794,6 +36803,10 @@ function getCentralBankProfileProfessionalAssessment(article) {
       noiseAssessment,
     });
   });
+}
+
+function isCentralBankProfileActive(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  return getMatchingPersonalDashboardTemplateId(selectedInterests) === "central_bank";
 }
 
 function matchesBanknoteInterest(article, interestId) {
