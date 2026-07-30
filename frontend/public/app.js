@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-32";
+const APP_BUILD = "intelligence-profile-ux-sprint-33";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -23450,6 +23450,31 @@ function normalizePersonalDashboardInterests(interests) {
   );
 }
 
+const LEGACY_BROAD_IDENTITY_VERIFICATION_PROFILE_INTERESTS = Object.freeze([
+  "digital_identity",
+  "eid",
+  "digital_wallet",
+  "biometric_verification",
+  "identity_verification",
+  "authentication",
+  "age_verification",
+  "artificial_intelligence",
+]);
+
+function samePersonalDashboardInterestSet(leftInterests, rightInterests) {
+  const left = normalizePersonalDashboardInterests(leftInterests).slice().sort();
+  const right = normalizePersonalDashboardInterests(rightInterests).slice().sort();
+  return left.length === right.length && left.every((interestId, index) => interestId === right[index]);
+}
+
+function migrateStoredPersonalDashboardInterests(interests) {
+  const normalizedInterests = normalizePersonalDashboardInterests(interests);
+  if (samePersonalDashboardInterestSet(normalizedInterests, LEGACY_BROAD_IDENTITY_VERIFICATION_PROFILE_INTERESTS)) {
+    return normalizePersonalDashboardInterests(PERSONAL_DASHBOARD_PROFILE_TEMPLATES.identity_verification.interests);
+  }
+  return normalizedInterests;
+}
+
 function normalizePersonalDashboardMode(value) {
   const normalizedValue = String(value || "").trim().toLowerCase();
   return Object.prototype.hasOwnProperty.call(PERSONAL_DASHBOARD_MODES, normalizedValue)
@@ -23465,7 +23490,7 @@ function loadPersonalDashboardPreferences() {
     const storedInterests = JSON.parse(
       window.localStorage.getItem(PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY) || "[]"
     );
-    state.personalDashboard.interests = normalizePersonalDashboardInterests(storedInterests);
+    state.personalDashboard.interests = migrateStoredPersonalDashboardInterests(storedInterests);
   } catch {
     state.personalDashboard.interests = [];
   }
