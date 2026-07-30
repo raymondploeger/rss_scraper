@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-41";
+const APP_BUILD = "intelligence-profile-ux-sprint-42";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -25199,10 +25199,7 @@ function limitIdentityDocumentBackendSearches(searches = [], selectedInterests =
   if (selectedIdentityInterests.length <= 1) {
     return normalizedSearches.slice(0, PERSONAL_DASHBOARD_BACKEND_SEARCH_LIMIT);
   }
-  const searchLimit = Math.max(
-    PERSONAL_DASHBOARD_BACKEND_SEARCH_LIMIT,
-    Math.min(IDENTITY_DOCUMENT_OR_BACKEND_SEARCH_LIMIT, selectedIdentityInterests.length * 4)
-  );
+  const searchLimit = IDENTITY_DOCUMENT_OR_BACKEND_SEARCH_LIMIT;
 
   const availableTerms = new Set(normalizedSearches);
   const prioritizedSearches = [];
