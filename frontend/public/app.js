@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-39";
+const APP_BUILD = "intelligence-profile-ux-sprint-40";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -25596,7 +25596,7 @@ function getPersonalDashboardBackendDomainPlan() {
     return {
       domain: "identity_documents",
       topic: "Identity Documents",
-      includeTopicBaseline: false,
+      includeTopicBaseline: selectedIdentitySubinterests.length > 1,
       searches: limitIdentityDocumentBackendSearches(Array.from(identitySearches), selectedInterests),
     };
   }
