@@ -169,9 +169,9 @@
                 </div>
               </div>
 
-              <div class="keyword-filter field-full" aria-label="Keyword noise filters">
+              <div class="keyword-filter field-full" aria-label="Optional keyword filters">
                 <div class="keyword-filter-head">
-                  <span>Noise keywords</span>
+                  <span>Optional keyword filters</span>
                   <button id="keyword-toggle" class="tag-manager-toggle" type="button" aria-expanded="false">
                     Manage ▾
                   </button>
@@ -179,17 +179,17 @@
                 <div id="keyword-filter-content" class="keyword-filter-content" hidden>
                   <label class="field" data-filter-field="include-keywords">
                     <span>Include context</span>
-                    <input id="include-keywords-input" type="text" placeholder="visa, immigration, document" />
+                    <input id="include-keywords-input" type="text" placeholder="Only show articles containing..." />
                   </label>
                   <label class="field" data-filter-field="exclude-keywords">
                     <span>Exclude false positives</span>
-                    <input id="exclude-keywords-input" type="text" placeholder="honda, suv, vehicle" />
+                    <input id="exclude-keywords-input" type="text" placeholder="Hide articles containing..." />
                   </label>
                   <div class="keyword-filter-actions">
                     <button id="keyword-reset-button" class="ghost-button tag-manager-reset" type="button">Reset keywords</button>
                   </div>
                   <p class="keyword-filter-note">
-                    Used to hide obvious passport keyword noise, such as vehicle articles.
+                    Optional manual refinements. Professional relevance is handled by the dashboard rules.
                   </p>
                 </div>
               </div>
@@ -386,6 +386,6 @@
       </article>
     </template>
 
-    <script type="module" src="/app.js?v=20260730-intelligence-profile-ux-43"></script>
+    <script type="module" src="/app.js?v=20260730-intelligence-profile-ux-44"></script>
   </body>
 </html>

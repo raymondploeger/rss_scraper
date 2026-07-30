@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-43";
+const APP_BUILD = "intelligence-profile-ux-sprint-44";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -3997,6 +3997,10 @@ const DEFAULT_KEYWORD_INCLUDES = [
   "verification",
   "travel document",
 ];
+const MANUAL_KEYWORD_FILTER_DEFAULTS = {
+  include: [],
+  exclude: [],
+};
 const DRIVER_LICENSE_FALSE_POSITIVE_TERMS = [
   "driver license",
   "drivers license",
@@ -40905,9 +40909,21 @@ function saveKeywordFilters() {
   window.localStorage.setItem(KEYWORD_FILTER_STORAGE_KEY, JSON.stringify(state.keywordFilters));
 }
 
+function getManualKeywordFilterDefaults() {
+  return {
+    include: MANUAL_KEYWORD_FILTER_DEFAULTS.include.slice(),
+    exclude: MANUAL_KEYWORD_FILTER_DEFAULTS.exclude.slice(),
+  };
+}
+
+function isLegacyDefaultKeywordFilterSet(filters = {}) {
+  return keywordListsMatch(filters.include, DEFAULT_KEYWORD_INCLUDES) &&
+    keywordListsMatch(filters.exclude, DEFAULT_KEYWORD_EXCLUDES);
+}
+
 function setKeywordFilters({ include = state.keywordFilters.include, exclude = state.keywordFilters.exclude }, persist = true) {
-  state.keywordFilters.include = normalizeKeywordList(include, DEFAULT_KEYWORD_INCLUDES);
-  state.keywordFilters.exclude = normalizeKeywordList(exclude, DEFAULT_KEYWORD_EXCLUDES);
+  state.keywordFilters.include = normalizeKeywordList(include, MANUAL_KEYWORD_FILTER_DEFAULTS.include);
+  state.keywordFilters.exclude = normalizeKeywordList(exclude, MANUAL_KEYWORD_FILTER_DEFAULTS.exclude);
   if (persist) {
     saveKeywordFilters();
   }
@@ -40917,12 +40933,17 @@ function setKeywordFilters({ include = state.keywordFilters.include, exclude = s
 function loadKeywordFilters() {
   const storedFilters = window.localStorage.getItem(KEYWORD_FILTER_STORAGE_KEY);
   if (!storedFilters) {
-    setKeywordFilters({ include: DEFAULT_KEYWORD_INCLUDES, exclude: DEFAULT_KEYWORD_EXCLUDES }, false);
+    setKeywordFilters(getManualKeywordFilterDefaults(), false);
     return;
   }
 
   try {
     const parsedFilters = JSON.parse(storedFilters);
+    if (isLegacyDefaultKeywordFilterSet(parsedFilters)) {
+      setKeywordFilters(getManualKeywordFilterDefaults(), false);
+      saveKeywordFilters();
+      return;
+    }
     setKeywordFilters(
       {
         include: parsedFilters?.include,
@@ -40931,14 +40952,14 @@ function loadKeywordFilters() {
       false
     );
   } catch (error) {
-    console.warn("Unable to load keyword filters; using defaults.", error);
-    setKeywordFilters({ include: DEFAULT_KEYWORD_INCLUDES, exclude: DEFAULT_KEYWORD_EXCLUDES }, false);
+    console.warn("Unable to load keyword filters; using empty manual filters.", error);
+    setKeywordFilters(getManualKeywordFilterDefaults(), false);
   }
 }
 
 function resetKeywordFilters() {
   window.localStorage.removeItem(KEYWORD_FILTER_STORAGE_KEY);
-  setKeywordFilters({ include: DEFAULT_KEYWORD_INCLUDES, exclude: DEFAULT_KEYWORD_EXCLUDES }, false);
+  setKeywordFilters(getManualKeywordFilterDefaults(), false);
 }
 
 function isNoiseKeywordsExpanded() {
@@ -40967,8 +40988,8 @@ function syncAdvancedFiltersVisibility(expanded = false) {
 
 function applyKeywordInputs() {
   setKeywordFilters({
-    include: parseKeywordInput(elements.includeKeywordsInput?.value, DEFAULT_KEYWORD_INCLUDES),
-    exclude: parseKeywordInput(elements.excludeKeywordsInput?.value, DEFAULT_KEYWORD_EXCLUDES),
+    include: parseKeywordInput(elements.includeKeywordsInput?.value, MANUAL_KEYWORD_FILTER_DEFAULTS.include),
+    exclude: parseKeywordInput(elements.excludeKeywordsInput?.value, MANUAL_KEYWORD_FILTER_DEFAULTS.exclude),
   });
   scheduleRenderArticles("keyword-inputs");
 }
@@ -40983,11 +41004,11 @@ function keywordListsMatch(left, right) {
 }
 
 function hasCustomIncludeKeywords() {
-  return !keywordListsMatch(state.keywordFilters.include, DEFAULT_KEYWORD_INCLUDES);
+  return !keywordListsMatch(state.keywordFilters.include, MANUAL_KEYWORD_FILTER_DEFAULTS.include);
 }
 
 function hasCustomExcludeKeywords() {
-  return !keywordListsMatch(state.keywordFilters.exclude, DEFAULT_KEYWORD_EXCLUDES);
+  return !keywordListsMatch(state.keywordFilters.exclude, MANUAL_KEYWORD_FILTER_DEFAULTS.exclude);
 }
 
 function getActiveTags() {
@@ -44055,9 +44076,9 @@ function clearActiveFilter(filterKey) {
       elements.signalFilter.value = "";
     }
   } else if (filterKey === "include-keywords") {
-    setKeywordFilters({ include: DEFAULT_KEYWORD_INCLUDES });
+    setKeywordFilters({ include: MANUAL_KEYWORD_FILTER_DEFAULTS.include });
   } else if (filterKey === "exclude-keywords") {
-    setKeywordFilters({ exclude: DEFAULT_KEYWORD_EXCLUDES });
+    setKeywordFilters({ exclude: MANUAL_KEYWORD_FILTER_DEFAULTS.exclude });
   } else if (filterKey === "feed") {
     state.filters.feedId = "";
     elements.feedFilter.value = "";
