@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-49";
+const APP_BUILD = "intelligence-profile-ux-sprint-50";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -15231,6 +15231,35 @@ function getIdentityProfessionalRelevanceGuardAssessment(article, options = {}) 
   const identityDocumentRelevance = getIdentityDocumentRelevance(article);
   const uiRelevantIntelligenceArticle = isUiRelevantIntelligenceArticle(article);
   const evidenceBuilderRescue = getEvidenceBuilderProfessionalRelevanceRescue(article);
+  const bundleMode = selectedIdentityInterests.length > 1;
+  const alternateIdentityInterestScores = bundleMode
+    ? selectedIdentityInterests
+      .filter((interestId) => interestId !== "passports")
+      .map((interestId) => {
+        const boost = computePersonalInterestBoost(article, interestId);
+        return Object.freeze({
+          interestId,
+          score: Number(boost?.score) || 0,
+          passed: (Number(boost?.score) || 0) >= 18,
+        });
+      })
+    : [];
+  const bundleAssessment = bundleMode
+    ? getIdentityDocumentConjunctiveInterestAssessment(article, selectedInterests, { forceOrMode: true })
+    : null;
+  const bundleAlternateInterestMatched = alternateIdentityInterestScores.some((entry) => entry.passed) ||
+    (Array.isArray(bundleAssessment?.matchedObjectInterests) &&
+      bundleAssessment.matchedObjectInterests.some((interestId) => interestId !== "passports"));
+  const bundleRescued = Boolean(
+    enabled &&
+    bundleMode &&
+    !hardPassportNoise &&
+    !lowRelevancePassportArticle &&
+    passportRejected &&
+    getArticleDominantDomain(article) === "identity_documents" &&
+    bundleAlternateInterestMatched &&
+    (uiRelevantIntelligenceArticle || evidenceBuilderRescue.matched)
+  );
   const professionalIdentityRescueMatched = Boolean(
     enabled &&
     !hardPassportNoise &&
@@ -15270,7 +15299,7 @@ function getIdentityProfessionalRelevanceGuardAssessment(article, options = {}) 
   const bridgeAssessment = getIdentitySharedSecurityGuardBridgeAssessment(article, selectedInterests);
   const bridgeRescued = Boolean(enabled && !legacyGuardPassed && bridgeAssessment.bridgeMatched);
   const evidenceBuilderRescued = Boolean(enabled && !legacyGuardPassed && evidenceBuilderRescue.matched);
-  const passed = !enabled || legacyGuardPassed || professionalIdentityRescueMatched || bridgeRescued || evidenceBuilderRescued;
+  const passed = !enabled || legacyGuardPassed || professionalIdentityRescueMatched || bridgeRescued || evidenceBuilderRescued || bundleRescued;
   const bridgeRejected = Boolean(
     enabled &&
     bridgeAssessment.combinationMode &&
@@ -15316,6 +15345,11 @@ function getIdentityProfessionalRelevanceGuardAssessment(article, options = {}) 
     rejectionReason,
     firstFailingGate,
     professionalIdentityRescued: professionalIdentityRescueMatched,
+    bundleMode,
+    bundleRescued,
+    bundleAlternateInterestMatched,
+    bundleAssessment,
+    alternateIdentityInterestScores: Object.freeze(alternateIdentityInterestScores.slice()),
     evidence_builder_rescue: evidenceBuilderRescued,
     evidenceBuilderRescued,
     evidenceBuilderRescue,
@@ -16191,9 +16225,11 @@ function getIdentityProfessionalRelevanceGuardSummary(diagnostics) {
   const triggeredGuardCounts = new Map();
   const professionalIdentityRescuedTitles = [];
   const evidenceBuilderRescuedTitles = [];
+  const bundleRescuedTitles = [];
   const evidenceBuilderNoiseBlockedTitles = [];
   let professionalIdentityRescued = 0;
   let evidenceBuilderRescued = 0;
+  let bundleRescued = 0;
   let evidenceBuilderNoiseGuardBlocked = 0;
   let professionalIdentityRescueRejected = 0;
   const firstFailingGateCounts = {
@@ -16228,6 +16264,12 @@ function getIdentityProfessionalRelevanceGuardSummary(diagnostics) {
       evidenceBuilderRescued += 1;
       if (evidenceBuilderRescuedTitles.length < 25) {
         evidenceBuilderRescuedTitles.push(trace?.title || stage.metadata?.title || "Untitled article");
+      }
+    }
+    if (stage.metadata?.bundleRescued) {
+      bundleRescued += 1;
+      if (bundleRescuedTitles.length < 25) {
+        bundleRescuedTitles.push(trace?.title || stage.metadata?.title || "Untitled article");
       }
     }
     if (stage.metadata?.evidenceBuilderRescue?.evidenceBuilderNoiseGuardBlocked) {
@@ -16265,10 +16307,12 @@ function getIdentityProfessionalRelevanceGuardSummary(diagnostics) {
     bridgeRejected: guardStages.filter((stage) => Boolean(stage.metadata?.bridgeRejected)).length,
     professionalIdentityRescued,
     evidenceBuilderRescued,
+    bundleRescued,
     evidenceBuilderNoiseGuardBlocked,
     professionalIdentityRescueRejected,
     professionalIdentityRescuedTitles,
     evidenceBuilderRescuedTitles,
+    bundleRescuedTitles,
     evidenceBuilderNoiseBlockedTitles,
     identityOnlyMode: guardStages.some((stage) => !stage.metadata?.combinationMode),
     sharedSecurityInterests: Array.from(sharedSecurityInterestSet),
@@ -20786,6 +20830,7 @@ function logCompactFilterPipelineSummary(diagnostics) {
     lines.push(formatPipelineSummaryLine("bridgeRescued", identityProfessionalRelevanceGuardSummary.bridgeRescued));
     lines.push(formatPipelineSummaryLine("bridgeRejected", identityProfessionalRelevanceGuardSummary.bridgeRejected));
     lines.push(formatPipelineSummaryLine("professionalIdentityRescued", identityProfessionalRelevanceGuardSummary.professionalIdentityRescued));
+    lines.push(formatPipelineSummaryLine("bundleRescued", identityProfessionalRelevanceGuardSummary.bundleRescued));
     lines.push(formatPipelineSummaryLine("professionalIdentityRescueRejected", identityProfessionalRelevanceGuardSummary.professionalIdentityRescueRejected));
     lines.push(`combinationMode: ${identityProfessionalRelevanceGuardSummary.combinationMode ? "yes" : "no"}`);
     lines.push(`identityOnlyMode: ${identityProfessionalRelevanceGuardSummary.identityOnlyMode ? "yes" : "no"}`);
