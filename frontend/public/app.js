@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-46";
+const APP_BUILD = "intelligence-profile-ux-sprint-47";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -28059,55 +28059,55 @@ function computePersonalInterestBoostMeasured(article, interestId, options = {})
       );
       const selectedIdentityInterests = measureBoostSegment("selectedIdentitySubinterests", () => getSelectedIdentityDocumentSubinterests());
       const selectedSubinterest = selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : "";
-      const borderAuthorityAdjustment = selectedSubinterest === "border_control"
+      const activeIdentityProfile = selectedSubinterest || interestId || "";
+      const borderAuthorityAdjustment = activeIdentityProfile === "border_control"
         ? measureBoostSegment("borderAuthorityAdjustment", () => getBorderControlAuthorityAdjustment(article, authority))
         : { multiplier: authority.multiplier, sourceBoostScale: 1 };
       const genericDmvNoise = measureBoostSegment("genericDmvNoise", () => isGenericDmvNoise(article));
-      const requiredContext = selectedSubinterest
-        ? measureBoostSegment("requiredContextCombo", () => hasRequiredContextCombo(article, selectedSubinterest))
+      const requiredContext = activeIdentityProfile
+        ? measureBoostSegment("requiredContextCombo", () => hasRequiredContextCombo(article, activeIdentityProfile))
         : { matched: false, matchedCombos: [] };
-      const hardPenaltyBase = selectedSubinterest ? Number(IDENTITY_REQUIRED_CONTEXT_STRICT_PENALTIES[selectedSubinterest] || 0) : 0;
+      const hardPenaltyBase = activeIdentityProfile ? Number(IDENTITY_REQUIRED_CONTEXT_STRICT_PENALTIES[activeIdentityProfile] || 0) : 0;
       const travelNoiseAssessment = measureBoostSegment("identityTravelNoiseAssessment", () => getIdentityTravelNoiseAssessment(article));
       const borderTravelNoise = travelNoiseAssessment.borderTravelNoise;
       const borderTechContext = travelNoiseAssessment.borderTechContext;
       const passportLifestyleNoise = travelNoiseAssessment.passportLifestyleNoise;
       const passportAnchorContext = travelNoiseAssessment.passportAnchorContext;
       const visaSpamNoise = travelNoiseAssessment.visaSpamNoise;
-      const selectedIntent = selectedSubinterest
-        ? (subinterestScore.intentByInterest?.[selectedSubinterest] || {
+      const selectedIntent = activeIdentityProfile
+        ? (subinterestScore.intentByInterest?.[activeIdentityProfile] || {
           score: 0,
           matchedStrong: [],
           matchedWeak: [],
           matchedNegative: [],
         })
         : { score: 0, matchedStrong: [], matchedWeak: [], matchedNegative: [] };
-      const selectedProfileSourcePriority = selectedSubinterest
+      const selectedProfileSourcePriority = activeIdentityProfile
         ? measureBoostSegment("identityProfileSourcePriority", () =>
-          getIdentityProfileSourcePriorityBoost(article, selectedSubinterest)
+          getIdentityProfileSourcePriorityBoost(article, activeIdentityProfile)
         )
         : { level: "none", boost: 0 };
-      const selectedSoftNoise = selectedSubinterest
+      const selectedSoftNoise = activeIdentityProfile
         ? measureBoostSegment("identityProfileSoftNoise", () =>
-          getIdentityProfileSoftNoiseAssessment(article, selectedSubinterest)
+          getIdentityProfileSoftNoiseAssessment(article, activeIdentityProfile)
         )
         : { penalty: 0, hasNoise: false, hasStrongContext: false, matchedNoise: [], matchedStrongContext: [] };
-      const borderMarketingPenalty = selectedSubinterest === "border_control"
+      const borderMarketingPenalty = activeIdentityProfile === "border_control"
         ? measureBoostSegment("borderMarketingPenalty", () => getBorderControlMarketingPagePenalty(article))
         : { penalty: 0 };
-      const borderNewsPriority = selectedSubinterest === "border_control"
+      const borderNewsPriority = activeIdentityProfile === "border_control"
         ? measureBoostSegment("borderNewsPriority", () => getBorderControlNewsPriority(article))
         : { boost: 0, penalty: 0 };
-      const residencePermitIntentAdjustment = selectedSubinterest === "residence_permits" || interestId === "residence_permits"
+      const residencePermitIntentAdjustment = activeIdentityProfile === "residence_permits" || interestId === "residence_permits"
         ? measureBoostSegment("residencePermitIntentAdjustment", () => getResidencePermitIntentAdjustment(article))
         : { hasCardIntent: false, cardBoost: 0, officialSourceBoost: 0, guidePenalty: 0 };
       const googleNewsArticle = measureBoostSegment("googleNewsArticle", () => isGoogleNewsArticle(article));
       const visualQualityScore = measureBoostSegment("articleVisualQuality", () => getArticleVisualQualityScore(article));
-      const activeIdentityProfile = selectedSubinterest || interestId || "";
       const recencyAdjustment = measureBoostSegment("identityRecencyAdjustment", () => getIdentityRecencyAdjustment(article));
       const googleNewsPenalty = measureBoostSegment("identityGoogleNewsPenalty", () =>
         getIdentityGoogleNewsPenalty(article, activeIdentityProfile)
       );
-      const selectedSubinterestHasStrongEvidence = Boolean(selectedSubinterest) && (
+      const selectedSubinterestHasStrongEvidence = Boolean(activeIdentityProfile) && (
         subinterestScore.bestSelectedScore >= 18 ||
         selectedIntent.score >= 18 ||
         requiredContext.matched ||
@@ -28119,7 +28119,7 @@ function computePersonalInterestBoostMeasured(article, interestId, options = {})
       score += Math.round(selectedProfileSourcePriority.boost * borderAuthorityAdjustment.sourceBoostScale);
       score += recencyAdjustment.boost;
       score -= selectedSoftNoise.penalty;
-      if (selectedSubinterest === "border_control") {
+      if (activeIdentityProfile === "border_control") {
         score += borderNewsPriority.boost;
         score -= borderNewsPriority.penalty;
       }
@@ -28130,16 +28130,16 @@ function computePersonalInterestBoostMeasured(article, interestId, options = {})
         score -= googleNewsPenalty.penalty;
       }
 
-      if (selectedSubinterest && subinterestScore.bestSelectedScore < 8 && selectedSubinterest !== "drivers_licenses") {
+      if (activeIdentityProfile && subinterestScore.bestSelectedScore < 8 && activeIdentityProfile !== "drivers_licenses") {
         score -= 400;
       }
       if (subinterestScore.mismatchPenalty > HARD_SUBINTEREST_MISMATCH_THRESHOLD && !selectedSubinterestHasStrongEvidence) {
         score -= 500;
       }
-      if (genericDmvNoise && selectedSubinterest && selectedSubinterest !== "drivers_licenses") {
+      if (genericDmvNoise && activeIdentityProfile && activeIdentityProfile !== "drivers_licenses") {
         score -= 700;
       }
-      if (selectedSubinterest && ["passports", "residence_permits", "icao"].includes(selectedSubinterest)) {
+      if (activeIdentityProfile && ["passports", "residence_permits", "icao"].includes(activeIdentityProfile)) {
         score += Math.min(120, Math.round(selectedIntent.score * 1.2));
         score += measureBoostSegment("identityIntentAuthorityBoost", () =>
           getIdentityIntentAuthorityBoost(article, selectedIntent.score)
@@ -28148,8 +28148,8 @@ function computePersonalInterestBoostMeasured(article, interestId, options = {})
           score -= 300;
         }
       }
-      const selectedProfile = selectedSubinterest
-        ? (subinterestScore.profileByInterest?.[selectedSubinterest] || {
+      const selectedProfile = activeIdentityProfile
+        ? (subinterestScore.profileByInterest?.[activeIdentityProfile] || {
           score: 0,
           authorityBoost: 0,
           matchedRequiredGroups: 0,
@@ -28171,18 +28171,18 @@ function computePersonalInterestBoostMeasured(article, interestId, options = {})
         score -= hardPenaltyBase;
         hardPenaltyApplied += hardPenaltyBase;
       }
-      if (selectedSubinterest === "border_control" && borderTravelNoise && !borderTechContext) {
+      if (activeIdentityProfile === "border_control" && borderTravelNoise && !borderTechContext) {
         score -= 900;
         hardPenaltyApplied += 900;
       }
-      if (selectedSubinterest === "border_control" && borderMarketingPenalty.penalty) {
+      if (activeIdentityProfile === "border_control" && borderMarketingPenalty.penalty) {
         score -= borderMarketingPenalty.penalty;
       }
-      if (selectedSubinterest === "passports" && passportLifestyleNoise && !passportAnchorContext) {
+      if (activeIdentityProfile === "passports" && passportLifestyleNoise && !passportAnchorContext) {
         score -= 260;
         hardPenaltyApplied += 260;
       }
-      if (selectedSubinterest === "visas" && visaSpamNoise) {
+      if (activeIdentityProfile === "visas" && visaSpamNoise) {
         score -= 260;
         hardPenaltyApplied += 260;
       }
