@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-33";
+const APP_BUILD = "intelligence-profile-ux-sprint-34";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -3873,6 +3873,18 @@ function getMatchingPersonalDashboardTemplateId(interests = state.personalDashbo
     return templateKey === normalizedKey;
   });
   return matchedTemplate?.[0] || "custom";
+}
+
+function isPersonalDashboardProfileBundleSelection(interests = state.personalDashboard.interests) {
+  const templateId = getMatchingPersonalDashboardTemplateId(interests);
+  return Boolean(templateId && templateId !== "custom");
+}
+
+function shouldUseSharedSecurityAsHardRefinement(interests = state.personalDashboard.interests) {
+  const normalizedInterests = normalizePersonalDashboardInterests(interests);
+  return getSelectedSharedSecuritySubinterests(normalizedInterests).length > 0 &&
+    getSelectedMainDomains(normalizedInterests).length > 0 &&
+    !isPersonalDashboardProfileBundleSelection(normalizedInterests);
 }
 
 function updatePersonalDashboardTemplateSelection(interests = state.personalDashboard.interests) {
@@ -21571,12 +21583,13 @@ function getIdentityDocumentConjunctiveInterestAssessment(article, selectedInter
   const idCardsBridgeMatched = Boolean(options.idCardsBridgeMatched)
     && selectedObjectInterests.includes("id_cards")
     && selectedSharedInterests.length > 0;
+  const forceOrMode = Boolean(options.forceOrMode);
   const objectMatched = !selectedObjectInterests.length
     || matchedObjectInterests.length > 0
     || idCardsBridgeMatched;
   const intelligenceMatched = !selectedIntelligenceInterests.length
     || matchedIntelligenceInterests.length > 0;
-  const conjunctiveMode = selectedObjectInterests.length > 0 && selectedIntelligenceInterests.length > 0;
+  const conjunctiveMode = !forceOrMode && selectedObjectInterests.length > 0 && selectedIntelligenceInterests.length > 0;
   const legacyOrMatched = measureConjunctiveSegment("legacyOrMatched", () =>
     !selectedIdentityInterests.length
       || selectedIdentityInterests.some((interestId) => interestPasses(interestId))
@@ -21604,6 +21617,7 @@ function getIdentityDocumentConjunctiveInterestAssessment(article, selectedInter
     selectedIntelligenceInterests,
     matchedObjectInterests,
     matchedIntelligenceInterests,
+    forceOrMode,
     idCardsBridgeMatched,
     icaoStandardsAssessment: selectedIdentityInterests.includes("icao")
       ? getIdentityDocumentIcaoStandardsAssessment(article)
@@ -21617,6 +21631,8 @@ function classifyPersonalDashboardRejection(article) {
   const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
   const selectedIdentityInterests = getSelectedIdentityDashboardInterests(selectedInterests);
   const primaryDomain = getArticleDominantDomain(article);
+  const profileBundleSelection = isPersonalDashboardProfileBundleSelection(selectedInterests);
+  const sharedSecurityHardRefinement = shouldUseSharedSecurityAsHardRefinement(selectedInterests);
 
   if (isSharedSecurityOnlyPersonalSelection(selectedInterests) && !matchesSelectedSharedSecurityTechnique(article, selectedInterests)) {
     return {
@@ -21628,7 +21644,7 @@ function classifyPersonalDashboardRejection(article) {
   const identityTechniqueBridgeMatched = articleMatchesSelectedIdentityTechniqueBridge(article, selectedInterests);
   const banknoteTechniqueBridgeMatched = articleMatchesSelectedBanknoteTechniqueBridge(article, selectedInterests);
   const sharedSecurityBridgeDecision = getSharedSecurityBridgeDecision(article, selectedInterests);
-  if (sharedSecurityBridgeDecision.applies && !sharedSecurityBridgeDecision.passed) {
+  if (sharedSecurityHardRefinement && sharedSecurityBridgeDecision.applies && !sharedSecurityBridgeDecision.passed) {
     if (!sharedSecurityBridgeDecision.baseDomainMatched) {
       return {
         category: "bridgeRejected",
@@ -21655,7 +21671,7 @@ function classifyPersonalDashboardRejection(article) {
     };
   }
 
-  if (selectedSharedInterests.length && !matchesSelectedSharedSecurityTechnique(article, selectedInterests)) {
+  if (sharedSecurityHardRefinement && !matchesSelectedSharedSecurityTechnique(article, selectedInterests)) {
     return {
       category: "techniqueRejected",
       reason: "selected shared security technique did not match",
@@ -21670,7 +21686,7 @@ function classifyPersonalDashboardRejection(article) {
     const matchedBanknoteInterests = banknoteInterestResolution.effectiveInterestIds.filter((interestId) =>
       matchesBanknoteInterest(article, interestId)
     );
-    if (banknoteInterestResolution.parentActsAsDomainGate && !matchedBanknoteInterests.length) {
+    if (!profileBundleSelection && banknoteInterestResolution.parentActsAsDomainGate && !matchedBanknoteInterests.length) {
       return {
         category: "parentChildMismatch",
         reason: "banknote parent matched as domain gate but selected child did not match",
@@ -21685,12 +21701,13 @@ function classifyPersonalDashboardRejection(article) {
   if (primaryDomain === "identity_documents") {
     if (selectedIdentityInterests.length) {
       const identityInterestAssessment = getIdentityDocumentConjunctiveInterestAssessment(article, selectedInterests, {
-        selectedSharedInterests,
+        selectedSharedInterests: sharedSecurityHardRefinement ? selectedSharedInterests : [],
         idCardsBridgeMatched: matchesIdCardsHolographyOvdCombinationBridge(
           article,
           selectedIdentityInterests,
-          selectedSharedInterests
+          sharedSecurityHardRefinement ? selectedSharedInterests : []
         ),
+        forceOrMode: profileBundleSelection,
       });
       if (!identityInterestAssessment.passed) {
         return {
@@ -29355,6 +29372,8 @@ function getDashboardCombinationDiagnostics(normalizedFilterState = createNormal
   const selectedBaseDomains = selectedMainDomains.filter((domainId) =>
     ["banknotes", "identity_documents", "digital_identity_biometrics"].includes(domainId)
   );
+  const matchedProfileTemplateId = getMatchingPersonalDashboardTemplateId(selectedInterests);
+  const profileBundleSelection = Boolean(matchedProfileTemplateId && matchedProfileTemplateId !== "custom");
   const selectedInterestLabels = selectedInterests.map((interestId) => ({
     id: interestId,
     label: PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.label || interestId,
@@ -29365,7 +29384,8 @@ function getDashboardCombinationDiagnostics(normalizedFilterState = createNormal
   const hasAdvancedFilters = hasNormalizedAdvancedFilters(normalizedFilterState);
   const sharedSecuritySelected = selectedSharedSecurityInterests.length > 0;
   const baseDomainCount = selectedBaseDomains.length;
-  const dashboardCombinationMode = sharedSecuritySelected && baseDomainCount > 0
+  const sharedSecurityHardRefinement = sharedSecuritySelected && baseDomainCount > 0 && !profileBundleSelection;
+  const dashboardCombinationMode = sharedSecurityHardRefinement
     ? "base_domain_or_with_shared_security_and"
     : baseDomainCount > 1
       ? "base_domain_or"
@@ -29381,15 +29401,19 @@ function getDashboardCombinationDiagnostics(normalizedFilterState = createNormal
     ? `(${selectedSharedSecurityInterests.join(" OR ")})`
     : "";
   const expectedInterpretation = baseDomainExpression && sharedSecurityExpression
-    ? `${baseDomainExpression} AND ${sharedSecurityExpression}`
+    ? (sharedSecurityHardRefinement
+      ? `${baseDomainExpression} AND ${sharedSecurityExpression}`
+      : `profile bundle: ${baseDomainExpression} OR ${sharedSecurityExpression}`)
     : baseDomainExpression || sharedSecurityExpression || "no personal dashboard selection";
   const notes = [];
 
   if (baseDomainCount > 1) {
     notes.push("Multiple selected product domains should be interpreted as an OR union for dashboard matching.");
   }
-  if (sharedSecuritySelected && baseDomainCount > 0) {
+  if (sharedSecurityHardRefinement) {
     notes.push("Shared Security selections act as an AND technique refinement over the selected base-domain union.");
+  } else if (profileBundleSelection && sharedSecuritySelected && baseDomainCount > 0) {
+    notes.push("Profile templates treat selected interests as an OR intelligence bundle; Shared Security is not a hard refinement inside the template.");
   }
   if (hasSearch) {
     notes.push("Search text currently acts as both a backend request parameter where applicable and a frontend hard filter.");
@@ -29403,12 +29427,16 @@ function getDashboardCombinationDiagnostics(normalizedFilterState = createNormal
     dashboardCombinationMode,
     selectedInterests,
     selectedInterestLabels,
+    matchedProfileTemplateId,
+    profileBundleSelection,
     selectedMainDomains,
     selectedBaseDomains,
     selectedSharedSecurityInterests,
     baseDomainLogic: baseDomainCount > 1 ? "OR" : baseDomainCount === 1 ? "single" : "none",
     sharedSecurityLogic: sharedSecuritySelected
-      ? (baseDomainCount > 0 ? "AND_refinement" : "standalone_shared_security_match")
+      ? (sharedSecurityHardRefinement
+        ? "AND_refinement"
+        : (baseDomainCount > 0 ? "profile_bundle_or" : "standalone_shared_security_match"))
       : "not_selected",
     expectedInterpretation,
     searchRefinementActive: hasSearch,
@@ -37015,6 +37043,12 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
   const selectedSharedInterests = measurePersonalDashboardSegment("selectedSharedSecurityInterests", () =>
     getSelectedSharedSecuritySubinterests(selectedInterests)
   );
+  const profileBundleSelection = measurePersonalDashboardSegment("profileBundleSelection", () =>
+    isPersonalDashboardProfileBundleSelection(selectedInterests)
+  );
+  const sharedSecurityHardRefinement = measurePersonalDashboardSegment("sharedSecurityHardRefinement", () =>
+    shouldUseSharedSecurityAsHardRefinement(selectedInterests)
+  );
   const multiDigitalIdentityProfileSelection = measurePersonalDashboardSegment("multiDigitalIdentityProfileSelection", () =>
     isMultiDigitalIdentityProfileSelection(selectedInterests)
   );
@@ -37024,7 +37058,7 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
       return finishPersonalDashboardTiming(false, "banknote_contaminated");
     }
 
-    const getBanknoteSharedSecurityTechniqueMatched = () => !selectedSharedInterests.length
+    const getBanknoteSharedSecurityTechniqueMatched = () => !sharedSecurityHardRefinement
       || measurePersonalDashboardSegment("sharedSecurityTechniqueMatch", () => matchesSelectedSharedSecurityTechnique(article, selectedInterests))
       || measurePersonalDashboardSegment("identityTechniqueBridge", () =>
         articleMatchesSelectedIdentityTechniqueBridge(article, selectedInterests)
@@ -37039,7 +37073,10 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
         "banknote_intelligence"
       )
     );
-    const banknoteInterestIds = banknoteInterestResolution.effectiveInterestIds;
+    const banknoteInterestIds = profileBundleSelection
+      ? banknoteInterestResolution.groupInterestIds
+      : banknoteInterestResolution.effectiveInterestIds;
+    const banknoteParentActsAsDomainGate = !profileBundleSelection && banknoteInterestResolution.parentActsAsDomainGate;
 
     if (!banknoteInterestIds.length) {
       const banknoteDomainMatched = measurePersonalDashboardSegment("banknoteDomainMatch", () =>
@@ -37059,7 +37096,7 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
       banknoteInterestIds.some((interestId) => matchesBanknoteInterest(article, interestId))
     );
 
-    if (banknoteInterestResolution.parentActsAsDomainGate) {
+    if (banknoteParentActsAsDomainGate) {
       if (!banknoteInterestMatched) {
         return finishPersonalDashboardTiming(false, "banknote_parent_gate_rejected");
       }
@@ -37104,7 +37141,7 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
   const sharedSecurityBridgeDecision = measurePersonalDashboardSegment("sharedSecurityBridgeDecision", () =>
     getSharedSecurityBridgeDecision(article, selectedInterests)
   );
-  if (sharedSecurityBridgeDecision.applies && !isBanknotesOnlyPersonalSelection(selectedInterests)) {
+  if (sharedSecurityHardRefinement && sharedSecurityBridgeDecision.applies && !isBanknotesOnlyPersonalSelection(selectedInterests)) {
     return finishPersonalDashboardTiming(
       sharedSecurityBridgeDecision.passed,
       sharedSecurityBridgeDecision.passed ? "shared_security_bridge_passed" : "shared_security_bridge_rejected"
@@ -37126,7 +37163,7 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
   // Main filters define the scope ("what document / market is this about?").
   // Shared Security Printing filters define the technique ("which security-printing method is involved?").
   // When both are selected together, the article must satisfy scope AND technique.
-  const sharedSecurityTechniqueMatched = !selectedSharedInterests.length
+  const sharedSecurityTechniqueMatched = !sharedSecurityHardRefinement
     || measurePersonalDashboardSegment("sharedSecurityTechniqueMatch", () => matchesSelectedSharedSecurityTechnique(article, selectedInterests))
     || identityTechniqueBridgeMatched
     || banknoteTechniqueBridgeMatched;
@@ -37145,13 +37182,14 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
       matchesIdCardsHolographyOvdCombinationBridge(
         article,
         selectedIdentityInterests,
-        selectedSharedInterests
+        sharedSecurityHardRefinement ? selectedSharedInterests : []
       )
     );
     const identityScopeAssessment = measurePersonalDashboardSegment("identityConjunctiveAssessment", () =>
       getIdentityDocumentConjunctiveInterestAssessment(article, selectedInterests, {
-        selectedSharedInterests,
+        selectedSharedInterests: sharedSecurityHardRefinement ? selectedSharedInterests : [],
         idCardsBridgeMatched: idCardsHolographyOvdBridgeMatched,
+        forceOrMode: profileBundleSelection,
         timingContext: personalDashboardTimingContext,
       })
     );
