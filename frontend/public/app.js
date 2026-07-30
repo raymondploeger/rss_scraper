@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-34";
+const APP_BUILD = "intelligence-profile-ux-sprint-35";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -3778,26 +3778,20 @@ const PERSONAL_DASHBOARD_PROFILE_TEMPLATES = Object.freeze({
       "withdrawal",
       "counterfeit",
       "central_bank",
-      "security_features",
-      "security_printing",
-      "security_inks",
-      "polymer",
-      "substrate",
     ]),
   }),
   passport_authority: Object.freeze({
-    label: "Passport Authority",
+    label: "Identity Document Authority",
     interests: Object.freeze([
       "passports",
+      "id_cards",
+      "visas",
+      "residence_permits",
+      "drivers_licenses",
       "issuance",
       "fraud",
       "icao",
       "border_control",
-      "security_features",
-      "polycarbonate",
-      "laminate",
-      "personalization",
-      "secure_documents",
     ]),
   }),
   border_control: Object.freeze({
@@ -3855,9 +3849,6 @@ const PERSONAL_DASHBOARD_PROFILE_TEMPLATES = Object.freeze({
       "icao",
       "digital_identity",
       "identity_verification",
-      "security_features",
-      "security_printing",
-      "anti_counterfeit",
     ]),
   }),
 });
