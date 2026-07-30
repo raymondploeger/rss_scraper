@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-40";
+const APP_BUILD = "intelligence-profile-ux-sprint-41";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1478,6 +1478,7 @@ const ACTIVITY_LOG_LIMIT = 24;
 const LOW_VALUE_ARTICLE_THRESHOLD = 5;
 const BACKEND_ARTICLE_QUERY_CONCURRENCY_LIMIT = 8;
 const PERSONAL_DASHBOARD_BACKEND_SEARCH_LIMIT = 16;
+const IDENTITY_DOCUMENT_OR_BACKEND_SEARCH_LIMIT = 32;
 const SUMMARY_METRICS = [
   { label: "Active feeds", key: "activeFeeds" },
   { label: "Tracked topics", key: "topics" },
@@ -25198,6 +25199,10 @@ function limitIdentityDocumentBackendSearches(searches = [], selectedInterests =
   if (selectedIdentityInterests.length <= 1) {
     return normalizedSearches.slice(0, PERSONAL_DASHBOARD_BACKEND_SEARCH_LIMIT);
   }
+  const searchLimit = Math.max(
+    PERSONAL_DASHBOARD_BACKEND_SEARCH_LIMIT,
+    Math.min(IDENTITY_DOCUMENT_OR_BACKEND_SEARCH_LIMIT, selectedIdentityInterests.length * 4)
+  );
 
   const availableTerms = new Set(normalizedSearches);
   const prioritizedSearches = [];
@@ -25213,7 +25218,7 @@ function limitIdentityDocumentBackendSearches(searches = [], selectedInterests =
   });
   normalizedSearches.forEach(addSearch);
 
-  return prioritizedSearches.slice(0, PERSONAL_DASHBOARD_BACKEND_SEARCH_LIMIT);
+  return prioritizedSearches.slice(0, searchLimit);
 }
 
 function getPersonalDashboardBackendDomainPlan() {
