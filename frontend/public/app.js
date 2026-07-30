@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-53";
+const APP_BUILD = "intelligence-profile-ux-sprint-54";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -36653,6 +36653,124 @@ function isBanknoteContaminated(article) {
   });
 }
 
+const CENTRAL_BANK_PROFILE_SOURCE_NOISE_TERMS = [
+  "auction",
+  "bids.",
+  "beloitauction",
+  "catawiki",
+  "colnect",
+  "vcoins",
+  "banknoteworld",
+  "planetbanknote",
+  "reddit",
+  "facebook",
+  "instagram",
+  "tiktok",
+  "youtube",
+  "x.com",
+  "twitter",
+  "linkedin",
+  "reutersconnect",
+  "stock photo",
+  "stock photography",
+];
+
+const CENTRAL_BANK_PROFILE_MARKET_NOISE_TERMS = [
+  "sterling rises",
+  "dollar steadies",
+  "stocks",
+  "stock market",
+  "forex",
+  "exchange rate",
+  "bond market",
+  "exporters dump dollars",
+  "fed holds rates",
+  "ahead of boe decision",
+  "currency markets",
+];
+
+function getCentralBankProfileProfessionalAssessment(article) {
+  return getCachedArticleValue(article, "centralBankProfileProfessionalAssessment", () => {
+    const dominantDomain = getArticleDominantDomain(article);
+    const signals = getBanknoteInterestSignals(article);
+    const noiseAssessment = getBanknoteNoiseAssessment(article);
+    const relevance = getBanknoteIntelligenceRelevance(article);
+    const eventType = relevance?.eventType || getBanknoteEventType(article);
+    const context = getPersonalBoostContext(article, "getCentralBankProfileProfessionalAssessment", { interest: "central_bank" });
+    const sourceFingerprint = [
+      context.sourceText,
+      context.domainText,
+      context.metadataText,
+    ].join(" ");
+    const articleText = [
+      context.titleText,
+      context.tagText,
+      context.metadataText,
+      context.bodyText,
+    ].join(" ");
+    const sourceNoiseTerms = normalizeKeywordList(CENTRAL_BANK_PROFILE_SOURCE_NOISE_TERMS)
+      .filter((term) => textMatchesKeyword(sourceFingerprint, term));
+    const marketNoiseTerms = normalizeKeywordList(CENTRAL_BANK_PROFILE_MARKET_NOISE_TERMS)
+      .filter((term) => textMatchesKeyword(articleText, term));
+    const professionalEventMatched = [
+      "banknote_withdrawal",
+      "counterfeit_banknotes",
+      "banknote_new_design",
+      "banknote_new_series",
+      "polymer_transition",
+      "central_bank_warning",
+    ].includes(eventType) ||
+      signals.releaseHits >= 3 ||
+      signals.redesignHits >= 3 ||
+      signals.withdrawalHits >= 3 ||
+      signals.counterfeitHits >= 3;
+    const issuerContextMatched = isBanknoteAuthoritySource(article) ||
+      signals.centralBankHits >= 3 ||
+      textMatchesKeyword(articleText, "central bank") ||
+      textMatchesKeyword(articleText, "reserve bank") ||
+      textMatchesKeyword(articleText, "monetary authority");
+    const collectorOrSocialNoise = sourceNoiseTerms.length > 0 || isBanknoteSocialSource(article);
+    const marketNoise = marketNoiseTerms.length > 0 && !professionalEventMatched;
+    const blocked = dominantDomain !== "banknotes" ||
+      noiseAssessment.contaminated ||
+      collectorOrSocialNoise ||
+      marketNoise ||
+      eventType === "banknote_auction_noise";
+    const passed = !blocked && Boolean(
+      isBanknoteAuthoritySource(article) ||
+      (relevance?.kept && (professionalEventMatched || issuerContextMatched)) ||
+      (signals.contextHits >= 3 && professionalEventMatched && issuerContextMatched)
+    );
+
+    let rejectionReason = "";
+    if (dominantDomain !== "banknotes") {
+      rejectionReason = "central_bank_profile_wrong_domain";
+    } else if (collectorOrSocialNoise || eventType === "banknote_auction_noise") {
+      rejectionReason = "central_bank_profile_collector_social_or_auction_noise";
+    } else if (noiseAssessment.contaminated) {
+      rejectionReason = "central_bank_profile_banknote_noise";
+    } else if (marketNoise) {
+      rejectionReason = "central_bank_profile_market_noise";
+    } else if (!passed) {
+      rejectionReason = "central_bank_profile_weak_professional_signal";
+    }
+
+    return Object.freeze({
+      passed,
+      rejected: !passed,
+      rejectionReason,
+      eventType,
+      relevanceScore: Number(relevance?.score) || 0,
+      relevanceKept: Boolean(relevance?.kept),
+      professionalEventMatched,
+      issuerContextMatched,
+      sourceNoiseTerms: Object.freeze(sourceNoiseTerms.slice(0, 10)),
+      marketNoiseTerms: Object.freeze(marketNoiseTerms.slice(0, 10)),
+      noiseAssessment,
+    });
+  });
+}
+
 function matchesBanknoteInterest(article, interestId) {
   return getCachedArticleValue(article, `matchesBanknoteInterest:${interestId}`, () => {
     if (getArticleDominantDomain(article) !== "banknotes") {
@@ -37333,6 +37451,18 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
   if (measurePersonalDashboardSegment("banknotesOnlySelection", () => isBanknotesOnlyPersonalSelection(selectedInterests))) {
     if (measurePersonalDashboardSegment("banknoteContamination", () => isBanknoteContaminated(article))) {
       return finishPersonalDashboardTiming(false, "banknote_contaminated");
+    }
+    const centralBankProfileActive = profileBundleSelection &&
+      measurePersonalDashboardSegment("centralBankProfileTemplate", () =>
+        getMatchingPersonalDashboardTemplateId(selectedInterests) === "central_bank"
+      );
+    if (centralBankProfileActive) {
+      const centralBankProfileAssessment = measurePersonalDashboardSegment("centralBankProfileProfessionalGuard", () =>
+        getCentralBankProfileProfessionalAssessment(article)
+      );
+      if (!centralBankProfileAssessment.passed) {
+        return finishPersonalDashboardTiming(false, centralBankProfileAssessment.rejectionReason || "central_bank_profile_guard");
+      }
     }
 
     const getBanknoteSharedSecurityTechniqueMatched = () => !sharedSecurityHardRefinement
