@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-56";
+const APP_BUILD = "intelligence-profile-ux-sprint-57";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -36759,8 +36759,8 @@ function getCentralBankProfileProfessionalAssessment(article) {
       textMatchesKeyword(articleText, "reserve bank") ||
       textMatchesKeyword(articleText, "monetary authority");
     const collectorOrSocialNoise = sourceNoiseTerms.length > 0 || isBanknoteSocialSource(article);
-    const marketNoise = marketNoiseTerms.length > 0 && !professionalEventMatched;
-    const digitalIdNoise = digitalIdNoiseTerms.length > 0 && !professionalEventMatched && !issuerContextMatched;
+    const marketNoise = marketNoiseTerms.length > 0;
+    const digitalIdNoise = digitalIdNoiseTerms.length > 0;
     const blocked = dominantDomain !== "banknotes" ||
       noiseAssessment.contaminated ||
       collectorOrSocialNoise ||
