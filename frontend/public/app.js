@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-36";
+const APP_BUILD = "intelligence-profile-ux-sprint-37";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -3879,10 +3879,24 @@ function shouldUseSharedSecurityAsHardRefinement(interests = state.personalDashb
 }
 
 function updatePersonalDashboardTemplateSelection(interests = state.personalDashboard.interests) {
+  const matchingTemplateId = getMatchingPersonalDashboardTemplateId(interests);
   if (!elements.personalDashboardTemplateSelect) {
-    return;
+    if (!elements.personalDashboardTemplateOptions) {
+      return;
+    }
+  } else {
+    elements.personalDashboardTemplateSelect.value = matchingTemplateId;
   }
-  elements.personalDashboardTemplateSelect.value = getMatchingPersonalDashboardTemplateId(interests);
+  if (elements.personalDashboardTemplateOptions) {
+    elements.personalDashboardTemplateOptions
+      .querySelectorAll("[data-profile-template]")
+      .forEach((option) => {
+        const selected = option instanceof HTMLElement &&
+          option.dataset.profileTemplate === matchingTemplateId;
+        option.dataset.selected = selected ? "true" : "false";
+        option.setAttribute("aria-checked", String(selected));
+      });
+  }
 }
 
 function getPersonalDashboardLocalSaveLabel(selectedInterestCount = 0) {
@@ -4833,6 +4847,7 @@ const elements = {
   tagManagerList: document.getElementById("tag-manager-list"),
   personalDashboard: document.getElementById("personal-dashboard"),
   personalDashboardTemplateSelect: document.getElementById("personal-dashboard-template-select"),
+  personalDashboardTemplateOptions: document.getElementById("personal-dashboard-template-options"),
   personalDashboardSummary: document.getElementById("personal-dashboard-summary"),
   personalDashboardGroups: document.getElementById("personal-dashboard-groups"),
   personalDashboardInterests: document.getElementById("personal-dashboard-interests"),
@@ -53146,6 +53161,18 @@ function bindEvents() {
       if (templateId && templateId !== "custom") {
         applyPersonalDashboardTemplate(templateId);
       }
+    });
+  }
+
+  if (elements.personalDashboardTemplateOptions) {
+    elements.personalDashboardTemplateOptions.addEventListener("click", (event) => {
+      const option = event.target instanceof Element
+        ? event.target.closest("[data-profile-template]")
+        : null;
+      if (!option) {
+        return;
+      }
+      applyPersonalDashboardTemplate(option.dataset.profileTemplate || "");
     });
   }
 
