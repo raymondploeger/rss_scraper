@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-29";
+const APP_BUILD = "intelligence-profile-ux-sprint-30";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -50177,70 +50177,94 @@ function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, 
     const identityVerificationProductionDecision = identityVerificationAssessment
       ? identityVerificationAssessment.authoritativeDecision || identityVerificationAssessment
       : null;
-    const rejectedAssessment = digitalIdentityAssessment && !digitalIdentityAssessment.passed
-      ? {
-          type: "digital_identity",
-          assessment: digitalIdentityAssessment,
-          reason: "digital_identity_professional_guard_rejected",
-          fallbackReason: "Digital Identity professional relevance guard rejected article",
-        }
-      : biometricsAssessment && !biometricsAssessment.passed
+    const activeProfessionalGuardAssessments = [
+      digitalIdentityAssessment
+        ? {
+            type: "digital_identity",
+            assessment: digitalIdentityAssessment,
+            passed: digitalIdentityAssessment.passed,
+            reason: "digital_identity_professional_guard_rejected",
+            fallbackReason: "Digital Identity professional relevance guard rejected article",
+          }
+        : null,
+      biometricsAssessment
         ? {
             type: "biometrics",
             assessment: biometricsAssessment,
+            passed: biometricsAssessment.passed,
             reason: "biometrics_professional_guard_rejected",
             fallbackReason: "Biometrics professional relevance guard rejected article",
           }
-        : digitalWalletAssessment && !digitalWalletAssessment.passed
-          ? {
-              type: "digital_wallet",
-              assessment: digitalWalletAssessment,
-              reason: "digital_wallet_professional_guard_rejected",
-              fallbackReason: "Digital Wallet professional relevance guard rejected article",
-            }
-          : kycAssessment && !kycAssessment.passed
-            ? {
-                type: "kyc",
-                assessment: kycAssessment,
-                reason: "kyc_professional_guard_rejected",
-                fallbackReason: "KYC professional relevance guard rejected article",
-              }
-            : onboardingAssessment && !onboardingAssessment.passed
-              ? {
-                  type: "onboarding",
-                  assessment: onboardingAssessment,
-                  reason: "onboarding_professional_guard_rejected",
-                  fallbackReason: "Onboarding professional relevance guard rejected article",
-                }
-              : livenessAssessment && !livenessAssessment.passed
-                ? {
-                    type: "liveness",
-                    assessment: livenessAssessment,
-                    reason: "liveness_professional_guard_rejected",
-                    fallbackReason: "Liveness professional relevance guard rejected article",
-                  }
-                : aiAssessment && !aiAssessment.passed
-                  ? {
-                      type: "artificial_intelligence",
-                      assessment: aiAssessment,
-                      reason: "ai_professional_guard_rejected",
-                      fallbackReason: "Artificial Intelligence professional relevance guard rejected article",
-                    }
-                  : authenticationAssessment && !authenticationAssessment.passed
-                    ? {
-                        type: "authentication",
-                        assessment: authenticationAssessment,
-                        reason: "authentication_professional_guard_rejected",
-                        fallbackReason: "Authentication professional relevance guard rejected article",
-                      }
-                    : identityVerificationProductionDecision && !identityVerificationProductionDecision.passed
-                      ? {
-                          type: "identity_verification",
-                          assessment: identityVerificationAssessment,
-                          reason: "identity_verification_professional_guard_rejected",
-                          fallbackReason: "Identity Verification professional relevance guard rejected article",
-                        }
-        : null;
+        : null,
+      digitalWalletAssessment
+        ? {
+            type: "digital_wallet",
+            assessment: digitalWalletAssessment,
+            passed: digitalWalletAssessment.passed,
+            reason: "digital_wallet_professional_guard_rejected",
+            fallbackReason: "Digital Wallet professional relevance guard rejected article",
+          }
+        : null,
+      kycAssessment
+        ? {
+            type: "kyc",
+            assessment: kycAssessment,
+            passed: kycAssessment.passed,
+            reason: "kyc_professional_guard_rejected",
+            fallbackReason: "KYC professional relevance guard rejected article",
+          }
+        : null,
+      onboardingAssessment
+        ? {
+            type: "onboarding",
+            assessment: onboardingAssessment,
+            passed: onboardingAssessment.passed,
+            reason: "onboarding_professional_guard_rejected",
+            fallbackReason: "Onboarding professional relevance guard rejected article",
+          }
+        : null,
+      livenessAssessment
+        ? {
+            type: "liveness",
+            assessment: livenessAssessment,
+            passed: livenessAssessment.passed,
+            reason: "liveness_professional_guard_rejected",
+            fallbackReason: "Liveness professional relevance guard rejected article",
+          }
+        : null,
+      aiAssessment
+        ? {
+            type: "artificial_intelligence",
+            assessment: aiAssessment,
+            passed: aiAssessment.passed,
+            reason: "ai_professional_guard_rejected",
+            fallbackReason: "Artificial Intelligence professional relevance guard rejected article",
+          }
+        : null,
+      authenticationAssessment
+        ? {
+            type: "authentication",
+            assessment: authenticationAssessment,
+            passed: authenticationAssessment.passed,
+            reason: "authentication_professional_guard_rejected",
+            fallbackReason: "Authentication professional relevance guard rejected article",
+          }
+        : null,
+      identityVerificationProductionDecision
+        ? {
+            type: "identity_verification",
+            assessment: identityVerificationAssessment,
+            passed: identityVerificationProductionDecision.passed,
+            reason: "identity_verification_professional_guard_rejected",
+            fallbackReason: "Identity Verification professional relevance guard rejected article",
+          }
+        : null,
+    ].filter(Boolean);
+    const passedProfessionalGuardAssessments = activeProfessionalGuardAssessments
+      .filter((entry) => entry.passed);
+    const rejectedAssessment = activeProfessionalGuardAssessments.length > 1
+      ? (passedProfessionalGuardAssessments.length ? null : activeProfessionalGuardAssessments[0] || null)
+      : activeProfessionalGuardAssessments.find((entry) => !entry.passed) || null;
 
     if (!rejectedAssessment) {
       recordFilterDecisionStage(diagnostics, article, {
@@ -50276,6 +50300,10 @@ function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, 
         ],
         metadata: {
           enabled: true,
+          digitalIdentityProfessionalGuardCombinationMode: activeProfessionalGuardAssessments.length > 1
+            ? "any_selected_guard_passes"
+            : "single_selected_guard",
+          passedProfessionalGuardTypes: passedProfessionalGuardAssessments.map((entry) => entry.type),
           digitalIdentityProfessionalGuard: digitalIdentityAssessment,
           biometricsProfessionalGuard: biometricsAssessment,
           digitalWalletProfessionalGuard: digitalWalletAssessment,
@@ -50318,6 +50346,10 @@ function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, 
       ],
       metadata: {
         enabled: true,
+        digitalIdentityProfessionalGuardCombinationMode: activeProfessionalGuardAssessments.length > 1
+          ? "any_selected_guard_passes"
+          : "single_selected_guard",
+        passedProfessionalGuardTypes: passedProfessionalGuardAssessments.map((entry) => entry.type),
         digitalIdentityProfessionalGuard: digitalIdentityAssessment,
         biometricsProfessionalGuard: biometricsAssessment,
         digitalWalletProfessionalGuard: digitalWalletAssessment,
