@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-52";
+const APP_BUILD = "intelligence-profile-ux-sprint-53";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -3633,7 +3633,7 @@ const PERSONAL_DASHBOARD_GROUPS = [
   {
     id: "banknote_intelligence",
     label: "Banknote Intelligence",
-    description: "Cash, central banks, issuance, withdrawals and counterfeiting.",
+    description: "Banknotes broaden your feed. Themes refine it.",
     interests: [
       { id: "banknotes", label: "Banknotes", strong: ["banknote", "banknotes", "currency note", "commemorative note", "note issuance"], weak: ["cash", "payment"], topicSignals: ["banknotes"], tagSignals: ["banknotes"], eventTypes: ["banknote_withdrawal", "new_banknote_series", "banknote_redesign", "commemorative_issue"] },
       { id: "counterfeit", label: "Counterfeiting", strong: ["counterfeit", "counterfeit notes", "counterfeit banknote", "fake note", "forged banknote"], weak: ["forged note"], eventTypes: ["counterfeit_banknotes", "central_bank_warning"], signalIds: ["counterfeit"] },
@@ -3770,6 +3770,16 @@ const PERSONAL_DASHBOARD_INTEREST_MAP = new Map(
     group.interests.map((interest) => [interest.id, { ...interest, groupId: group.id }])
   )
 );
+const BANKNOTE_OBJECT_INTEREST_IDS = new Set([
+  "banknotes",
+]);
+const BANKNOTE_THEME_INTEREST_IDS = new Set([
+  "counterfeit",
+  "rollout",
+  "withdrawal",
+  "redesign",
+  "central_bank",
+]);
 const IDENTITY_DOCUMENT_TYPE_INTEREST_IDS = new Set([
   "passports",
   "id_cards",
@@ -23680,6 +23690,35 @@ function renderPersonalDashboardInterestSection(title, description, interests, a
 }
 
 function renderPersonalDashboardGroupOptions(group, visibleInterests, activeInterests) {
+  if (group.id === "banknote_intelligence") {
+    const objectInterests = visibleInterests.filter((interest) =>
+      BANKNOTE_OBJECT_INTEREST_IDS.has(interest.id)
+    );
+    const themeInterests = visibleInterests.filter((interest) =>
+      BANKNOTE_THEME_INTEREST_IDS.has(interest.id)
+    );
+    const otherInterests = visibleInterests.filter((interest) =>
+      !BANKNOTE_OBJECT_INTEREST_IDS.has(interest.id) &&
+      !BANKNOTE_THEME_INTEREST_IDS.has(interest.id)
+    );
+
+    return [
+      renderPersonalDashboardInterestSection(
+        "Object",
+        "Start with banknote articles.",
+        objectInterests,
+        activeInterests
+      ),
+      renderPersonalDashboardInterestSection(
+        "Refine by intelligence theme",
+        "Narrow results to topics such as counterfeiting, issuance, withdrawal or designs.",
+        themeInterests,
+        activeInterests
+      ),
+      renderPersonalDashboardInterestSection("", "", otherInterests, activeInterests),
+    ].join("");
+  }
+
   if (group.id !== "identity_documents") {
     return visibleInterests
       .map((interest) => renderPersonalDashboardInterestCheckbox(interest, activeInterests))
