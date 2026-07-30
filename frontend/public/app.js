@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-31";
+const APP_BUILD = "intelligence-profile-ux-sprint-32";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -3839,14 +3839,10 @@ const PERSONAL_DASHBOARD_PROFILE_TEMPLATES = Object.freeze({
   identity_verification: Object.freeze({
     label: "Identity Verification",
     interests: Object.freeze([
-      "digital_identity",
-      "eid",
-      "digital_wallet",
       "biometric_verification",
       "identity_verification",
       "authentication",
       "age_verification",
-      "artificial_intelligence",
     ]),
   }),
   researcher: Object.freeze({
