@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-38";
+const APP_BUILD = "intelligence-profile-ux-sprint-39";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -25152,6 +25152,70 @@ function limitPersonalDashboardBackendSearches(searches = []) {
   return normalizedSearches.slice(0, PERSONAL_DASHBOARD_BACKEND_SEARCH_LIMIT);
 }
 
+const IDENTITY_DOCUMENT_BACKEND_SEARCH_PRIORITY_BY_INTEREST = Object.freeze({
+  passports: Object.freeze([
+    "passport issuance",
+    "biometric passport",
+  ]),
+  id_cards: Object.freeze([
+    "identity card",
+    "id card",
+  ]),
+  visas: Object.freeze([
+    "visa issuance",
+    "evisa",
+  ]),
+  residence_permits: Object.freeze([
+    "residence permit",
+    "biometric residence permit",
+  ]),
+  drivers_licenses: Object.freeze([
+    "driver license",
+    "driving licence",
+  ]),
+  issuance: Object.freeze([
+    "document issuance",
+  ]),
+  fraud: Object.freeze([
+    "document fraud",
+    "counterfeit document",
+  ]),
+  icao: Object.freeze([
+    "icao",
+    "doc 9303",
+  ]),
+  border_control: Object.freeze([
+    "border control",
+    "document inspection",
+  ]),
+});
+
+function limitIdentityDocumentBackendSearches(searches = [], selectedInterests = state.personalDashboard.interests) {
+  const normalizedSearches = Array.from(new Set((Array.isArray(searches) ? searches : [])
+    .map((term) => String(term || "").trim())
+    .filter(Boolean)));
+  const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
+  if (selectedIdentityInterests.length <= 1) {
+    return normalizedSearches.slice(0, PERSONAL_DASHBOARD_BACKEND_SEARCH_LIMIT);
+  }
+
+  const availableTerms = new Set(normalizedSearches);
+  const prioritizedSearches = [];
+  const addSearch = (term) => {
+    if (!availableTerms.has(term) || prioritizedSearches.includes(term)) {
+      return;
+    }
+    prioritizedSearches.push(term);
+  };
+
+  selectedIdentityInterests.forEach((interestId) => {
+    (IDENTITY_DOCUMENT_BACKEND_SEARCH_PRIORITY_BY_INTEREST[interestId] || []).forEach(addSearch);
+  });
+  normalizedSearches.forEach(addSearch);
+
+  return prioritizedSearches.slice(0, PERSONAL_DASHBOARD_BACKEND_SEARCH_LIMIT);
+}
+
 function getPersonalDashboardBackendDomainPlan() {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const selectedMainDomains = getSelectedMainDomains(selectedInterests);
@@ -25533,7 +25597,7 @@ function getPersonalDashboardBackendDomainPlan() {
       domain: "identity_documents",
       topic: "Identity Documents",
       includeTopicBaseline: false,
-      searches: limitPersonalDashboardBackendSearches(Array.from(identitySearches)),
+      searches: limitIdentityDocumentBackendSearches(Array.from(identitySearches), selectedInterests),
     };
   }
 
@@ -25704,7 +25768,7 @@ function getPersonalDashboardBackendDomainPlan() {
           "document security",
         ].forEach((term) => identitySearches.add(term));
       }
-      addMultiTerms(Array.from(identitySearches));
+      addMultiTerms(limitIdentityDocumentBackendSearches(Array.from(identitySearches), selectedInterests));
     }
 
     if (selectedMainDomains.includes("digital_identity_biometrics")) {
