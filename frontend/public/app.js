@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-42";
+const APP_BUILD = "intelligence-profile-ux-sprint-43";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -25478,23 +25478,41 @@ function getPersonalDashboardBackendDomainPlan() {
         "biometric passport",
         "epassport",
         "e-passport",
+        "machine readable travel document",
+        "mrtd",
+        "emrtd",
+        "passport chip",
+        "passport personalization",
+        "passport personalisation",
         "passport verification",
+        "passport authentication",
         "passport security",
+        "passport security features",
+        "passport security printing",
         "passport fraud",
+        "secure passport document",
         "passport production",
+        "passport manufacturing",
       ]);
     }
     if (hasInterest("id_cards")) {
       addTerms([
-        "identity card",
         "id card",
+        "identity card",
+        "national id",
         "electronic identity card",
+        "electronic id card",
         "smart id",
+        "smart id card",
         "nicop",
         "cnic",
+        "secure id documents",
+        "national id documents",
+        "czech id",
         "national identity guard",
         "card issuance",
         "polycarbonate id",
+        "identity card design",
       ]);
     }
     if (hasInterest("residence_permits")) {
