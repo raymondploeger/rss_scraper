@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-65";
+const APP_BUILD = "intelligence-profile-ux-sprint-66";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -41654,6 +41654,7 @@ function syncAdvancedFiltersVisibility(expanded = false) {
   elements.advancedFiltersContent.hidden = !expanded;
   elements.advancedFiltersToggle.setAttribute("aria-expanded", String(expanded));
   elements.advancedFiltersToggle.textContent = expanded ? "Hide search" : "Show search";
+  syncFilterUx();
 }
 
 function applyKeywordInputs() {
@@ -44631,6 +44632,7 @@ function syncFilterUx() {
   }
 
   const fragment = document.createDocumentFragment();
+  let advancedSearchActiveCount = 0;
   const sourceSearch = String(elements.feedPanelSearch?.value || "").trim();
   const sourceStatus = elements.feedVisibilityFilter?.value || "all";
   const sourceGroup = state.filters.sourceGroup || "all";
@@ -44653,6 +44655,7 @@ function syncFilterUx() {
 
   if (state.filters.search) {
     addActiveFilterChip(fragment, "Search", state.filters.search, "search");
+    advancedSearchActiveCount += 1;
   }
   if (Array.isArray(state.filters.articleIds) && state.filters.articleIds.length) {
     addActiveFilterChip(
@@ -44661,12 +44664,15 @@ function syncFilterUx() {
       state.filters.alertLabel || `${state.filters.articleIds.length} articles`,
       "article-ids"
     );
+    advancedSearchActiveCount += 1;
   }
   if (state.filters.topic) {
     addActiveFilterChip(fragment, "Topic", state.filters.topic, "topic");
+    advancedSearchActiveCount += 1;
   }
   if (state.filters.tag) {
     addActiveFilterChip(fragment, "Tag", state.filters.tag, "tag");
+    advancedSearchActiveCount += 1;
   }
   if (state.filters.signalCategory) {
     addActiveFilterChip(
@@ -44675,20 +44681,26 @@ function syncFilterUx() {
       getSignalCategoryById(state.filters.signalCategory)?.label || state.filters.signalCategory,
       "signal-category"
     );
+    advancedSearchActiveCount += 1;
   }
   if (hasCustomIncludeKeywords()) {
     addActiveFilterChip(fragment, "Include keywords", `${state.keywordFilters.include.length} terms`, "include-keywords");
+    advancedSearchActiveCount += 1;
   }
   if (hasCustomExcludeKeywords()) {
     addActiveFilterChip(fragment, "Exclude keywords", `${state.keywordFilters.exclude.length} terms`, "exclude-keywords");
+    advancedSearchActiveCount += 1;
   }
   if (state.filters.feedId) {
     addActiveFilterChip(fragment, "Feed", getSelectedOptionText(elements.feedFilter) || "Selected feed", "feed");
+    advancedSearchActiveCount += 1;
   }
   if (state.filters.dmvFeedId) {
     addActiveFilterChip(fragment, "USA", getSelectedOptionText(elements.dmvFeedFilter) || "Selected state", "usa");
+    advancedSearchActiveCount += 1;
   } else if (state.dashboardMode === "usa") {
     addActiveFilterChip(fragment, "Mode", "USA feeds", "mode");
+    advancedSearchActiveCount += 1;
   }
   if (state.filters.canadaDmvFeedPath) {
     addActiveFilterChip(
@@ -44697,13 +44709,17 @@ function syncFilterUx() {
       getSelectedOptionText(elements.canadaDmvFilter) || "Selected province",
       "canada"
     );
+    advancedSearchActiveCount += 1;
   } else if (state.filters.canadaDmvAll) {
     addActiveFilterChip(fragment, "Canada", "All Canada DMV", "canada");
+    advancedSearchActiveCount += 1;
   } else if (state.dashboardMode === "canada") {
     addActiveFilterChip(fragment, "Mode", "Canada feeds", "mode");
+    advancedSearchActiveCount += 1;
   }
   if (state.filters.date) {
     addActiveFilterChip(fragment, "Date", state.filters.date, "date");
+    advancedSearchActiveCount += 1;
   }
   if (sourceSearch) {
     addActiveFilterChip(fragment, "Source search", sourceSearch, "source-search");
@@ -44726,6 +44742,18 @@ function syncFilterUx() {
     hasActiveFilters ? "Clear all active search/profile selections" : "Reset search and profile"
   );
   elements.clearFilters.title = hasActiveFilters ? "Clear all active search/profile selections" : "Reset search and profile";
+
+  if (elements.advancedFiltersToggle) {
+    const advancedSearchExpanded = elements.advancedFiltersToggle.getAttribute("aria-expanded") === "true";
+    const hasActiveAdvancedSearch = advancedSearchActiveCount > 0;
+    elements.advancedFiltersToggle.classList.toggle("is-active-filter", hasActiveAdvancedSearch);
+    elements.advancedFiltersToggle.textContent = hasActiveAdvancedSearch
+      ? `${advancedSearchActiveCount} search ${advancedSearchActiveCount === 1 ? "filter" : "filters"} active`
+      : (advancedSearchExpanded ? "Hide search" : "Show search");
+    elements.advancedFiltersToggle.title = hasActiveAdvancedSearch
+      ? "Advanced Search is refining the current profile"
+      : "Show Advanced Search";
+  }
 }
 
 function clearActiveFilter(filterKey) {
