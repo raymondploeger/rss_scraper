@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-58";
+const APP_BUILD = "intelligence-profile-ux-sprint-59";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -36744,6 +36744,50 @@ const CENTRAL_BANK_PROFILE_CONSUMER_NOISE_TERMS = [
   "banknote collecting",
 ];
 
+const CENTRAL_BANK_PROFILE_DIGITAL_CURRENCY_NOISE_TERMS = [
+  "bank digital currency",
+  "central bank digital currency",
+  "central bank digital currencies",
+  "cbdc",
+  "cbdcs",
+  "digital currency",
+  "digital currencies",
+  "digital euro",
+  "digital pound",
+  "digital rupee",
+  "digital yuan",
+  "digital naira",
+  "digital money",
+];
+
+const CENTRAL_BANK_PROFILE_PHYSICAL_BANKNOTE_CONTEXT_TERMS = [
+  "banknote",
+  "banknotes",
+  "currency note",
+  "currency notes",
+  "paper currency",
+  "paper money",
+  "cash",
+  "polymer note",
+  "polymer notes",
+  "new notes",
+  "lower-denomination notes",
+  "physical currency",
+  "legal tender notes",
+];
+
+const CENTRAL_BANK_PROFILE_EDUCATION_NOISE_TERMS = [
+  "upsc",
+  "ias",
+  "academy",
+  "yearbook",
+  "exam preparation",
+  "study notes",
+  "study material",
+  "current affairs quiz",
+  "explained for students",
+];
+
 function getCentralBankProfileProfessionalAssessment(article) {
   return getCachedArticleValue(article, "centralBankProfileProfessionalAssessment", () => {
     const dominantDomain = getArticleDominantDomain(article);
@@ -36763,6 +36807,10 @@ function getCentralBankProfileProfessionalAssessment(article) {
       context.metadataText,
       context.bodyText,
     ].join(" ");
+    const titleBodyText = [
+      context.titleText,
+      context.bodyText,
+    ].join(" ");
     const sourceNoiseTerms = normalizeKeywordList(CENTRAL_BANK_PROFILE_SOURCE_NOISE_TERMS)
       .filter((term) => textMatchesKeyword(sourceFingerprint, term));
     const marketNoiseTerms = normalizeKeywordList(CENTRAL_BANK_PROFILE_MARKET_NOISE_TERMS)
@@ -36773,6 +36821,12 @@ function getCentralBankProfileProfessionalAssessment(article) {
       .filter((term) => textMatchesKeyword(articleText, term));
     const consumerNoiseTerms = normalizeKeywordList(CENTRAL_BANK_PROFILE_CONSUMER_NOISE_TERMS)
       .filter((term) => textMatchesKeyword(articleText, term));
+    const digitalCurrencyNoiseTerms = normalizeKeywordList(CENTRAL_BANK_PROFILE_DIGITAL_CURRENCY_NOISE_TERMS)
+      .filter((term) => textMatchesKeyword(titleBodyText, term));
+    const physicalBanknoteContextTerms = normalizeKeywordList(CENTRAL_BANK_PROFILE_PHYSICAL_BANKNOTE_CONTEXT_TERMS)
+      .filter((term) => textMatchesKeyword(titleBodyText, term));
+    const educationNoiseTerms = normalizeKeywordList(CENTRAL_BANK_PROFILE_EDUCATION_NOISE_TERMS)
+      .filter((term) => textMatchesKeyword(`${sourceFingerprint} ${articleText}`, term));
     const professionalEventMatched = [
       "banknote_withdrawal",
       "counterfeit_banknotes",
@@ -36795,6 +36849,8 @@ function getCentralBankProfileProfessionalAssessment(article) {
     const digitalIdNoise = digitalIdNoiseTerms.length > 0;
     const adminNoise = adminNoiseTerms.length > 0 && !professionalEventMatched;
     const consumerNoise = consumerNoiseTerms.length > 0 && !professionalEventMatched;
+    const digitalCurrencyNoise = digitalCurrencyNoiseTerms.length > 0 && physicalBanknoteContextTerms.length === 0;
+    const educationNoise = educationNoiseTerms.length > 0;
     const blocked = dominantDomain !== "banknotes" ||
       noiseAssessment.contaminated ||
       collectorOrSocialNoise ||
@@ -36802,6 +36858,8 @@ function getCentralBankProfileProfessionalAssessment(article) {
       marketNoise ||
       adminNoise ||
       consumerNoise ||
+      digitalCurrencyNoise ||
+      educationNoise ||
       eventType === "banknote_auction_noise";
     const passed = !blocked && Boolean(
       isBanknoteAuthoritySource(article) ||
@@ -36824,6 +36882,10 @@ function getCentralBankProfileProfessionalAssessment(article) {
       rejectionReason = "central_bank_profile_admin_noise";
     } else if (consumerNoise) {
       rejectionReason = "central_bank_profile_consumer_noise";
+    } else if (digitalCurrencyNoise) {
+      rejectionReason = "central_bank_profile_digital_currency_noise";
+    } else if (educationNoise) {
+      rejectionReason = "central_bank_profile_education_explainer_noise";
     } else if (!passed) {
       rejectionReason = "central_bank_profile_weak_professional_signal";
     }
@@ -36842,6 +36904,9 @@ function getCentralBankProfileProfessionalAssessment(article) {
       digitalIdNoiseTerms: Object.freeze(digitalIdNoiseTerms.slice(0, 10)),
       adminNoiseTerms: Object.freeze(adminNoiseTerms.slice(0, 10)),
       consumerNoiseTerms: Object.freeze(consumerNoiseTerms.slice(0, 10)),
+      digitalCurrencyNoiseTerms: Object.freeze(digitalCurrencyNoiseTerms.slice(0, 10)),
+      physicalBanknoteContextTerms: Object.freeze(physicalBanknoteContextTerms.slice(0, 10)),
+      educationNoiseTerms: Object.freeze(educationNoiseTerms.slice(0, 10)),
       noiseAssessment,
     });
   });
