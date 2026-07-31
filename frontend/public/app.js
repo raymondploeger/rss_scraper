@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-63";
+const APP_BUILD = "intelligence-profile-ux-sprint-64";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }

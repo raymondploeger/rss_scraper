@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>IN Security Document Scraper</title>
     <link rel="icon" type="image/png" href="/images/in-group-logo.png" />
-    <link rel="stylesheet" href="/styles.css?v=20260731-intelligence-profile-ux-63" />
+    <link rel="stylesheet" href="/styles.css?v=20260731-intelligence-profile-ux-64" />
   </head>
   <body>
     <div id="notification-region" class="notification-region" aria-live="polite" aria-label="Notifications"></div>
@@ -216,6 +216,11 @@
                 <input id="search-filter" type="search" placeholder="Search title, source, topic" />
               </label>
 
+              <label class="field" data-filter-field="date">
+                <span>Date</span>
+                <input id="date-filter" type="date" />
+              </label>
+
               <label class="field" data-filter-field="topic">
                 <span>Topic</span>
                 <select id="topic-filter">
@@ -319,11 +324,6 @@
                 Showing all DMV feeds
               </p>
 
-              <label class="field field-full" data-filter-field="date">
-                <span>Date</span>
-                <input id="date-filter" type="date" />
-              </label>
-
               <div id="active-filter-list" class="active-filter-list field-full" aria-live="polite" hidden></div>
             </div>
           </section>
@@ -396,6 +396,6 @@
       </article>
     </template>
 
-    <script type="module" src="/app.js?v=20260731-intelligence-profile-ux-63"></script>
+    <script type="module" src="/app.js?v=20260731-intelligence-profile-ux-64"></script>
   </body>
 </html>
