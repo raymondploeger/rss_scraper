@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>IN Security Document Scraper</title>
     <link rel="icon" type="image/png" href="/images/in-group-logo.png" />
-    <link rel="stylesheet" href="/styles.css?v=20260731-intelligence-profile-ux-67" />
+    <link rel="stylesheet" href="/styles.css?v=20260731-intelligence-profile-ux-68" />
   </head>
   <body>
     <div id="notification-region" class="notification-region" aria-live="polite" aria-label="Notifications"></div>
@@ -206,27 +206,22 @@
                 <p class="panel-subhead-copy">Temporarily search within the current intelligence feed by text, date, topic, or source.</p>
               </div>
               <button id="advanced-filters-toggle" class="ghost-button advanced-filters-toggle" type="button" aria-expanded="false">
-                Show search
+                More options
               </button>
             </div>
 
-            <div class="advanced-search-intro">
-              <strong>Search inside your profile</strong>
-              <span>Use this when you want to narrow the current feed by keyword, date, topic, feed, tag, or expert signal without changing your saved intelligence profile.</span>
-            </div>
+            <label class="field advanced-search-primary" data-filter-field="search">
+              <span>Search inside your profile</span>
+              <input id="search-filter" type="search" placeholder="Search title, source, topic" />
+            </label>
 
             <div id="advanced-filters-content" class="filter-grid" hidden>
               <div class="advanced-search-group field-full">
                 <div class="advanced-search-group-head">
-                  <span>Search scope</span>
-                  <p>Use these fields for temporary searches inside your selected profile.</p>
+                  <span>Search options</span>
+                  <p>Narrow the current feed by date, topic, source, tag, or expert signal without changing your saved intelligence profile.</p>
                 </div>
                 <div class="advanced-search-group-grid">
-                  <label class="field field-full" data-filter-field="search">
-                    <span>Search</span>
-                    <input id="search-filter" type="search" placeholder="Search title, source, topic" />
-                  </label>
-
                   <label class="field" data-filter-field="date">
                     <span>Date</span>
                     <input id="date-filter" type="date" />
@@ -425,6 +420,6 @@
       </article>
     </template>
 
-    <script type="module" src="/app.js?v=20260731-intelligence-profile-ux-67"></script>
+    <script type="module" src="/app.js?v=20260731-intelligence-profile-ux-68"></script>
   </body>
 </html>

@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-67";
+const APP_BUILD = "intelligence-profile-ux-sprint-68";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -41653,7 +41653,7 @@ function syncAdvancedFiltersVisibility(expanded = false) {
 
   elements.advancedFiltersContent.hidden = !expanded;
   elements.advancedFiltersToggle.setAttribute("aria-expanded", String(expanded));
-  elements.advancedFiltersToggle.textContent = expanded ? "Hide search" : "Show search";
+  elements.advancedFiltersToggle.textContent = expanded ? "Hide options" : "More options";
   syncFilterUx();
 }
 
@@ -44749,10 +44749,10 @@ function syncFilterUx() {
     elements.advancedFiltersToggle.classList.toggle("is-active-filter", hasActiveAdvancedSearch);
     elements.advancedFiltersToggle.textContent = hasActiveAdvancedSearch
       ? `${advancedSearchActiveCount} search ${advancedSearchActiveCount === 1 ? "filter" : "filters"} active`
-      : (advancedSearchExpanded ? "Hide search" : "Show search");
+      : (advancedSearchExpanded ? "Hide options" : "More options");
     elements.advancedFiltersToggle.title = hasActiveAdvancedSearch
       ? "Advanced Search is refining the current profile"
-      : "Show Advanced Search";
+      : "Show more Advanced Search options";
   }
 }
 
