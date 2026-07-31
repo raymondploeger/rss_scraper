@@ -802,6 +802,27 @@ img {
   white-space: nowrap;
 }
 
+.advanced-search-intro {
+  display: grid;
+  gap: 4px;
+  margin: -2px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(22, 96, 255, 0.18);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+}
+
+.advanced-search-intro strong {
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.advanced-search-intro span {
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
 .eyebrow {
   margin: 0 0 8px;
   color: var(--accent);
