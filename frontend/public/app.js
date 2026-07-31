@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-59";
+const APP_BUILD = "intelligence-profile-ux-sprint-60";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1494,6 +1494,7 @@ const KEYWORD_FILTER_STORAGE_KEY = "dashboardKeywordFilters";
 const PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY = "personalDashboardInterests";
 const PERSONAL_DASHBOARD_MODE_STORAGE_KEY = "personalDashboardMode";
 const PERSONAL_DASHBOARD_LAST_SAVED_STORAGE_KEY = "personalDashboardLastSavedAt";
+const PERSONAL_DASHBOARD_CUSTOM_PROFILES_STORAGE_KEY = "personalDashboardCustomProfiles";
 const DEFAULT_PERSONAL_DASHBOARD_SORT = "newest";
 const NOISE_KEYWORDS_EXPANDED_STORAGE_KEY = "noiseKeywordsExpanded";
 const PERSONAL_DASHBOARD_MODES = {
@@ -3887,6 +3888,68 @@ function getMatchingPersonalDashboardTemplateId(interests = state.personalDashbo
   return matchedTemplate?.[0] || "custom";
 }
 
+function normalizePersonalDashboardCustomProfile(profile) {
+  const id = String(profile?.id || "").trim();
+  const name = String(profile?.name || "").trim().slice(0, 60);
+  const interests = normalizePersonalDashboardInterests(profile?.interests || []);
+  if (!id || !name || !interests.length) {
+    return null;
+  }
+  return Object.freeze({ id, name, interests: Object.freeze(interests) });
+}
+
+function normalizePersonalDashboardCustomProfiles(profiles) {
+  if (!Array.isArray(profiles)) {
+    return [];
+  }
+  const seen = new Set();
+  return profiles
+    .map(normalizePersonalDashboardCustomProfile)
+    .filter(Boolean)
+    .filter((profile) => {
+      if (seen.has(profile.id)) {
+        return false;
+      }
+      seen.add(profile.id);
+      return true;
+    })
+    .slice(0, 12);
+}
+
+function getMatchingPersonalDashboardCustomProfile(interests = state.personalDashboard.interests) {
+  const normalizedKey = normalizePersonalDashboardInterests(interests).slice().sort().join("|");
+  if (!normalizedKey) {
+    return null;
+  }
+  return (state.personalDashboard.customProfiles || []).find((profile) =>
+    normalizePersonalDashboardInterests(profile.interests).slice().sort().join("|") === normalizedKey
+  ) || null;
+}
+
+function getPersonalDashboardProfileDisplay(interests = state.personalDashboard.interests) {
+  const templateId = getMatchingPersonalDashboardTemplateId(interests);
+  if (templateId && templateId !== "custom") {
+    return {
+      id: templateId,
+      type: "template",
+      label: PERSONAL_DASHBOARD_PROFILE_TEMPLATES[templateId]?.label || "Profile",
+    };
+  }
+  const customProfile = getMatchingPersonalDashboardCustomProfile(interests);
+  if (customProfile) {
+    return {
+      id: customProfile.id,
+      type: "custom",
+      label: customProfile.name,
+    };
+  }
+  return {
+    id: "",
+    type: templateId === "custom" ? "custom-unsaved" : "empty",
+    label: templateId === "custom" ? "Custom profile" : "",
+  };
+}
+
 function isPersonalDashboardProfileBundleSelection(interests = state.personalDashboard.interests) {
   const templateId = getMatchingPersonalDashboardTemplateId(interests);
   return Boolean(templateId && templateId !== "custom");
@@ -3919,6 +3982,17 @@ function updatePersonalDashboardTemplateSelection(interests = state.personalDash
       .forEach((option) => {
         const selected = option instanceof HTMLElement &&
           option.dataset.profileTemplate === matchingTemplateId;
+        option.dataset.selected = selected ? "true" : "false";
+        option.setAttribute("aria-checked", String(selected));
+      });
+  }
+  if (elements.personalDashboardCustomProfiles) {
+    const matchingCustomProfile = getMatchingPersonalDashboardCustomProfile(interests);
+    elements.personalDashboardCustomProfiles
+      .querySelectorAll("[data-custom-profile-id]")
+      .forEach((option) => {
+        const selected = option instanceof HTMLElement &&
+          option.dataset.customProfileId === matchingCustomProfile?.id;
         option.dataset.selected = selected ? "true" : "false";
         option.setAttribute("aria-checked", String(selected));
       });
@@ -4753,6 +4827,7 @@ const state = {
     expandedGroups: [],
     summaryCollapsed: true,
     selectedInterestsCollapsed: true,
+    customProfiles: [],
     mode: "balanced",
   },
   filters: {
@@ -4878,6 +4953,8 @@ const elements = {
   personalDashboard: document.getElementById("personal-dashboard"),
   personalDashboardTemplateSelect: document.getElementById("personal-dashboard-template-select"),
   personalDashboardTemplateOptions: document.getElementById("personal-dashboard-template-options"),
+  personalDashboardCustomProfiles: document.getElementById("personal-dashboard-custom-profiles"),
+  personalDashboardSaveCustom: document.getElementById("personal-dashboard-save-custom"),
   personalDashboardSummary: document.getElementById("personal-dashboard-summary"),
   personalDashboardGroups: document.getElementById("personal-dashboard-groups"),
   personalDashboardInterests: document.getElementById("personal-dashboard-interests"),
@@ -23595,6 +23672,13 @@ function loadPersonalDashboardPreferences() {
     window.localStorage.getItem(PERSONAL_DASHBOARD_MODE_STORAGE_KEY) || "balanced"
   );
   try {
+    state.personalDashboard.customProfiles = normalizePersonalDashboardCustomProfiles(JSON.parse(
+      window.localStorage.getItem(PERSONAL_DASHBOARD_CUSTOM_PROFILES_STORAGE_KEY) || "[]"
+    ));
+  } catch {
+    state.personalDashboard.customProfiles = [];
+  }
+  try {
     const storedInterests = JSON.parse(
       window.localStorage.getItem(PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY) || "[]"
     );
@@ -23615,12 +23699,53 @@ function savePersonalDashboardPreferences() {
   window.localStorage.setItem(PERSONAL_DASHBOARD_LAST_SAVED_STORAGE_KEY, new Date().toISOString());
 }
 
+function savePersonalDashboardCustomProfiles() {
+  state.personalDashboard.customProfiles = normalizePersonalDashboardCustomProfiles(state.personalDashboard.customProfiles);
+  window.localStorage.setItem(
+    PERSONAL_DASHBOARD_CUSTOM_PROFILES_STORAGE_KEY,
+    JSON.stringify(state.personalDashboard.customProfiles)
+  );
+}
+
 function clearPersonalDashboardPreferences() {
   state.personalDashboard.interests = [];
   state.personalDashboard.mode = "balanced";
   window.localStorage.removeItem(PERSONAL_DASHBOARD_MODE_STORAGE_KEY);
   window.localStorage.removeItem(PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY);
   window.localStorage.removeItem(PERSONAL_DASHBOARD_LAST_SAVED_STORAGE_KEY);
+}
+
+function createPersonalDashboardCustomProfile() {
+  const interests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  if (!interests.length) {
+    return;
+  }
+
+  const suggestedName = getPersonalDashboardProfileDisplay(interests).label || "My profile";
+  const profileName = String(window.prompt("Name this custom profile", suggestedName) || "").trim();
+  if (!profileName) {
+    return;
+  }
+
+  const profile = normalizePersonalDashboardCustomProfile({
+    id: `custom-${Date.now().toString(36)}`,
+    name: profileName,
+    interests,
+  });
+  if (!profile) {
+    return;
+  }
+
+  const matchingIndex = (state.personalDashboard.customProfiles || [])
+    .findIndex((existingProfile) => existingProfile.name.toLowerCase() === profile.name.toLowerCase());
+  if (matchingIndex >= 0) {
+    state.personalDashboard.customProfiles[matchingIndex] = profile;
+  } else {
+    state.personalDashboard.customProfiles = [profile, ...(state.personalDashboard.customProfiles || [])];
+  }
+  savePersonalDashboardCustomProfiles();
+  updatePersonalDashboardTemplateSelection(interests);
+  renderPersonalDashboard();
 }
 
 function ensurePersonalDashboardElements() {
@@ -23802,6 +23927,25 @@ function getPersonalDashboardSummaryItems(selectedGroups, interestLimit = 5) {
   };
 }
 
+function renderPersonalDashboardCustomProfileOptions() {
+  const profiles = normalizePersonalDashboardCustomProfiles(state.personalDashboard.customProfiles || []);
+  if (!profiles.length) {
+    return "";
+  }
+
+  return `
+    <div class="personal-dashboard-custom-profile-list">
+      <span class="personal-dashboard-custom-profile-label">Saved profiles</span>
+      ${profiles.map((profile) => `
+        <button type="button" class="personal-dashboard-template-option personal-dashboard-custom-profile-option" data-custom-profile-id="${escapeHtml(profile.id)}" role="radio" aria-checked="false">
+          <span class="profile-template-radio" aria-hidden="true"></span>
+          <span>${escapeHtml(profile.name)}</span>
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
 function openFirstSelectedPersonalDashboardGroup() {
   const activeInterests = new Set(normalizePersonalDashboardInterests(state.personalDashboard.interests));
   const firstSelectedGroup = getPersonalDashboardSelectedGroups(activeInterests)[0];
@@ -23843,6 +23987,7 @@ function renderPersonalDashboard() {
   const selectedGroups = getPersonalDashboardSelectedGroups(activeInterests);
   const selectedInterestCount = activeInterests.size;
   const summaryCollapsed = Boolean(selectedInterestCount && state.personalDashboard.summaryCollapsed);
+  const profileDisplay = getPersonalDashboardProfileDisplay(Array.from(activeInterests));
   updatePersonalDashboardTemplateSelection(Array.from(activeInterests));
 
   if (elements.personalDashboardSummary) {
@@ -23850,6 +23995,10 @@ function renderPersonalDashboard() {
     if (selectedInterestCount) {
       const summaryItems = getPersonalDashboardSummaryItems(selectedGroups);
       const domainSummary = summaryItems.domainItems.map((item) => item.label).join(" + ") || "Custom profile";
+      const summaryTitle = profileDisplay.label || domainSummary;
+      const summarySubtitle = profileDisplay.type === "custom-unsaved"
+        ? "Unsaved custom profile"
+        : domainSummary;
       const localSaveLabel = getPersonalDashboardLocalSaveLabel(selectedInterestCount);
       const interestMarkup = summaryItems.visibleInterestItems
         .map((item) => `
@@ -23883,8 +24032,8 @@ function renderPersonalDashboard() {
         </div>
         <div class="personal-dashboard-summary-main">
           <div class="personal-dashboard-summary-overview">
-            <strong>${escapeHtml(domainSummary)}</strong>
-            <span>${selectedInterestCount} interest${selectedInterestCount === 1 ? "" : "s"} selected</span>
+            <strong>${escapeHtml(summaryTitle)}</strong>
+            <span>${escapeHtml(summarySubtitle)} · ${selectedInterestCount} interest${selectedInterestCount === 1 ? "" : "s"} selected</span>
           </div>
           <div class="personal-dashboard-summary-row is-interests" ${summaryCollapsed ? "hidden" : ""} aria-label="Selected profile interests">
             ${interestMarkup}${moreMarkup}
@@ -23909,6 +24058,14 @@ function renderPersonalDashboard() {
       `;
     }
   }
+
+  if (elements.personalDashboardCustomProfiles) {
+    elements.personalDashboardCustomProfiles.innerHTML = renderPersonalDashboardCustomProfileOptions();
+  }
+  if (elements.personalDashboardSaveCustom) {
+    elements.personalDashboardSaveCustom.disabled = !selectedInterestCount;
+  }
+  updatePersonalDashboardTemplateSelection(Array.from(activeInterests));
 
   elements.personalDashboardGroups.innerHTML = PERSONAL_DASHBOARD_GROUPS.map((group) => {
     const expanded = isPersonalDashboardGroupExpanded(group.id);
@@ -24021,6 +24178,23 @@ function applyPersonalDashboardTemplate(templateId) {
   renderPersonalDashboard();
   clearFeedRenderCaches({ preserveBackendArticleQueryCache: true });
   scheduleRenderArticles("personal-dashboard-template", { mode: "frame" });
+}
+
+function applyPersonalDashboardCustomProfile(profileId) {
+  const profile = (state.personalDashboard.customProfiles || [])
+    .find((customProfile) => customProfile.id === profileId);
+  if (!profile) {
+    return;
+  }
+
+  state.personalDashboard.interests = normalizePersonalDashboardInterests(profile.interests);
+  state.personalDashboard.expandedGroups = [];
+  ensurePaginationState();
+  state.pagination.page = 1;
+  savePersonalDashboardPreferences();
+  renderPersonalDashboard();
+  clearFeedRenderCaches({ preserveBackendArticleQueryCache: true });
+  scheduleRenderArticles("personal-dashboard-custom-profile", { mode: "frame" });
 }
 
 function hasPersonalDashboardSelections() {
@@ -53747,6 +53921,24 @@ function bindEvents() {
         return;
       }
       applyPersonalDashboardTemplate(option.dataset.profileTemplate || "");
+    });
+  }
+
+  if (elements.personalDashboardCustomProfiles) {
+    elements.personalDashboardCustomProfiles.addEventListener("click", (event) => {
+      const option = event.target instanceof Element
+        ? event.target.closest("[data-custom-profile-id]")
+        : null;
+      if (!option) {
+        return;
+      }
+      applyPersonalDashboardCustomProfile(option.dataset.customProfileId || "");
+    });
+  }
+
+  if (elements.personalDashboardSaveCustom) {
+    elements.personalDashboardSaveCustom.addEventListener("click", () => {
+      createPersonalDashboardCustomProfile();
     });
   }
 

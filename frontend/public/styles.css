@@ -308,6 +308,40 @@ img {
   background: var(--accent);
 }
 
+.personal-dashboard-custom-profiles:empty {
+  display: none;
+}
+
+.personal-dashboard-custom-profile-list {
+  display: grid;
+  gap: 7px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.personal-dashboard-custom-profile-label {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.personal-dashboard-custom-profile-option {
+  background: rgba(87, 166, 255, 0.05);
+}
+
+.personal-dashboard-save-custom {
+  width: 100%;
+  min-height: 36px;
+  justify-content: center;
+}
+
+.personal-dashboard-save-custom:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .personal-dashboard-template-select-fallback {
   position: absolute;
   width: 1px;
