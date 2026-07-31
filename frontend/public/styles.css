@@ -328,7 +328,36 @@ img {
 }
 
 .personal-dashboard-custom-profile-option {
+  min-width: 0;
   background: rgba(87, 166, 255, 0.05);
+}
+
+.personal-dashboard-custom-profile-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 7px;
+  align-items: stretch;
+}
+
+.personal-dashboard-custom-profile-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--muted);
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.personal-dashboard-custom-profile-delete:hover {
+  border-color: rgba(248, 113, 113, 0.65);
+  background: rgba(248, 113, 113, 0.12);
+  color: #fecaca;
 }
 
 .personal-dashboard-save-custom {

@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-60";
+const APP_BUILD = "intelligence-profile-ux-sprint-61";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -23748,6 +23748,30 @@ function createPersonalDashboardCustomProfile() {
   renderPersonalDashboard();
 }
 
+function deletePersonalDashboardCustomProfile(profileId) {
+  const normalizedProfileId = String(profileId || "").trim();
+  if (!normalizedProfileId) {
+    return;
+  }
+
+  const profile = (state.personalDashboard.customProfiles || [])
+    .find((customProfile) => customProfile.id === normalizedProfileId);
+  if (!profile) {
+    return;
+  }
+
+  const confirmed = window.confirm(`Delete custom profile "${profile.name}"?`);
+  if (!confirmed) {
+    return;
+  }
+
+  state.personalDashboard.customProfiles = (state.personalDashboard.customProfiles || [])
+    .filter((customProfile) => customProfile.id !== normalizedProfileId);
+  savePersonalDashboardCustomProfiles();
+  updatePersonalDashboardTemplateSelection(state.personalDashboard.interests);
+  renderPersonalDashboard();
+}
+
 function ensurePersonalDashboardElements() {
   if (!elements.personalDashboard) {
     return false;
@@ -23937,10 +23961,21 @@ function renderPersonalDashboardCustomProfileOptions() {
     <div class="personal-dashboard-custom-profile-list">
       <span class="personal-dashboard-custom-profile-label">Saved profiles</span>
       ${profiles.map((profile) => `
-        <button type="button" class="personal-dashboard-template-option personal-dashboard-custom-profile-option" data-custom-profile-id="${escapeHtml(profile.id)}" role="radio" aria-checked="false">
-          <span class="profile-template-radio" aria-hidden="true"></span>
-          <span>${escapeHtml(profile.name)}</span>
-        </button>
+        <div class="personal-dashboard-custom-profile-row">
+          <button type="button" class="personal-dashboard-template-option personal-dashboard-custom-profile-option" data-custom-profile-id="${escapeHtml(profile.id)}" role="radio" aria-checked="false">
+            <span class="profile-template-radio" aria-hidden="true"></span>
+            <span>${escapeHtml(profile.name)}</span>
+          </button>
+          <button
+            type="button"
+            class="personal-dashboard-custom-profile-delete"
+            data-delete-custom-profile-id="${escapeHtml(profile.id)}"
+            aria-label="Delete ${escapeHtml(profile.name)}"
+            title="Delete profile"
+          >
+            ×
+          </button>
+        </div>
       `).join("")}
     </div>
   `;
@@ -53926,6 +53961,14 @@ function bindEvents() {
 
   if (elements.personalDashboardCustomProfiles) {
     elements.personalDashboardCustomProfiles.addEventListener("click", (event) => {
+      const deleteButton = event.target instanceof Element
+        ? event.target.closest("[data-delete-custom-profile-id]")
+        : null;
+      if (deleteButton) {
+        deletePersonalDashboardCustomProfile(deleteButton.dataset.deleteCustomProfileId || "");
+        return;
+      }
+
       const option = event.target instanceof Element
         ? event.target.closest("[data-custom-profile-id]")
         : null;
