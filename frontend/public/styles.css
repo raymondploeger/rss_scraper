@@ -1480,6 +1480,50 @@ h3 {
   align-items: end;
 }
 
+.advanced-search-group {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.32);
+}
+
+:root[data-theme="dark"] .advanced-search-group {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.advanced-search-group-muted {
+  border-style: dashed;
+}
+
+.advanced-search-group-head {
+  display: grid;
+  gap: 3px;
+}
+
+.advanced-search-group-head span {
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.advanced-search-group-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.advanced-search-group-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: 13px;
+}
+
 .field {
   display: grid;
   gap: 7px;
