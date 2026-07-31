@@ -193,6 +193,15 @@ img {
   gap: 18px;
 }
 
+.main-content {
+  display: grid;
+  gap: 18px;
+}
+
+.advanced-search-panel {
+  margin-bottom: 0;
+}
+
 .profile-builder-panel {
   transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
 }

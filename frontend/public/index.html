@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>IN Security Document Scraper</title>
     <link rel="icon" type="image/png" href="/images/in-group-logo.png" />
-    <link rel="stylesheet" href="/styles.css?v=20260731-intelligence-profile-ux-62" />
+    <link rel="stylesheet" href="/styles.css?v=20260731-intelligence-profile-ux-63" />
   </head>
   <body>
     <div id="notification-region" class="notification-region" aria-live="polite" aria-label="Notifications"></div>
@@ -113,10 +113,97 @@
               <div id="personal-dashboard-interests" class="personal-dashboard-interests" aria-live="polite"></div>
             </section>
 
+          </section>
+
+          <section id="feed-panel" class="panel is-collapsed" data-collapsed="true">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Sources</p>
+                <h2>Tracked sources</h2>
+              </div>
+              <div class="panel-head-actions">
+                <span id="feed-count" class="pill">0</span>
+                <button id="add-source-toggle" class="ghost-button add-source-toggle" type="button" aria-expanded="false">+ Add</button>
+                <button id="feed-panel-toggle" class="ghost-button" type="button" aria-expanded="false">Show sources</button>
+              </div>
+            </div>
+            <div id="add-source-content" class="add-source-content" hidden>
+              <form id="feed-form" class="feed-form">
+                <label class="field">
+                  <span>Source name</span>
+                  <input id="feed-name" type="text" placeholder="Nebraska DMV or Google Alerts - Acme" required />
+                </label>
+                <label class="field">
+                  <span>Topic</span>
+                  <input id="feed-topic" type="text" placeholder="Acme Corp" required />
+                </label>
+                <label class="field">
+                  <span>Source type</span>
+                  <select id="feed-source-type">
+                    <option value="rss">RSS Feed</option>
+                    <option value="website">Website</option>
+                  </select>
+                </label>
+                <label class="field field-full">
+                  <span>Source URL</span>
+                  <input id="feed-url" type="url" placeholder="https://www.google.com/alerts/feeds/... or https://dmv.nebraska.gov" required />
+                </label>
+                <div class="feed-form-actions">
+                  <button id="feed-submit" class="primary-button" type="submit">Add source</button>
+                  <button id="feed-cancel" class="ghost-button" type="button" hidden>Cancel edit</button>
+                </div>
+              </form>
+
+              <div class="google-alerts-batch field-full">
+                <label class="field field-full">
+                  <span>Batch Google Alerts RSS feeds</span>
+                  <textarea
+                    id="google-alerts-batch-input"
+                    rows="5"
+                    placeholder="Feed name | https://www.google.com/alerts/feeds/... | Topic"
+                  ></textarea>
+                </label>
+                <div class="feed-form-actions">
+                  <button id="google-alerts-batch-submit" class="ghost-button" type="button">Import Google Alerts batch</button>
+                </div>
+                <p id="google-alerts-batch-status" class="status-line" role="status">
+                  Paste one feed per line: feed name | RSS URL | topic.
+                </p>
+              </div>
+
+              <p id="feed-form-status" class="status-line" role="status">Monitor up to 300 RSS feeds and websites.</p>
+            </div>
+            <div id="feed-panel-content" class="feed-panel-content" hidden>
+              <label class="field">
+                <span>Search sources</span>
+                <input id="feed-panel-search" type="search" placeholder="Search name, topic, URL" />
+              </label>
+              <label class="field">
+                <span>Source status</span>
+                <select id="feed-visibility-filter">
+                  <option value="all">All sources</option>
+                  <option value="active">Active sources</option>
+                  <option value="inactive">Inactive or errored sources</option>
+                </select>
+              </label>
+              <div id="feed-group-tabs" class="feed-group-tabs" aria-label="Source group filters">
+                <button class="feed-group-tab is-active" type="button" data-source-group="all" aria-pressed="true">All</button>
+                <button class="feed-group-tab" type="button" data-source-group="USA" aria-pressed="false">USA</button>
+                <button class="feed-group-tab" type="button" data-source-group="Canada" aria-pressed="false">Canada</button>
+                <button class="feed-group-tab" type="button" data-source-group="Google Alerts" aria-pressed="false">Google Alerts</button>
+                <button class="feed-group-tab" type="button" data-source-group="Other" aria-pressed="false">Other</button>
+              </div>
+              <div id="feed-list" class="feed-list"></div>
+            </div>
+          </section>
+        </aside>
+
+        <main class="main-content">
+          <section class="panel advanced-search-panel" aria-label="Advanced search">
             <div class="panel-subhead">
               <div>
                 <span class="panel-subhead-title">Advanced Search</span>
-                <p class="panel-subhead-copy">Use search, source, date, and signal controls for temporary refinement.</p>
+                <p class="panel-subhead-copy">Temporarily refine the current intelligence feed by search, source, date, tag, or signal.</p>
               </div>
               <button id="advanced-filters-toggle" class="ghost-button advanced-filters-toggle" type="button" aria-expanded="false">
                 Show search
@@ -241,90 +328,6 @@
             </div>
           </section>
 
-          <section id="feed-panel" class="panel is-collapsed" data-collapsed="true">
-            <div class="panel-head">
-              <div>
-                <p class="eyebrow">Sources</p>
-                <h2>Tracked sources</h2>
-              </div>
-              <div class="panel-head-actions">
-                <span id="feed-count" class="pill">0</span>
-                <button id="add-source-toggle" class="ghost-button add-source-toggle" type="button" aria-expanded="false">+ Add</button>
-                <button id="feed-panel-toggle" class="ghost-button" type="button" aria-expanded="false">Show sources</button>
-              </div>
-            </div>
-            <div id="add-source-content" class="add-source-content" hidden>
-              <form id="feed-form" class="feed-form">
-                <label class="field">
-                  <span>Source name</span>
-                  <input id="feed-name" type="text" placeholder="Nebraska DMV or Google Alerts - Acme" required />
-                </label>
-                <label class="field">
-                  <span>Topic</span>
-                  <input id="feed-topic" type="text" placeholder="Acme Corp" required />
-                </label>
-                <label class="field">
-                  <span>Source type</span>
-                  <select id="feed-source-type">
-                    <option value="rss">RSS Feed</option>
-                    <option value="website">Website</option>
-                  </select>
-                </label>
-                <label class="field field-full">
-                  <span>Source URL</span>
-                  <input id="feed-url" type="url" placeholder="https://www.google.com/alerts/feeds/... or https://dmv.nebraska.gov" required />
-                </label>
-                <div class="feed-form-actions">
-                  <button id="feed-submit" class="primary-button" type="submit">Add source</button>
-                  <button id="feed-cancel" class="ghost-button" type="button" hidden>Cancel edit</button>
-                </div>
-              </form>
-
-              <div class="google-alerts-batch field-full">
-                <label class="field field-full">
-                  <span>Batch Google Alerts RSS feeds</span>
-                  <textarea
-                    id="google-alerts-batch-input"
-                    rows="5"
-                    placeholder="Feed name | https://www.google.com/alerts/feeds/... | Topic"
-                  ></textarea>
-                </label>
-                <div class="feed-form-actions">
-                  <button id="google-alerts-batch-submit" class="ghost-button" type="button">Import Google Alerts batch</button>
-                </div>
-                <p id="google-alerts-batch-status" class="status-line" role="status">
-                  Paste one feed per line: feed name | RSS URL | topic.
-                </p>
-              </div>
-
-              <p id="feed-form-status" class="status-line" role="status">Monitor up to 300 RSS feeds and websites.</p>
-            </div>
-            <div id="feed-panel-content" class="feed-panel-content" hidden>
-              <label class="field">
-                <span>Search sources</span>
-                <input id="feed-panel-search" type="search" placeholder="Search name, topic, URL" />
-              </label>
-              <label class="field">
-                <span>Source status</span>
-                <select id="feed-visibility-filter">
-                  <option value="all">All sources</option>
-                  <option value="active">Active sources</option>
-                  <option value="inactive">Inactive or errored sources</option>
-                </select>
-              </label>
-              <div id="feed-group-tabs" class="feed-group-tabs" aria-label="Source group filters">
-                <button class="feed-group-tab is-active" type="button" data-source-group="all" aria-pressed="true">All</button>
-                <button class="feed-group-tab" type="button" data-source-group="USA" aria-pressed="false">USA</button>
-                <button class="feed-group-tab" type="button" data-source-group="Canada" aria-pressed="false">Canada</button>
-                <button class="feed-group-tab" type="button" data-source-group="Google Alerts" aria-pressed="false">Google Alerts</button>
-                <button class="feed-group-tab" type="button" data-source-group="Other" aria-pressed="false">Other</button>
-              </div>
-              <div id="feed-list" class="feed-list"></div>
-            </div>
-          </section>
-        </aside>
-
-        <main class="main-content">
           <section class="content-head">
             <div>
               <p class="eyebrow">Live Stream</p>
@@ -393,6 +396,6 @@
       </article>
     </template>
 
-    <script type="module" src="/app.js?v=20260731-intelligence-profile-ux-62"></script>
+    <script type="module" src="/app.js?v=20260731-intelligence-profile-ux-63"></script>
   </body>
 </html>
