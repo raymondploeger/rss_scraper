@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-68";
+const APP_BUILD = "intelligence-profile-ux-sprint-69";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -44747,11 +44747,9 @@ function syncFilterUx() {
     const advancedSearchExpanded = elements.advancedFiltersToggle.getAttribute("aria-expanded") === "true";
     const hasActiveAdvancedSearch = advancedSearchActiveCount > 0;
     elements.advancedFiltersToggle.classList.toggle("is-active-filter", hasActiveAdvancedSearch);
-    elements.advancedFiltersToggle.textContent = hasActiveAdvancedSearch
-      ? `${advancedSearchActiveCount} search ${advancedSearchActiveCount === 1 ? "filter" : "filters"} active`
-      : (advancedSearchExpanded ? "Hide options" : "More options");
+    elements.advancedFiltersToggle.textContent = advancedSearchExpanded ? "Hide options" : "More options";
     elements.advancedFiltersToggle.title = hasActiveAdvancedSearch
-      ? "Advanced Search is refining the current profile"
+      ? `${advancedSearchActiveCount} Advanced Search ${advancedSearchActiveCount === 1 ? "filter is" : "filters are"} active`
       : "Show more Advanced Search options";
   }
 }
