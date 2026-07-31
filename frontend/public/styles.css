@@ -193,6 +193,32 @@ img {
   gap: 18px;
 }
 
+.profile-builder-panel {
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.profile-builder-panel[data-editing="true"] {
+  border-color: rgba(87, 166, 255, 0.55);
+  box-shadow: 0 0 0 1px rgba(87, 166, 255, 0.18), 0 16px 42px rgba(15, 23, 42, 0.12);
+}
+
+:root[data-theme="dark"] .profile-builder-panel[data-editing="true"] {
+  background: rgba(87, 166, 255, 0.045);
+}
+
+.profile-builder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.profile-builder-done {
+  border-color: rgba(87, 166, 255, 0.65);
+  background: rgba(87, 166, 255, 0.12);
+  color: var(--text);
+}
+
 .personal-dashboard-panel {
   display: grid;
   gap: 12px;

@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-61";
+const APP_BUILD = "intelligence-profile-ux-sprint-62";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4828,6 +4828,7 @@ const state = {
     summaryCollapsed: true,
     selectedInterestsCollapsed: true,
     customProfiles: [],
+    editing: false,
     mode: "balanced",
   },
   filters: {
@@ -4950,6 +4951,8 @@ const elements = {
   tagManagerToggle: document.getElementById("tag-manager-toggle"),
   tagManagerContent: document.getElementById("tag-manager-content"),
   tagManagerList: document.getElementById("tag-manager-list"),
+  profileBuilderPanel: document.getElementById("profile-builder-panel"),
+  profileBuilderDone: document.getElementById("profile-builder-done"),
   personalDashboard: document.getElementById("personal-dashboard"),
   personalDashboardTemplateSelect: document.getElementById("personal-dashboard-template-select"),
   personalDashboardTemplateOptions: document.getElementById("personal-dashboard-template-options"),
@@ -23985,12 +23988,19 @@ function openFirstSelectedPersonalDashboardGroup() {
   const activeInterests = new Set(normalizePersonalDashboardInterests(state.personalDashboard.interests));
   const firstSelectedGroup = getPersonalDashboardSelectedGroups(activeInterests)[0];
   const groupToOpen = firstSelectedGroup?.id || PERSONAL_DASHBOARD_GROUPS[0]?.id || "";
+  state.personalDashboard.editing = true;
   state.personalDashboard.expandedGroups = groupToOpen ? [groupToOpen] : [];
   renderPersonalDashboard();
-  elements.personalDashboardGroups?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  elements.profileBuilderPanel?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   elements.personalDashboardGroups
     ?.querySelector(`[data-personal-group-toggle="${groupToOpen}"]`)
     ?.focus();
+}
+
+function finishPersonalDashboardEditing() {
+  state.personalDashboard.editing = false;
+  state.personalDashboard.expandedGroups = [];
+  renderPersonalDashboard();
 }
 
 function togglePersonalDashboardSummary() {
@@ -24023,7 +24033,15 @@ function renderPersonalDashboard() {
   const selectedInterestCount = activeInterests.size;
   const summaryCollapsed = Boolean(selectedInterestCount && state.personalDashboard.summaryCollapsed);
   const profileDisplay = getPersonalDashboardProfileDisplay(Array.from(activeInterests));
+  const editingProfile = Boolean(state.personalDashboard.editing);
   updatePersonalDashboardTemplateSelection(Array.from(activeInterests));
+
+  if (elements.profileBuilderPanel) {
+    elements.profileBuilderPanel.dataset.editing = editingProfile ? "true" : "false";
+  }
+  if (elements.profileBuilderDone) {
+    elements.profileBuilderDone.hidden = !editingProfile;
+  }
 
   if (elements.personalDashboardSummary) {
     elements.personalDashboardSummary.classList.toggle("has-active-profile", Boolean(selectedInterestCount));
@@ -53935,6 +53953,12 @@ function bindEvents() {
       }
 
       openFirstSelectedPersonalDashboardGroup();
+    });
+  }
+
+  if (elements.profileBuilderDone) {
+    elements.profileBuilderDone.addEventListener("click", () => {
+      finishPersonalDashboardEditing();
     });
   }
 

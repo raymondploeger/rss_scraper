@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>IN Security Document Scraper</title>
     <link rel="icon" type="image/png" href="/images/in-group-logo.png" />
-    <link rel="stylesheet" href="/styles.css?v=20260731-intelligence-profile-ux-61-r1" />
+    <link rel="stylesheet" href="/styles.css?v=20260731-intelligence-profile-ux-62" />
   </head>
   <body>
     <div id="notification-region" class="notification-region" aria-live="polite" aria-label="Notifications"></div>
@@ -43,13 +43,16 @@
             <div id="personal-dashboard-summary" class="personal-dashboard-summary" aria-live="polite"></div>
           </section>
 
-          <section class="panel">
+          <section id="profile-builder-panel" class="panel profile-builder-panel">
             <div class="panel-head">
               <div>
                 <p class="eyebrow">Profile Builder</p>
                 <h2>Edit your intelligence feed</h2>
               </div>
-              <button id="clear-filters" class="ghost-button" type="button">Reset</button>
+              <div class="profile-builder-actions">
+                <button id="profile-builder-done" class="ghost-button profile-builder-done" type="button" hidden>Done</button>
+                <button id="clear-filters" class="ghost-button" type="button">Reset</button>
+              </div>
             </div>
 
             <section id="personal-dashboard" class="personal-dashboard-panel" aria-label="Intelligence profile preferences">
@@ -390,6 +393,6 @@
       </article>
     </template>
 
-    <script type="module" src="/app.js?v=20260731-intelligence-profile-ux-61-r1"></script>
+    <script type="module" src="/app.js?v=20260731-intelligence-profile-ux-62"></script>
   </body>
 </html>
