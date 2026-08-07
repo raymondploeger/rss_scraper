@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-74";
+const APP_BUILD = "intelligence-profile-ux-sprint-75";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4001,8 +4001,8 @@ function updatePersonalDashboardTemplateSelection(interests = state.personalDash
 
 function getPersonalDashboardLocalSaveLabel(selectedInterestCount = 0) {
   return selectedInterestCount
-    ? "Saved on this device"
-    : "Selections save automatically here";
+    ? "Saved locally on this device"
+    : "Selections save locally on this device";
 }
 
 const PERSONAL_DASHBOARD_PARENT_INTEREST_BY_GROUP = new Map([
