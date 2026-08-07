@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>IN Security Document Scraper</title>
     <link rel="icon" type="image/png" href="/images/in-group-logo.png" />
-    <link rel="stylesheet" href="/styles.css?v=20260807-intelligence-profile-ux-71" />
+    <link rel="stylesheet" href="/styles.css?v=20260807-intelligence-profile-ux-72" />
   </head>
   <body>
     <div id="notification-region" class="notification-region" aria-live="polite" aria-label="Notifications"></div>
@@ -65,41 +65,54 @@
                   Clear profile
                 </button>
               </div>
-              <label class="personal-dashboard-template">
-                <span>Start with a profile</span>
-                <div id="personal-dashboard-template-options" class="personal-dashboard-template-options" role="radiogroup" aria-label="Choose profile">
-                  <button type="button" class="personal-dashboard-template-option" data-profile-template="central_bank" role="radio" aria-checked="false">
-                    <span class="profile-template-radio" aria-hidden="true"></span>
-                    <span>Central Bank</span>
+              <div class="personal-dashboard-template">
+                <section class="personal-dashboard-profile-section">
+                  <div class="personal-dashboard-profile-section-head">
+                    <span>Start profiles</span>
+                    <small>Pick a professional starting point.</small>
+                  </div>
+                  <div id="personal-dashboard-template-options" class="personal-dashboard-template-options" role="radiogroup" aria-label="Choose profile">
+                    <button type="button" class="personal-dashboard-template-option" data-profile-template="central_bank" role="radio" aria-checked="false">
+                      <span class="profile-template-radio" aria-hidden="true"></span>
+                      <span>Central Bank</span>
+                    </button>
+                    <button type="button" class="personal-dashboard-template-option" data-profile-template="passport_authority" role="radio" aria-checked="false">
+                      <span class="profile-template-radio" aria-hidden="true"></span>
+                      <span>Identity Document Authority</span>
+                    </button>
+                    <button type="button" class="personal-dashboard-template-option" data-profile-template="border_control" role="radio" aria-checked="false">
+                      <span class="profile-template-radio" aria-hidden="true"></span>
+                      <span>Border Control</span>
+                    </button>
+                    <button type="button" class="personal-dashboard-template-option" data-profile-template="security_printer" role="radio" aria-checked="false">
+                      <span class="profile-template-radio" aria-hidden="true"></span>
+                      <span>Security Printer</span>
+                    </button>
+                    <button type="button" class="personal-dashboard-template-option" data-profile-template="identity_verification" role="radio" aria-checked="false">
+                      <span class="profile-template-radio" aria-hidden="true"></span>
+                      <span>Identity Verification</span>
+                    </button>
+                    <button type="button" class="personal-dashboard-template-option" data-profile-template="researcher" role="radio" aria-checked="false">
+                      <span class="profile-template-radio" aria-hidden="true"></span>
+                      <span>Researcher</span>
+                    </button>
+                  </div>
+                </section>
+                <section class="personal-dashboard-profile-section">
+                  <div class="personal-dashboard-profile-section-head">
+                    <span>Your saved profiles</span>
+                    <small>Local profiles saved on this device.</small>
+                  </div>
+                  <div id="personal-dashboard-custom-profiles" class="personal-dashboard-custom-profiles" aria-live="polite"></div>
+                </section>
+                <div class="personal-dashboard-profile-actions">
+                  <button id="personal-dashboard-update-custom" class="ghost-button personal-dashboard-save-custom" type="button" disabled>
+                    Update selected profile
                   </button>
-                  <button type="button" class="personal-dashboard-template-option" data-profile-template="passport_authority" role="radio" aria-checked="false">
-                    <span class="profile-template-radio" aria-hidden="true"></span>
-                    <span>Identity Document Authority</span>
-                  </button>
-                  <button type="button" class="personal-dashboard-template-option" data-profile-template="border_control" role="radio" aria-checked="false">
-                    <span class="profile-template-radio" aria-hidden="true"></span>
-                    <span>Border Control</span>
-                  </button>
-                  <button type="button" class="personal-dashboard-template-option" data-profile-template="security_printer" role="radio" aria-checked="false">
-                    <span class="profile-template-radio" aria-hidden="true"></span>
-                    <span>Security Printer</span>
-                  </button>
-                  <button type="button" class="personal-dashboard-template-option" data-profile-template="identity_verification" role="radio" aria-checked="false">
-                    <span class="profile-template-radio" aria-hidden="true"></span>
-                    <span>Identity Verification</span>
-                  </button>
-                  <button type="button" class="personal-dashboard-template-option" data-profile-template="researcher" role="radio" aria-checked="false">
-                    <span class="profile-template-radio" aria-hidden="true"></span>
-                    <span>Researcher</span>
+                  <button id="personal-dashboard-save-custom" class="ghost-button personal-dashboard-save-custom" type="button">
+                    Save as new profile
                   </button>
                 </div>
-                <div id="personal-dashboard-custom-profiles" class="personal-dashboard-custom-profiles" aria-live="polite"></div>
-                <button id="personal-dashboard-update-custom" class="ghost-button personal-dashboard-save-custom" type="button" disabled>
-                  Update selected profile
-                </button>
-                <button id="personal-dashboard-save-custom" class="ghost-button personal-dashboard-save-custom" type="button">
-                  Save as new profile
-                </button>
                 <select id="personal-dashboard-template-select" class="personal-dashboard-template-select-fallback" aria-label="Choose profile fallback" tabindex="-1">
                   <option value="">Choose template</option>
                   <option value="central_bank">Central Bank</option>
@@ -110,8 +123,7 @@
                   <option value="researcher">Researcher</option>
                   <option value="custom">Custom profile</option>
                 </select>
-                <small>Pick a professional starting point, then adjust interests below.</small>
-              </label>
+              </div>
               <div id="personal-dashboard-groups" class="personal-dashboard-groups" aria-live="polite"></div>
               <div id="personal-dashboard-interests" class="personal-dashboard-interests" aria-live="polite"></div>
             </section>
@@ -423,6 +435,6 @@
       </article>
     </template>
 
-    <script type="module" src="/app.js?v=20260807-intelligence-profile-ux-71"></script>
+    <script type="module" src="/app.js?v=20260807-intelligence-profile-ux-72"></script>
   </body>
 </html>
