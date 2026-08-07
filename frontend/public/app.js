@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-72";
+const APP_BUILD = "intelligence-profile-ux-sprint-73";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -23805,14 +23805,26 @@ function deletePersonalDashboardCustomProfile(profileId) {
     return;
   }
 
+  const deletedProfileKey = normalizePersonalDashboardInterests(profile.interests).slice().sort().join("|");
+  const currentProfileKey = normalizePersonalDashboardInterests(state.personalDashboard.interests).slice().sort().join("|");
+  const deletingCurrentProfile =
+    state.personalDashboard.activeCustomProfileId === normalizedProfileId ||
+    (deletedProfileKey && deletedProfileKey === currentProfileKey);
+
   state.personalDashboard.customProfiles = (state.personalDashboard.customProfiles || [])
     .filter((customProfile) => customProfile.id !== normalizedProfileId);
-  if (state.personalDashboard.activeCustomProfileId === normalizedProfileId) {
+  if (deletingCurrentProfile) {
+    clearPersonalDashboardPreferences();
+  } else if (state.personalDashboard.activeCustomProfileId === normalizedProfileId) {
     state.personalDashboard.activeCustomProfileId = "";
   }
   savePersonalDashboardCustomProfiles();
   updatePersonalDashboardTemplateSelection(state.personalDashboard.interests);
   renderPersonalDashboard();
+  if (deletingCurrentProfile) {
+    clearFeedRenderCaches();
+    scheduleRenderArticles("personal-dashboard-custom-profile-delete", { mode: "frame" });
+  }
 }
 
 function ensurePersonalDashboardElements() {
