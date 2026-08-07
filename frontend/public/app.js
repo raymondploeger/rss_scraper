@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-75";
+const APP_BUILD = "intelligence-profile-ux-sprint-76";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -3965,6 +3965,13 @@ function shouldUseSharedSecurityAsHardRefinement(interests = state.personalDashb
 function shouldUseIdentityDocumentInterestOrMode(interests = state.personalDashboard.interests) {
   const selectedIdentityInterests = getSelectedIdentityDashboardInterests(interests);
   return selectedIdentityInterests.length > 1;
+}
+
+function shouldUsePassportIcaoHardRefinement(interests = state.personalDashboard.interests) {
+  const selectedIdentityInterests = getSelectedIdentityDashboardInterests(interests);
+  return selectedIdentityInterests.includes("passports") &&
+    selectedIdentityInterests.includes("icao") &&
+    !isPersonalDashboardProfileBundleSelection(interests);
 }
 
 function updatePersonalDashboardTemplateSelection(interests = state.personalDashboard.interests) {
@@ -21807,6 +21814,7 @@ function classifyPersonalDashboardRejection(article) {
   const primaryDomain = getArticleDominantDomain(article);
   const profileBundleSelection = isPersonalDashboardProfileBundleSelection(selectedInterests);
   const identityDocumentInterestOrMode = shouldUseIdentityDocumentInterestOrMode(selectedInterests);
+  const passportIcaoHardRefinement = shouldUsePassportIcaoHardRefinement(selectedInterests);
   const sharedSecurityHardRefinement = shouldUseSharedSecurityAsHardRefinement(selectedInterests);
 
   if (isSharedSecurityOnlyPersonalSelection(selectedInterests) && !matchesSelectedSharedSecurityTechnique(article, selectedInterests)) {
@@ -21882,7 +21890,7 @@ function classifyPersonalDashboardRejection(article) {
           selectedIdentityInterests,
           sharedSecurityHardRefinement ? selectedSharedInterests : []
         ),
-        forceOrMode: profileBundleSelection || identityDocumentInterestOrMode,
+        forceOrMode: profileBundleSelection || (identityDocumentInterestOrMode && !passportIcaoHardRefinement),
       });
       if (!identityInterestAssessment.passed) {
         return {
@@ -37993,6 +38001,9 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
   const identityDocumentInterestOrMode = measurePersonalDashboardSegment("identityDocumentInterestOrMode", () =>
     shouldUseIdentityDocumentInterestOrMode(selectedInterests)
   );
+  const passportIcaoHardRefinement = measurePersonalDashboardSegment("passportIcaoHardRefinement", () =>
+    shouldUsePassportIcaoHardRefinement(selectedInterests)
+  );
   const sharedSecurityHardRefinement = measurePersonalDashboardSegment("sharedSecurityHardRefinement", () =>
     shouldUseSharedSecurityAsHardRefinement(selectedInterests)
   );
@@ -38148,7 +38159,7 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
       getIdentityDocumentConjunctiveInterestAssessment(article, selectedInterests, {
         selectedSharedInterests: sharedSecurityHardRefinement ? selectedSharedInterests : [],
         idCardsBridgeMatched: idCardsHolographyOvdBridgeMatched,
-        forceOrMode: profileBundleSelection || identityDocumentInterestOrMode,
+        forceOrMode: profileBundleSelection || (identityDocumentInterestOrMode && !passportIcaoHardRefinement),
         timingContext: personalDashboardTimingContext,
       })
     );
