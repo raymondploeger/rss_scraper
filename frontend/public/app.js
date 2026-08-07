@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-70";
+const APP_BUILD = "intelligence-profile-ux-sprint-71";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4828,6 +4828,7 @@ const state = {
     summaryCollapsed: true,
     selectedInterestsCollapsed: true,
     customProfiles: [],
+    activeCustomProfileId: "",
     editing: false,
     mode: "balanced",
   },
@@ -4957,6 +4958,7 @@ const elements = {
   personalDashboardTemplateSelect: document.getElementById("personal-dashboard-template-select"),
   personalDashboardTemplateOptions: document.getElementById("personal-dashboard-template-options"),
   personalDashboardCustomProfiles: document.getElementById("personal-dashboard-custom-profiles"),
+  personalDashboardUpdateCustom: document.getElementById("personal-dashboard-update-custom"),
   personalDashboardSaveCustom: document.getElementById("personal-dashboard-save-custom"),
   personalDashboardSummary: document.getElementById("personal-dashboard-summary"),
   personalDashboardGroups: document.getElementById("personal-dashboard-groups"),
@@ -23713,6 +23715,7 @@ function savePersonalDashboardCustomProfiles() {
 function clearPersonalDashboardPreferences() {
   state.personalDashboard.interests = [];
   state.personalDashboard.mode = "balanced";
+  state.personalDashboard.activeCustomProfileId = "";
   window.localStorage.removeItem(PERSONAL_DASHBOARD_MODE_STORAGE_KEY);
   window.localStorage.removeItem(PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY);
   window.localStorage.removeItem(PERSONAL_DASHBOARD_LAST_SAVED_STORAGE_KEY);
@@ -23746,6 +23749,40 @@ function createPersonalDashboardCustomProfile() {
   } else {
     state.personalDashboard.customProfiles = [profile, ...(state.personalDashboard.customProfiles || [])];
   }
+  state.personalDashboard.activeCustomProfileId = profile.id;
+  savePersonalDashboardCustomProfiles();
+  updatePersonalDashboardTemplateSelection(interests);
+  renderPersonalDashboard();
+}
+
+function getEditablePersonalDashboardCustomProfile() {
+  const activeProfileId = String(state.personalDashboard.activeCustomProfileId || "").trim();
+  const profiles = state.personalDashboard.customProfiles || [];
+  const activeProfile = activeProfileId
+    ? profiles.find((profile) => profile.id === activeProfileId)
+    : null;
+  return activeProfile || getMatchingPersonalDashboardCustomProfile(state.personalDashboard.interests);
+}
+
+function updatePersonalDashboardCustomProfile() {
+  const profile = getEditablePersonalDashboardCustomProfile();
+  const interests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  if (!profile || !interests.length) {
+    return;
+  }
+
+  const updatedProfile = normalizePersonalDashboardCustomProfile({
+    id: profile.id,
+    name: profile.name,
+    interests,
+  });
+  if (!updatedProfile) {
+    return;
+  }
+
+  state.personalDashboard.customProfiles = (state.personalDashboard.customProfiles || [])
+    .map((customProfile) => (customProfile.id === updatedProfile.id ? updatedProfile : customProfile));
+  state.personalDashboard.activeCustomProfileId = updatedProfile.id;
   savePersonalDashboardCustomProfiles();
   updatePersonalDashboardTemplateSelection(interests);
   renderPersonalDashboard();
@@ -23770,6 +23807,9 @@ function deletePersonalDashboardCustomProfile(profileId) {
 
   state.personalDashboard.customProfiles = (state.personalDashboard.customProfiles || [])
     .filter((customProfile) => customProfile.id !== normalizedProfileId);
+  if (state.personalDashboard.activeCustomProfileId === normalizedProfileId) {
+    state.personalDashboard.activeCustomProfileId = "";
+  }
   savePersonalDashboardCustomProfiles();
   updatePersonalDashboardTemplateSelection(state.personalDashboard.interests);
   renderPersonalDashboard();
@@ -24115,6 +24155,13 @@ function renderPersonalDashboard() {
   if (elements.personalDashboardCustomProfiles) {
     elements.personalDashboardCustomProfiles.innerHTML = renderPersonalDashboardCustomProfileOptions();
   }
+  if (elements.personalDashboardUpdateCustom) {
+    const editableCustomProfile = getEditablePersonalDashboardCustomProfile();
+    elements.personalDashboardUpdateCustom.disabled = !selectedInterestCount || !editableCustomProfile;
+    elements.personalDashboardUpdateCustom.textContent = editableCustomProfile
+      ? `Update ${editableCustomProfile.name}`
+      : "Update selected profile";
+  }
   if (elements.personalDashboardSaveCustom) {
     elements.personalDashboardSaveCustom.disabled = !selectedInterestCount;
   }
@@ -24225,6 +24272,7 @@ function applyPersonalDashboardTemplate(templateId) {
 
   state.personalDashboard.interests = normalizePersonalDashboardInterests(template.interests);
   state.personalDashboard.expandedGroups = [];
+  state.personalDashboard.activeCustomProfileId = "";
   ensurePaginationState();
   state.pagination.page = 1;
   savePersonalDashboardPreferences();
@@ -24242,6 +24290,7 @@ function applyPersonalDashboardCustomProfile(profileId) {
 
   state.personalDashboard.interests = normalizePersonalDashboardInterests(profile.interests);
   state.personalDashboard.expandedGroups = [];
+  state.personalDashboard.activeCustomProfileId = profile.id;
   ensurePaginationState();
   state.pagination.page = 1;
   savePersonalDashboardPreferences();
@@ -54032,6 +54081,12 @@ function bindEvents() {
   if (elements.personalDashboardSaveCustom) {
     elements.personalDashboardSaveCustom.addEventListener("click", () => {
       createPersonalDashboardCustomProfile();
+    });
+  }
+
+  if (elements.personalDashboardUpdateCustom) {
+    elements.personalDashboardUpdateCustom.addEventListener("click", () => {
+      updatePersonalDashboardCustomProfile();
     });
   }
 
