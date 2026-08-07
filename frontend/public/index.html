@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>IN Security Document Scraper</title>
     <link rel="icon" type="image/png" href="/images/in-group-logo.png" />
-    <link rel="stylesheet" href="/styles.css?v=20260807-intelligence-profile-ux-73" />
+    <link rel="stylesheet" href="/styles.css?v=20260807-intelligence-profile-ux-74" />
   </head>
   <body>
     <div id="notification-region" class="notification-region" aria-live="polite" aria-label="Notifications"></div>
@@ -112,6 +112,10 @@
                   <button id="personal-dashboard-save-custom" class="ghost-button personal-dashboard-save-custom" type="button">
                     Save as new profile
                   </button>
+                  <button id="personal-dashboard-import-custom" class="ghost-button personal-dashboard-save-custom" type="button">
+                    Import profile
+                  </button>
+                  <input id="personal-dashboard-import-file" type="file" accept="application/json,.json" hidden />
                 </div>
                 <select id="personal-dashboard-template-select" class="personal-dashboard-template-select-fallback" aria-label="Choose profile fallback" tabindex="-1">
                   <option value="">Choose template</option>
@@ -435,6 +439,6 @@
       </article>
     </template>
 
-    <script type="module" src="/app.js?v=20260807-intelligence-profile-ux-73"></script>
+    <script type="module" src="/app.js?v=20260807-intelligence-profile-ux-74"></script>
   </body>
 </html>

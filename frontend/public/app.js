@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-73";
+const APP_BUILD = "intelligence-profile-ux-sprint-74";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4960,6 +4960,8 @@ const elements = {
   personalDashboardCustomProfiles: document.getElementById("personal-dashboard-custom-profiles"),
   personalDashboardUpdateCustom: document.getElementById("personal-dashboard-update-custom"),
   personalDashboardSaveCustom: document.getElementById("personal-dashboard-save-custom"),
+  personalDashboardImportCustom: document.getElementById("personal-dashboard-import-custom"),
+  personalDashboardImportFile: document.getElementById("personal-dashboard-import-file"),
   personalDashboardSummary: document.getElementById("personal-dashboard-summary"),
   personalDashboardGroups: document.getElementById("personal-dashboard-groups"),
   personalDashboardInterests: document.getElementById("personal-dashboard-interests"),
@@ -23755,6 +23757,114 @@ function createPersonalDashboardCustomProfile() {
   renderPersonalDashboard();
 }
 
+function getUniquePersonalDashboardCustomProfileName(name) {
+  const baseName = String(name || "Imported profile").trim().slice(0, 60) || "Imported profile";
+  const existingNames = new Set(
+    (state.personalDashboard.customProfiles || [])
+      .map((profile) => String(profile.name || "").trim().toLowerCase())
+      .filter(Boolean)
+  );
+  if (!existingNames.has(baseName.toLowerCase())) {
+    return baseName;
+  }
+
+  for (let index = 2; index <= 99; index += 1) {
+    const candidate = `${baseName} copy ${index}`;
+    if (!existingNames.has(candidate.toLowerCase())) {
+      return candidate.slice(0, 60);
+    }
+  }
+  return `${baseName.slice(0, 48)} ${Date.now().toString(36)}`.slice(0, 60);
+}
+
+function getPersonalDashboardProfileExportPayload(profile) {
+  return {
+    type: "rss-scraper-custom-profile",
+    version: 1,
+    appBuild: APP_BUILD,
+    exportedAt: new Date().toISOString(),
+    profile: {
+      name: profile.name,
+      interests: normalizePersonalDashboardInterests(profile.interests),
+    },
+  };
+}
+
+function getSafeProfileExportFilename(name) {
+  const safeName = String(name || "custom-profile")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48) || "custom-profile";
+  return `${safeName}-profile.json`;
+}
+
+function exportPersonalDashboardCustomProfile(profileId) {
+  const profile = (state.personalDashboard.customProfiles || [])
+    .find((customProfile) => customProfile.id === String(profileId || "").trim());
+  if (!profile) {
+    return;
+  }
+
+  const payload = getPersonalDashboardProfileExportPayload(profile);
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = getSafeProfileExportFilename(profile.name);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function normalizeImportedPersonalDashboardCustomProfile(payload) {
+  const sourceProfile = payload?.profile && typeof payload.profile === "object"
+    ? payload.profile
+    : payload;
+  return normalizePersonalDashboardCustomProfile({
+    id: `custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+    name: getUniquePersonalDashboardCustomProfileName(sourceProfile?.name),
+    interests: sourceProfile?.interests,
+  });
+}
+
+function importPersonalDashboardCustomProfileFromText(text) {
+  let parsed;
+  try {
+    parsed = JSON.parse(String(text || ""));
+  } catch (error) {
+    window.alert("Could not import this profile. The file is not valid JSON.");
+    return;
+  }
+
+  const profile = normalizeImportedPersonalDashboardCustomProfile(parsed);
+  if (!profile) {
+    window.alert("Could not import this profile. No valid interests were found.");
+    return;
+  }
+
+  state.personalDashboard.customProfiles = [profile, ...(state.personalDashboard.customProfiles || [])];
+  savePersonalDashboardCustomProfiles();
+  renderPersonalDashboard();
+}
+
+function importPersonalDashboardCustomProfileFile(file) {
+  if (!file) {
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.addEventListener("load", () => {
+    importPersonalDashboardCustomProfileFromText(reader.result);
+  });
+  reader.addEventListener("error", () => {
+    window.alert("Could not read this profile file.");
+  });
+  reader.readAsText(file);
+}
+
 function getEditablePersonalDashboardCustomProfile() {
   const activeProfileId = String(state.personalDashboard.activeCustomProfileId || "").trim();
   const profiles = state.personalDashboard.customProfiles || [];
@@ -24020,6 +24130,15 @@ function renderPersonalDashboardCustomProfileOptions() {
           <button type="button" class="personal-dashboard-template-option personal-dashboard-custom-profile-option" data-custom-profile-id="${escapeHtml(profile.id)}" role="radio" aria-checked="false">
             <span class="profile-template-radio" aria-hidden="true"></span>
             <span>${escapeHtml(profile.name)}</span>
+          </button>
+          <button
+            type="button"
+            class="personal-dashboard-custom-profile-export"
+            data-export-custom-profile-id="${escapeHtml(profile.id)}"
+            aria-label="Export ${escapeHtml(profile.name)}"
+            title="Export profile"
+          >
+            Export
           </button>
           <button
             type="button"
@@ -54072,6 +54191,14 @@ function bindEvents() {
 
   if (elements.personalDashboardCustomProfiles) {
     elements.personalDashboardCustomProfiles.addEventListener("click", (event) => {
+      const exportButton = event.target instanceof Element
+        ? event.target.closest("[data-export-custom-profile-id]")
+        : null;
+      if (exportButton) {
+        exportPersonalDashboardCustomProfile(exportButton.dataset.exportCustomProfileId || "");
+        return;
+      }
+
       const deleteButton = event.target instanceof Element
         ? event.target.closest("[data-delete-custom-profile-id]")
         : null;
@@ -54099,6 +54226,17 @@ function bindEvents() {
   if (elements.personalDashboardUpdateCustom) {
     elements.personalDashboardUpdateCustom.addEventListener("click", () => {
       updatePersonalDashboardCustomProfile();
+    });
+  }
+
+  if (elements.personalDashboardImportCustom && elements.personalDashboardImportFile) {
+    elements.personalDashboardImportCustom.addEventListener("click", () => {
+      elements.personalDashboardImportFile.click();
+    });
+    elements.personalDashboardImportFile.addEventListener("change", (event) => {
+      const file = event.target?.files?.[0] || null;
+      importPersonalDashboardCustomProfileFile(file);
+      event.target.value = "";
     });
   }
 
