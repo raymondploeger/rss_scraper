@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-76";
+const APP_BUILD = "intelligence-profile-ux-sprint-77";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1918,6 +1918,35 @@ const ID_DOCUMENT_SOURCE_AUTHORITY = {
   ],
 };
 const IDENTITY_PROFILE_SOURCE_PRIORITY = {
+  passport_authority: {
+    strong: [
+      "icao",
+      "keesing",
+      "security document world",
+      "securitydocumentworld",
+      "biometric update",
+      "regula",
+      "veridos",
+      "thales",
+      "idemia",
+      "hid",
+      "entrust",
+      "interpol",
+      "frontex",
+      "immigration authority",
+      "ministry of interior",
+      "passport authority",
+    ],
+    medium: [
+      "government",
+      "state department",
+      "home office",
+      "civil registry",
+      "issuing authority",
+      "border agency",
+      "immigration service",
+    ],
+  },
   icao: {
     strong: ["icao newsroom", "icao trip", "icao.int"],
     medium: ["biometric update", "keesing", "security document world", "securitydocumentworld"],
@@ -1995,6 +2024,39 @@ const IDENTITY_PROFILE_SOURCE_PRIORITY = {
   },
 };
 const IDENTITY_PROFILE_SOFT_NOISE_TERMS = {
+  passport_authority: [
+    "facebook",
+    "fan club",
+    "fanclub",
+    "concert",
+    "music",
+    "movie",
+    "tv show",
+    "sports passport",
+    "career passport",
+    "passport to",
+    "patriot passports",
+    "travel deal",
+    "great deals",
+    "tourism",
+    "holiday",
+    "vacation",
+    "school place",
+    "school admissions",
+    "student advice",
+    "investorplace",
+    "stock market",
+    "shares",
+    "jobpocalypse",
+    "stabbing",
+    "brandlucht",
+    "brandweer",
+    "hulpdiensten",
+    "112",
+    "drimble",
+    "ovd-b",
+    "ovd-g",
+  ],
   passports: [
     "travel rankings",
     "passport rankings",
@@ -2067,6 +2129,42 @@ const IDENTITY_PROFILE_SOFT_NOISE_TERMS = {
   ],
 };
 const IDENTITY_PROFILE_STRONG_CONTEXT_TERMS = {
+  passport_authority: [
+    "passport issuance",
+    "passport verification",
+    "passport fraud",
+    "passport authentication",
+    "biometric passport",
+    "e-passport",
+    "epassport",
+    "passport chip",
+    "id card",
+    "identity card",
+    "identity document",
+    "national id",
+    "driver license",
+    "driving licence",
+    "residence permit",
+    "visa issuance",
+    "e-visa",
+    "document verification",
+    "document authentication",
+    "document fraud",
+    "counterfeit document",
+    "secure document",
+    "document security",
+    "icao",
+    "doc 9303",
+    "pkd",
+    "emrtd",
+    "border control",
+    "border inspection",
+    "immigration authority",
+    "issuing authority",
+    "ministry of interior",
+    "government identity",
+    "civil registry",
+  ],
   passports: [
     "icao",
     "doc 9303",
@@ -3972,6 +4070,45 @@ function shouldUsePassportIcaoHardRefinement(interests = state.personalDashboard
   return selectedIdentityInterests.includes("passports") &&
     selectedIdentityInterests.includes("icao") &&
     !isPersonalDashboardProfileBundleSelection(interests);
+}
+
+function shouldUseIdentityDocumentAuthorityProfileGuard(interests = state.personalDashboard.interests) {
+  return getMatchingPersonalDashboardTemplateId(interests) === "passport_authority";
+}
+
+function getIdentityDocumentAuthorityProfileGuardAssessment(article) {
+  return getCachedArticleValue(article, "identityDocumentAuthorityProfileGuard", () => {
+    const context = getPersonalBoostContext(article, "getIdentityDocumentAuthorityProfileGuardAssessment", { interest: "passport_authority" });
+    const haystack = [
+      context.titleText,
+      context.tagText,
+      context.metadataText,
+      context.bodyText,
+      context.sourceText,
+      context.domainText,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const matchedNoise = normalizeKeywordList(IDENTITY_PROFILE_SOFT_NOISE_TERMS.passport_authority)
+      .filter((term) => textMatchesKeyword(haystack, term));
+    const matchedProfessionalContext = normalizeKeywordList(IDENTITY_PROFILE_STRONG_CONTEXT_TERMS.passport_authority)
+      .filter((term) => textMatchesKeyword(haystack, term));
+    const sourcePriority = getIdentityProfileSourcePriorityBoost(article, "passport_authority");
+    const softNoise = getIdentityProfileSoftNoiseAssessment(article, "passport_authority");
+    const hasProfessionalContext = matchedProfessionalContext.length > 0 || sourcePriority.level === "strong";
+    const blocked = matchedNoise.length > 0 && !hasProfessionalContext;
+
+    return Object.freeze({
+      enabled: true,
+      passed: !blocked,
+      blocked,
+      rejectionReason: blocked ? "identity_document_authority_profile_noise" : "",
+      matchedNoise,
+      matchedProfessionalContext,
+      sourcePriority,
+      softNoise,
+    });
+  });
 }
 
 function updatePersonalDashboardTemplateSelection(interests = state.personalDashboard.interests) {
@@ -21882,6 +22019,15 @@ function classifyPersonalDashboardRejection(article) {
   }
 
   if (primaryDomain === "identity_documents") {
+    if (shouldUseIdentityDocumentAuthorityProfileGuard(selectedInterests)) {
+      const authorityProfileGuard = getIdentityDocumentAuthorityProfileGuardAssessment(article);
+      if (!authorityProfileGuard.passed) {
+        return {
+          category: "identityDocumentAuthorityProfileGuard",
+          reason: authorityProfileGuard.rejectionReason || "identity_document_authority_profile_noise",
+        };
+      }
+    }
     if (selectedIdentityInterests.length) {
       const identityInterestAssessment = getIdentityDocumentConjunctiveInterestAssessment(article, selectedInterests, {
         selectedSharedInterests: sharedSecurityHardRefinement ? selectedSharedInterests : [],
@@ -38141,6 +38287,16 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
   if (primaryDomain === "identity_documents") {
     if (measurePersonalDashboardSegment("identityNavigationPage", () => isIdentityNavigationPageArticle(article))) {
       return finishPersonalDashboardTiming(false, "identity_navigation_page");
+    }
+    if (measurePersonalDashboardSegment("identityDocumentAuthorityProfileGuardActive", () =>
+      shouldUseIdentityDocumentAuthorityProfileGuard(selectedInterests)
+    )) {
+      const authorityProfileGuard = measurePersonalDashboardSegment("identityDocumentAuthorityProfileGuard", () =>
+        getIdentityDocumentAuthorityProfileGuardAssessment(article)
+      );
+      if (!authorityProfileGuard.passed) {
+        return finishPersonalDashboardTiming(false, authorityProfileGuard.rejectionReason || "identity_document_authority_profile_noise");
+      }
     }
 
     const selectedIdentityInterests = measurePersonalDashboardSegment("selectedIdentityInterests", () =>
