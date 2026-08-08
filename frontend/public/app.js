@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-86";
+const APP_BUILD = "intelligence-profile-ux-sprint-87";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4341,9 +4341,37 @@ function getIdentityDocumentBundleQualityGateAssessment(article) {
       "hit pause on ees border checks",
       "border checks",
     ];
+    const broadAllowedServiceContextTerms = [
+      "passport fees",
+      "passport department faces overwhelming demand",
+      "overwhelming demand amidst eps application rush",
+      "not all parents know",
+      "children from 12 years old",
+      "passport appointment",
+      "passport renewal scams",
+      "online passport renewal",
+      "passport service centres",
+      "passport service centers",
+      "passport office",
+      "oyo passport office",
+      "duplicate-reissue",
+      "should use online",
+      "get used to new driver's licenses",
+      "get used to new driver licenses",
+      "new driver's licenses, says",
+      "new driver licenses, says",
+      "aloha state daily",
+      "blangiardi",
+      "latvia-ukraine driving licence parity",
+      "ees border checks",
+      "hit pause on ees border checks",
+      "border checks",
+    ];
     const matchedNoise = normalizeKeywordList(IDENTITY_PROFILE_SOFT_NOISE_TERMS.passport_authority)
       .filter((term) => textMatchesKeyword(allText, term));
     const matchedHardOffTopicNoise = normalizeKeywordList(hardOffTopicNoiseTerms)
+      .filter((term) => textMatchesKeyword(allText, term));
+    const matchedBroadAllowedServiceContext = normalizeKeywordList(broadAllowedServiceContextTerms)
       .filter((term) => textMatchesKeyword(allText, term));
     const matchedProfessionalContext = normalizeKeywordList(authorityRescueTerms)
       .filter((term) => textMatchesKeyword(authoredText, term));
@@ -4361,7 +4389,12 @@ function getIdentityDocumentBundleQualityGateAssessment(article) {
       ? !hasIdentityDocumentObject && sourcePriority.level !== "strong"
       : !hasIdentityDocumentObject && !hasProfessionalContext;
     const missingFocusedProfessionalContext = authorityStrictness === "focused" && !hasProfessionalContext;
-    const blocked = matchedHardOffTopicNoise.length > 0 ||
+    const hasAbsoluteHardNoise = matchedHardOffTopicNoise.some((term) =>
+      !matchedBroadAllowedServiceContext.includes(term)
+    );
+    const hasStrictnessOnlyNoise = matchedHardOffTopicNoise.length > 0 && authorityStrictness !== "broad";
+    const blocked = hasAbsoluteHardNoise ||
+      hasStrictnessOnlyNoise ||
       (matchedNoise.length > 0 && !hasProfessionalContext) ||
       missingIdentityDocumentContext ||
       missingFocusedProfessionalContext;
@@ -4371,7 +4404,7 @@ function getIdentityDocumentBundleQualityGateAssessment(article) {
       passed: !blocked,
       blocked,
       rejectionReason: blocked
-        ? (matchedHardOffTopicNoise.length
+        ? (hasAbsoluteHardNoise || hasStrictnessOnlyNoise
           ? "identity_document_bundle_hard_noise"
           : missingIdentityDocumentContext || missingFocusedProfessionalContext
             ? "identity_document_bundle_missing_document_context"
@@ -4380,6 +4413,7 @@ function getIdentityDocumentBundleQualityGateAssessment(article) {
       authorityStrictness,
       matchedNoise,
       matchedHardOffTopicNoise,
+      matchedBroadAllowedServiceContext,
       matchedProfessionalContext,
       matchedIdentityDocumentObjects,
       sourcePriority,
