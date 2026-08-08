@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-80";
+const APP_BUILD = "intelligence-profile-ux-sprint-81";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -2047,6 +2047,8 @@ const IDENTITY_PROFILE_SOFT_NOISE_TERMS = {
     "passport fees",
     "passport appointment",
     "passport validity time in criminal cases",
+    "overwhelming demand",
+    "eps application rush",
     "travel deal",
     "great deals",
     "tourism",
@@ -2082,6 +2084,8 @@ const IDENTITY_PROFILE_SOFT_NOISE_TERMS = {
     "retaliation if italy keeps border controls",
     "citizenship rules most people",
     "most people discover too late",
+    "north slope",
+    "foreign travel",
   ],
   passports: [
     "travel rankings",
@@ -4178,22 +4182,59 @@ function getIdentityDocumentBundleQualityGateAssessment(article) {
       "fake id",
       "counterfeit id",
     ];
+    const identityDocumentObjectTerms = [
+      "passport",
+      "passports",
+      "e-passport",
+      "epassport",
+      "travel document",
+      "identity document",
+      "identity documents",
+      "id card",
+      "id cards",
+      "identity card",
+      "identity cards",
+      "national id",
+      "national identity",
+      "smart id",
+      "driver license",
+      "driver licenses",
+      "driving licence",
+      "driving licences",
+      "residence permit",
+      "residence permits",
+      "visa",
+      "visas",
+      "e-visa",
+      "birth certificate",
+      "civil registration",
+      "seafarers' digital identity card",
+      "seafarers digital identity card",
+    ];
     const matchedNoise = normalizeKeywordList(IDENTITY_PROFILE_SOFT_NOISE_TERMS.passport_authority)
       .filter((term) => textMatchesKeyword(allText, term));
     const matchedProfessionalContext = normalizeKeywordList(authorityRescueTerms)
       .filter((term) => textMatchesKeyword(authoredText, term));
+    const matchedIdentityDocumentObjects = normalizeKeywordList(identityDocumentObjectTerms)
+      .filter((term) => textMatchesKeyword(authoredText, term));
     const sourcePriority = getIdentityProfileSourcePriorityBoost(article, "passport_authority");
     const softNoise = getIdentityProfileSoftNoiseAssessment(article, "passport_authority");
-    const hasProfessionalContext = matchedProfessionalContext.length > 0 || sourcePriority.level === "strong";
-    const blocked = matchedNoise.length > 0 && !hasProfessionalContext;
+    const hasIdentityDocumentObject = matchedIdentityDocumentObjects.length > 0;
+    const hasProfessionalContext = matchedProfessionalContext.length > 0 ||
+      (sourcePriority.level === "strong" && hasIdentityDocumentObject);
+    const missingIdentityDocumentContext = !hasIdentityDocumentObject && !hasProfessionalContext;
+    const blocked = (matchedNoise.length > 0 && !hasProfessionalContext) || missingIdentityDocumentContext;
 
     return Object.freeze({
       enabled: true,
       passed: !blocked,
       blocked,
-      rejectionReason: blocked ? "identity_document_bundle_quality_noise" : "",
+      rejectionReason: blocked
+        ? (missingIdentityDocumentContext ? "identity_document_bundle_missing_document_context" : "identity_document_bundle_quality_noise")
+        : "",
       matchedNoise,
       matchedProfessionalContext,
+      matchedIdentityDocumentObjects,
       sourcePriority,
       softNoise,
     });
