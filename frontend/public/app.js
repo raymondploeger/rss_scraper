@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-83";
+const APP_BUILD = "intelligence-profile-ux-sprint-84";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4187,10 +4187,12 @@ function getIdentityDocumentBundleObjectTerms(interests = state.personalDashboar
     "birth certificate",
     "civil registration",
   ];
+  const includeSharedDocumentTerms = shouldUseIdentityDocumentAuthorityProfileGuard(selectedInterests) ||
+    selectedIdentityTypes.length === 0;
   return Array.from(new Set([
     ...selectedTerms,
     ...(shouldUseIdentityDocumentAuthorityProfileGuard(selectedInterests) ? Object.values(objectTermsByInterest).flat() : []),
-    ...sharedDocumentTerms,
+    ...(includeSharedDocumentTerms ? sharedDocumentTerms : []),
   ]));
 }
 
@@ -4290,6 +4292,11 @@ function getIdentityDocumentBundleQualityGateAssessment(article) {
       "online passport renewal",
       "passport service centres",
       "passport service centers",
+      "duplicate-reissue",
+      "should use online",
+      "get used to new driver's licenses",
+      "get used to new driver licenses",
+      "latvia-ukraine driving licence parity",
       "passport office",
       "oyo passport office",
       "face matching system",
