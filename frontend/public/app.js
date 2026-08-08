@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-85";
+const APP_BUILD = "intelligence-profile-ux-sprint-86";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1493,6 +1493,7 @@ const TAG_LIST_STORAGE_KEY = "dashboardTagList";
 const KEYWORD_FILTER_STORAGE_KEY = "dashboardKeywordFilters";
 const PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY = "personalDashboardInterests";
 const PERSONAL_DASHBOARD_MODE_STORAGE_KEY = "personalDashboardMode";
+const IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_STORAGE_KEY = "identityDocumentAuthorityStrictness";
 const PERSONAL_DASHBOARD_LAST_SAVED_STORAGE_KEY = "personalDashboardLastSavedAt";
 const PERSONAL_DASHBOARD_CUSTOM_PROFILES_STORAGE_KEY = "personalDashboardCustomProfiles";
 const DEFAULT_PERSONAL_DASHBOARD_SORT = "newest";
@@ -1502,6 +1503,20 @@ const PERSONAL_DASHBOARD_MODES = {
   balanced: 1.0,
   broad: 0.5,
 };
+const IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_OPTIONS = Object.freeze({
+  focused: Object.freeze({
+    label: "Focused",
+    description: "Issuance, security, ID cards and passport lifecycle.",
+  }),
+  balanced: Object.freeze({
+    label: "Balanced",
+    description: "Also includes broader government ID document context.",
+  }),
+  broad: Object.freeze({
+    label: "Broad",
+    description: "Allows adjacent authority and civil identity context.",
+  }),
+});
 const PERSONAL_DASHBOARD_GENERIC_INTEREST_IDS = new Set(["rollout", "release", "issuance", "redesign"]);
 const DIGITAL_SUBGROUP_BASELINE_MINIMUM_SCORE = 18;
 const DIGITAL_SUBGROUP_HYBRID_FILTERS = {
@@ -4197,7 +4212,7 @@ function getIdentityDocumentBundleObjectTerms(interests = state.personalDashboar
 }
 
 function getIdentityDocumentBundleQualityGateAssessment(article) {
-  const signature = getPersonalInterestSignature();
+  const signature = `${getPersonalInterestSignature()}:${getIdentityDocumentAuthorityStrictness()}`;
   return getCachedArticleValue(article, `identityDocumentBundleQualityGate:${signature}`, () => {
     const context = getPersonalBoostContext(article, "getIdentityDocumentBundleQualityGateAssessment", { interest: "identity_documents" });
     const allText = [
@@ -4336,13 +4351,20 @@ function getIdentityDocumentBundleQualityGateAssessment(article) {
       .filter((term) => textMatchesKeyword(authoredText, term));
     const sourcePriority = getIdentityProfileSourcePriorityBoost(article, "passport_authority");
     const softNoise = getIdentityProfileSoftNoiseAssessment(article, "passport_authority");
+    const authorityStrictness = shouldUseIdentityDocumentAuthorityProfileGuard()
+      ? getIdentityDocumentAuthorityStrictness()
+      : "balanced";
     const hasIdentityDocumentObject = matchedIdentityDocumentObjects.length > 0;
     const hasProfessionalContext = matchedProfessionalContext.length > 0 ||
       (sourcePriority.level === "strong" && hasIdentityDocumentObject);
-    const missingIdentityDocumentContext = !hasIdentityDocumentObject && !hasProfessionalContext;
+    const missingIdentityDocumentContext = authorityStrictness === "broad"
+      ? !hasIdentityDocumentObject && sourcePriority.level !== "strong"
+      : !hasIdentityDocumentObject && !hasProfessionalContext;
+    const missingFocusedProfessionalContext = authorityStrictness === "focused" && !hasProfessionalContext;
     const blocked = matchedHardOffTopicNoise.length > 0 ||
       (matchedNoise.length > 0 && !hasProfessionalContext) ||
-      missingIdentityDocumentContext;
+      missingIdentityDocumentContext ||
+      missingFocusedProfessionalContext;
 
     return Object.freeze({
       enabled: true,
@@ -4351,10 +4373,11 @@ function getIdentityDocumentBundleQualityGateAssessment(article) {
       rejectionReason: blocked
         ? (matchedHardOffTopicNoise.length
           ? "identity_document_bundle_hard_noise"
-          : missingIdentityDocumentContext
+          : missingIdentityDocumentContext || missingFocusedProfessionalContext
             ? "identity_document_bundle_missing_document_context"
             : "identity_document_bundle_quality_noise")
         : "",
+      authorityStrictness,
       matchedNoise,
       matchedHardOffTopicNoise,
       matchedProfessionalContext,
@@ -5254,6 +5277,7 @@ const state = {
     activeCustomProfileId: "",
     editing: false,
     mode: "balanced",
+    identityDocumentAuthorityStrictness: "focused",
   },
   filters: {
     search: "",
@@ -24115,9 +24139,23 @@ function normalizePersonalDashboardMode(value) {
     : "balanced";
 }
 
+function normalizeIdentityDocumentAuthorityStrictness(value) {
+  const normalizedValue = String(value || "").trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_OPTIONS, normalizedValue)
+    ? normalizedValue
+    : "focused";
+}
+
+function getIdentityDocumentAuthorityStrictness() {
+  return normalizeIdentityDocumentAuthorityStrictness(state.personalDashboard.identityDocumentAuthorityStrictness);
+}
+
 function loadPersonalDashboardPreferences() {
   state.personalDashboard.mode = normalizePersonalDashboardMode(
     window.localStorage.getItem(PERSONAL_DASHBOARD_MODE_STORAGE_KEY) || "balanced"
+  );
+  state.personalDashboard.identityDocumentAuthorityStrictness = normalizeIdentityDocumentAuthorityStrictness(
+    window.localStorage.getItem(IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_STORAGE_KEY) || "focused"
   );
   try {
     state.personalDashboard.customProfiles = normalizePersonalDashboardCustomProfiles(JSON.parse(
@@ -24138,8 +24176,15 @@ function loadPersonalDashboardPreferences() {
 
 function savePersonalDashboardPreferences() {
   state.personalDashboard.mode = normalizePersonalDashboardMode(state.personalDashboard.mode);
+  state.personalDashboard.identityDocumentAuthorityStrictness = normalizeIdentityDocumentAuthorityStrictness(
+    state.personalDashboard.identityDocumentAuthorityStrictness
+  );
   state.personalDashboard.interests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   window.localStorage.setItem(PERSONAL_DASHBOARD_MODE_STORAGE_KEY, state.personalDashboard.mode);
+  window.localStorage.setItem(
+    IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_STORAGE_KEY,
+    state.personalDashboard.identityDocumentAuthorityStrictness
+  );
   window.localStorage.setItem(
     PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY,
     JSON.stringify(state.personalDashboard.interests)
@@ -24158,8 +24203,10 @@ function savePersonalDashboardCustomProfiles() {
 function clearPersonalDashboardPreferences() {
   state.personalDashboard.interests = [];
   state.personalDashboard.mode = "balanced";
+  state.personalDashboard.identityDocumentAuthorityStrictness = "focused";
   state.personalDashboard.activeCustomProfileId = "";
   window.localStorage.removeItem(PERSONAL_DASHBOARD_MODE_STORAGE_KEY);
+  window.localStorage.removeItem(IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_STORAGE_KEY);
   window.localStorage.removeItem(PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY);
   window.localStorage.removeItem(PERSONAL_DASHBOARD_LAST_SAVED_STORAGE_KEY);
 }
@@ -24557,6 +24604,40 @@ function getPersonalDashboardSummaryItems(selectedGroups, interestLimit = 5) {
   };
 }
 
+function renderIdentityDocumentAuthorityStrictnessControl(profileDisplay) {
+  if (profileDisplay?.id !== "passport_authority") {
+    return "";
+  }
+  const activeStrictness = getIdentityDocumentAuthorityStrictness();
+  const activeOption = IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_OPTIONS[activeStrictness] ||
+    IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_OPTIONS.focused;
+  const optionsMarkup = Object.entries(IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_OPTIONS)
+    .map(([strictnessId, option]) => `
+      <button
+        type="button"
+        class="identity-document-strictness-option"
+        data-identity-document-authority-strictness="${escapeHtml(strictnessId)}"
+        data-selected="${strictnessId === activeStrictness ? "true" : "false"}"
+        aria-pressed="${strictnessId === activeStrictness ? "true" : "false"}"
+      >
+        ${escapeHtml(option.label)}
+      </button>
+    `)
+    .join("");
+
+  return `
+    <div class="identity-document-strictness-control" aria-label="Identity Document Authority strictness">
+      <div class="identity-document-strictness-copy">
+        <span>Profile strictness</span>
+        <small>${escapeHtml(activeOption.description)}</small>
+      </div>
+      <div class="identity-document-strictness-options">
+        ${optionsMarkup}
+      </div>
+    </div>
+  `;
+}
+
 function renderPersonalDashboardCustomProfileOptions() {
   const profiles = normalizePersonalDashboardCustomProfiles(state.personalDashboard.customProfiles || []);
   if (!profiles.length) {
@@ -24665,6 +24746,7 @@ function renderPersonalDashboard() {
         ? "Unsaved custom profile"
         : domainSummary;
       const localSaveLabel = getPersonalDashboardLocalSaveLabel(selectedInterestCount);
+      const strictnessMarkup = renderIdentityDocumentAuthorityStrictnessControl(profileDisplay);
       const interestMarkup = summaryItems.visibleInterestItems
         .map((item) => `
           <span class="personal-dashboard-summary-chip is-interest">
@@ -24703,6 +24785,7 @@ function renderPersonalDashboard() {
           <div class="personal-dashboard-summary-row is-interests" ${summaryCollapsed ? "hidden" : ""} aria-label="Selected profile interests">
             ${interestMarkup}${moreMarkup}
           </div>
+          ${strictnessMarkup}
         </div>
       `;
     } else {
@@ -24869,6 +24952,20 @@ function applyPersonalDashboardCustomProfile(profileId) {
   renderPersonalDashboard();
   clearFeedRenderCaches({ preserveBackendArticleQueryCache: true });
   scheduleRenderArticles("personal-dashboard-custom-profile", { mode: "frame" });
+}
+
+function setIdentityDocumentAuthorityStrictness(strictness) {
+  const normalizedStrictness = normalizeIdentityDocumentAuthorityStrictness(strictness);
+  if (state.personalDashboard.identityDocumentAuthorityStrictness === normalizedStrictness) {
+    return;
+  }
+  state.personalDashboard.identityDocumentAuthorityStrictness = normalizedStrictness;
+  ensurePaginationState();
+  state.pagination.page = 1;
+  savePersonalDashboardPreferences();
+  renderPersonalDashboard();
+  clearFeedRenderCaches({ preserveBackendArticleQueryCache: true });
+  scheduleRenderArticles("identity-document-authority-strictness", { mode: "frame" });
 }
 
 function hasPersonalDashboardSelections() {
@@ -54611,6 +54708,14 @@ function bindEvents() {
         : null;
       if (toggleButton) {
         togglePersonalDashboardSummary();
+        return;
+      }
+
+      const strictnessButton = event.target instanceof Element
+        ? event.target.closest("[data-identity-document-authority-strictness]")
+        : null;
+      if (strictnessButton) {
+        setIdentityDocumentAuthorityStrictness(strictnessButton.dataset.identityDocumentAuthorityStrictness || "");
         return;
       }
 
