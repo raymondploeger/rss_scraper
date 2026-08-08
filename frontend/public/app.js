@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-82";
+const APP_BUILD = "intelligence-profile-ux-sprint-83";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4114,8 +4114,89 @@ function shouldUseIdentityDocumentBundleQualityGate(interests = state.personalDa
   return shouldUseIdentityDocumentAuthorityProfileGuard(normalizedInterests) || selectedIdentityTypes.length > 1;
 }
 
+function getIdentityDocumentBundleObjectTerms(interests = state.personalDashboard.interests) {
+  const selectedInterests = normalizePersonalDashboardInterests(interests);
+  const selectedIdentityTypes = selectedInterests.filter((interestId) =>
+    IDENTITY_DOCUMENT_TYPE_INTEREST_IDS.has(interestId)
+  );
+  const objectTermsByInterest = {
+    passports: [
+      "passport",
+      "passports",
+      "e-passport",
+      "epassport",
+      "travel document",
+      "travel documents",
+      "biometric passport",
+      "passport chip",
+    ],
+    id_cards: [
+      "id card",
+      "id cards",
+      "identity card",
+      "identity cards",
+      "state id card",
+      "state id cards",
+      "national id",
+      "national identity card",
+      "national identity cards",
+      "smart id",
+      "smart id card",
+      "cnic",
+      "mykad",
+      "aadhaar",
+      "seafarers' digital identity card",
+      "seafarers digital identity card",
+    ],
+    visas: [
+      "visa",
+      "visas",
+      "e-visa",
+      "evisa",
+      "travel visa",
+    ],
+    residence_permits: [
+      "residence permit",
+      "residence permits",
+      "resident permit",
+      "resident permits",
+      "biometric residence permit",
+    ],
+    drivers_licenses: [
+      "driver license",
+      "driver licenses",
+      "driving licence",
+      "driving licences",
+      "driver's license",
+      "driver's licenses",
+      "driving license",
+      "driving licenses",
+    ],
+  };
+  const selectedTerms = selectedIdentityTypes
+    .flatMap((interestId) => objectTermsByInterest[interestId] || []);
+  const sharedDocumentTerms = [
+    "identity document",
+    "identity documents",
+    "secure document",
+    "secure documents",
+    "document issuance",
+    "document verification",
+    "document authentication",
+    "document security",
+    "birth certificate",
+    "civil registration",
+  ];
+  return Array.from(new Set([
+    ...selectedTerms,
+    ...(shouldUseIdentityDocumentAuthorityProfileGuard(selectedInterests) ? Object.values(objectTermsByInterest).flat() : []),
+    ...sharedDocumentTerms,
+  ]));
+}
+
 function getIdentityDocumentBundleQualityGateAssessment(article) {
-  return getCachedArticleValue(article, "identityDocumentBundleQualityGate", () => {
+  const signature = getPersonalInterestSignature();
+  return getCachedArticleValue(article, `identityDocumentBundleQualityGate:${signature}`, () => {
     const context = getPersonalBoostContext(article, "getIdentityDocumentBundleQualityGateAssessment", { interest: "identity_documents" });
     const allText = [
       context.titleText,
@@ -4182,35 +4263,7 @@ function getIdentityDocumentBundleQualityGateAssessment(article) {
       "fake id",
       "counterfeit id",
     ];
-    const identityDocumentObjectTerms = [
-      "passport",
-      "passports",
-      "e-passport",
-      "epassport",
-      "travel document",
-      "identity document",
-      "identity documents",
-      "id card",
-      "id cards",
-      "identity card",
-      "identity cards",
-      "national id",
-      "national identity",
-      "smart id",
-      "driver license",
-      "driver licenses",
-      "driving licence",
-      "driving licences",
-      "residence permit",
-      "residence permits",
-      "visa",
-      "visas",
-      "e-visa",
-      "birth certificate",
-      "civil registration",
-      "seafarers' digital identity card",
-      "seafarers digital identity card",
-    ];
+    const identityDocumentObjectTerms = getIdentityDocumentBundleObjectTerms();
     const hardOffTopicNoiseTerms = [
       "applicant tracking system",
       "ats alternatives",
@@ -4237,6 +4290,28 @@ function getIdentityDocumentBundleQualityGateAssessment(article) {
       "online passport renewal",
       "passport service centres",
       "passport service centers",
+      "passport office",
+      "oyo passport office",
+      "face matching system",
+      "national face matching system",
+      "biometric age verification",
+      "age verification law",
+      "identity proofing for ot remote access",
+      "ot remote access",
+      "remote access",
+      "sim registry",
+      "biometric sim registry",
+      "kyc gap",
+      "virtual credit card",
+      "credit card online",
+      "step-by-step guide",
+      "diplomatic credentials",
+      "receives credentials of ambassador",
+      "hostile attack",
+      "undersecretary receives credentials",
+      "ees border checks",
+      "hit pause on ees border checks",
+      "border checks",
     ];
     const matchedNoise = normalizeKeywordList(IDENTITY_PROFILE_SOFT_NOISE_TERMS.passport_authority)
       .filter((term) => textMatchesKeyword(allText, term));
