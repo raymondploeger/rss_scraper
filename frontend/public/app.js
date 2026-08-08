@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-84";
+const APP_BUILD = "intelligence-profile-ux-sprint-85";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4296,7 +4296,13 @@ function getIdentityDocumentBundleQualityGateAssessment(article) {
       "should use online",
       "get used to new driver's licenses",
       "get used to new driver licenses",
+      "new driver's licenses, says",
+      "new driver licenses, says",
+      "aloha state daily",
+      "blangiardi",
       "latvia-ukraine driving licence parity",
+      "minister of finance regulation",
+      "special provisions governing",
       "passport office",
       "oyo passport office",
       "face matching system",
