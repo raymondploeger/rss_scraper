@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-81";
+const APP_BUILD = "intelligence-profile-ux-sprint-82";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4211,7 +4211,36 @@ function getIdentityDocumentBundleQualityGateAssessment(article) {
       "seafarers' digital identity card",
       "seafarers digital identity card",
     ];
+    const hardOffTopicNoiseTerms = [
+      "applicant tracking system",
+      "ats alternatives",
+      "fan club",
+      "patriot passports",
+      "investorplace",
+      "jobpocalypse",
+      "stock market",
+      "shares",
+      "ceuta spat",
+      "border checks on italy",
+      "border checks for arrivals from spain",
+      "retaliation if italy keeps border controls",
+      "schengen is unravelling",
+      "north slope",
+      "foreign travel",
+      "passport fees",
+      "passport department faces overwhelming demand",
+      "overwhelming demand amidst eps application rush",
+      "not all parents know",
+      "children from 12 years old",
+      "passport appointment",
+      "passport renewal scams",
+      "online passport renewal",
+      "passport service centres",
+      "passport service centers",
+    ];
     const matchedNoise = normalizeKeywordList(IDENTITY_PROFILE_SOFT_NOISE_TERMS.passport_authority)
+      .filter((term) => textMatchesKeyword(allText, term));
+    const matchedHardOffTopicNoise = normalizeKeywordList(hardOffTopicNoiseTerms)
       .filter((term) => textMatchesKeyword(allText, term));
     const matchedProfessionalContext = normalizeKeywordList(authorityRescueTerms)
       .filter((term) => textMatchesKeyword(authoredText, term));
@@ -4223,16 +4252,23 @@ function getIdentityDocumentBundleQualityGateAssessment(article) {
     const hasProfessionalContext = matchedProfessionalContext.length > 0 ||
       (sourcePriority.level === "strong" && hasIdentityDocumentObject);
     const missingIdentityDocumentContext = !hasIdentityDocumentObject && !hasProfessionalContext;
-    const blocked = (matchedNoise.length > 0 && !hasProfessionalContext) || missingIdentityDocumentContext;
+    const blocked = matchedHardOffTopicNoise.length > 0 ||
+      (matchedNoise.length > 0 && !hasProfessionalContext) ||
+      missingIdentityDocumentContext;
 
     return Object.freeze({
       enabled: true,
       passed: !blocked,
       blocked,
       rejectionReason: blocked
-        ? (missingIdentityDocumentContext ? "identity_document_bundle_missing_document_context" : "identity_document_bundle_quality_noise")
+        ? (matchedHardOffTopicNoise.length
+          ? "identity_document_bundle_hard_noise"
+          : missingIdentityDocumentContext
+            ? "identity_document_bundle_missing_document_context"
+            : "identity_document_bundle_quality_noise")
         : "",
       matchedNoise,
+      matchedHardOffTopicNoise,
       matchedProfessionalContext,
       matchedIdentityDocumentObjects,
       sourcePriority,
