@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-77";
+const APP_BUILD = "intelligence-profile-ux-sprint-78";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -2026,8 +2026,11 @@ const IDENTITY_PROFILE_SOURCE_PRIORITY = {
 const IDENTITY_PROFILE_SOFT_NOISE_TERMS = {
   passport_authority: [
     "facebook",
+    "applicant tracking system",
+    "ats alternatives",
     "fan club",
     "fanclub",
+    "booth",
     "concert",
     "music",
     "movie",
@@ -2043,12 +2046,20 @@ const IDENTITY_PROFILE_SOFT_NOISE_TERMS = {
     "vacation",
     "school place",
     "school admissions",
+    "admit card",
+    "exam admit card",
     "student advice",
     "investorplace",
     "stock market",
     "shares",
     "jobpocalypse",
     "stabbing",
+    "bribery",
+    "suspended sentence",
+    "travelers arriving",
+    "travellers arriving",
+    "border checks for travelers",
+    "border checks for travellers",
     "brandlucht",
     "brandweer",
     "hulpdiensten",
@@ -4079,7 +4090,7 @@ function shouldUseIdentityDocumentAuthorityProfileGuard(interests = state.person
 function getIdentityDocumentAuthorityProfileGuardAssessment(article) {
   return getCachedArticleValue(article, "identityDocumentAuthorityProfileGuard", () => {
     const context = getPersonalBoostContext(article, "getIdentityDocumentAuthorityProfileGuardAssessment", { interest: "passport_authority" });
-    const haystack = [
+    const allText = [
       context.titleText,
       context.tagText,
       context.metadataText,
@@ -4089,10 +4100,54 @@ function getIdentityDocumentAuthorityProfileGuardAssessment(article) {
     ]
       .filter(Boolean)
       .join(" ");
+    const authoredText = [
+      context.titleText,
+      context.bodyText,
+      context.sourceText,
+      context.domainText,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const authorityRescueTerms = [
+      "passport issuance",
+      "passport verification",
+      "passport fraud",
+      "passport authentication",
+      "biometric passport",
+      "e-passport",
+      "epassport",
+      "passport chip",
+      "id card issuance",
+      "id card verification",
+      "identity card issuance",
+      "identity card verification",
+      "national id rollout",
+      "national identity rollout",
+      "driver license issuance",
+      "driving licence issuance",
+      "residence permit issuance",
+      "visa issuance",
+      "e-visa",
+      "document verification",
+      "document authentication",
+      "document fraud",
+      "counterfeit document",
+      "secure document",
+      "document security",
+      "icao",
+      "doc 9303",
+      "pkd",
+      "emrtd",
+      "border inspection",
+      "immigration authority",
+      "issuing authority",
+      "ministry of interior",
+      "civil registry",
+    ];
     const matchedNoise = normalizeKeywordList(IDENTITY_PROFILE_SOFT_NOISE_TERMS.passport_authority)
-      .filter((term) => textMatchesKeyword(haystack, term));
-    const matchedProfessionalContext = normalizeKeywordList(IDENTITY_PROFILE_STRONG_CONTEXT_TERMS.passport_authority)
-      .filter((term) => textMatchesKeyword(haystack, term));
+      .filter((term) => textMatchesKeyword(allText, term));
+    const matchedProfessionalContext = normalizeKeywordList(authorityRescueTerms)
+      .filter((term) => textMatchesKeyword(authoredText, term));
     const sourcePriority = getIdentityProfileSourcePriorityBoost(article, "passport_authority");
     const softNoise = getIdentityProfileSoftNoiseAssessment(article, "passport_authority");
     const hasProfessionalContext = matchedProfessionalContext.length > 0 || sourcePriority.level === "strong";
