@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-78";
+const APP_BUILD = "intelligence-profile-ux-sprint-79";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -2039,6 +2039,14 @@ const IDENTITY_PROFILE_SOFT_NOISE_TERMS = {
     "career passport",
     "passport to",
     "patriot passports",
+    "passport renewal",
+    "passport renewal scams",
+    "online passport renewal",
+    "passport service centres",
+    "passport service centers",
+    "passport fees",
+    "passport appointment",
+    "passport validity time in criminal cases",
     "travel deal",
     "great deals",
     "tourism",
@@ -2067,6 +2075,13 @@ const IDENTITY_PROFILE_SOFT_NOISE_TERMS = {
     "drimble",
     "ovd-b",
     "ovd-g",
+    "unrwa",
+    "since birth",
+    "schengen is unravelling",
+    "ceuta spat",
+    "retaliation if italy keeps border controls",
+    "citizenship rules most people",
+    "most people discover too late",
   ],
   passports: [
     "travel rankings",
@@ -4087,9 +4102,17 @@ function shouldUseIdentityDocumentAuthorityProfileGuard(interests = state.person
   return getMatchingPersonalDashboardTemplateId(interests) === "passport_authority";
 }
 
-function getIdentityDocumentAuthorityProfileGuardAssessment(article) {
-  return getCachedArticleValue(article, "identityDocumentAuthorityProfileGuard", () => {
-    const context = getPersonalBoostContext(article, "getIdentityDocumentAuthorityProfileGuardAssessment", { interest: "passport_authority" });
+function shouldUseIdentityDocumentBundleQualityGate(interests = state.personalDashboard.interests) {
+  const normalizedInterests = normalizePersonalDashboardInterests(interests);
+  const selectedIdentityTypes = normalizedInterests.filter((interestId) =>
+    IDENTITY_DOCUMENT_TYPE_INTEREST_IDS.has(interestId)
+  );
+  return shouldUseIdentityDocumentAuthorityProfileGuard(normalizedInterests) || selectedIdentityTypes.length > 1;
+}
+
+function getIdentityDocumentBundleQualityGateAssessment(article) {
+  return getCachedArticleValue(article, "identityDocumentBundleQualityGate", () => {
+    const context = getPersonalBoostContext(article, "getIdentityDocumentBundleQualityGateAssessment", { interest: "identity_documents" });
     const allText = [
       context.titleText,
       context.tagText,
@@ -4114,6 +4137,11 @@ function getIdentityDocumentAuthorityProfileGuardAssessment(article) {
       "passport fraud",
       "passport authentication",
       "biometric passport",
+      "passport rollout",
+      "passport production",
+      "passport personalization",
+      "passport personalisation",
+      "passport procurement",
       "e-passport",
       "epassport",
       "passport chip",
@@ -4123,6 +4151,8 @@ function getIdentityDocumentAuthorityProfileGuardAssessment(article) {
       "identity card verification",
       "national id rollout",
       "national identity rollout",
+      "electronic identity card",
+      "smart id card",
       "driver license issuance",
       "driving licence issuance",
       "residence permit issuance",
@@ -4143,6 +4173,10 @@ function getIdentityDocumentAuthorityProfileGuardAssessment(article) {
       "issuing authority",
       "ministry of interior",
       "civil registry",
+      "fake passport",
+      "forged passport",
+      "fake id",
+      "counterfeit id",
     ];
     const matchedNoise = normalizeKeywordList(IDENTITY_PROFILE_SOFT_NOISE_TERMS.passport_authority)
       .filter((term) => textMatchesKeyword(allText, term));
@@ -4157,13 +4191,17 @@ function getIdentityDocumentAuthorityProfileGuardAssessment(article) {
       enabled: true,
       passed: !blocked,
       blocked,
-      rejectionReason: blocked ? "identity_document_authority_profile_noise" : "",
+      rejectionReason: blocked ? "identity_document_bundle_quality_noise" : "",
       matchedNoise,
       matchedProfessionalContext,
       sourcePriority,
       softNoise,
     });
   });
+}
+
+function getIdentityDocumentAuthorityProfileGuardAssessment(article) {
+  return getIdentityDocumentBundleQualityGateAssessment(article);
 }
 
 function updatePersonalDashboardTemplateSelection(interests = state.personalDashboard.interests) {
@@ -22046,6 +22084,16 @@ function classifyPersonalDashboardRejection(article) {
     };
   }
 
+  if (selectedMainDomains.includes("identity_documents") && shouldUseIdentityDocumentBundleQualityGate(selectedInterests)) {
+    const identityDocumentBundleQualityGate = getIdentityDocumentBundleQualityGateAssessment(article);
+    if (!identityDocumentBundleQualityGate.passed) {
+      return {
+        category: "identityDocumentBundleQualityGate",
+        reason: identityDocumentBundleQualityGate.rejectionReason || "identity_document_bundle_quality_noise",
+      };
+    }
+  }
+
   if (sharedSecurityHardRefinement && !matchesSelectedSharedSecurityTechnique(article, selectedInterests)) {
     return {
       category: "techniqueRejected",
@@ -22074,15 +22122,6 @@ function classifyPersonalDashboardRejection(article) {
   }
 
   if (primaryDomain === "identity_documents") {
-    if (shouldUseIdentityDocumentAuthorityProfileGuard(selectedInterests)) {
-      const authorityProfileGuard = getIdentityDocumentAuthorityProfileGuardAssessment(article);
-      if (!authorityProfileGuard.passed) {
-        return {
-          category: "identityDocumentAuthorityProfileGuard",
-          reason: authorityProfileGuard.rejectionReason || "identity_document_authority_profile_noise",
-        };
-      }
-    }
     if (selectedIdentityInterests.length) {
       const identityInterestAssessment = getIdentityDocumentConjunctiveInterestAssessment(article, selectedInterests, {
         selectedSharedInterests: sharedSecurityHardRefinement ? selectedSharedInterests : [],
@@ -38331,6 +38370,17 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
     }
   }
 
+  if (selectedMainDomains.includes("identity_documents") && measurePersonalDashboardSegment("identityDocumentBundleQualityGateActive", () =>
+    shouldUseIdentityDocumentBundleQualityGate(selectedInterests)
+  )) {
+    const identityDocumentBundleQualityGate = measurePersonalDashboardSegment("identityDocumentBundleQualityGate", () =>
+      getIdentityDocumentBundleQualityGateAssessment(article)
+    );
+    if (!identityDocumentBundleQualityGate.passed) {
+      return finishPersonalDashboardTiming(false, identityDocumentBundleQualityGate.rejectionReason || "identity_document_bundle_quality_noise");
+    }
+  }
+
   // Main filters define the scope ("what document / market is this about?").
   // Shared Security Printing filters define the technique ("which security-printing method is involved?").
   // When both are selected together, the article must satisfy scope AND technique.
@@ -38342,16 +38392,6 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
   if (primaryDomain === "identity_documents") {
     if (measurePersonalDashboardSegment("identityNavigationPage", () => isIdentityNavigationPageArticle(article))) {
       return finishPersonalDashboardTiming(false, "identity_navigation_page");
-    }
-    if (measurePersonalDashboardSegment("identityDocumentAuthorityProfileGuardActive", () =>
-      shouldUseIdentityDocumentAuthorityProfileGuard(selectedInterests)
-    )) {
-      const authorityProfileGuard = measurePersonalDashboardSegment("identityDocumentAuthorityProfileGuard", () =>
-        getIdentityDocumentAuthorityProfileGuardAssessment(article)
-      );
-      if (!authorityProfileGuard.passed) {
-        return finishPersonalDashboardTiming(false, authorityProfileGuard.rejectionReason || "identity_document_authority_profile_noise");
-      }
     }
 
     const selectedIdentityInterests = measurePersonalDashboardSegment("selectedIdentityInterests", () =>
