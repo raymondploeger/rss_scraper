@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-79";
+const APP_BUILD = "intelligence-profile-ux-sprint-80";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4204,6 +4204,27 @@ function getIdentityDocumentAuthorityProfileGuardAssessment(article) {
   return getIdentityDocumentBundleQualityGateAssessment(article);
 }
 
+function applyIdentityDocumentBundleQualityGateToArticles(articles = []) {
+  const sourceArticles = Array.isArray(articles) ? articles : [];
+  if (!shouldUseIdentityDocumentBundleQualityGate()) {
+    return {
+      active: false,
+      articles: sourceArticles,
+      rejectedCount: 0,
+    };
+  }
+
+  const passedArticles = sourceArticles.filter((article) =>
+    getIdentityDocumentBundleQualityGateAssessment(article).passed
+  );
+
+  return {
+    active: true,
+    articles: passedArticles,
+    rejectedCount: sourceArticles.length - passedArticles.length,
+  };
+}
+
 function updatePersonalDashboardTemplateSelection(interests = state.personalDashboard.interests) {
   const matchingTemplateId = getMatchingPersonalDashboardTemplateId(interests);
   if (!elements.personalDashboardTemplateSelect) {
@@ -5392,20 +5413,27 @@ function promoteNewestArticleInSelectedFeedGroup(article) {
     ? sortArticlesByPublicationDate(article.sources)
     : [article].filter(Boolean);
   const centralBankProfileActive = isCentralBankProfileActive();
-  const sources = centralBankProfileActive
+  const identityDocumentBundleGateActive = shouldUseIdentityDocumentBundleQualityGate();
+  const centralBankSources = centralBankProfileActive
     ? originalSources.filter((sourceArticle) =>
       getCentralBankProfileProfessionalAssessment(sourceArticle).passed
     )
     : originalSources;
+  const sources = identityDocumentBundleGateActive
+    ? centralBankSources.filter((sourceArticle) =>
+      getIdentityDocumentBundleQualityGateAssessment(sourceArticle).passed
+    )
+    : centralBankSources;
   const safeSources = sources.length ? sources : originalSources.slice(0, 1);
   const representative = selectDashboardRepresentativeArticle(safeSources) || article;
+  const groupedSourceCountIsFiltered = centralBankProfileActive || identityDocumentBundleGateActive;
 
   return {
     ...article,
     ...representative,
     sources: safeSources,
-    sourceCount: centralBankProfileActive ? safeSources.length : (Number(article?.sourceCount) || safeSources.length),
-    groupedArticlesCount: centralBankProfileActive
+    sourceCount: groupedSourceCountIsFiltered ? safeSources.length : (Number(article?.sourceCount) || safeSources.length),
+    groupedArticlesCount: groupedSourceCountIsFiltered
       ? Math.max(0, safeSources.length - 1)
       : (Number(article?.groupedArticlesCount) || Math.max(0, safeSources.length - 1)),
   };
@@ -53095,13 +53123,21 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
     inputCount: candidatePool.length,
     outputCount: advancedFilteredBackendArticles.length,
   });
+  const identityDocumentBundleQualityGateStage = applyIdentityDocumentBundleQualityGateToArticles(advancedFilteredBackendArticles);
+  const personalDashboardFilteredBackendArticles = identityDocumentBundleQualityGateStage.articles;
+  if (diagnostics?.enabled && identityDocumentBundleQualityGateStage.active) {
+    addFilterPipelineNote(diagnostics, "Identity Document bundle quality gate applied to backend-query production output");
+    if (identityDocumentBundleQualityGateStage.rejectedCount > 0) {
+      addFilterPipelineNote(diagnostics, `Identity Document bundle quality gate rejected ${identityDocumentBundleQualityGateStage.rejectedCount} backend-query article(s) before grouping`);
+    }
+  }
   markProductionLoadTiming("backendNormalizationIdentityGuardStart", {
-    inputCount: advancedFilteredBackendArticles.length,
+    inputCount: personalDashboardFilteredBackendArticles.length,
   });
-  const filteredBackendArticles = advancedFilteredBackendArticles
+  const filteredBackendArticles = personalDashboardFilteredBackendArticles
     .filter((article) => articlePassesLegacyIdentityProfessionalRelevance(article, { branch: "backend-query" }));
   markProductionLoadTiming("backendNormalizationIdentityGuardComplete", {
-    inputCount: advancedFilteredBackendArticles.length,
+    inputCount: personalDashboardFilteredBackendArticles.length,
     outputCount: filteredBackendArticles.length,
   });
   markProductionLoadTiming("backendNormalizationDigitalGuardStart", {
@@ -53117,7 +53153,7 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
     inputCount: filteredBackendArticles.length,
     outputCount: digitalIdentityFilteredBackendArticles.length,
   });
-  const guardRejectedCount = advancedFilteredBackendArticles.length - filteredBackendArticles.length;
+  const guardRejectedCount = personalDashboardFilteredBackendArticles.length - filteredBackendArticles.length;
   const digitalIdentityGuardRejectedCount = filteredBackendArticles.length - digitalIdentityFilteredBackendArticles.length;
   if (diagnostics?.enabled && shouldApplyIdentityProfessionalRelevanceGuard({ branch: "backend-query" })) {
     addFilterPipelineNote(diagnostics, "Identity professional relevance guard reapplied");
@@ -53234,16 +53270,16 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
         },
         personal_dashboard: {
           inputCount: candidatePool.length,
-          outputCount: advancedFilteredBackendArticles.length,
+          outputCount: personalDashboardFilteredBackendArticles.length,
           source: "backend_result_normalization_combined_articleMatchesFilters",
         },
         advanced_filters: {
-          inputCount: advancedFilteredBackendArticles.length,
-          outputCount: advancedFilteredBackendArticles.length,
+          inputCount: personalDashboardFilteredBackendArticles.length,
+          outputCount: personalDashboardFilteredBackendArticles.length,
           source: "backend_result_normalization_combined_articleMatchesFilters",
         },
         identity_professional_relevance_guard: {
-          inputCount: advancedFilteredBackendArticles.length,
+          inputCount: personalDashboardFilteredBackendArticles.length,
           outputCount: filteredBackendArticles.length,
           source: "backend_result_normalization",
         },
