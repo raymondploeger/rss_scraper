@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-95";
+const APP_BUILD = "intelligence-profile-ux-sprint-96";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -37771,8 +37771,74 @@ function getBanknoteConsumerNoiseGuard(article) {
       "price guide",
       "worth",
       "value of",
+      "chartered banknotes",
+      "consecutive",
+      "unc",
+      "pick number",
+      "pmg",
+      "pcgs",
     ];
     const collectorSaleHits = collectorSaleTerms.filter((term) => textMatchesKeyword(haystack, term));
+    const contentNoiseTerms = [
+      "stock photo",
+      "stock photography",
+      "hi-res stock photography",
+      "wall art",
+      "poster",
+      "posters",
+      "words that start with",
+      "arabic word",
+      "rebate check",
+      "get paid faster",
+      "boost to households",
+      "households in august",
+      "snipers",
+      "decoys",
+      "bomb-proof vans",
+      "breaching bail",
+      "cash-dumping",
+      "cash dumping",
+      "dirty money",
+      "organised drug",
+      "drug locations",
+      "house prices",
+      "fx intervention",
+      "currency defense",
+      "guards reserves",
+      "piggy bank",
+    ];
+    const contentNoiseHits = contentNoiseTerms.filter((term) => textMatchesKeyword(haystack, term));
+    const professionalBanknoteTerms = [
+      "central bank",
+      "banknote issuance",
+      "new banknote",
+      "new banknotes",
+      "banknote series",
+      "banknote design",
+      "banknote redesign",
+      "banknote withdrawal",
+      "withdrawn banknotes",
+      "polymer banknote",
+      "polymer banknotes",
+      "security feature",
+      "security features",
+      "counterfeit banknote",
+      "counterfeit banknotes",
+      "fake banknote",
+      "fake banknotes",
+      "forged banknote",
+      "banknote production",
+      "currency in circulation",
+    ];
+    const professionalBanknoteHits = professionalBanknoteTerms.filter((term) => textMatchesKeyword(haystack, term));
+    const counterfeitSpecificMatched = [
+      "counterfeit banknote",
+      "counterfeit banknotes",
+      "fake banknote",
+      "fake banknotes",
+      "forged banknote",
+      "forged banknotes",
+    ].some((term) => textMatchesKeyword(haystack, term));
     const eventType = getBanknoteEventType(article);
     const relevance = getBanknoteIntelligenceRelevance(article);
     const isAuthoritySource = isBanknoteAuthoritySource(article);
@@ -37789,13 +37855,33 @@ function getBanknoteConsumerNoiseGuard(article) {
     ].includes(eventType);
     const sourceNoiseMatched = sourceNoiseTerms.length > 0 || isBanknoteSocialSource(article);
     const collectorNoiseMatched = collectorSaleHits.length > 0 || eventType === "banknote_auction_noise";
-    const rejected = !isAuthoritySource && (sourceNoiseMatched || collectorNoiseMatched) && !professionalEventMatched;
+    const contentNoiseMatched = contentNoiseHits.length > 0;
+    const generalCashCrimeNoiseMatched = contentNoiseHits.some((term) =>
+      [
+        "snipers",
+        "decoys",
+        "bomb-proof vans",
+        "breaching bail",
+        "cash-dumping",
+        "cash dumping",
+        "dirty money",
+        "organised drug",
+        "drug locations",
+      ].includes(term)
+    );
+    const rejected = !isAuthoritySource && (
+      ((sourceNoiseMatched || collectorNoiseMatched) && !professionalEventMatched) ||
+      (contentNoiseMatched && professionalBanknoteHits.length === 0) ||
+      (generalCashCrimeNoiseMatched && !counterfeitSpecificMatched)
+    );
 
     return {
       rejected,
-      rejectionReason: rejected ? "banknote_consumer_collector_or_social_noise" : "",
+      rejectionReason: rejected ? "banknote_consumer_collector_or_general_cash_noise" : "",
       sourceNoiseTerms: Object.freeze(sourceNoiseTerms.slice(0, 10)),
       collectorSaleTerms: Object.freeze(collectorSaleHits.slice(0, 10)),
+      contentNoiseTerms: Object.freeze(contentNoiseHits.slice(0, 10)),
+      professionalBanknoteTerms: Object.freeze(professionalBanknoteHits.slice(0, 10)),
       eventType,
       relevanceKept: Boolean(relevance?.kept),
       professionalEventMatched,
@@ -38046,6 +38132,14 @@ const CENTRAL_BANK_PROFILE_SOURCE_NOISE_TERMS = [
   "twitter",
   "linkedin",
   "reutersconnect",
+  "alamy",
+  "dreamstime",
+  "abposters",
+  "word.tips",
+  "arabic123",
+  "coinsandcanada",
+  "greatcoins",
+  "musemap",
   "stock photo",
   "stock photography",
 ];
