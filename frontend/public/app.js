@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-87";
+const APP_BUILD = "intelligence-profile-ux-sprint-88";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1493,6 +1493,7 @@ const TAG_LIST_STORAGE_KEY = "dashboardTagList";
 const KEYWORD_FILTER_STORAGE_KEY = "dashboardKeywordFilters";
 const PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY = "personalDashboardInterests";
 const PERSONAL_DASHBOARD_MODE_STORAGE_KEY = "personalDashboardMode";
+const PERSONAL_DASHBOARD_EXPLICITLY_CLEARED_STORAGE_KEY = "personalDashboardExplicitlyCleared";
 const IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_STORAGE_KEY = "identityDocumentAuthorityStrictness";
 const PERSONAL_DASHBOARD_LAST_SAVED_STORAGE_KEY = "personalDashboardLastSavedAt";
 const PERSONAL_DASHBOARD_CUSTOM_PROFILES_STORAGE_KEY = "personalDashboardCustomProfiles";
@@ -5312,6 +5313,7 @@ const state = {
     editing: false,
     mode: "balanced",
     identityDocumentAuthorityStrictness: "focused",
+    explicitlyCleared: false,
   },
   filters: {
     search: "",
@@ -24188,6 +24190,8 @@ function loadPersonalDashboardPreferences() {
   state.personalDashboard.mode = normalizePersonalDashboardMode(
     window.localStorage.getItem(PERSONAL_DASHBOARD_MODE_STORAGE_KEY) || "balanced"
   );
+  state.personalDashboard.explicitlyCleared =
+    window.localStorage.getItem(PERSONAL_DASHBOARD_EXPLICITLY_CLEARED_STORAGE_KEY) === "1";
   state.personalDashboard.identityDocumentAuthorityStrictness = normalizeIdentityDocumentAuthorityStrictness(
     window.localStorage.getItem(IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_STORAGE_KEY) || "focused"
   );
@@ -24214,7 +24218,15 @@ function savePersonalDashboardPreferences() {
     state.personalDashboard.identityDocumentAuthorityStrictness
   );
   state.personalDashboard.interests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  state.personalDashboard.explicitlyCleared = Boolean(
+    state.personalDashboard.explicitlyCleared && !state.personalDashboard.interests.length
+  );
   window.localStorage.setItem(PERSONAL_DASHBOARD_MODE_STORAGE_KEY, state.personalDashboard.mode);
+  if (state.personalDashboard.explicitlyCleared) {
+    window.localStorage.setItem(PERSONAL_DASHBOARD_EXPLICITLY_CLEARED_STORAGE_KEY, "1");
+  } else {
+    window.localStorage.removeItem(PERSONAL_DASHBOARD_EXPLICITLY_CLEARED_STORAGE_KEY);
+  }
   window.localStorage.setItem(
     IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_STORAGE_KEY,
     state.personalDashboard.identityDocumentAuthorityStrictness
@@ -24239,10 +24251,12 @@ function clearPersonalDashboardPreferences() {
   state.personalDashboard.mode = "balanced";
   state.personalDashboard.identityDocumentAuthorityStrictness = "focused";
   state.personalDashboard.activeCustomProfileId = "";
+  state.personalDashboard.explicitlyCleared = true;
   window.localStorage.removeItem(PERSONAL_DASHBOARD_MODE_STORAGE_KEY);
   window.localStorage.removeItem(IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_STORAGE_KEY);
   window.localStorage.removeItem(PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY);
   window.localStorage.removeItem(PERSONAL_DASHBOARD_LAST_SAVED_STORAGE_KEY);
+  window.localStorage.setItem(PERSONAL_DASHBOARD_EXPLICITLY_CLEARED_STORAGE_KEY, "1");
 }
 
 function createPersonalDashboardCustomProfile() {
@@ -24944,6 +24958,7 @@ function setPersonalDashboardInterest(interestId, enabled) {
   }
 
   state.personalDashboard.interests = Array.from(nextInterests);
+  state.personalDashboard.explicitlyCleared = false;
   updatePersonalDashboardTemplateSelection(state.personalDashboard.interests);
   ensurePaginationState();
   state.pagination.page = 1;
@@ -24962,6 +24977,7 @@ function applyPersonalDashboardTemplate(templateId) {
   state.personalDashboard.interests = normalizePersonalDashboardInterests(template.interests);
   state.personalDashboard.expandedGroups = [];
   state.personalDashboard.activeCustomProfileId = "";
+  state.personalDashboard.explicitlyCleared = false;
   ensurePaginationState();
   state.pagination.page = 1;
   savePersonalDashboardPreferences();
@@ -24980,6 +24996,7 @@ function applyPersonalDashboardCustomProfile(profileId) {
   state.personalDashboard.interests = normalizePersonalDashboardInterests(profile.interests);
   state.personalDashboard.expandedGroups = [];
   state.personalDashboard.activeCustomProfileId = profile.id;
+  state.personalDashboard.explicitlyCleared = false;
   ensurePaginationState();
   state.pagination.page = 1;
   savePersonalDashboardPreferences();
@@ -25004,6 +25021,33 @@ function setIdentityDocumentAuthorityStrictness(strictness) {
 
 function hasPersonalDashboardSelections() {
   return Array.isArray(state.personalDashboard.interests) && state.personalDashboard.interests.length > 0;
+}
+
+function hasActiveAdvancedSearchFilters() {
+  const filters = state.filters || {};
+  const keywordFilters = state.keywordFilters || {};
+  return Boolean(
+    String(filters.search || "").trim() ||
+      String(filters.topic || "").trim() ||
+      String(filters.tag || "").trim() ||
+      String(filters.signalCategory || "").trim() ||
+      String(filters.feedId || "").trim() ||
+      String(filters.dmvFeedId || "").trim() ||
+      String(filters.canadaDmvFeedPath || "").trim() ||
+      String(filters.date || "").trim() ||
+      (filters.sourceGroup && filters.sourceGroup !== "all") ||
+      filters.canadaDmvAll ||
+      (Array.isArray(keywordFilters.include) && keywordFilters.include.length > 0) ||
+      (Array.isArray(keywordFilters.exclude) && keywordFilters.exclude.length > 0)
+  );
+}
+
+function shouldShowExplicitlyClearedProfileEmptyState() {
+  return Boolean(
+    state.personalDashboard?.explicitlyCleared &&
+      !hasPersonalDashboardSelections() &&
+      !hasActiveAdvancedSearchFilters()
+  );
 }
 
 function getSelectedIdentityDocumentSubinterests(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
@@ -54059,6 +54103,32 @@ function renderArticles() {
           }
         : null,
     };
+
+    if (shouldShowExplicitlyClearedProfileEmptyState()) {
+      intelligenceTime("renderArticles:dom-update");
+      startFilterPerformanceDomRender();
+      elements.resultsCount.textContent = "0 results";
+      elements.articlesGrid.classList.remove("is-grouped-feed-view");
+      elements.articlesGrid.classList.remove("has-personal-lanes");
+      elements.articlesGrid.innerHTML = `
+        <div class="empty-state">
+          Choose a profile or select interests to build your intelligence feed.
+        </div>
+      `;
+      renderPaginationControls(getPaginatedItems([]));
+      markProductionLoadTiming("explicitProfileClearedEmptyState", {
+        reason: "personal_dashboard_explicitly_cleared",
+      });
+      intelligenceTimeEnd("renderArticles:dom-update");
+      finalizeRenderDiagnostics({
+        ...renderDiagnostics,
+        branchName: "personal-dashboard-empty-profile",
+        total: 0,
+        page: 1,
+        totalPages: 1,
+      });
+      return;
+    }
 
     if (renderDispatch?.renderMode === "selected_feed") {
       intelligenceTime("renderArticles:dom-update");
