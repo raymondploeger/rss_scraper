@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-97";
+const APP_BUILD = "intelligence-profile-ux-sprint-98";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1497,6 +1497,7 @@ const PERSONAL_DASHBOARD_EXPLICITLY_CLEARED_STORAGE_KEY = "personalDashboardExpl
 const IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_STORAGE_KEY = "identityDocumentAuthorityStrictness";
 const PERSONAL_DASHBOARD_LAST_SAVED_STORAGE_KEY = "personalDashboardLastSavedAt";
 const PERSONAL_DASHBOARD_CUSTOM_PROFILES_STORAGE_KEY = "personalDashboardCustomProfiles";
+const PERSONAL_DASHBOARD_ACTIVE_TEMPLATE_STORAGE_KEY = "personalDashboardActiveTemplate";
 const DEFAULT_PERSONAL_DASHBOARD_SORT = "newest";
 const NOISE_KEYWORDS_EXPANDED_STORAGE_KEY = "noiseKeywordsExpanded";
 const PERSONAL_DASHBOARD_MODES = {
@@ -3980,20 +3981,6 @@ const PERSONAL_DASHBOARD_PROFILE_TEMPLATES = Object.freeze({
     label: "Security Printer",
     interests: Object.freeze([
       "security_features",
-      "security_printing",
-      "security_inks",
-      "micro_optics",
-      "holography",
-      "dovid",
-      "ovd",
-      "intaglio",
-      "polycarbonate",
-      "polymer",
-      "laminate",
-      "substrate",
-      "anti_counterfeit",
-      "personalization",
-      "secure_documents",
     ]),
   }),
   identity_verification: Object.freeze({
@@ -4024,12 +4011,24 @@ function getMatchingPersonalDashboardTemplateId(interests = state.personalDashbo
   if (!normalizedInterests.length) {
     return "";
   }
+  const activeTemplateId = String(state.personalDashboard.activeTemplateId || "").trim();
+  if (
+    activeTemplateId &&
+    PERSONAL_DASHBOARD_PROFILE_TEMPLATES[activeTemplateId] &&
+    samePersonalDashboardInterestSet(
+      normalizedInterests,
+      PERSONAL_DASHBOARD_PROFILE_TEMPLATES[activeTemplateId].interests
+    )
+  ) {
+    return activeTemplateId;
+  }
   const normalizedKey = normalizedInterests.join("|");
   const matchedTemplate = Object.entries(PERSONAL_DASHBOARD_PROFILE_TEMPLATES).find(([, template]) => {
     const templateKey = normalizePersonalDashboardInterests(template.interests).slice().sort().join("|");
     return templateKey === normalizedKey;
   });
-  return matchedTemplate?.[0] || "custom";
+  const matchedTemplateId = matchedTemplate?.[0] || "";
+  return matchedTemplateId === "security_printer" ? "custom" : matchedTemplateId || "custom";
 }
 
 function normalizePersonalDashboardCustomProfile(profile) {
@@ -5311,6 +5310,7 @@ const state = {
     selectedInterestsCollapsed: true,
     customProfiles: [],
     activeCustomProfileId: "",
+    activeTemplateId: "",
     editing: false,
     mode: "balanced",
     identityDocumentAuthorityStrictness: "focused",
@@ -24211,6 +24211,14 @@ function loadPersonalDashboardPreferences() {
   } catch {
     state.personalDashboard.interests = [];
   }
+  const storedTemplateId = String(window.localStorage.getItem(PERSONAL_DASHBOARD_ACTIVE_TEMPLATE_STORAGE_KEY) || "").trim();
+  state.personalDashboard.activeTemplateId = (
+    PERSONAL_DASHBOARD_PROFILE_TEMPLATES[storedTemplateId] &&
+    samePersonalDashboardInterestSet(
+      state.personalDashboard.interests,
+      PERSONAL_DASHBOARD_PROFILE_TEMPLATES[storedTemplateId].interests
+    )
+  ) ? storedTemplateId : "";
 }
 
 function savePersonalDashboardPreferences() {
@@ -24236,6 +24244,20 @@ function savePersonalDashboardPreferences() {
     PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY,
     JSON.stringify(state.personalDashboard.interests)
   );
+  const activeTemplateId = String(state.personalDashboard.activeTemplateId || "").trim();
+  if (
+    activeTemplateId &&
+    PERSONAL_DASHBOARD_PROFILE_TEMPLATES[activeTemplateId] &&
+    samePersonalDashboardInterestSet(
+      state.personalDashboard.interests,
+      PERSONAL_DASHBOARD_PROFILE_TEMPLATES[activeTemplateId].interests
+    )
+  ) {
+    window.localStorage.setItem(PERSONAL_DASHBOARD_ACTIVE_TEMPLATE_STORAGE_KEY, activeTemplateId);
+  } else {
+    state.personalDashboard.activeTemplateId = "";
+    window.localStorage.removeItem(PERSONAL_DASHBOARD_ACTIVE_TEMPLATE_STORAGE_KEY);
+  }
   window.localStorage.setItem(PERSONAL_DASHBOARD_LAST_SAVED_STORAGE_KEY, new Date().toISOString());
 }
 
@@ -24252,10 +24274,12 @@ function clearPersonalDashboardPreferences() {
   state.personalDashboard.mode = "balanced";
   state.personalDashboard.identityDocumentAuthorityStrictness = "focused";
   state.personalDashboard.activeCustomProfileId = "";
+  state.personalDashboard.activeTemplateId = "";
   state.personalDashboard.explicitlyCleared = true;
   window.localStorage.removeItem(PERSONAL_DASHBOARD_MODE_STORAGE_KEY);
   window.localStorage.removeItem(IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_STORAGE_KEY);
   window.localStorage.removeItem(PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY);
+  window.localStorage.removeItem(PERSONAL_DASHBOARD_ACTIVE_TEMPLATE_STORAGE_KEY);
   window.localStorage.removeItem(PERSONAL_DASHBOARD_LAST_SAVED_STORAGE_KEY);
   window.localStorage.setItem(PERSONAL_DASHBOARD_EXPLICITLY_CLEARED_STORAGE_KEY, "1");
 }
@@ -24289,6 +24313,7 @@ function createPersonalDashboardCustomProfile() {
     state.personalDashboard.customProfiles = [profile, ...(state.personalDashboard.customProfiles || [])];
   }
   state.personalDashboard.activeCustomProfileId = profile.id;
+  state.personalDashboard.activeTemplateId = "";
   savePersonalDashboardCustomProfiles();
   updatePersonalDashboardTemplateSelection(interests);
   renderPersonalDashboard();
@@ -24430,6 +24455,7 @@ function updatePersonalDashboardCustomProfile() {
   state.personalDashboard.customProfiles = (state.personalDashboard.customProfiles || [])
     .map((customProfile) => (customProfile.id === updatedProfile.id ? updatedProfile : customProfile));
   state.personalDashboard.activeCustomProfileId = updatedProfile.id;
+  state.personalDashboard.activeTemplateId = "";
   savePersonalDashboardCustomProfiles();
   updatePersonalDashboardTemplateSelection(interests);
   renderPersonalDashboard();
@@ -24959,6 +24985,8 @@ function setPersonalDashboardInterest(interestId, enabled) {
   }
 
   state.personalDashboard.interests = Array.from(nextInterests);
+  state.personalDashboard.activeTemplateId = "";
+  state.personalDashboard.activeCustomProfileId = "";
   state.personalDashboard.explicitlyCleared = false;
   updatePersonalDashboardTemplateSelection(state.personalDashboard.interests);
   ensurePaginationState();
@@ -24978,6 +25006,7 @@ function applyPersonalDashboardTemplate(templateId) {
   state.personalDashboard.interests = normalizePersonalDashboardInterests(template.interests);
   state.personalDashboard.expandedGroups = [];
   state.personalDashboard.activeCustomProfileId = "";
+  state.personalDashboard.activeTemplateId = templateId;
   state.personalDashboard.explicitlyCleared = false;
   ensurePaginationState();
   state.pagination.page = 1;
@@ -24997,6 +25026,7 @@ function applyPersonalDashboardCustomProfile(profileId) {
   state.personalDashboard.interests = normalizePersonalDashboardInterests(profile.interests);
   state.personalDashboard.expandedGroups = [];
   state.personalDashboard.activeCustomProfileId = profile.id;
+  state.personalDashboard.activeTemplateId = "";
   state.personalDashboard.explicitlyCleared = false;
   ensurePaginationState();
   state.pagination.page = 1;
@@ -39036,13 +39066,6 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
           ...getSharedSecurityStandaloneAssessment(article, interestId),
         })),
       });
-    }
-
-    const securityPrinterProfileGuard = measurePersonalDashboardSegment("securityPrinterProfileGuard", () =>
-      getSecurityPrinterProfileProfessionalGuard(article, selectedInterests)
-    );
-    if (matched && securityPrinterProfileGuard.applies && !securityPrinterProfileGuard.passed) {
-      return finishPersonalDashboardTiming(false, securityPrinterProfileGuard.rejectionReason || "security_printer_profile_guard");
     }
 
     return finishPersonalDashboardTiming(matched, matched ? "shared_security_only_passed" : "shared_security_only_rejected");
