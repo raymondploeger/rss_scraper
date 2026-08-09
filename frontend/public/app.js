@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-94";
+const APP_BUILD = "intelligence-profile-ux-sprint-95";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -37929,6 +37929,105 @@ function getVisaResidencePermitServiceNoiseGuard(article, selectedIdentityIntere
   });
 }
 
+function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests = state.personalDashboard.interests) {
+  const templateId = getMatchingPersonalDashboardTemplateId(selectedInterests);
+  if (templateId !== "security_printer") {
+    return {
+      applies: false,
+      passed: true,
+      rejectionReason: "",
+      noiseTerms: Object.freeze([]),
+      professionalTerms: Object.freeze([]),
+    };
+  }
+
+  return getCachedArticleValue(article, "securityPrinterProfileProfessionalGuard", () => {
+    const context = getPersonalBoostContext(article, "getSecurityPrinterProfileProfessionalGuard", { interest: "shared_security" });
+    const haystack = [
+      context.titleText,
+      context.tagText,
+      context.metadataText,
+      context.bodyText,
+      context.sourceText,
+      context.domainText,
+    ].filter(Boolean).join(" ");
+    const professionalTerms = [
+      "security printing",
+      "security printer",
+      "secure printing",
+      "banknote printing",
+      "banknote",
+      "banknotes",
+      "currency note",
+      "central bank",
+      "passport",
+      "id card",
+      "identity card",
+      "identity document",
+      "secure document",
+      "document security",
+      "security feature",
+      "security features",
+      "security ink",
+      "security inks",
+      "hologram",
+      "holographic",
+      "micro optics",
+      "optically variable",
+      "dovid",
+      "intaglio",
+      "polycarbonate",
+      "polymer banknote",
+      "security laminate",
+      "anti-counterfeit",
+      "counterfeit prevention",
+    ];
+    const noiseTerms = [
+      "commercial printing",
+      "label printing",
+      "labels",
+      "packaging",
+      "packaging foil",
+      "decorative hologram",
+      "hologram sticker",
+      "stickers",
+      "car wrap",
+      "car wraps",
+      "flooring laminate",
+      "kitchen laminate",
+      "furniture laminate",
+      "medical micro",
+      "medical optics",
+      "electronics microstructure",
+      "semiconductor",
+      "pcb",
+      "3d printing",
+      "cybersecurity",
+      "software security",
+      "cloud security",
+      "router security",
+      "home security",
+      "car security",
+    ];
+    const matchedProfessionalTerms = professionalTerms.filter((term) => textMatchesKeyword(haystack, term));
+    const matchedNoiseTerms = noiseTerms.filter((term) => textMatchesKeyword(haystack, term));
+    const sourceNoiseTerms = CENTRAL_BANK_PROFILE_SOURCE_NOISE_TERMS.filter((term) =>
+      textMatchesKeyword(`${context.sourceText} ${context.domainText} ${context.metadataText}`, term)
+    );
+    const passed = matchedProfessionalTerms.length > 0
+      && !(matchedNoiseTerms.length > 0 && matchedProfessionalTerms.length < 2)
+      && !(sourceNoiseTerms.length > 0 && matchedProfessionalTerms.length < 2);
+
+    return {
+      applies: true,
+      passed,
+      rejectionReason: passed ? "" : "security_printer_profile_guard_rejected",
+      noiseTerms: Object.freeze([...matchedNoiseTerms, ...sourceNoiseTerms].slice(0, 10)),
+      professionalTerms: Object.freeze(matchedProfessionalTerms.slice(0, 10)),
+    };
+  });
+}
+
 const CENTRAL_BANK_PROFILE_SOURCE_NOISE_TERMS = [
   "auction",
   "bids.",
@@ -38838,6 +38937,13 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
           ...getSharedSecurityStandaloneAssessment(article, interestId),
         })),
       });
+    }
+
+    const securityPrinterProfileGuard = measurePersonalDashboardSegment("securityPrinterProfileGuard", () =>
+      getSecurityPrinterProfileProfessionalGuard(article, selectedInterests)
+    );
+    if (matched && securityPrinterProfileGuard.applies && !securityPrinterProfileGuard.passed) {
+      return finishPersonalDashboardTiming(false, securityPrinterProfileGuard.rejectionReason || "security_printer_profile_guard");
     }
 
     return finishPersonalDashboardTiming(matched, matched ? "shared_security_only_passed" : "shared_security_only_rejected");
