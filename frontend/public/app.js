@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-98";
+const APP_BUILD = "intelligence-profile-ux-sprint-99";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -3938,6 +3938,25 @@ const IDENTITY_DOCUMENT_THEME_INTEREST_IDS = new Set([
   "issuance",
   "icao",
   "border_control",
+]);
+const SHARED_SECURITY_UMBRELLA_INTEREST_IDS = new Set([
+  "security_features",
+]);
+const SHARED_SECURITY_REFINEMENT_INTEREST_IDS = new Set([
+  "security_printing",
+  "security_inks",
+  "holography",
+  "ovd",
+  "dovid",
+  "micro_optics",
+  "intaglio",
+  "polycarbonate",
+  "polymer",
+  "laminate",
+  "substrate",
+  "personalization",
+  "secure_documents",
+  "anti_counterfeit",
 ]);
 const PERSONAL_DASHBOARD_PROFILE_TEMPLATES = Object.freeze({
   central_bank: Object.freeze({
@@ -24599,6 +24618,35 @@ function renderPersonalDashboardGroupOptions(group, visibleInterests, activeInte
         "Refine by intelligence theme",
         "Narrow results to topics such as counterfeiting, issuance, withdrawal or designs.",
         themeInterests,
+        activeInterests
+      ),
+      renderPersonalDashboardInterestSection("", "", otherInterests, activeInterests),
+    ].join("");
+  }
+
+  if (group.id === PERSONAL_DASHBOARD_SHARED_GROUP_ID) {
+    const umbrellaInterests = visibleInterests.filter((interest) =>
+      SHARED_SECURITY_UMBRELLA_INTEREST_IDS.has(interest.id)
+    );
+    const refinementInterests = visibleInterests.filter((interest) =>
+      SHARED_SECURITY_REFINEMENT_INTEREST_IDS.has(interest.id)
+    );
+    const otherInterests = visibleInterests.filter((interest) =>
+      !SHARED_SECURITY_UMBRELLA_INTEREST_IDS.has(interest.id) &&
+      !SHARED_SECURITY_REFINEMENT_INTEREST_IDS.has(interest.id)
+    );
+
+    return [
+      renderPersonalDashboardInterestSection(
+        "Umbrella",
+        "Start with all security-feature articles.",
+        umbrellaInterests,
+        activeInterests
+      ),
+      renderPersonalDashboardInterestSection(
+        "Refine by technology or material",
+        "Narrow results to printing, inks, holography, substrates, polymer or document materials.",
+        refinementInterests,
         activeInterests
       ),
       renderPersonalDashboardInterestSection("", "", otherInterests, activeInterests),
