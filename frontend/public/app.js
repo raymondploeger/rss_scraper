@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-96";
+const APP_BUILD = "intelligence-profile-ux-sprint-97";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -37790,8 +37790,12 @@ function getBanknoteConsumerNoiseGuard(article) {
       "arabic word",
       "rebate check",
       "get paid faster",
+      "hmrc",
+      "alert issued",
+      "send out",
       "boost to households",
       "households in august",
+      "households",
       "snipers",
       "decoys",
       "bomb-proof vans",
@@ -38140,6 +38144,7 @@ const CENTRAL_BANK_PROFILE_SOURCE_NOISE_TERMS = [
   "coinsandcanada",
   "greatcoins",
   "musemap",
+  "lincolnshirelive",
   "stock photo",
   "stock photography",
 ];
