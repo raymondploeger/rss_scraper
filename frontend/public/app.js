@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-99";
+const APP_BUILD = "intelligence-profile-ux-sprint-100";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -24895,7 +24895,7 @@ function renderPersonalDashboard() {
             >
               ${summaryCollapsed ? "Show details" : "Hide details"}
             </button>
-            <button class="ghost-button personal-dashboard-summary-edit" type="button" data-edit-personal-profile ${summaryCollapsed ? "hidden" : ""}>
+            <button class="ghost-button personal-dashboard-summary-edit" type="button" data-edit-personal-profile>
               Edit Profile
             </button>
           </div>
@@ -25053,6 +25053,7 @@ function applyPersonalDashboardTemplate(templateId) {
 
   state.personalDashboard.interests = normalizePersonalDashboardInterests(template.interests);
   state.personalDashboard.expandedGroups = [];
+  state.personalDashboard.editing = false;
   state.personalDashboard.activeCustomProfileId = "";
   state.personalDashboard.activeTemplateId = templateId;
   state.personalDashboard.explicitlyCleared = false;
@@ -25073,6 +25074,7 @@ function applyPersonalDashboardCustomProfile(profileId) {
 
   state.personalDashboard.interests = normalizePersonalDashboardInterests(profile.interests);
   state.personalDashboard.expandedGroups = [];
+  state.personalDashboard.editing = false;
   state.personalDashboard.activeCustomProfileId = profile.id;
   state.personalDashboard.activeTemplateId = "";
   state.personalDashboard.explicitlyCleared = false;

@@ -203,10 +203,12 @@ img {
 }
 
 .profile-builder-panel {
+  display: none;
   transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
 }
 
 .profile-builder-panel[data-editing="true"] {
+  display: block;
   border-color: rgba(87, 166, 255, 0.55);
   box-shadow: 0 0 0 1px rgba(87, 166, 255, 0.18), 0 16px 42px rgba(15, 23, 42, 0.12);
 }
