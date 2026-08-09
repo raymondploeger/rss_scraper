@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-101";
+const APP_BUILD = "intelligence-profile-ux-sprint-102";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -25123,9 +25123,9 @@ function hasActiveAdvancedSearchFilters() {
   );
 }
 
-function shouldShowExplicitlyClearedProfileEmptyState() {
+function shouldShowPersonalDashboardEmptyProfileState(renderDispatch = null) {
   return Boolean(
-    state.personalDashboard?.explicitlyCleared &&
+    renderDispatch?.renderMode !== "selected_feed" &&
       !hasPersonalDashboardSelections()
   );
 }
@@ -54640,7 +54640,7 @@ function renderArticles() {
         : null,
     };
 
-    if (shouldShowExplicitlyClearedProfileEmptyState()) {
+    if (shouldShowPersonalDashboardEmptyProfileState(renderDispatch)) {
       intelligenceTime("renderArticles:dom-update");
       startFilterPerformanceDomRender();
       elements.resultsCount.textContent = "0 results";
@@ -54653,12 +54653,16 @@ function renderArticles() {
       `;
       renderPaginationControls(getPaginatedItems([]));
       markProductionLoadTiming("explicitProfileClearedEmptyState", {
-        reason: "personal_dashboard_explicitly_cleared",
+        reason: state.personalDashboard?.explicitlyCleared
+          ? "personal_dashboard_explicitly_cleared"
+          : "personal_dashboard_empty_profile",
       });
       intelligenceTimeEnd("renderArticles:dom-update");
       finalizeRenderDiagnostics({
         ...renderDiagnostics,
-        branchName: "personal-dashboard-empty-profile",
+        branchName: state.personalDashboard?.explicitlyCleared
+          ? "personal-dashboard-empty-profile"
+          : "personal-dashboard-no-profile",
         total: 0,
         page: 1,
         totalPages: 1,
