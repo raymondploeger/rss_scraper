@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-93";
+const APP_BUILD = "intelligence-profile-ux-sprint-94";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -37804,6 +37804,131 @@ function getBanknoteConsumerNoiseGuard(article) {
   });
 }
 
+function getVisaResidencePermitServiceNoiseGuard(article, selectedIdentityInterests = []) {
+  const selectedObjects = Array.isArray(selectedIdentityInterests)
+    ? selectedIdentityInterests.filter((interestId) => IDENTITY_DOCUMENT_OBJECT_INTEREST_IDS.has(interestId))
+    : [];
+  const applies = selectedObjects.length > 0
+    && selectedObjects.every((interestId) => interestId === "visas" || interestId === "residence_permits");
+  if (!applies) {
+    return {
+      applies: false,
+      rejected: false,
+      rejectionReason: "",
+      noiseTerms: Object.freeze([]),
+      professionalTerms: Object.freeze([]),
+    };
+  }
+
+  const cacheKey = `visaResidencePermitServiceNoiseGuard:${selectedObjects.slice().sort().join("|")}`;
+  return getCachedArticleValue(article, cacheKey, () => {
+    const context = getPersonalBoostContext(article, "getVisaResidencePermitServiceNoiseGuard", { interest: "identity_documents" });
+    const haystack = [
+      context.titleText,
+      context.tagText,
+      context.metadataText,
+      context.bodyText,
+      context.sourceText,
+      context.domainText,
+    ].filter(Boolean).join(" ");
+    const visaTravelNoiseTerms = [
+      "visa-free",
+      "visa free",
+      "travel without a visa",
+      "tourist visa",
+      "travel tips",
+      "travel advice",
+      "tourism",
+      "holiday",
+      "strongest passport",
+      "powerful passport",
+      "passport ranks",
+      "passport ranking",
+      "business traveller",
+      "travel blog",
+      "thetravel",
+      "travelandtourworld",
+      "gulf news",
+      "atta.travel",
+    ];
+    const residenceServiceNoiseTerms = [
+      "how to renew",
+      "renew your permanent residence permit",
+      "residence permit cancelled",
+      "leave the country within",
+      "booking appointments",
+      "appointment booking",
+      "collect residence permit card",
+      "supermarket",
+      "banking problems",
+      "need to carry your residence permit",
+      "fee",
+      "fees",
+      "immigration lawyer",
+      "law firm",
+    ];
+    const professionalTerms = [
+      "evisa",
+      "e-visa",
+      "electronic visa",
+      "digital visa",
+      "visa sticker",
+      "visa document",
+      "biometric visa",
+      "carrier guidance",
+      "ukvi",
+      "biometric residence permit",
+      "biometric residence card",
+      "residence permit card",
+      "permit issuance",
+      "permit verification",
+      "permit authentication",
+      "digital residence permit",
+      "evisas to fully replace",
+      "document security",
+      "secure document",
+      "identity document",
+      "government",
+      "ministry",
+      "migration agency",
+      "home office",
+      "immigration system",
+      "border control",
+      "etias",
+      "entry exit system",
+      "ees",
+      "regula",
+      "verification",
+    ];
+    const noiseTerms = [...visaTravelNoiseTerms, ...residenceServiceNoiseTerms]
+      .filter((term) => textMatchesKeyword(haystack, term));
+    const matchedProfessionalTerms = professionalTerms.filter((term) => textMatchesKeyword(haystack, term));
+    const sourceOrServiceNoise = noiseTerms.some((term) =>
+      [
+        "thetravel",
+        "travelandtourworld",
+        "gulf news",
+        "atta.travel",
+        "immigration lawyer",
+        "law firm",
+        "booking appointments",
+        "appointment booking",
+      ].includes(term)
+    );
+    const rejected = noiseTerms.length > 0
+      && matchedProfessionalTerms.length === 0
+      && (sourceOrServiceNoise || noiseTerms.length >= 2);
+
+    return {
+      applies: true,
+      rejected,
+      rejectionReason: rejected ? "visa_residence_permit_service_or_travel_noise" : "",
+      noiseTerms: Object.freeze(noiseTerms.slice(0, 10)),
+      professionalTerms: Object.freeze(matchedProfessionalTerms.slice(0, 10)),
+    };
+  });
+}
+
 const CENTRAL_BANK_PROFILE_SOURCE_NOISE_TERMS = [
   "auction",
   "bids.",
@@ -38907,6 +39032,15 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
         timingContext: personalDashboardTimingContext,
       })
     );
+    const visaResidencePermitServiceNoiseGuard = measurePersonalDashboardSegment("visaResidencePermitServiceNoiseGuard", () =>
+      getVisaResidencePermitServiceNoiseGuard(article, selectedIdentityInterests)
+    );
+    if (identityScopeAssessment.passed && visaResidencePermitServiceNoiseGuard.rejected) {
+      return finishPersonalDashboardTiming(
+        false,
+        visaResidencePermitServiceNoiseGuard.rejectionReason || "visa_residence_permit_service_noise"
+      );
+    }
     return finishPersonalDashboardTiming(
       identityScopeAssessment.passed && sharedSecurityTechniqueMatched,
       identityScopeAssessment.passed && sharedSecurityTechniqueMatched ? "identity_documents_passed" : "identity_documents_rejected"
