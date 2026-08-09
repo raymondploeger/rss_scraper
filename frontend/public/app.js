@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-90";
+const APP_BUILD = "intelligence-profile-ux-sprint-91";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -35297,12 +35297,19 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       foregroundStrongHits === 0 &&
       bridgeEvidenceHits === 0
     ) && !hardNegativeRejected;
+    const umbrellaChildIncluded = interestId === "security_features" &&
+      SHARED_SECURITY_FEATURE_UMBRELLA_INTERESTS.some((childInterestId) =>
+        childInterestId !== "security_features" &&
+          getSharedSecurityStandaloneAssessment(article, childInterestId).included
+      );
+    const effectiveIncluded = included || umbrellaChildIncluded;
 
     return {
-      included,
+      included: effectiveIncluded,
       directMatch,
       hybridMatch,
       bodyContextBridgeMatch,
+      umbrellaChildIncluded,
       foregroundStrongHits,
       foregroundWeakHits,
       bodyStrongHits,
