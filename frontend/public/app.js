@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-100";
+const APP_BUILD = "intelligence-profile-ux-sprint-101";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -25126,8 +25126,7 @@ function hasActiveAdvancedSearchFilters() {
 function shouldShowExplicitlyClearedProfileEmptyState() {
   return Boolean(
     state.personalDashboard?.explicitlyCleared &&
-      !hasPersonalDashboardSelections() &&
-      !hasActiveAdvancedSearchFilters()
+      !hasPersonalDashboardSelections()
   );
 }
 
