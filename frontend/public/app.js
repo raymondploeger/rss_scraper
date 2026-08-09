@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-89";
+const APP_BUILD = "intelligence-profile-ux-sprint-90";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -25063,6 +25063,28 @@ function getSelectedSharedSecuritySubinterests(selectedInterests = normalizePers
   ).effectiveInterestIds;
 }
 
+function getSharedSecurityParentRefinementGate(article, selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const resolution = resolvePersonalDashboardParentChildInterests(
+    selectedInterests,
+    PERSONAL_DASHBOARD_SHARED_GROUP_ID
+  );
+  if (!resolution.parentActsAsDomainGate) {
+    return {
+      applies: false,
+      passed: true,
+      parentId: resolution.parentId,
+    };
+  }
+
+  const parentAssessment = getSharedSecurityStandaloneAssessment(article, resolution.parentId);
+  return {
+    applies: true,
+    passed: Boolean(parentAssessment.included),
+    parentId: resolution.parentId,
+    parentAssessment,
+  };
+}
+
 function getSelectedDigitalIdentitySubinterests(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
   return normalizePersonalDashboardInterests(selectedInterests)
     .filter((interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "digital_identity_biometrics");
@@ -25084,6 +25106,10 @@ function matchesSelectedSharedSecurityTechnique(article, selectedInterests = nor
   const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
   if (!selectedSharedInterests.length) {
     return true;
+  }
+  const parentGate = getSharedSecurityParentRefinementGate(article, selectedInterests);
+  if (parentGate.applies && !parentGate.passed) {
+    return false;
   }
 
   return selectedSharedInterests.some((interestId) =>
@@ -25275,6 +25301,10 @@ function articleMatchesSelectedIdentityTechniqueBridge(article, selectedInterest
   if (!selectedIdentityInterests.length || !selectedSharedInterests.length) {
     return false;
   }
+  const parentGate = getSharedSecurityParentRefinementGate(article, selectedInterests);
+  if (parentGate.applies && !parentGate.passed) {
+    return false;
+  }
 
   const identityScopeMatched = selectedIdentityInterests.some((interestId) =>
     computePersonalInterestBoost(article, interestId).score >= 18
@@ -25311,6 +25341,10 @@ function articleMatchesSelectedBanknoteTechniqueBridge(article, selectedInterest
   );
 
   if (!selectedBanknoteInterests.length || !selectedSharedInterests.length) {
+    return false;
+  }
+  const parentGate = getSharedSecurityParentRefinementGate(article, selectedInterests);
+  if (parentGate.applies && !parentGate.passed) {
     return false;
   }
 
@@ -25766,8 +25800,10 @@ function getSharedSecurityBridgeDecision(article, selectedInterests = normalizeP
   const sharedSecurityTechniqueMatch = getSharedSecurityDashboardTechniqueMatch(article, selectedBridgeTechniqueInterests);
   const identitySignals = getIdentityDocumentInterestSignals(article);
   const banknoteSignals = getBanknoteInterestSignals(article);
+  const parentRefinementGate = getSharedSecurityParentRefinementGate(article, normalizedInterests);
   const directSharedSecurityTechniqueMatched = sharedSecurityTechniqueMatch.matched;
-  const sharedSecurityTechniqueMatched = directSharedSecurityTechniqueMatched;
+  const sharedSecurityTechniqueMatched = directSharedSecurityTechniqueMatched &&
+    (!parentRefinementGate.applies || parentRefinementGate.passed);
   const identityTechniqueBridgeMatched = false;
   const banknoteTechniqueBridgeMatched = false;
 
@@ -25853,6 +25889,7 @@ function getSharedSecurityBridgeDecision(article, selectedInterests = normalizeP
     scoreRescueAssessment.positiveScoreCandidate &&
     scoreRescueAssessment.baseEvidenceMatched &&
     scoreRescueAssessment.techniqueEvidenceMatched &&
+    (!parentRefinementGate.applies || parentRefinementGate.passed) &&
     !obviousSharedSecurityNoise &&
     !sharedSecurityBridgeNoiseBlocked;
   const legacyReturnFixRescued = !strictBaseDomainMatched && sharedSecurityBridgeScorePass;
