@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-88";
+const APP_BUILD = "intelligence-profile-ux-sprint-89";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4488,6 +4488,7 @@ function getPersonalDashboardLocalSaveLabel(selectedInterestCount = 0) {
 
 const PERSONAL_DASHBOARD_PARENT_INTEREST_BY_GROUP = new Map([
   ["banknote_intelligence", "banknotes"],
+  [PERSONAL_DASHBOARD_SHARED_GROUP_ID, "security_features"],
 ]);
 const IDENTITY_DOCUMENT_OBJECT_INTEREST_IDS = new Set([
   "passports",
@@ -25056,8 +25057,10 @@ function getSelectedIdentityDocumentSubinterests(selectedInterests = normalizePe
 }
 
 function getSelectedSharedSecuritySubinterests(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
-  return normalizePersonalDashboardInterests(selectedInterests)
-    .filter((interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === PERSONAL_DASHBOARD_SHARED_GROUP_ID);
+  return resolvePersonalDashboardParentChildInterests(
+    selectedInterests,
+    PERSONAL_DASHBOARD_SHARED_GROUP_ID
+  ).effectiveInterestIds;
 }
 
 function getSelectedDigitalIdentitySubinterests(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
@@ -25467,12 +25470,11 @@ const SHARED_SECURITY_MATERIAL_BRIDGE_NOISE_TERMS = [
 ];
 
 function getSelectedSharedSecurityBridgeTechniqueInterests(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
-  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
   return Array.from(new Set(
-    normalizedInterests.filter((interestId) => {
-      const groupId = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId || "";
-      return groupId === PERSONAL_DASHBOARD_SHARED_GROUP_ID;
-    })
+    resolvePersonalDashboardParentChildInterests(
+      selectedInterests,
+      PERSONAL_DASHBOARD_SHARED_GROUP_ID
+    ).effectiveInterestIds
   ));
 }
 
@@ -34946,6 +34948,7 @@ const SHARED_SECURITY_FEATURE_UMBRELLA_INTERESTS = [
   "ovd",
   "intaglio",
   "polycarbonate",
+  "polymer",
   "laminate",
   "substrate",
   "anti_counterfeit",
