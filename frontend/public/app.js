@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-91";
+const APP_BUILD = "intelligence-profile-ux-sprint-92";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -26276,6 +26276,14 @@ const SHARED_SECURITY_BACKEND_RETRIEVAL_SEARCH_TERMS = {
     "holographic security feature",
     "optically variable feature",
     "banknote security",
+    "polymer banknote",
+    "polymer banknotes",
+    "polymer substrate",
+    "security ink",
+    "security inks",
+    "optically variable ink",
+    "micro optics",
+    "secure substrate",
     "passport security features",
     "id card security features",
     "document security features",
