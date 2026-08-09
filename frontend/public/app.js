@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-92";
+const APP_BUILD = "intelligence-profile-ux-sprint-93";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -37740,6 +37740,70 @@ function isBanknoteContaminated(article) {
   });
 }
 
+function getBanknoteConsumerNoiseGuard(article) {
+  return getCachedArticleValue(article, "banknoteConsumerNoiseGuard", () => {
+    const context = getPersonalBoostContext(article, "getBanknoteConsumerNoiseGuard", { interest: "banknotes" });
+    const sourceFingerprint = `${context.sourceText} ${context.domainText} ${context.metadataText}`;
+    const haystack = [
+      context.titleText,
+      context.tagText,
+      context.metadataText,
+      context.bodyText,
+    ].filter(Boolean).join(" ");
+    const sourceNoiseTerms = CENTRAL_BANK_PROFILE_SOURCE_NOISE_TERMS.filter((term) =>
+      textMatchesKeyword(sourceFingerprint, term)
+    );
+    const collectorSaleTerms = [
+      "collector",
+      "collectors",
+      "collection",
+      "collectible",
+      "numismatic",
+      "for sale",
+      "auction",
+      "bids",
+      "rare banknote",
+      "old banknote",
+      "old banknotes",
+      "banknote sale",
+      "banknotes sale",
+      "banknote shop",
+      "price guide",
+      "worth",
+      "value of",
+    ];
+    const collectorSaleHits = collectorSaleTerms.filter((term) => textMatchesKeyword(haystack, term));
+    const eventType = getBanknoteEventType(article);
+    const relevance = getBanknoteIntelligenceRelevance(article);
+    const isAuthoritySource = isBanknoteAuthoritySource(article);
+    const professionalEventMatched = [
+      "banknote_withdrawal",
+      "new_banknote_series",
+      "banknote_redesign",
+      "commemorative_issue",
+      "counterfeit_banknotes",
+      "central_bank_warning",
+      "polymer_migration",
+      "security_feature_update",
+      "banknote_production",
+    ].includes(eventType);
+    const sourceNoiseMatched = sourceNoiseTerms.length > 0 || isBanknoteSocialSource(article);
+    const collectorNoiseMatched = collectorSaleHits.length > 0 || eventType === "banknote_auction_noise";
+    const rejected = !isAuthoritySource && (sourceNoiseMatched || collectorNoiseMatched) && !professionalEventMatched;
+
+    return {
+      rejected,
+      rejectionReason: rejected ? "banknote_consumer_collector_or_social_noise" : "",
+      sourceNoiseTerms: Object.freeze(sourceNoiseTerms.slice(0, 10)),
+      collectorSaleTerms: Object.freeze(collectorSaleHits.slice(0, 10)),
+      eventType,
+      relevanceKept: Boolean(relevance?.kept),
+      professionalEventMatched,
+      isAuthoritySource,
+    };
+  });
+}
+
 const CENTRAL_BANK_PROFILE_SOURCE_NOISE_TERMS = [
   "auction",
   "bids.",
@@ -38677,6 +38741,12 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
   if (measurePersonalDashboardSegment("banknotesOnlySelection", () => isBanknotesOnlyPersonalSelection(selectedInterests))) {
     if (measurePersonalDashboardSegment("banknoteContamination", () => isBanknoteContaminated(article))) {
       return finishPersonalDashboardTiming(false, "banknote_contaminated");
+    }
+    const banknoteConsumerNoiseGuard = measurePersonalDashboardSegment("banknoteConsumerNoiseGuard", () =>
+      getBanknoteConsumerNoiseGuard(article)
+    );
+    if (banknoteConsumerNoiseGuard.rejected) {
+      return finishPersonalDashboardTiming(false, banknoteConsumerNoiseGuard.rejectionReason || "banknote_consumer_noise");
     }
     const centralBankProfileActive = profileBundleSelection &&
       measurePersonalDashboardSegment("centralBankProfileTemplate", () =>
