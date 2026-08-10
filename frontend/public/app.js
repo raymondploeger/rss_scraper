@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-111";
+const APP_BUILD = "intelligence-profile-ux-sprint-112";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -38198,12 +38198,52 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       "video hosting",
       "video platform",
     ];
+    const hardOffDomainNoiseTerms = [
+      "ballroom construction",
+      "court orders halt",
+      "enterprise video hosting",
+      "video hosting market",
+      "video hosting",
+      "video platform",
+    ];
+    const secureContextTerms = [
+      "security printing",
+      "security printer",
+      "secure printing",
+      "banknote printing",
+      "banknote",
+      "banknotes",
+      "currency note",
+      "central bank",
+      "passport",
+      "id card",
+      "identity card",
+      "identity document",
+      "secure document",
+      "document security",
+      "security ink",
+      "security inks",
+      "hologram",
+      "holographic",
+      "micro optics",
+      "optically variable",
+      "dovid",
+      "intaglio",
+      "polycarbonate",
+      "polymer banknote",
+      "security laminate",
+      "anti-counterfeit",
+      "counterfeit prevention",
+    ];
     const matchedProfessionalTerms = professionalTerms.filter((term) => textMatchesKeyword(haystack, term));
     const matchedNoiseTerms = noiseTerms.filter((term) => textMatchesKeyword(haystack, term));
+    const matchedHardOffDomainNoiseTerms = hardOffDomainNoiseTerms.filter((term) => textMatchesKeyword(haystack, term));
+    const matchedSecureContextTerms = secureContextTerms.filter((term) => textMatchesKeyword(haystack, term));
     const sourceNoiseTerms = CENTRAL_BANK_PROFILE_SOURCE_NOISE_TERMS.filter((term) =>
       textMatchesKeyword(`${context.sourceText} ${context.domainText} ${context.metadataText}`, term)
     );
     const passed = matchedProfessionalTerms.length > 0
+      && !(matchedHardOffDomainNoiseTerms.length > 0 && matchedSecureContextTerms.length === 0)
       && !(matchedNoiseTerms.length > 0 && matchedProfessionalTerms.length < 2)
       && !(sourceNoiseTerms.length > 0 && matchedProfessionalTerms.length < 2);
 
@@ -38211,8 +38251,9 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       applies: true,
       passed,
       rejectionReason: passed ? "" : "security_printer_profile_guard_rejected",
-      noiseTerms: Object.freeze([...matchedNoiseTerms, ...sourceNoiseTerms].slice(0, 10)),
+      noiseTerms: Object.freeze([...matchedNoiseTerms, ...matchedHardOffDomainNoiseTerms, ...sourceNoiseTerms].slice(0, 10)),
       professionalTerms: Object.freeze(matchedProfessionalTerms.slice(0, 10)),
+      secureContextTerms: Object.freeze(matchedSecureContextTerms.slice(0, 10)),
     };
   });
 }
