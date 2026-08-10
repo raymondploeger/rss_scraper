@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-110";
+const APP_BUILD = "intelligence-profile-ux-sprint-111";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -38191,6 +38191,12 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       "router security",
       "home security",
       "car security",
+      "ballroom construction",
+      "court orders halt",
+      "enterprise video hosting",
+      "video hosting market",
+      "video hosting",
+      "video platform",
     ];
     const matchedProfessionalTerms = professionalTerms.filter((term) => textMatchesKeyword(haystack, term));
     const matchedNoiseTerms = noiseTerms.filter((term) => textMatchesKeyword(haystack, term));
@@ -52150,6 +52156,7 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
     const biometricsGuardBooleanAssessment = getBiometricsProfessionalGuardBooleanGateAssessment(article);
     const eidGuardBooleanAssessment = getEidProfessionalGuardBooleanGateAssessment(article);
     const authenticationGuardBooleanAssessment = getAuthenticationProfessionalGuardBooleanGateAssessment(article);
+    const securityPrinterGuardAssessment = getSecurityPrinterProfileProfessionalGuard(article);
     if (diagnostics?.enabled && digitalIdentityGuardBooleanAssessment) {
       if (!diagnostics.digitalIdentityGuardBooleanApplied) {
         diagnostics.digitalIdentityGuardBooleanApplied = {
@@ -52272,6 +52279,32 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
         }
       }
     }
+    if (diagnostics?.enabled && securityPrinterGuardAssessment?.applies) {
+      if (!diagnostics.securityPrinterProfessionalGuard) {
+        diagnostics.securityPrinterProfessionalGuard = {
+          enabled: true,
+          evaluated: 0,
+          passed: 0,
+          rejected: 0,
+          rejectionReasons: {},
+          rejectedExampleTitles: [],
+        };
+      }
+      diagnostics.securityPrinterProfessionalGuard.evaluated += 1;
+      if (securityPrinterGuardAssessment.passed) {
+        diagnostics.securityPrinterProfessionalGuard.passed += 1;
+      } else {
+        diagnostics.securityPrinterProfessionalGuard.rejected += 1;
+        const rejectionReason = securityPrinterGuardAssessment.rejectionReason || "unknown";
+        diagnostics.securityPrinterProfessionalGuard.rejectionReasons[rejectionReason] =
+          (diagnostics.securityPrinterProfessionalGuard.rejectionReasons[rejectionReason] || 0) + 1;
+        if (diagnostics.securityPrinterProfessionalGuard.rejectedExampleTitles.length < 25) {
+          diagnostics.securityPrinterProfessionalGuard.rejectedExampleTitles.push(
+            article?.title || "Untitled article"
+          );
+        }
+      }
+    }
     const legacyDashboardPassed = articleMatchesPersonalDashboardSelection(article);
     const booleanGuardAssessments = [
       digitalIdentityGuardBooleanAssessment
@@ -52314,6 +52347,16 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
             reason: "authentication_professional_guard_rejected",
           }
         : null,
+      securityPrinterGuardAssessment?.applies
+        ? {
+            type: "security_printer",
+            assessment: securityPrinterGuardAssessment,
+            passed: securityPrinterGuardAssessment.passed,
+            category: "security_printer_professional_guard",
+            rejectedCategory: "securityPrinterProfessionalGuard",
+            reason: "security_printer_profile_guard_rejected",
+          }
+        : null,
     ].filter(Boolean);
     const multiDigitalIdentityProfileSelection = isMultiDigitalIdentityProfileSelection();
     const booleanGuardPassed = multiDigitalIdentityProfileSelection && booleanGuardAssessments.length > 1
@@ -52321,7 +52364,8 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
       : (
         (!digitalIdentityGuardBooleanAssessment || digitalIdentityGuardBooleanAssessment.passed) &&
         (!eidGuardBooleanAssessment || eidGuardBooleanAssessment.passed) &&
-        (!authenticationGuardBooleanAssessment || authenticationGuardBooleanAssessment.passed)
+        (!authenticationGuardBooleanAssessment || authenticationGuardBooleanAssessment.passed) &&
+        (!securityPrinterGuardAssessment?.applies || securityPrinterGuardAssessment.passed)
       );
     const dashboardPassed = legacyDashboardPassed && booleanGuardPassed;
     const professionalGuardDecisionSource = multiDigitalIdentityProfileSelection && booleanGuardAssessments.length > 1
@@ -52334,6 +52378,8 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
         ? "legacy-pass-fail+authentication-professional-guard"
       : biometricsGuardBooleanAssessment
         ? "legacy-pass-fail+biometrics-professional-guard"
+      : securityPrinterGuardAssessment?.applies
+        ? "legacy-pass-fail+security-printer-professional-guard"
       : null;
     const sharedSecurityBridgeDiagnostics = diagnostics?.enabled
       ? getSharedSecurityBridgeDecision(article)
@@ -52367,6 +52413,7 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
           biometricsProfessionalGuard: biometricsGuardBooleanAssessment,
           eidProfessionalGuard: eidGuardBooleanAssessment,
           authenticationProfessionalGuard: authenticationGuardBooleanAssessment,
+          securityPrinterProfessionalGuard: securityPrinterGuardAssessment,
         },
       });
       outputArticles.push(article);
@@ -52378,6 +52425,7 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
     const digitalIdentityGuardRejected = rejectedBooleanGuard?.type === "digital_identity";
     const eidGuardRejected = rejectedBooleanGuard?.type === "eid";
     const authenticationGuardRejected = rejectedBooleanGuard?.type === "authentication";
+    const securityPrinterGuardRejected = rejectedBooleanGuard?.type === "security_printer";
     const rejection = rejectedBooleanGuard
       ? {
           category: rejectedBooleanGuard.category,
@@ -52412,6 +52460,7 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
         biometricsProfessionalGuard: biometricsGuardBooleanAssessment,
         eidProfessionalGuard: eidGuardBooleanAssessment,
         authenticationProfessionalGuard: authenticationGuardBooleanAssessment,
+        securityPrinterProfessionalGuard: securityPrinterGuardAssessment,
         category: rejection.category,
         rejectedStage: "personal_dashboard",
         rejectedCategory: digitalIdentityGuardRejected
@@ -52420,6 +52469,8 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
             ? "eidProfessionalGuard"
           : authenticationGuardRejected
             ? "authenticationProfessionalGuard"
+          : securityPrinterGuardRejected
+            ? "securityPrinterProfessionalGuard"
           : rejectedBooleanGuard?.rejectedCategory || rejection.category,
         finalReason: rejection.reason,
       },
