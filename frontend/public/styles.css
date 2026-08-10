@@ -524,6 +524,10 @@ img {
   gap: 5px;
 }
 
+.personal-dashboard-summary-row[hidden] {
+  display: none;
+}
+
 .personal-dashboard-summary-row.is-interests {
   gap: 4px;
 }

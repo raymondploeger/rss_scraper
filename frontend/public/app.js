@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-109";
+const APP_BUILD = "intelligence-profile-ux-sprint-110";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -24876,7 +24876,7 @@ function renderPersonalDashboard() {
         ? "Unsaved custom profile"
         : domainSummary;
       const localSaveLabel = getPersonalDashboardLocalSaveLabel(selectedInterestCount);
-      const strictnessMarkup = renderIdentityDocumentAuthorityStrictnessControl(profileDisplay);
+      const strictnessMarkup = summaryCollapsed ? "" : renderIdentityDocumentAuthorityStrictnessControl(profileDisplay);
       const interestMarkup = summaryItems.visibleInterestItems
         .map((item) => `
           <span class="personal-dashboard-summary-chip is-interest">
