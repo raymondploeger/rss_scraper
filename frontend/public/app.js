@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-108";
+const APP_BUILD = "intelligence-profile-ux-sprint-109";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -42681,7 +42681,7 @@ function renderSummary() {
     if (item.key === "articlesToday") {
       const profileTodayAvailable = Boolean(profileTodaySummary?.available);
       const profileTodayCount = Number(profileTodaySummary?.todayCount) || 0;
-      const todayCardClickable = false;
+      const todayCardClickable = Boolean(hasProfile && profileTodayAvailable && profileTodayCount > 0);
       if (todayCardClickable) {
         summaryCard.classList.add("is-clickable");
         summaryCard.classList.toggle("is-active", todayFilterActive);
@@ -42694,6 +42694,13 @@ function renderSummary() {
       } else {
         summaryCard.classList.add("is-disabled");
         summaryCard.setAttribute("aria-disabled", "true");
+        summaryCard.dataset.disabledReason = hasProfile
+          ? (
+              profileTodayAvailable
+                ? (profileTodayCount ? "" : " · no articles today")
+                : " · loading feed"
+            )
+          : " · choose a profile first";
         summaryCard.setAttribute(
           "title",
           hasProfile
@@ -42719,8 +42726,11 @@ function renderSummary() {
 
 function applyTodayArticleFilter() {
   if (hasPersonalDashboardSelections()) {
-    renderSummary();
-    return;
+    const profileTodaySummary = getProfileTodaySummary();
+    if (!profileTodaySummary.available || !profileTodaySummary.todayCount) {
+      renderSummary();
+      return;
+    }
   }
   const today = toDateInputValue(new Date());
   const nextDate = state.filters.date === today ? "" : today;

@@ -1015,7 +1015,7 @@ h3 {
 }
 
 .summary-card.is-disabled .summary-label::after {
-  content: " · choose a profile first";
+  content: attr(data-disabled-reason);
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 500;
