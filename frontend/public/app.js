@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-112";
+const APP_BUILD = "intelligence-profile-ux-sprint-113";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -39176,6 +39176,13 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
           ...getSharedSecurityStandaloneAssessment(article, interestId),
         })),
       });
+    }
+
+    const securityPrinterProfileAssessment = measurePersonalDashboardSegment("securityPrinterProfileProfessionalGuard", () =>
+      getSecurityPrinterProfileProfessionalGuard(article, selectedInterests)
+    );
+    if (matched && securityPrinterProfileAssessment.applies && !securityPrinterProfileAssessment.passed) {
+      return finishPersonalDashboardTiming(false, securityPrinterProfileAssessment.rejectionReason || "security_printer_profile_guard_rejected");
     }
 
     return finishPersonalDashboardTiming(matched, matched ? "shared_security_only_passed" : "shared_security_only_rejected");
