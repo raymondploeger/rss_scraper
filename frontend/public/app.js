@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-106";
+const APP_BUILD = "intelligence-profile-ux-sprint-107";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -5437,6 +5437,7 @@ const runtime = {
     signature: "",
     available: false,
     todayCount: 0,
+    todayArticleIds: [],
     totalCount: 0,
   },
 };
@@ -40744,6 +40745,7 @@ function invalidateProfileTodaySummary() {
     signature: "",
     available: false,
     todayCount: 0,
+    todayArticleIds: [],
     totalCount: 0,
   };
 }
@@ -40765,8 +40767,24 @@ function updateProfileTodaySummaryFromArticles(articles = [], rawArticles = null
     signature: getTodayInFeedSummarySignature(),
     available: true,
     todayCount: todayArticles.length,
+    todayArticleIds: todayArticles.map((article) => article.id).filter(Boolean),
     totalCount: visibleArticles.length,
   };
+}
+
+function sameArticleIdList(left = [], right = []) {
+  const normalizedLeft = Array.from(new Set((Array.isArray(left) ? left : []).filter(Boolean))).sort();
+  const normalizedRight = Array.from(new Set((Array.isArray(right) ? right : []).filter(Boolean))).sort();
+  return normalizedLeft.length === normalizedRight.length &&
+    normalizedLeft.every((articleId, index) => articleId === normalizedRight[index]);
+}
+
+function isProfileTodayArticleFilterActive(profileTodaySummary = getProfileTodaySummary()) {
+  return Boolean(
+    profileTodaySummary?.available &&
+      profileTodaySummary.todayArticleIds?.length &&
+      sameArticleIdList(state.filters.articleIds, profileTodaySummary.todayArticleIds)
+  );
 }
 
 function getProfileTodaySummary() {
@@ -40775,6 +40793,7 @@ function getProfileTodaySummary() {
     return {
       available: false,
       todayCount: 0,
+      todayArticleIds: [],
       totalCount: 0,
     };
   }
@@ -42643,9 +42662,11 @@ function renderSummary() {
   const metrics = getSummaryMetrics();
   elements.summaryGrid.innerHTML = "";
   const fragment = document.createDocumentFragment();
-  const todayFilterActive = state.filters.date === toDateInputValue(new Date());
   const hasProfile = hasPersonalDashboardSelections();
   const profileTodaySummary = hasProfile ? getProfileTodaySummary() : null;
+  const todayFilterActive =
+    state.filters.date === toDateInputValue(new Date()) ||
+    (hasProfile && isProfileTodayArticleFilterActive(profileTodaySummary));
 
   SUMMARY_METRICS.forEach((item) => {
     const card = elements.summaryCardTemplate.content.cloneNode(true);
@@ -42700,6 +42721,18 @@ function applyTodayArticleFilter() {
       renderSummary();
       return;
     }
+    if (isProfileTodayArticleFilterActive(profileTodaySummary)) {
+      clearExactArticleFilter();
+    } else {
+      state.filters.articleIds = Array.from(new Set(profileTodaySummary.todayArticleIds || []));
+      state.filters.alertLabel = "Today in your feed";
+      saveExactArticleFilter(state.filters.articleIds, state.filters.alertLabel);
+    }
+    state.filters.date = "";
+    elements.dateFilter.value = "";
+    renderSummary();
+    scheduleRenderArticles("profile-today-filter");
+    return;
   }
   const today = toDateInputValue(new Date());
   const nextDate = state.filters.date === today ? "" : today;
