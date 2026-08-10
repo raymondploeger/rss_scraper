@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-104";
+const APP_BUILD = "intelligence-profile-ux-sprint-105";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -5433,6 +5433,12 @@ const runtime = {
   sidebarHovered: false,
   lastSnapshotSignature: "",
   pendingSnapshot: null,
+  latestProfileTodaySummary: {
+    signature: "",
+    available: false,
+    todayCount: 0,
+    totalCount: 0,
+  },
 };
 
 const elements = {
@@ -25040,6 +25046,7 @@ function setPersonalDashboardInterest(interestId, enabled) {
   ensurePaginationState();
   state.pagination.page = 1;
   savePersonalDashboardPreferences();
+  invalidateProfileTodaySummary();
   renderPersonalDashboard();
   renderSummary();
   clearFeedRenderCaches({ preserveBackendArticleQueryCache: true });
@@ -25061,6 +25068,7 @@ function applyPersonalDashboardTemplate(templateId) {
   ensurePaginationState();
   state.pagination.page = 1;
   savePersonalDashboardPreferences();
+  invalidateProfileTodaySummary();
   renderPersonalDashboard();
   renderSummary();
   clearFeedRenderCaches({ preserveBackendArticleQueryCache: true });
@@ -25083,6 +25091,7 @@ function applyPersonalDashboardCustomProfile(profileId) {
   ensurePaginationState();
   state.pagination.page = 1;
   savePersonalDashboardPreferences();
+  invalidateProfileTodaySummary();
   renderPersonalDashboard();
   renderSummary();
   clearFeedRenderCaches({ preserveBackendArticleQueryCache: true });
@@ -25098,6 +25107,7 @@ function setIdentityDocumentAuthorityStrictness(strictness) {
   ensurePaginationState();
   state.pagination.page = 1;
   savePersonalDashboardPreferences();
+  invalidateProfileTodaySummary();
   renderPersonalDashboard();
   clearFeedRenderCaches({ preserveBackendArticleQueryCache: true });
   scheduleRenderArticles("identity-document-authority-strictness", { mode: "frame" });
@@ -40712,6 +40722,61 @@ function getSummaryMetrics() {
   };
 }
 
+function getTodayInFeedSummarySignature() {
+  return JSON.stringify({
+    search: state.filters.search || "",
+    topic: state.filters.topic || "",
+    tag: state.filters.tag || "",
+    signalCategory: state.filters.signalCategory || "",
+    feedId: state.filters.feedId || "",
+    sourceGroup: state.filters.sourceGroup || "all",
+    dashboardMode: state.dashboardMode || "normal",
+    includeKeywords: Array.isArray(state.keywordFilters?.include) ? state.keywordFilters.include.slice().sort() : [],
+    excludeKeywords: Array.isArray(state.keywordFilters?.exclude) ? state.keywordFilters.exclude.slice().sort() : [],
+    personalDashboardInterests: normalizePersonalDashboardInterests(state.personalDashboard?.interests),
+    personalDashboardMode: normalizePersonalDashboardMode(state.personalDashboard?.mode),
+    identityDocumentAuthorityStrictness: getIdentityDocumentAuthorityStrictness(),
+  });
+}
+
+function invalidateProfileTodaySummary() {
+  runtime.latestProfileTodaySummary = {
+    signature: "",
+    available: false,
+    todayCount: 0,
+    totalCount: 0,
+  };
+}
+
+function updateProfileTodaySummaryFromArticles(articles = []) {
+  if (!hasPersonalDashboardSelections()) {
+    invalidateProfileTodaySummary();
+    return;
+  }
+
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const visibleArticles = Array.isArray(articles) ? articles : [];
+  runtime.latestProfileTodaySummary = {
+    signature: getTodayInFeedSummarySignature(),
+    available: true,
+    todayCount: visibleArticles.filter((article) => toDate(article.pubDate) >= startOfToday).length,
+    totalCount: visibleArticles.length,
+  };
+}
+
+function getProfileTodaySummary() {
+  const summary = runtime.latestProfileTodaySummary || {};
+  if (!summary.available || summary.signature !== getTodayInFeedSummarySignature()) {
+    return {
+      available: false,
+      todayCount: 0,
+      totalCount: 0,
+    };
+  }
+  return summary;
+}
+
 function getFeedArticleCounts(articles) {
   return articles.reduce((counts, article) => {
     const feedId = article.feedId || "";
@@ -42576,6 +42641,7 @@ function renderSummary() {
   const fragment = document.createDocumentFragment();
   const todayFilterActive = state.filters.date === toDateInputValue(new Date());
   const hasProfile = hasPersonalDashboardSelections();
+  const profileTodaySummary = hasProfile ? getProfileTodaySummary() : null;
 
   SUMMARY_METRICS.forEach((item) => {
     const card = elements.summaryCardTemplate.content.cloneNode(true);
@@ -42583,10 +42649,16 @@ function renderSummary() {
     card.querySelector(".summary-label").textContent = item.key === "articlesToday" && hasProfile
       ? "Today in your feed"
       : item.label;
-    card.querySelector(".summary-value").textContent = String(metrics[item.key]);
+    const summaryValue =
+      item.key === "articlesToday" && hasProfile
+        ? (profileTodaySummary?.available ? profileTodaySummary.todayCount : 0)
+        : metrics[item.key];
+    card.querySelector(".summary-value").textContent = String(summaryValue);
 
     if (item.key === "articlesToday") {
-      if (hasProfile) {
+      const profileTodayAvailable = Boolean(profileTodaySummary?.available);
+      const profileTodayCount = Number(profileTodaySummary?.todayCount) || 0;
+      if (hasProfile && profileTodayAvailable && profileTodayCount > 0) {
         summaryCard.classList.add("is-clickable");
         summaryCard.classList.toggle("is-active", todayFilterActive);
         summaryCard.dataset.action = "filter-today";
@@ -42598,7 +42670,12 @@ function renderSummary() {
       } else {
         summaryCard.classList.add("is-disabled");
         summaryCard.setAttribute("aria-disabled", "true");
-        summaryCard.setAttribute("title", "Choose a profile first");
+        summaryCard.setAttribute(
+          "title",
+          hasProfile
+            ? (profileTodayAvailable ? "No articles today in your current intelligence feed" : "Loading your current intelligence feed")
+            : "Choose a profile first"
+        );
       }
     }
 
@@ -42613,6 +42690,13 @@ function renderSummary() {
 }
 
 function applyTodayArticleFilter() {
+  if (hasPersonalDashboardSelections()) {
+    const profileTodaySummary = getProfileTodaySummary();
+    if (!profileTodaySummary.available || !profileTodaySummary.todayCount) {
+      renderSummary();
+      return;
+    }
+  }
   const today = toDateInputValue(new Date());
   const nextDate = state.filters.date === today ? "" : today;
   clearExactArticleFilter();
@@ -54565,6 +54649,10 @@ function renderArticles() {
 
     syncFilterUx();
     updateArticleFilterContext(articles);
+    if (hasPersonalDashboardSelections()) {
+      updateProfileTodaySummaryFromArticles(articles);
+      renderSummary();
+    }
     const articlePagination = pipelineResult.paginationResult;
     const renderModel = pipelineResult.renderModel;
     const renderDispatch = pipelineResult.renderDispatch;
@@ -55489,6 +55577,7 @@ function bindEvents() {
   if (elements.personalDashboardClear) {
     elements.personalDashboardClear.addEventListener("click", () => {
       clearPersonalDashboardPreferences();
+      invalidateProfileTodaySummary();
       renderPersonalDashboard();
       renderSummary();
       clearFeedRenderCaches();
