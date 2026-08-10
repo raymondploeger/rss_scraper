@@ -1009,6 +1009,19 @@ h3 {
   padding: 20px;
 }
 
+.summary-card.is-disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+
+.summary-card.is-disabled .summary-label::after {
+  content: " · choose a profile first";
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+  text-transform: none;
+}
+
 .analytics-card {
   display: grid;
   grid-column: 1 / -1;

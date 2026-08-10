@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-102";
+const APP_BUILD = "intelligence-profile-ux-sprint-103";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -42572,21 +42572,31 @@ function renderSummary() {
   elements.summaryGrid.innerHTML = "";
   const fragment = document.createDocumentFragment();
   const todayFilterActive = state.filters.date === toDateInputValue(new Date());
+  const hasProfile = hasPersonalDashboardSelections();
 
   SUMMARY_METRICS.forEach((item) => {
     const card = elements.summaryCardTemplate.content.cloneNode(true);
     const summaryCard = card.querySelector(".summary-card");
-    card.querySelector(".summary-label").textContent = item.label;
+    card.querySelector(".summary-label").textContent = item.key === "articlesToday" && hasProfile
+      ? "Today in your feed"
+      : item.label;
     card.querySelector(".summary-value").textContent = String(metrics[item.key]);
 
     if (item.key === "articlesToday") {
-      summaryCard.classList.add("is-clickable");
-      summaryCard.classList.toggle("is-active", todayFilterActive);
-      summaryCard.dataset.action = "filter-today";
-      summaryCard.setAttribute("role", "button");
-      summaryCard.setAttribute("tabindex", "0");
-      summaryCard.setAttribute("aria-pressed", String(todayFilterActive));
-      summaryCard.setAttribute("aria-label", "Show today's articles");
+      if (hasProfile) {
+        summaryCard.classList.add("is-clickable");
+        summaryCard.classList.toggle("is-active", todayFilterActive);
+        summaryCard.dataset.action = "filter-today";
+        summaryCard.setAttribute("role", "button");
+        summaryCard.setAttribute("tabindex", "0");
+        summaryCard.setAttribute("aria-pressed", String(todayFilterActive));
+        summaryCard.setAttribute("aria-label", "Show today's articles in your feed");
+        summaryCard.setAttribute("title", "Show today's articles in your current intelligence feed");
+      } else {
+        summaryCard.classList.add("is-disabled");
+        summaryCard.setAttribute("aria-disabled", "true");
+        summaryCard.setAttribute("title", "Choose a profile first");
+      }
     }
 
     fragment.appendChild(card);
