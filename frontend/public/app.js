@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-107";
+const APP_BUILD = "intelligence-profile-ux-sprint-108";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -42664,9 +42664,7 @@ function renderSummary() {
   const fragment = document.createDocumentFragment();
   const hasProfile = hasPersonalDashboardSelections();
   const profileTodaySummary = hasProfile ? getProfileTodaySummary() : null;
-  const todayFilterActive =
-    state.filters.date === toDateInputValue(new Date()) ||
-    (hasProfile && isProfileTodayArticleFilterActive(profileTodaySummary));
+  const todayFilterActive = state.filters.date === toDateInputValue(new Date());
 
   SUMMARY_METRICS.forEach((item) => {
     const card = elements.summaryCardTemplate.content.cloneNode(true);
@@ -42683,7 +42681,8 @@ function renderSummary() {
     if (item.key === "articlesToday") {
       const profileTodayAvailable = Boolean(profileTodaySummary?.available);
       const profileTodayCount = Number(profileTodaySummary?.todayCount) || 0;
-      if (hasProfile && profileTodayAvailable && profileTodayCount > 0) {
+      const todayCardClickable = false;
+      if (todayCardClickable) {
         summaryCard.classList.add("is-clickable");
         summaryCard.classList.toggle("is-active", todayFilterActive);
         summaryCard.dataset.action = "filter-today";
@@ -42691,14 +42690,18 @@ function renderSummary() {
         summaryCard.setAttribute("tabindex", "0");
         summaryCard.setAttribute("aria-pressed", String(todayFilterActive));
         summaryCard.setAttribute("aria-label", "Show today's articles in your feed");
-        summaryCard.setAttribute("title", "Show today's articles in your current intelligence feed");
+        summaryCard.setAttribute("title", "Show today's articles");
       } else {
         summaryCard.classList.add("is-disabled");
         summaryCard.setAttribute("aria-disabled", "true");
         summaryCard.setAttribute(
           "title",
           hasProfile
-            ? (profileTodayAvailable ? "No articles today in your current intelligence feed" : "Loading your current intelligence feed")
+            ? (
+                profileTodayAvailable
+                  ? (profileTodayCount ? "Today count for your current intelligence feed" : "No articles today in your current intelligence feed")
+                  : "Loading your current intelligence feed"
+              )
             : "Choose a profile first"
         );
       }
@@ -42716,22 +42719,7 @@ function renderSummary() {
 
 function applyTodayArticleFilter() {
   if (hasPersonalDashboardSelections()) {
-    const profileTodaySummary = getProfileTodaySummary();
-    if (!profileTodaySummary.available || !profileTodaySummary.todayCount) {
-      renderSummary();
-      return;
-    }
-    if (isProfileTodayArticleFilterActive(profileTodaySummary)) {
-      clearExactArticleFilter();
-    } else {
-      state.filters.articleIds = Array.from(new Set(profileTodaySummary.todayArticleIds || []));
-      state.filters.alertLabel = "Today in your feed";
-      saveExactArticleFilter(state.filters.articleIds, state.filters.alertLabel);
-    }
-    state.filters.date = "";
-    elements.dateFilter.value = "";
     renderSummary();
-    scheduleRenderArticles("profile-today-filter");
     return;
   }
   const today = toDateInputValue(new Date());
