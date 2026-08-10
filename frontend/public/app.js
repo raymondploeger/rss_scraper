@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-103";
+const APP_BUILD = "intelligence-profile-ux-sprint-104";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -25041,6 +25041,7 @@ function setPersonalDashboardInterest(interestId, enabled) {
   state.pagination.page = 1;
   savePersonalDashboardPreferences();
   renderPersonalDashboard();
+  renderSummary();
   clearFeedRenderCaches({ preserveBackendArticleQueryCache: true });
   scheduleRenderArticles("personal-dashboard-boost", { mode: "frame" });
 }
@@ -25061,6 +25062,7 @@ function applyPersonalDashboardTemplate(templateId) {
   state.pagination.page = 1;
   savePersonalDashboardPreferences();
   renderPersonalDashboard();
+  renderSummary();
   clearFeedRenderCaches({ preserveBackendArticleQueryCache: true });
   scheduleRenderArticles("personal-dashboard-template", { mode: "frame" });
 }
@@ -25082,6 +25084,7 @@ function applyPersonalDashboardCustomProfile(profileId) {
   state.pagination.page = 1;
   savePersonalDashboardPreferences();
   renderPersonalDashboard();
+  renderSummary();
   clearFeedRenderCaches({ preserveBackendArticleQueryCache: true });
   scheduleRenderArticles("personal-dashboard-custom-profile", { mode: "frame" });
 }
@@ -55487,6 +55490,7 @@ function bindEvents() {
     elements.personalDashboardClear.addEventListener("click", () => {
       clearPersonalDashboardPreferences();
       renderPersonalDashboard();
+      renderSummary();
       clearFeedRenderCaches();
       scheduleRenderArticles("personal-dashboard-clear", { mode: "frame" });
     });
