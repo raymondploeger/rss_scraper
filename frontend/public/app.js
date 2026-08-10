@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-114";
+const APP_BUILD = "intelligence-profile-ux-sprint-115";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -38305,11 +38305,17 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       "eoi",
     ];
     const semiNoiseTerms = [
+      "youtube",
       "instagram.com",
       "facebook.com",
       "x.com",
       "upsc",
       "ias",
+      "clearias",
+      "drishti",
+      "race ias",
+      "akka ias",
+      "understand upsc",
       "exam",
       "yearbook",
       "baike.baidu",
@@ -38321,6 +38327,49 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       "armchairs",
       "second life",
     ];
+    const educationalNoiseTerms = [
+      "upsc",
+      "ias",
+      "clearias",
+      "drishti",
+      "race ias",
+      "akka ias",
+      "understand upsc",
+      "exam",
+      "yearbook",
+    ];
+    const lowTrustSourceNoiseTerms = [
+      "youtube",
+      "instagram.com",
+      "facebook.com",
+      "x.com",
+      "baike.baidu",
+      "radio",
+      "planetbanknote",
+      "numismatics",
+      "collections.blogspot",
+    ];
+    const explicitSecurityPrintingTechnologyTerms = [
+      "security printing",
+      "security printer",
+      "secure printing",
+      "banknote printing",
+      "currency printing",
+      "security ink",
+      "security inks",
+      "security thread",
+      "security threads",
+      "intaglio",
+      "hologram",
+      "holographic",
+      "dovid",
+      "optically variable",
+      "micro optics",
+      "polycarbonate",
+      "security laminate",
+      "anti-counterfeit",
+      "counterfeit prevention",
+    ];
     const matchedProfessionalTerms = professionalTerms.filter((term) => textMatchesKeyword(haystack, term));
     const matchedNoiseTerms = noiseTerms.filter((term) => textMatchesKeyword(haystack, term));
     const matchedHardOffDomainNoiseTerms = hardOffDomainNoiseTerms.filter((term) => textMatchesKeyword(haystack, term));
@@ -38328,12 +38377,19 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
     const matchedStrongProfessionalContextTerms = strongProfessionalContextTerms.filter((term) => textMatchesKeyword(haystack, term));
     const matchedPrintingTechnologyContextTerms = printingTechnologyContextTerms.filter((term) => textMatchesKeyword(haystack, term));
     const matchedSemiNoiseTerms = semiNoiseTerms.filter((term) => textMatchesKeyword(haystack, term));
+    const matchedEducationalNoiseTerms = educationalNoiseTerms.filter((term) => textMatchesKeyword(haystack, term));
+    const matchedLowTrustSourceNoiseTerms = lowTrustSourceNoiseTerms.filter((term) => textMatchesKeyword(haystack, term));
+    const matchedExplicitSecurityPrintingTechnologyTerms = explicitSecurityPrintingTechnologyTerms.filter((term) =>
+      textMatchesKeyword(haystack, term)
+    );
     const sourceNoiseTerms = CENTRAL_BANK_PROFILE_SOURCE_NOISE_TERMS.filter((term) =>
       textMatchesKeyword(`${context.sourceText} ${context.domainText} ${context.metadataText}`, term)
     );
     const passed = matchedProfessionalTerms.length > 0
       && !(matchedHardOffDomainNoiseTerms.length > 0 && matchedSecureContextTerms.length === 0)
       && !(matchedSemiNoiseTerms.length > 0 && matchedPrintingTechnologyContextTerms.length === 0)
+      && !(matchedEducationalNoiseTerms.length > 0 && matchedExplicitSecurityPrintingTechnologyTerms.length === 0)
+      && !(matchedLowTrustSourceNoiseTerms.length > 0 && matchedExplicitSecurityPrintingTechnologyTerms.length === 0)
       && !(matchedNoiseTerms.length > 0 && matchedProfessionalTerms.length < 2)
       && !(sourceNoiseTerms.length > 0 && matchedProfessionalTerms.length < 2);
 
@@ -38341,11 +38397,19 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       applies: true,
       passed,
       rejectionReason: passed ? "" : "security_printer_profile_guard_rejected",
-      noiseTerms: Object.freeze([...matchedNoiseTerms, ...matchedHardOffDomainNoiseTerms, ...matchedSemiNoiseTerms, ...sourceNoiseTerms].slice(0, 10)),
+      noiseTerms: Object.freeze([
+        ...matchedNoiseTerms,
+        ...matchedHardOffDomainNoiseTerms,
+        ...matchedSemiNoiseTerms,
+        ...matchedEducationalNoiseTerms,
+        ...matchedLowTrustSourceNoiseTerms,
+        ...sourceNoiseTerms,
+      ].slice(0, 10)),
       professionalTerms: Object.freeze(matchedProfessionalTerms.slice(0, 10)),
       secureContextTerms: Object.freeze(matchedSecureContextTerms.slice(0, 10)),
       strongProfessionalContextTerms: Object.freeze(matchedStrongProfessionalContextTerms.slice(0, 10)),
       printingTechnologyContextTerms: Object.freeze(matchedPrintingTechnologyContextTerms.slice(0, 10)),
+      explicitSecurityPrintingTechnologyTerms: Object.freeze(matchedExplicitSecurityPrintingTechnologyTerms.slice(0, 10)),
     };
   });
 }
