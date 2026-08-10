@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-105";
+const APP_BUILD = "intelligence-profile-ux-sprint-106";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -40748,7 +40748,7 @@ function invalidateProfileTodaySummary() {
   };
 }
 
-function updateProfileTodaySummaryFromArticles(articles = []) {
+function updateProfileTodaySummaryFromArticles(articles = [], rawArticles = null) {
   if (!hasPersonalDashboardSelections()) {
     invalidateProfileTodaySummary();
     return;
@@ -40756,10 +40756,15 @@ function updateProfileTodaySummaryFromArticles(articles = []) {
 
   const today = toDateInputValue(new Date());
   const visibleArticles = Array.isArray(articles) ? articles : [];
+  const todayArticles = Array.isArray(rawArticles)
+    ? prepareDateFirstGroupedArticles(
+        rawArticles.filter((article) => toDateInputValue(article.pubDate) === today)
+      )
+    : visibleArticles.filter((article) => toDateInputValue(article.pubDate) === today);
   runtime.latestProfileTodaySummary = {
     signature: getTodayInFeedSummarySignature(),
     available: true,
-    todayCount: visibleArticles.filter((article) => toDateInputValue(article.pubDate) === today).length,
+    todayCount: todayArticles.length,
     totalCount: visibleArticles.length,
   };
 }
@@ -54649,7 +54654,7 @@ function renderArticles() {
     syncFilterUx();
     updateArticleFilterContext(articles);
     if (hasPersonalDashboardSelections()) {
-      updateProfileTodaySummaryFromArticles(articles);
+      updateProfileTodaySummaryFromArticles(articles, filteredRawArticles);
       renderSummary();
     }
     const articlePagination = pipelineResult.paginationResult;
