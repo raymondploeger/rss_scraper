@@ -40754,13 +40754,12 @@ function updateProfileTodaySummaryFromArticles(articles = []) {
     return;
   }
 
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
+  const today = toDateInputValue(new Date());
   const visibleArticles = Array.isArray(articles) ? articles : [];
   runtime.latestProfileTodaySummary = {
     signature: getTodayInFeedSummarySignature(),
     available: true,
-    todayCount: visibleArticles.filter((article) => toDate(article.pubDate) >= startOfToday).length,
+    todayCount: visibleArticles.filter((article) => toDateInputValue(article.pubDate) === today).length,
     totalCount: visibleArticles.length,
   };
 }
