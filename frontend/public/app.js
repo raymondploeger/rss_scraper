@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-116";
+const APP_BUILD = "intelligence-profile-ux-sprint-117";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -33859,12 +33859,83 @@ function getIdentityVerificationProfessionalGuardAssessmentUncached(article, opt
   const semanticProfessionalGatePassed = Boolean(sharedEvidence.verificationFlowMatched) &&
     (Boolean(semanticGate.semanticGatePassed) || identityVerificationProfessionalTitleRescue);
   const semanticProfessionalGateRejected = Boolean(enabled && sharedEvidence.passed && !semanticProfessionalGatePassed);
+  const titleOnlyHaystack = getNormalizedSearchText(article?.title || "");
+  const broadProfileNoiseTerms = [
+    "palantir",
+    "ai-generated content",
+    "agentic ai",
+    "ai governance",
+    "digital sovereignty",
+    "trust infrastructure",
+    "strong dpi",
+    "agentic commerce",
+    "google-synced passkeys",
+    "hardware-backed passkeys",
+    "passkeys deeper into workplace",
+    "windows hello biometrics",
+  ];
+  const titleVerificationRescueTerms = [
+    "identity verification",
+    "document verification",
+    "biometric verification",
+    "idv",
+    "age verification",
+    "age assurance",
+    "liveness",
+    "kyc",
+    "onboarding",
+    "identity proofing",
+    "identity fraud",
+    "synthetic identity",
+    "credential",
+    "credentials",
+    "digital credential",
+    "digital id",
+    "eid",
+    "eudi wallet",
+    "wallet",
+    "passport",
+    "id document",
+    "national id",
+    "biometric",
+    "biometrics",
+    "face",
+    "facial",
+    "fingerprint",
+    "border",
+    "immigration",
+    "idemia",
+    "thales",
+    "entrust",
+    "regula",
+    "veriff",
+    "onfido",
+    "jumio",
+    "mitek",
+    "iproov",
+    "shufti",
+    "idenfy",
+    "authsignal",
+    "au10tix",
+    "fourthline",
+    "veridas",
+  ];
+  const matchedBroadProfileNoiseTerms = broadProfileNoiseTerms.filter((term) => textMatchesKeyword(titleOnlyHaystack, term));
+  const matchedTitleVerificationRescueTerms = titleVerificationRescueTerms.filter((term) => textMatchesKeyword(titleOnlyHaystack, term));
+  const broadProfileNoiseWithoutVerificationTitleContext = matchedBroadProfileNoiseTerms.length > 0 &&
+    matchedTitleVerificationRescueTerms.length === 0;
   const rejectionReason = enabled
     ? sharedEvidence.rejectionReason || (semanticProfessionalGateRejected
         ? "identity_verification_semantic_gate_failed"
-        : "")
+        : broadProfileNoiseWithoutVerificationTitleContext
+          ? "identity_verification_broad_ai_trust_noise"
+          : "")
     : "";
-  const passed = !enabled || (sharedEvidence.passed && semanticProfessionalGatePassed);
+  const passed = !enabled || (
+    sharedEvidence.passed &&
+    semanticProfessionalGatePassed &&
+    !broadProfileNoiseWithoutVerificationTitleContext
+  );
   const passReason = !passed
     ? ""
     : identityVerificationProfessionalTitleRescue
@@ -33888,6 +33959,9 @@ function getIdentityVerificationProfessionalGuardAssessmentUncached(article, opt
     specificityGatePassed,
     semanticProfessionalGatePassed,
     semanticProfessionalGateRejected,
+    broadProfileNoiseWithoutVerificationTitleContext,
+    matchedBroadProfileNoiseTerms: Object.freeze(matchedBroadProfileNoiseTerms.slice(0, 12)),
+    matchedTitleVerificationRescueTerms: Object.freeze(matchedTitleVerificationRescueTerms.slice(0, 12)),
     identityVerificationProfessionalTitleRescue,
     titleProfessionalRescueSignals: Object.freeze(titleProfessionalRescueSignals.slice(0, 12)),
     titleProfessionalRescueBlocked,
@@ -33932,6 +34006,9 @@ function getIdentityVerificationProfessionalGuardAssessmentUncached(article, opt
     specificityGatePassed,
     semanticProfessionalGatePassed,
     semanticProfessionalGateRejected,
+    broadProfileNoiseWithoutVerificationTitleContext,
+    matchedBroadProfileNoiseTerms: Object.freeze(matchedBroadProfileNoiseTerms.slice(0, 12)),
+    matchedTitleVerificationRescueTerms: Object.freeze(matchedTitleVerificationRescueTerms.slice(0, 12)),
     identityVerificationProfessionalTitleRescue,
     titleProfessionalRescueSignals: Object.freeze(titleProfessionalRescueSignals.slice(0, 12)),
     titleProfessionalRescueBlocked,
