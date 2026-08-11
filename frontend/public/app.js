@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-120";
+const APP_BUILD = "intelligence-profile-ux-sprint-121";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4043,6 +4043,24 @@ function getMatchingPersonalDashboardTemplateId(interests = state.personalDashbo
   });
   const matchedTemplateId = matchedTemplate?.[0] || "";
   return matchedTemplateId === "security_printer" ? "custom" : matchedTemplateId || "custom";
+}
+
+function getEffectiveIdentitySubinterestForScoring(selectedIdentityInterests = [], selectedInterests = state.personalDashboard.interests) {
+  const normalizedIdentityInterests = normalizePersonalDashboardInterests(selectedIdentityInterests);
+  if (normalizedIdentityInterests.length === 1) {
+    return normalizedIdentityInterests[0];
+  }
+
+  const normalizedSelectedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  const activeTemplateId = getMatchingPersonalDashboardTemplateId(normalizedSelectedInterests);
+  if (
+    activeTemplateId === "border_control" &&
+    normalizedIdentityInterests.includes("border_control")
+  ) {
+    return "border_control";
+  }
+
+  return "";
 }
 
 function normalizePersonalDashboardCustomProfile(profile) {
@@ -29382,7 +29400,7 @@ function computePersonalInterestBoostMeasured(article, interestId, options = {})
         getIdentityDocumentSubinterestScore(article, undefined, { timingContext })
       );
       const selectedIdentityInterests = measureBoostSegment("selectedIdentitySubinterests", () => getSelectedIdentityDocumentSubinterests());
-      const selectedSubinterest = selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : "";
+      const selectedSubinterest = getEffectiveIdentitySubinterestForScoring(selectedIdentityInterests);
       const borderAuthorityAdjustment = selectedSubinterest === "border_control"
         ? measureBoostSegment("borderAuthorityAdjustment", () => getBorderControlAuthorityAdjustment(article, authority))
         : { multiplier: authority.multiplier, sourceBoostScale: 1 };
@@ -39023,7 +39041,7 @@ function calculatePersonalDomainScoreMeasured(article, selectedInterests = norma
         const identitySignals = getIdentityDocumentInterestSignals(article);
         const identitySubinterest = getIdentityDocumentSubinterestScore(article, normalizedInterests);
         const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(normalizedInterests);
-        const selectedSubinterest = selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : "";
+        const selectedSubinterest = getEffectiveIdentitySubinterestForScoring(selectedIdentityInterests, normalizedInterests);
         const borderAuthorityAdjustment = selectedSubinterest === "border_control"
           ? getBorderControlAuthorityAdjustment(article, identityAuthority)
           : { multiplier: identityAuthority.multiplier, sourceBoostScale: 1 };
@@ -39774,7 +39792,7 @@ function comparePersonalDashboardArticlesByRelevance(left, right) {
   const selectedMainDomains = getSelectedMainDomains();
   if (selectedMainDomains.length === 1 && selectedMainDomains[0] === "identity_documents") {
     const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests();
-    const selectedSubinterest = selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : "";
+    const selectedSubinterest = getEffectiveIdentitySubinterestForScoring(selectedIdentityInterests);
     if (selectedSubinterest === "border_control") {
       const leftContentType = getBorderControlContentType(left);
       const rightContentType = getBorderControlContentType(right);
@@ -40006,7 +40024,7 @@ function compareArticlesForDisplay(left, right) {
 
   if (selectedMainDomains.length === 1 && selectedMainDomains[0] === "identity_documents") {
     const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests();
-    const selectedSubinterest = selectedIdentityInterests.length === 1 ? selectedIdentityInterests[0] : "";
+    const selectedSubinterest = getEffectiveIdentitySubinterestForScoring(selectedIdentityInterests);
     if (selectedSubinterest) {
       if (selectedSubinterest === "border_control") {
         const leftContentType = getBorderControlContentType(left);
