@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-123";
+const APP_BUILD = "intelligence-profile-ux-sprint-124";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -2935,7 +2935,22 @@ const IDENTITY_INTELLIGENCE_PROFILES = {
       "border verification",
       "document authentication",
       "passport verification",
+      "passport check at border",
+      "passport checks at border",
+      "passport rejected at border",
+      "passport refused at border",
+      "passport not valid at border",
+      "invalid passport at border",
+      "visa check at border",
+      "visa checks at border",
+      "travel document check at border",
+      "travel document checks at border",
+      "residence permit check at border",
       "travel document verification",
+      "entry document check",
+      "entry document checks",
+      "denied entry over passport",
+      "refused entry over passport",
       "ees",
       "etias",
       "entry exit system",
@@ -2976,6 +2991,10 @@ const IDENTITY_INTELLIGENCE_PROFILES = {
       "border verification",
       "border interoperability",
       "passport control",
+      "passport checks",
+      "passport validity at border",
+      "visa checks",
+      "entry requirements at border",
       "document verification",
       "travel document inspection",
       "icao border interoperability",
@@ -3024,7 +3043,20 @@ const IDENTITY_INTELLIGENCE_PROFILES = {
       "airport disturbance",
       "immigration gate vandalism",
     ],
-    requiredContextGroups: [["border", "passport control", "immigration"], ["biometric", "verification", "document", "egate", "ees", "etias", "frontex", "cbp", "facial recognition", "inspection", "automation"]],
+    requiredContextGroups: [
+      ["border", "passport control", "immigration"],
+      ["biometric", "verification", "document", "egate", "ees", "etias", "frontex", "cbp", "facial recognition", "inspection", "automation"],
+      ["passport", "border"],
+      ["passport", "entry"],
+      ["passport", "valid", "border"],
+      ["passport", "invalid", "border"],
+      ["visa", "border"],
+      ["visa", "entry"],
+      ["residence permit", "border"],
+      ["travel document", "border"],
+      ["document", "border check"],
+      ["document", "entry check"],
+    ],
     authorityBoostSources: [
       "icao",
       "frontex",
@@ -26793,6 +26825,12 @@ function getPersonalDashboardBackendDomainPlan() {
           "border inspection",
           "mobile passport control",
           "mpc",
+          "passport checks at border",
+          "passport not valid at border",
+          "invalid passport at border",
+          "visa checks at border",
+          "entry document checks",
+          "travel document inspection",
           "biometric border",
           "facial recognition",
         ]);
@@ -27121,6 +27159,11 @@ function getPersonalDashboardBackendDomainPlan() {
           "ees",
           "etias",
           "document inspection",
+          "passport checks at border",
+          "passport not valid at border",
+          "invalid passport at border",
+          "visa checks at border",
+          "travel document inspection",
         ]);
       }
       if (!identitySearches.size) {
