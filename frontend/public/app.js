@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-122";
+const APP_BUILD = "intelligence-profile-ux-sprint-123";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -3983,9 +3983,6 @@ const PERSONAL_DASHBOARD_PROFILE_TEMPLATES = Object.freeze({
   border_control: Object.freeze({
     label: "Border Control",
     interests: Object.freeze([
-      "passports",
-      "visas",
-      "residence_permits",
       "border_control",
       "icao",
     ]),
