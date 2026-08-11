@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-117";
+const APP_BUILD = "intelligence-profile-ux-sprint-118";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -33859,7 +33859,7 @@ function getIdentityVerificationProfessionalGuardAssessmentUncached(article, opt
   const semanticProfessionalGatePassed = Boolean(sharedEvidence.verificationFlowMatched) &&
     (Boolean(semanticGate.semanticGatePassed) || identityVerificationProfessionalTitleRescue);
   const semanticProfessionalGateRejected = Boolean(enabled && sharedEvidence.passed && !semanticProfessionalGatePassed);
-  const titleOnlyHaystack = getNormalizedSearchText(article?.title || "");
+  const titleOnlyHaystack = article?.title || "";
   const broadProfileNoiseTerms = [
     "palantir",
     "ai-generated content",
