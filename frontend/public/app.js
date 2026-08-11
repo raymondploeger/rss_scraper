@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-119";
+const APP_BUILD = "intelligence-profile-ux-sprint-120";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -33867,12 +33867,39 @@ function getIdentityVerificationProfessionalGuardAssessmentUncached(article, opt
     "ai governance",
     "digital sovereignty",
     "trust infrastructure",
+    "digital trust first",
     "strong dpi",
+    "sustainable dpi",
+    "approach to dpi",
     "agentic commerce",
+    "career passport",
+    "developer community",
+    "vehicle safety",
+    "driver monitoring",
     "google-synced passkeys",
     "hardware-backed passkeys",
     "passkeys deeper into workplace",
     "windows hello biometrics",
+  ];
+  const strongTitleVerificationRescueTerms = [
+    "identity verification",
+    "document verification",
+    "biometric verification",
+    "idv",
+    "age verification",
+    "age assurance",
+    "liveness",
+    "kyc",
+    "onboarding",
+    "identity proofing",
+    "identity fraud",
+    "synthetic identity",
+    "identity check",
+    "identity checks",
+    "identity assurance",
+    "match selfie",
+    "selfie comparison",
+    "face comparison",
   ];
   const titleVerificationRescueTerms = [
     "identity verification",
@@ -33922,8 +33949,9 @@ function getIdentityVerificationProfessionalGuardAssessmentUncached(article, opt
   ];
   const matchedBroadProfileNoiseTerms = broadProfileNoiseTerms.filter((term) => textMatchesKeyword(titleOnlyHaystack, term));
   const matchedTitleVerificationRescueTerms = titleVerificationRescueTerms.filter((term) => textMatchesKeyword(titleOnlyHaystack, term));
+  const matchedStrongTitleVerificationRescueTerms = strongTitleVerificationRescueTerms.filter((term) => textMatchesKeyword(titleOnlyHaystack, term));
   const broadProfileNoiseWithoutVerificationTitleContext = matchedBroadProfileNoiseTerms.length > 0 &&
-    matchedTitleVerificationRescueTerms.length === 0;
+    matchedStrongTitleVerificationRescueTerms.length === 0;
   const rejectionReason = enabled
     ? sharedEvidence.rejectionReason || (semanticProfessionalGateRejected
         ? "identity_verification_semantic_gate_failed"
@@ -33962,6 +33990,7 @@ function getIdentityVerificationProfessionalGuardAssessmentUncached(article, opt
     broadProfileNoiseWithoutVerificationTitleContext,
     matchedBroadProfileNoiseTerms: Object.freeze(matchedBroadProfileNoiseTerms.slice(0, 12)),
     matchedTitleVerificationRescueTerms: Object.freeze(matchedTitleVerificationRescueTerms.slice(0, 12)),
+    matchedStrongTitleVerificationRescueTerms: Object.freeze(matchedStrongTitleVerificationRescueTerms.slice(0, 12)),
     identityVerificationProfessionalTitleRescue,
     titleProfessionalRescueSignals: Object.freeze(titleProfessionalRescueSignals.slice(0, 12)),
     titleProfessionalRescueBlocked,
@@ -34009,6 +34038,7 @@ function getIdentityVerificationProfessionalGuardAssessmentUncached(article, opt
     broadProfileNoiseWithoutVerificationTitleContext,
     matchedBroadProfileNoiseTerms: Object.freeze(matchedBroadProfileNoiseTerms.slice(0, 12)),
     matchedTitleVerificationRescueTerms: Object.freeze(matchedTitleVerificationRescueTerms.slice(0, 12)),
+    matchedStrongTitleVerificationRescueTerms: Object.freeze(matchedStrongTitleVerificationRescueTerms.slice(0, 12)),
     identityVerificationProfessionalTitleRescue,
     titleProfessionalRescueSignals: Object.freeze(titleProfessionalRescueSignals.slice(0, 12)),
     titleProfessionalRescueBlocked,
