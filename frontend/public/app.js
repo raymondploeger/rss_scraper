@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-118";
+const APP_BUILD = "intelligence-profile-ux-sprint-119";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -52944,6 +52944,12 @@ function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, 
     const identityVerificationProductionDecision = identityVerificationAssessment
       ? identityVerificationAssessment.authoritativeDecision || identityVerificationAssessment
       : null;
+    const identityVerificationProfileTemplateActive =
+      getMatchingPersonalDashboardTemplateId(normalizePersonalDashboardInterests(state.personalDashboard.interests)) === "identity_verification";
+    const identityVerificationBroadProfileNoiseRejected = Boolean(
+      identityVerificationProfileTemplateActive &&
+      identityVerificationProductionDecision?.broadProfileNoiseWithoutVerificationTitleContext
+    );
     const activeProfessionalGuardAssessments = [
       digitalIdentityAssessment
         ? {
@@ -53029,9 +53035,18 @@ function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, 
     ].filter(Boolean);
     const passedProfessionalGuardAssessments = activeProfessionalGuardAssessments
       .filter((entry) => entry.passed);
-    const rejectedAssessment = activeProfessionalGuardAssessments.length > 1
+    let rejectedAssessment = activeProfessionalGuardAssessments.length > 1
       ? (passedProfessionalGuardAssessments.length ? null : activeProfessionalGuardAssessments[0] || null)
       : activeProfessionalGuardAssessments.find((entry) => !entry.passed) || null;
+    if (identityVerificationBroadProfileNoiseRejected) {
+      rejectedAssessment = {
+        type: "identity_verification",
+        assessment: identityVerificationAssessment,
+        passed: false,
+        reason: identityVerificationProductionDecision.rejectionReason || "identity_verification_broad_ai_trust_noise",
+        fallbackReason: "Identity Verification profile broad AI/trust noise",
+      };
+    }
 
     if (!rejectedAssessment) {
       recordFilterDecisionStage(diagnostics, article, {
