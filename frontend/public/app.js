@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-149";
+const APP_BUILD = "intelligence-profile-ux-sprint-150";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -5163,6 +5163,7 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
     const vendorDeploymentRescue = producerVendorNameInTitle &&
       matchedTitleBusinessEventTerms.length > 0 &&
       matchedTitleProducerOutputTerms.length > 0;
+    const vendorCentralStory = producerVendorNameInTitle || vendorDeploymentRescue;
     const lowValueNoiseMatched = matchedLowValueSourceTerms.length > 0 ||
       matchedLowValueContentTerms.length > 0 ||
       matchedTutorialSetupTerms.length > 0;
@@ -5171,6 +5172,7 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
         && (vendorNamedStory || officialProducerOutputStory || producerEventStory))
       || vendorDeploymentRescue
     )
+      && vendorCentralStory
       && !lowValueNoiseMatched
       && !(matchedNoiseTerms.length > 0 && matchedVendorTerms.length === 0)
       && !professionalSourceOnly
@@ -5191,6 +5193,8 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
             ? "vendors_profile_tutorial_or_setup_noise"
           : matchedHardNoiseTerms.length > 0
             ? "vendors_profile_professional_source_without_vendor_story"
+          : !vendorCentralStory
+            ? "vendors_profile_vendor_not_central"
           : !(vendorNamedStory || officialProducerOutputStory || producerEventStory)
             ? "vendors_profile_missing_vendor_event_context"
           : "vendors_profile_guard_rejected",
@@ -5213,6 +5217,7 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
       officialProducerOutputStory,
       producerEventStory,
       vendorDeploymentRescue,
+      vendorCentralStory,
       professionalSourceOnly,
       professionalVendorNewsSource,
       professionalSourceVendorEvent,
