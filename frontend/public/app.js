@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-145";
+const APP_BUILD = "intelligence-profile-ux-sprint-146";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4030,6 +4030,9 @@ const PERSONAL_DASHBOARD_PROFILE_TEMPLATES = Object.freeze({
   vendors: Object.freeze({
     label: "Vendors",
     interests: Object.freeze([
+      "banknotes",
+      "passports",
+      "id_cards",
       "security_features",
       "security_printing",
       "identity_verification",
@@ -4059,6 +4062,13 @@ const PERSONAL_DASHBOARD_PROFILE_TEMPLATES = Object.freeze({
   }),
 });
 
+const PERSONAL_DASHBOARD_LEGACY_VENDOR_TEMPLATE_INTERESTS = Object.freeze([
+  "security_features",
+  "security_printing",
+  "identity_verification",
+  "biometric_verification",
+]);
+
 function getMatchingPersonalDashboardTemplateId(interests = state.personalDashboard.interests) {
   const normalizedInterests = normalizePersonalDashboardInterests(interests).slice().sort();
   if (!normalizedInterests.length) {
@@ -4068,9 +4078,15 @@ function getMatchingPersonalDashboardTemplateId(interests = state.personalDashbo
   if (
     activeTemplateId &&
     PERSONAL_DASHBOARD_PROFILE_TEMPLATES[activeTemplateId] &&
-    samePersonalDashboardInterestSet(
-      normalizedInterests,
-      PERSONAL_DASHBOARD_PROFILE_TEMPLATES[activeTemplateId].interests
+    (
+      samePersonalDashboardInterestSet(
+        normalizedInterests,
+        PERSONAL_DASHBOARD_PROFILE_TEMPLATES[activeTemplateId].interests
+      ) ||
+      (
+        activeTemplateId === "vendors" &&
+        samePersonalDashboardInterestSet(normalizedInterests, PERSONAL_DASHBOARD_LEGACY_VENDOR_TEMPLATE_INTERESTS)
+      )
     )
   ) {
     return activeTemplateId;
