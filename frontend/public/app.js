@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-127";
+const APP_BUILD = "intelligence-profile-ux-sprint-128";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -39733,6 +39733,13 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
   );
   if (!selectedInterests.length) {
     return finishPersonalDashboardTiming(true, "no_selected_interests");
+  }
+
+  const vendorsProfileAssessment = measurePersonalDashboardSegment("vendorsProfileProfessionalGuard", () =>
+    getVendorsProfileProfessionalGuard(article, selectedInterests)
+  );
+  if (vendorsProfileAssessment.applies && !vendorsProfileAssessment.passed) {
+    return finishPersonalDashboardTiming(false, vendorsProfileAssessment.rejectionReason || "vendors_profile_guard_rejected");
   }
 
   if (measurePersonalDashboardSegment("sharedSecurityOnlySelection", () => isSharedSecurityOnlyPersonalSelection(selectedInterests))) {
