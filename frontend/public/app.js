@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-140";
+const APP_BUILD = "intelligence-profile-ux-sprint-141";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -53662,6 +53662,36 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
 
 function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, diagnostics } = {}) {
   const inputArticles = Array.isArray(articles) ? articles : [];
+  if (isVendorsProfileActive()) {
+    inputArticles.forEach((article) => {
+      recordFilterDecisionStage(diagnostics, article, {
+        stage: "digital_identity_professional_guard",
+        result: "passed",
+        reason: "vendors_profile_guard_authoritative",
+        notes: [
+          "Vendors profile uses the Vendors professional guard as the authoritative quality gate",
+          "Digital Identity/Biometrics subcategory guards are bypassed for Vendors",
+        ],
+        metadata: {
+          enabled: false,
+          bypassedForVendorsProfile: true,
+          vendorsProfileProfessionalGuard: getVendorsProfileProfessionalGuard(article),
+        },
+      });
+    });
+    return {
+      articles: inputArticles,
+      stage: createFilterPipelineStageResult(
+        "digital_identity_professional_guard",
+        inputArticles.length,
+        inputArticles.length,
+        [
+          "Vendors profile uses the Vendors professional guard as the authoritative quality gate",
+          "Digital Identity/Biometrics subcategory guards bypassed for Vendors",
+        ]
+      ),
+    };
+  }
   const digitalIdentityGuardActive = shouldApplyDigitalIdentityProfessionalGuard();
   const biometricsGuardActive = shouldApplyBiometricsProfessionalGuardBooleanGate();
   const digitalWalletGuardActive = shouldApplyDigitalWalletProfessionalGuard();
