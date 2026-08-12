@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-126";
+const APP_BUILD = "intelligence-profile-ux-sprint-127";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4493,6 +4493,260 @@ function getIdentityDocumentBundleQualityGateAssessment(article) {
 
 function getIdentityDocumentAuthorityProfileGuardAssessment(article) {
   return getIdentityDocumentBundleQualityGateAssessment(article);
+}
+
+const VENDORS_PROFILE_VENDOR_TERMS = Object.freeze([
+  "de la rue",
+  "de-la-rue",
+  "thales",
+  "thalis",
+  "in groupe",
+  "ingroupe",
+  "bundesdruckerei",
+  "bunderDruckerei",
+  "veridos",
+  "giesecke+devrient",
+  "giesecke devrient",
+  "g+d",
+  "gi-de",
+  "idemia",
+  "hid",
+  "entrust",
+  "regula",
+  "veriff",
+  "onfido",
+  "jumio",
+  "mitek",
+  "facephi",
+  "iproov",
+  "innovatrics",
+  "laxton",
+  "nec",
+  "sicpa",
+  "crane currency",
+  "crane authentication",
+  "koenig & bauer",
+  "koenig-bauer",
+  "louisenthal",
+  "oberthur",
+  "ovd kinegram",
+  "kinegram",
+  "iq structures",
+  "covestro",
+  "dnp",
+  "toppan",
+  "muhlbauer",
+  "mühlbauer",
+  "semlex",
+  "iris corporation",
+  "shufti",
+  "sumsub",
+  "idnow",
+  "persona",
+  "trulioo",
+  "socure",
+]);
+
+const VENDORS_PROFILE_PRODUCER_CONTEXT_TERMS = Object.freeze([
+  "security printer",
+  "security printers",
+  "banknote printer",
+  "banknote printers",
+  "currency printer",
+  "currency printers",
+  "passport producer",
+  "passport producers",
+  "passport manufacturer",
+  "passport manufacturers",
+  "id card producer",
+  "id card producers",
+  "document producer",
+  "document producers",
+  "secure document producer",
+  "secure document producers",
+  "identity verification provider",
+  "identity verification providers",
+  "biometric vendor",
+  "biometric vendors",
+  "technology provider",
+  "solution provider",
+  "platform provider",
+  "vendor",
+  "vendors",
+  "supplier",
+  "suppliers",
+  "manufacturer",
+  "manufacturers",
+  "producer",
+  "producers",
+]);
+
+const VENDORS_PROFILE_EVENT_TERMS = Object.freeze([
+  "launches",
+  "launched",
+  "introduces",
+  "introduced",
+  "unveils",
+  "unveiled",
+  "partners",
+  "partnered",
+  "partnership",
+  "selected",
+  "selects",
+  "deploys",
+  "deployed",
+  "implements",
+  "implemented",
+  "integrates",
+  "integrated",
+  "contract",
+  "agreement",
+  "award",
+  "awarded",
+  "acquires",
+  "acquired",
+  "acquisition",
+  "certified",
+  "certification",
+  "supplies",
+  "supply",
+  "production",
+  "manufacturing",
+  "facility",
+  "plant",
+  "factory",
+]);
+
+const VENDORS_PROFILE_INDUSTRY_CONTEXT_TERMS = Object.freeze([
+  "banknote",
+  "banknotes",
+  "currency note",
+  "security printing",
+  "security feature",
+  "security features",
+  "security ink",
+  "security inks",
+  "hologram",
+  "holography",
+  "dovid",
+  "micro optics",
+  "intaglio",
+  "polycarbonate",
+  "polymer banknote",
+  "passport",
+  "passports",
+  "id card",
+  "identity card",
+  "identity document",
+  "secure document",
+  "document security",
+  "digital identity",
+  "identity verification",
+  "document verification",
+  "biometric verification",
+  "biometric identity",
+  "liveness",
+  "kyc",
+  "onboarding",
+  "credential",
+]);
+
+const VENDORS_PROFILE_NOISE_TERMS = Object.freeze([
+  "career passport",
+  "student passport",
+  "workplace surveillance",
+  "employee monitoring",
+  "generic ai",
+  "ai agent",
+  "cybersecurity",
+  "machine identity",
+  "cloud identity",
+  "iam",
+  "password",
+  "passkey",
+  "login security",
+  "payment wallet",
+  "crypto wallet",
+  "banking app",
+  "tutorial",
+  "how to",
+  "step-by-step",
+  "setup guide",
+  "developer guide",
+]);
+
+function getVendorsProfileProfessionalGuard(article, selectedInterests = state.personalDashboard.interests) {
+  const templateId = getMatchingPersonalDashboardTemplateId(selectedInterests);
+  if (templateId !== "vendors") {
+    return {
+      applies: false,
+      passed: true,
+      rejectionReason: "",
+      vendorTerms: Object.freeze([]),
+      producerContextTerms: Object.freeze([]),
+      eventTerms: Object.freeze([]),
+      industryContextTerms: Object.freeze([]),
+      noiseTerms: Object.freeze([]),
+    };
+  }
+
+  return getCachedArticleValue(article, "vendorsProfileProfessionalGuard", () => {
+    const context = getPersonalBoostContext(article, "getVendorsProfileProfessionalGuard", { interest: "vendors" });
+    const haystack = [
+      context.titleText,
+      context.tagText,
+      context.metadataText,
+      context.bodyText,
+      context.sourceText,
+      context.domainText,
+    ].filter(Boolean).join(" ");
+    const sourceOnlyText = [
+      context.sourceText,
+      context.domainText,
+      context.metadataText,
+    ].filter(Boolean).join(" ");
+    const articleBodyText = [
+      context.titleText,
+      context.tagText,
+      context.bodyText,
+    ].filter(Boolean).join(" ");
+
+    const matchedVendorTerms = VENDORS_PROFILE_VENDOR_TERMS.filter((term) => textMatchesKeyword(haystack, term));
+    const matchedProducerContextTerms = VENDORS_PROFILE_PRODUCER_CONTEXT_TERMS.filter((term) => textMatchesKeyword(haystack, term));
+    const matchedEventTerms = VENDORS_PROFILE_EVENT_TERMS.filter((term) => textMatchesKeyword(haystack, term));
+    const matchedIndustryContextTerms = VENDORS_PROFILE_INDUSTRY_CONTEXT_TERMS.filter((term) => textMatchesKeyword(haystack, term));
+    const matchedNoiseTerms = VENDORS_PROFILE_NOISE_TERMS.filter((term) => textMatchesKeyword(haystack, term));
+    const vendorNameInArticle = VENDORS_PROFILE_VENDOR_TERMS.some((term) => textMatchesKeyword(articleBodyText, term));
+    const professionalSourceOnly = [
+      "biometric update",
+      "security document world",
+      "securitydocumentworld",
+    ].some((term) => textMatchesKeyword(sourceOnlyText, term)) && !vendorNameInArticle;
+    const explicitVendorArticle = vendorNameInArticle &&
+      (matchedEventTerms.length > 0 || matchedIndustryContextTerms.length > 0);
+    const producerContextArticle = matchedProducerContextTerms.length > 0 &&
+      matchedIndustryContextTerms.length > 0 &&
+      (matchedEventTerms.length > 0 || vendorNameInArticle);
+    const passed = (explicitVendorArticle || producerContextArticle)
+      && !(matchedNoiseTerms.length > 0 && matchedVendorTerms.length === 0)
+      && !professionalSourceOnly;
+
+    return {
+      applies: true,
+      passed,
+      rejectionReason: passed
+        ? ""
+        : professionalSourceOnly
+          ? "vendors_profile_professional_source_only"
+          : "vendors_profile_guard_rejected",
+      vendorTerms: Object.freeze(matchedVendorTerms.slice(0, 12)),
+      producerContextTerms: Object.freeze(matchedProducerContextTerms.slice(0, 12)),
+      eventTerms: Object.freeze(matchedEventTerms.slice(0, 12)),
+      industryContextTerms: Object.freeze(matchedIndustryContextTerms.slice(0, 12)),
+      noiseTerms: Object.freeze(matchedNoiseTerms.slice(0, 12)),
+      professionalSourceOnly,
+    };
+  });
 }
 
 function applyIdentityDocumentBundleQualityGateToArticles(articles = []) {
@@ -52604,6 +52858,7 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
     const eidGuardBooleanAssessment = getEidProfessionalGuardBooleanGateAssessment(article);
     const authenticationGuardBooleanAssessment = getAuthenticationProfessionalGuardBooleanGateAssessment(article);
     const securityPrinterGuardAssessment = getSecurityPrinterProfileProfessionalGuard(article);
+    const vendorsProfileGuardAssessment = getVendorsProfileProfessionalGuard(article);
     if (diagnostics?.enabled && digitalIdentityGuardBooleanAssessment) {
       if (!diagnostics.digitalIdentityGuardBooleanApplied) {
         diagnostics.digitalIdentityGuardBooleanApplied = {
@@ -52752,6 +53007,32 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
         }
       }
     }
+    if (diagnostics?.enabled && vendorsProfileGuardAssessment?.applies) {
+      if (!diagnostics.vendorsProfileProfessionalGuard) {
+        diagnostics.vendorsProfileProfessionalGuard = {
+          enabled: true,
+          evaluated: 0,
+          passed: 0,
+          rejected: 0,
+          rejectionReasons: {},
+          rejectedExampleTitles: [],
+        };
+      }
+      diagnostics.vendorsProfileProfessionalGuard.evaluated += 1;
+      if (vendorsProfileGuardAssessment.passed) {
+        diagnostics.vendorsProfileProfessionalGuard.passed += 1;
+      } else {
+        diagnostics.vendorsProfileProfessionalGuard.rejected += 1;
+        const rejectionReason = vendorsProfileGuardAssessment.rejectionReason || "unknown";
+        diagnostics.vendorsProfileProfessionalGuard.rejectionReasons[rejectionReason] =
+          (diagnostics.vendorsProfileProfessionalGuard.rejectionReasons[rejectionReason] || 0) + 1;
+        if (diagnostics.vendorsProfileProfessionalGuard.rejectedExampleTitles.length < 25) {
+          diagnostics.vendorsProfileProfessionalGuard.rejectedExampleTitles.push(
+            article?.title || "Untitled article"
+          );
+        }
+      }
+    }
     const legacyDashboardPassed = articleMatchesPersonalDashboardSelection(article);
     const booleanGuardAssessments = [
       digitalIdentityGuardBooleanAssessment
@@ -52804,9 +53085,19 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
             reason: "security_printer_profile_guard_rejected",
           }
         : null,
+      vendorsProfileGuardAssessment?.applies
+        ? {
+            type: "vendors",
+            assessment: vendorsProfileGuardAssessment,
+            passed: vendorsProfileGuardAssessment.passed,
+            category: "vendors_profile_professional_guard",
+            rejectedCategory: "vendorsProfileProfessionalGuard",
+            reason: vendorsProfileGuardAssessment.rejectionReason || "vendors_profile_guard_rejected",
+          }
+        : null,
     ].filter(Boolean);
     const multiDigitalIdentityProfileSelection = isMultiDigitalIdentityProfileSelection();
-    const booleanGuardPassed = multiDigitalIdentityProfileSelection && booleanGuardAssessments.length > 1
+    const digitalProfileBooleanGuardPassed = multiDigitalIdentityProfileSelection && booleanGuardAssessments.length > 1
       ? booleanGuardAssessments.some((entry) => entry.passed)
       : (
         (!digitalIdentityGuardBooleanAssessment || digitalIdentityGuardBooleanAssessment.passed) &&
@@ -52814,10 +53105,14 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
         (!authenticationGuardBooleanAssessment || authenticationGuardBooleanAssessment.passed) &&
         (!securityPrinterGuardAssessment?.applies || securityPrinterGuardAssessment.passed)
       );
+    const booleanGuardPassed = digitalProfileBooleanGuardPassed &&
+      (!vendorsProfileGuardAssessment?.applies || vendorsProfileGuardAssessment.passed);
     const dashboardPassed = legacyDashboardPassed && booleanGuardPassed;
-    const professionalGuardDecisionSource = multiDigitalIdentityProfileSelection && booleanGuardAssessments.length > 1
-      ? "legacy-pass-fail+digital-profile-professional-guard-any"
-      : digitalIdentityGuardBooleanAssessment
+    const professionalGuardDecisionSource = vendorsProfileGuardAssessment?.applies
+      ? "legacy-pass-fail+vendors-profile-professional-guard"
+      : multiDigitalIdentityProfileSelection && booleanGuardAssessments.length > 1
+        ? "legacy-pass-fail+digital-profile-professional-guard-any"
+        : digitalIdentityGuardBooleanAssessment
         ? "legacy-pass-fail+digital-identity-professional-guard"
       : eidGuardBooleanAssessment
         ? "legacy-pass-fail+eid-professional-guard"
@@ -52861,6 +53156,7 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
           eidProfessionalGuard: eidGuardBooleanAssessment,
           authenticationProfessionalGuard: authenticationGuardBooleanAssessment,
           securityPrinterProfessionalGuard: securityPrinterGuardAssessment,
+          vendorsProfileProfessionalGuard: vendorsProfileGuardAssessment,
         },
       });
       outputArticles.push(article);
@@ -52868,11 +53164,14 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
     }
     const rejectedBooleanGuard = !legacyDashboardPassed || booleanGuardPassed
       ? null
-      : booleanGuardAssessments.find((entry) => !entry.passed) || null;
+      : booleanGuardAssessments.find((entry) => entry.type === "vendors" && !entry.passed)
+        || booleanGuardAssessments.find((entry) => !entry.passed)
+        || null;
     const digitalIdentityGuardRejected = rejectedBooleanGuard?.type === "digital_identity";
     const eidGuardRejected = rejectedBooleanGuard?.type === "eid";
     const authenticationGuardRejected = rejectedBooleanGuard?.type === "authentication";
     const securityPrinterGuardRejected = rejectedBooleanGuard?.type === "security_printer";
+    const vendorsProfileGuardRejected = rejectedBooleanGuard?.type === "vendors";
     const rejection = rejectedBooleanGuard
       ? {
           category: rejectedBooleanGuard.category,
@@ -52908,6 +53207,7 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
         eidProfessionalGuard: eidGuardBooleanAssessment,
         authenticationProfessionalGuard: authenticationGuardBooleanAssessment,
         securityPrinterProfessionalGuard: securityPrinterGuardAssessment,
+        vendorsProfileProfessionalGuard: vendorsProfileGuardAssessment,
         category: rejection.category,
         rejectedStage: "personal_dashboard",
         rejectedCategory: digitalIdentityGuardRejected
@@ -52918,6 +53218,8 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
             ? "authenticationProfessionalGuard"
           : securityPrinterGuardRejected
             ? "securityPrinterProfessionalGuard"
+          : vendorsProfileGuardRejected
+            ? "vendorsProfileProfessionalGuard"
           : rejectedBooleanGuard?.rejectedCategory || rejection.category,
         finalReason: rejection.reason,
       },
