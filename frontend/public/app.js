@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-156";
+const APP_BUILD = "intelligence-profile-ux-sprint-157";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4523,7 +4523,7 @@ function isSecurityPrinterProfileActive(interests = state.personalDashboard.inte
   ).trim();
   const securityPrinterTemplateActive = stateTemplateId === "security_printer" || storedTemplateId === "security_printer";
   const securityFeaturesOnlySelected = normalizedInterests.length === 1 && normalizedInterests.includes("security_features");
-  return securityPrinterTemplateActive && securityFeaturesOnlySelected;
+  return securityFeaturesOnlySelected && (securityPrinterTemplateActive || !stateTemplateId);
 }
 
 const VENDORS_PROFILE_VENDOR_TERMS = Object.freeze([
