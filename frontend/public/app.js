@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-131";
+const APP_BUILD = "intelligence-profile-ux-sprint-132";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4552,27 +4552,36 @@ const VENDORS_PROFILE_VENDOR_TERMS = Object.freeze([
 
 const VENDORS_PROFILE_BACKEND_SEARCH_TERMS = Object.freeze([
   "De La Rue",
-  "Thales",
-  "IN Groupe",
-  "Bundesdruckerei",
-  "Veridos",
+  "Crane Currency",
+  "SICPA",
   "Giesecke+Devrient",
   "Giesecke Devrient",
-  "G+D",
+  "G+D banknote",
+  "Louisenthal",
+  "Bundesdruckerei",
+  "Veridos",
+  "IN Groupe",
+  "Thales identity",
+  "Thales digital identity",
   "IDEMIA",
-  "HID",
-  "Entrust",
-  "SICPA",
-  "Crane Currency",
+  "HID identity",
+  "Entrust identity",
+  "Regula Forensics",
+  "Regula document verification",
   "Crane Authentication",
   "Koenig & Bauer",
-  "Louisenthal",
   "Oberthur",
   "OVD Kinegram",
   "IQ Structures",
-  "Toppan",
+  "Toppan security printing",
   "Covestro",
-  "Regula",
+  "Mühlbauer",
+  "Muhlbauer",
+  "Semlex",
+  "Iris Corporation",
+  "Laxton",
+  "NEC biometric",
+  "DNP secure document",
   "Signicat",
   "Authsignal",
   "iDenfy",
@@ -4585,8 +4594,10 @@ const VENDORS_PROFILE_BACKEND_SEARCH_TERMS = Object.freeze([
   "Facephi",
   "iProov",
   "Innovatrics",
-  "Laxton",
-  "NEC",
+  "Sumsub",
+  "IDnow",
+  "Persona",
+  "Trulioo",
 ]);
 
 const VENDORS_PROFILE_PRODUCER_CONTEXT_TERMS = Object.freeze([
@@ -4723,6 +4734,24 @@ const VENDORS_PROFILE_NOISE_TERMS = Object.freeze([
   "developer guide",
 ]);
 
+const VENDORS_PROFILE_HARD_NOISE_TERMS = Object.freeze([
+  "tech insider",
+  "step-by-step",
+  "setup",
+  "production setup",
+  "integration guide",
+  "developer guide",
+  "developer example",
+  "react",
+  "api setup",
+  "api tutorial",
+  "sdk integration guide",
+  "igaming setup",
+  "igaming",
+  "casino",
+  "sportsbook",
+]);
+
 function getVendorsProfileProfessionalGuard(article, selectedInterests = state.personalDashboard.interests) {
   const templateId = getMatchingPersonalDashboardTemplateId(selectedInterests);
   if (templateId !== "vendors") {
@@ -4735,6 +4764,7 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
       eventTerms: Object.freeze([]),
       industryContextTerms: Object.freeze([]),
       noiseTerms: Object.freeze([]),
+      hardNoiseTerms: Object.freeze([]),
     };
   }
 
@@ -4769,6 +4799,7 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
     const matchedTitleEventTerms = VENDORS_PROFILE_EVENT_TERMS.filter((term) => textMatchesKeyword(articleTitleText, term));
     const matchedIndustryContextTerms = VENDORS_PROFILE_INDUSTRY_CONTEXT_TERMS.filter((term) => textMatchesKeyword(haystack, term));
     const matchedNoiseTerms = VENDORS_PROFILE_NOISE_TERMS.filter((term) => textMatchesKeyword(haystack, term));
+    const matchedHardNoiseTerms = VENDORS_PROFILE_HARD_NOISE_TERMS.filter((term) => textMatchesKeyword(haystack, term));
     const vendorNameInArticle = VENDORS_PROFILE_VENDOR_TERMS.some((term) => textMatchesKeyword(articleBodyText, term));
     const vendorNameInTitle = VENDORS_PROFILE_VENDOR_TERMS.some((term) => textMatchesKeyword(articleTitleText, term));
     const professionalVendorNewsSource = [
@@ -4793,6 +4824,7 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
           : matchedEventTerms.length > 0 || vendorNameInArticle
       );
     const passed = (explicitVendorArticle || producerContextArticle)
+      && matchedHardNoiseTerms.length === 0
       && !(matchedNoiseTerms.length > 0 && matchedVendorTerms.length === 0)
       && !professionalSourceOnly
       && professionalSourceVendorEvent;
@@ -4804,6 +4836,8 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
         ? ""
         : professionalSourceOnly
           ? "vendors_profile_professional_source_only"
+          : matchedHardNoiseTerms.length > 0
+            ? "vendors_profile_tutorial_or_setup_noise"
           : "vendors_profile_guard_rejected",
       vendorTerms: Object.freeze(matchedVendorTerms.slice(0, 12)),
       producerContextTerms: Object.freeze(matchedProducerContextTerms.slice(0, 12)),
@@ -4811,6 +4845,7 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
       titleEventTerms: Object.freeze(matchedTitleEventTerms.slice(0, 12)),
       industryContextTerms: Object.freeze(matchedIndustryContextTerms.slice(0, 12)),
       noiseTerms: Object.freeze(matchedNoiseTerms.slice(0, 12)),
+      hardNoiseTerms: Object.freeze(matchedHardNoiseTerms.slice(0, 12)),
       professionalSourceOnly,
       professionalVendorNewsSource,
       professionalSourceVendorEvent,
