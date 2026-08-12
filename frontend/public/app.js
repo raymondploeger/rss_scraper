@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-144";
+const APP_BUILD = "intelligence-profile-ux-sprint-145";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4783,6 +4783,7 @@ const VENDORS_PROFILE_HARD_NOISE_TERMS = Object.freeze([
   "banknotenews.com",
   "owen linzmayer",
   "numismatic news",
+  "numis asia",
   "collector banknote",
   "collectors banknote",
   "banknote collector",
@@ -4807,6 +4808,9 @@ const VENDORS_PROFILE_HARD_NOISE_TERMS = Object.freeze([
   "company profile",
   "security solutions made in germany",
   "security solutions 'made in germany'",
+  "sicherheitslösungen",
+  "die bundesdruckerei-gruppe",
+  "made in germany",
   "not a technology story",
   "new frontline for cybersecurity",
   "securing workforce identities",
@@ -4818,6 +4822,31 @@ const VENDORS_PROFILE_HARD_NOISE_TERMS = Object.freeze([
   "hsm distributor",
   "tokenization system",
   "physical payment cards",
+  "minergie-certified",
+  "campus is minergie-certified",
+  "225 years of driving innovation",
+  "bold path forward",
+  "appointed as president",
+  "appointed to the iq structures board",
+  "precious metals",
+  "commemorative coins",
+  "investment packaging",
+  "vinyl records",
+  "iota awards competition",
+  "banknote printer is a british private company",
+  "credit card format is making its way",
+  "shortlisted among world's best",
+  "ibns bank note of the year award",
+  "currency manager award",
+  "how to prepare your banknote design",
+  "story behind the new",
+  "designing for a kingdom",
+  "designing life",
+  "designing the future",
+  "behind the walls",
+  "beauty of life house note",
+  "today's trends",
+  "tomorrow's cash",
   "tech insider",
   "free demo",
   "demo tool",
@@ -4844,6 +4873,7 @@ const VENDORS_PROFILE_LOW_VALUE_SOURCE_TERMS = Object.freeze([
   "banknotenews.com",
   "owen linzmayer",
   "numismatic news",
+  "numis asia",
 ]);
 
 const VENDORS_PROFILE_LOW_VALUE_CONTENT_TERMS = Object.freeze([
@@ -4863,6 +4893,9 @@ const VENDORS_PROFILE_LOW_VALUE_CONTENT_TERMS = Object.freeze([
   "company profile",
   "security solutions made in germany",
   "security solutions 'made in germany'",
+  "sicherheitslösungen",
+  "die bundesdruckerei-gruppe",
+  "made in germany",
   "not a technology story",
   "new frontline for cybersecurity",
   "securing workforce identities",
@@ -4874,6 +4907,31 @@ const VENDORS_PROFILE_LOW_VALUE_CONTENT_TERMS = Object.freeze([
   "hsm distributor",
   "tokenization system",
   "physical payment cards",
+  "minergie-certified",
+  "campus is minergie-certified",
+  "225 years of driving innovation",
+  "bold path forward",
+  "appointed as president",
+  "appointed to the iq structures board",
+  "precious metals",
+  "commemorative coins",
+  "investment packaging",
+  "vinyl records",
+  "iota awards competition",
+  "banknote printer is a british private company",
+  "credit card format is making its way",
+  "shortlisted among world's best",
+  "ibns bank note of the year award",
+  "currency manager award",
+  "how to prepare your banknote design",
+  "story behind the new",
+  "designing for a kingdom",
+  "designing life",
+  "designing the future",
+  "behind the walls",
+  "beauty of life house note",
+  "today's trends",
+  "tomorrow's cash",
 ]);
 
 const VENDORS_PROFILE_BUSINESS_EVENT_TERMS = Object.freeze([
