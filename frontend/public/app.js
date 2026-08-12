@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-139";
+const APP_BUILD = "intelligence-profile-ux-sprint-140";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -53401,8 +53401,10 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
         (!authenticationGuardBooleanAssessment || authenticationGuardBooleanAssessment.passed) &&
         (!securityPrinterGuardAssessment?.applies || securityPrinterGuardAssessment.passed)
       );
-    const booleanGuardPassed = digitalProfileBooleanGuardPassed &&
-      (!vendorsProfileGuardAssessment?.applies || vendorsProfileGuardAssessment.passed);
+    const vendorsProfileActive = Boolean(vendorsProfileGuardAssessment?.applies);
+    const booleanGuardPassed = vendorsProfileActive
+      ? vendorsProfileGuardAssessment.passed
+      : digitalProfileBooleanGuardPassed;
     const dashboardPassed = legacyDashboardPassed && booleanGuardPassed;
     const professionalGuardDecisionSource = vendorsProfileGuardAssessment?.applies
       ? "legacy-pass-fail+vendors-profile-professional-guard"
@@ -53460,9 +53462,9 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
     }
     const rejectedBooleanGuard = !legacyDashboardPassed || booleanGuardPassed
       ? null
-      : booleanGuardAssessments.find((entry) => entry.type === "vendors" && !entry.passed)
-        || booleanGuardAssessments.find((entry) => !entry.passed)
-        || null;
+      : vendorsProfileActive
+        ? booleanGuardAssessments.find((entry) => entry.type === "vendors" && !entry.passed) || null
+        : booleanGuardAssessments.find((entry) => !entry.passed) || null;
     const digitalIdentityGuardRejected = rejectedBooleanGuard?.type === "digital_identity";
     const eidGuardRejected = rejectedBooleanGuard?.type === "eid";
     const authenticationGuardRejected = rejectedBooleanGuard?.type === "authentication";
