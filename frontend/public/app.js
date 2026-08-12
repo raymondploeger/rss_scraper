@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-124";
+const APP_BUILD = "intelligence-profile-ux-sprint-125";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4023,6 +4023,15 @@ const PERSONAL_DASHBOARD_PROFILE_TEMPLATES = Object.freeze({
     label: "Security Printer",
     interests: Object.freeze([
       "security_features",
+    ]),
+  }),
+  vendors: Object.freeze({
+    label: "Vendors",
+    interests: Object.freeze([
+      "security_features",
+      "security_printing",
+      "identity_verification",
+      "biometric_verification",
     ]),
   }),
   identity_verification: Object.freeze({
@@ -49905,6 +49914,11 @@ function getCanonicalEventClusterKey(article) {
       return "";
     }
 
+    const indiaRbiPolymerTrialKey = getIndiaRbiPolymerBanknoteTrialClusterKey(article);
+    if (indiaRbiPolymerTrialKey) {
+      return indiaRbiPolymerTrialKey;
+    }
+
     if (normalizedEvent.domain === "banknote" && BANKNOTE_DESIGN_GROUPING_EVENT_TYPES.has(normalizedEvent.canonicalEventType)) {
       const timeBucket = normalizedEvent.timeBucket || "undated";
       return [
@@ -49978,6 +49992,68 @@ function getEventClusterKey(article) {
   return getCachedArticleValue(article, "eventClusterKey", () => {
     return getCanonicalEventClusterKey(article);
   });
+}
+
+function getIndiaRbiPolymerBanknoteTrialClusterKey(article) {
+  const text = getArticleSignalText(article);
+  if (!text) {
+    return "";
+  }
+
+  const hasIndiaRbiContext = [
+    "india",
+    "indian",
+    "rbi",
+    "reserve bank of india",
+    "nirmala sitharaman",
+  ].some((keyword) => textMatchesKeyword(text, keyword));
+  const hasPolymerBanknoteContext = [
+    "polymer banknote",
+    "polymer banknotes",
+    "polymer note",
+    "polymer notes",
+    "plastic currency",
+  ].some((keyword) => textMatchesKeyword(text, keyword));
+  const hasTrialOrApprovalContext = [
+    "field trial",
+    "field trials",
+    "trial",
+    "trials",
+    "approves",
+    "approved",
+    "approval",
+    "govt approves",
+    "government approves",
+    "pilot rollout",
+  ].some((keyword) => textMatchesKeyword(text, keyword));
+  const hasTenRupeeContext = [
+    "rs 10",
+    "rs. 10",
+    "10 rupee",
+    "10-rupee",
+    "10 rupees",
+    "10 and 20",
+    "10 & 20",
+  ].some((keyword) => textMatchesKeyword(text, keyword));
+  const hasTwentyRupeeContext = [
+    "rs 20",
+    "rs. 20",
+    "20 rupee",
+    "20-rupee",
+    "20 rupees",
+    "10 and 20",
+    "10 & 20",
+  ].some((keyword) => textMatchesKeyword(text, keyword));
+
+  if (!hasIndiaRbiContext || !hasPolymerBanknoteContext || !hasTrialOrApprovalContext || !hasTenRupeeContext || !hasTwentyRupeeContext) {
+    return "";
+  }
+
+  return "banknote:polymer_migration:india-rbi-rs10-rs20-field-trials";
+}
+
+function isIndiaRbiPolymerBanknoteTrialClusterKey(key) {
+  return key === "banknote:polymer_migration:india-rbi-rs10-rs20-field-trials";
 }
 
 function getGroupingConfidenceLevel({ score = 0, strongAnchorCount = 0, sharedKeywords = 0 }) {
@@ -50183,6 +50259,14 @@ function isSameIntelligenceEvent(leftArticle, rightArticle) {
     const rightClusterKey = getEventClusterKey(rightArticle);
     if (leftClusterKey && rightClusterKey && leftClusterKey !== rightClusterKey) {
       return false;
+    }
+    if (
+      leftClusterKey &&
+      rightClusterKey &&
+      leftClusterKey === rightClusterKey &&
+      isIndiaRbiPolymerBanknoteTrialClusterKey(leftClusterKey)
+    ) {
+      return true;
     }
 
     const conflictReason = getConflictReason(leftArticle, rightArticle);
