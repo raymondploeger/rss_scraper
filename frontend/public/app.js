@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-146";
+const APP_BUILD = "intelligence-profile-ux-sprint-147";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -55541,8 +55541,18 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
     inputCount: candidatePool.length,
     outputCount: advancedFilteredBackendArticles.length,
   });
-  const identityDocumentBundleQualityGateStage = applyIdentityDocumentBundleQualityGateToArticles(advancedFilteredBackendArticles);
+  const vendorsProfileActive = isVendorsProfileActive();
+  const identityDocumentBundleQualityGateStage = vendorsProfileActive
+    ? {
+        active: false,
+        articles: advancedFilteredBackendArticles,
+        rejectedCount: 0,
+      }
+    : applyIdentityDocumentBundleQualityGateToArticles(advancedFilteredBackendArticles);
   const personalDashboardFilteredBackendArticles = identityDocumentBundleQualityGateStage.articles;
+  if (diagnostics?.enabled && vendorsProfileActive) {
+    addFilterPipelineNote(diagnostics, "Vendors profile bypassed Identity Document backend normalization guard; Vendors professional guard remains authoritative");
+  }
   if (diagnostics?.enabled && identityDocumentBundleQualityGateStage.active) {
     addFilterPipelineNote(diagnostics, "Identity Document bundle quality gate applied to backend-query production output");
     if (identityDocumentBundleQualityGateStage.rejectedCount > 0) {
@@ -55552,12 +55562,17 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
   markProductionLoadTiming("backendNormalizationIdentityGuardStart", {
     inputCount: personalDashboardFilteredBackendArticles.length,
   });
-  const filteredBackendArticles = personalDashboardFilteredBackendArticles
-    .filter((article) => articlePassesLegacyIdentityProfessionalRelevance(article, { branch: "backend-query" }));
+  const filteredBackendArticles = vendorsProfileActive
+    ? personalDashboardFilteredBackendArticles
+    : personalDashboardFilteredBackendArticles
+      .filter((article) => articlePassesLegacyIdentityProfessionalRelevance(article, { branch: "backend-query" }));
   markProductionLoadTiming("backendNormalizationIdentityGuardComplete", {
     inputCount: personalDashboardFilteredBackendArticles.length,
     outputCount: filteredBackendArticles.length,
   });
+  if (diagnostics?.enabled && vendorsProfileActive) {
+    addFilterPipelineNote(diagnostics, "Vendors profile bypassed legacy Identity Documents backend relevance guard");
+  }
   markProductionLoadTiming("backendNormalizationDigitalGuardStart", {
     inputCount: filteredBackendArticles.length,
   });
