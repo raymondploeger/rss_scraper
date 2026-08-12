@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-138";
+const APP_BUILD = "intelligence-profile-ux-sprint-139";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1480,6 +1480,8 @@ const BACKEND_ARTICLE_QUERY_CONCURRENCY_LIMIT = 8;
 const PERSONAL_DASHBOARD_BACKEND_SEARCH_LIMIT = 16;
 const IDENTITY_DOCUMENT_OR_BACKEND_SEARCH_LIMIT = 32;
 const PERSONAL_DASHBOARD_MULTI_DOMAIN_BACKEND_SEARCH_LIMIT = 48;
+const VENDORS_PROFILE_BACKEND_SEARCH_LIMIT = 28;
+const VENDORS_PROFILE_BACKEND_PER_REQUEST_LIMIT = 60;
 const SUMMARY_METRICS = [
   { label: "Active feeds", key: "activeFeeds" },
   { label: "Tracked topics", key: "topics" },
@@ -27156,7 +27158,9 @@ function getPersonalDashboardBackendDomainPlan() {
       domain: "vendors",
       topic: "",
       includeTopicBaseline: false,
-      searches: limitMultiDomainPersonalDashboardBackendSearches(VENDORS_PROFILE_BACKEND_SEARCH_TERMS),
+      searches: limitMultiDomainPersonalDashboardBackendSearches(VENDORS_PROFILE_BACKEND_SEARCH_TERMS)
+        .slice(0, VENDORS_PROFILE_BACKEND_SEARCH_LIMIT),
+      perRequestLimit: VENDORS_PROFILE_BACKEND_PER_REQUEST_LIMIT,
       vendorProfileTargetedRetrieval: true,
     };
   }
@@ -52473,7 +52477,10 @@ function buildPersonalDashboardBackendQueryParamsList() {
 
   const requestParamsList = [];
   const seenKeys = new Set();
-  const perRequestLimit = Math.max(100, Math.min(250, Math.floor(MAX_ARTICLES_IN_MEMORY / 6)));
+  const planPerRequestLimit = Number(plan.perRequestLimit);
+  const perRequestLimit = Number.isFinite(planPerRequestLimit) && planPerRequestLimit > 0
+    ? Math.max(20, Math.min(250, Math.floor(planPerRequestLimit)))
+    : Math.max(100, Math.min(250, Math.floor(MAX_ARTICLES_IN_MEMORY / 6)));
   const hasExplicitTopicFilter = Boolean(state.filters.topic);
 
   const addParams = (mutate, options = {}) => {
