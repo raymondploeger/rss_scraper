@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-142";
+const APP_BUILD = "intelligence-profile-ux-sprint-143";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4791,6 +4791,33 @@ const VENDORS_PROFILE_HARD_NOISE_TERMS = Object.freeze([
   "for sale",
   "newsletter",
   "author at",
+  "banknote catalog",
+  "series list",
+  "composition: paper",
+  "are printed by",
+  "sustainability report",
+  "fuel marking",
+  "swiss sap quality awards",
+  "grand winner",
+  "helped underserved communities",
+  "expo 2020",
+  "world expo",
+  "will be present at",
+  "great success at",
+  "company profile",
+  "security solutions made in germany",
+  "security solutions 'made in germany'",
+  "not a technology story",
+  "new frontline for cybersecurity",
+  "securing workforce identities",
+  "shaping the debate",
+  "world of music on banknotes",
+  "product and brand protection",
+  "water management",
+  "iot initiative",
+  "hsm distributor",
+  "tokenization system",
+  "physical payment cards",
   "tech insider",
   "free demo",
   "demo tool",
@@ -4817,6 +4844,36 @@ const VENDORS_PROFILE_LOW_VALUE_SOURCE_TERMS = Object.freeze([
   "banknotenews.com",
   "owen linzmayer",
   "numismatic news",
+]);
+
+const VENDORS_PROFILE_LOW_VALUE_CONTENT_TERMS = Object.freeze([
+  "banknote catalog",
+  "series list",
+  "composition: paper",
+  "are printed by",
+  "sustainability report",
+  "fuel marking",
+  "swiss sap quality awards",
+  "grand winner",
+  "helped underserved communities",
+  "expo 2020",
+  "world expo",
+  "will be present at",
+  "great success at",
+  "company profile",
+  "security solutions made in germany",
+  "security solutions 'made in germany'",
+  "not a technology story",
+  "new frontline for cybersecurity",
+  "securing workforce identities",
+  "shaping the debate",
+  "world of music on banknotes",
+  "product and brand protection",
+  "water management",
+  "iot initiative",
+  "hsm distributor",
+  "tokenization system",
+  "physical payment cards",
 ]);
 
 function getVendorsProfileProfessionalGuard(article, selectedInterests = state.personalDashboard.interests) {
@@ -4870,6 +4927,7 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
     const matchedNoiseTerms = VENDORS_PROFILE_NOISE_TERMS.filter((term) => textMatchesKeyword(haystack, term));
     const matchedHardNoiseTerms = VENDORS_PROFILE_HARD_NOISE_TERMS.filter((term) => textMatchesKeyword(haystack, term));
     const matchedLowValueSourceTerms = VENDORS_PROFILE_LOW_VALUE_SOURCE_TERMS.filter((term) => textMatchesKeyword(sourceOnlyText, term) || textMatchesKeyword(articleTitleText, term));
+    const matchedLowValueContentTerms = VENDORS_PROFILE_LOW_VALUE_CONTENT_TERMS.filter((term) => textMatchesKeyword(haystack, term));
     const vendorNameInArticle = VENDORS_PROFILE_VENDOR_TERMS.some((term) => textMatchesKeyword(articleBodyText, term));
     const vendorNameInTitle = VENDORS_PROFILE_VENDOR_TERMS.some((term) => textMatchesKeyword(articleTitleText, term));
     const producerVendorNameInArticle = VENDORS_PROFILE_PRODUCER_VENDOR_TERMS.some((term) => textMatchesKeyword(articleBodyText, term));
@@ -4915,6 +4973,8 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
           ? "vendors_profile_professional_source_only"
           : matchedLowValueSourceTerms.length > 0
             ? "vendors_profile_low_value_source_noise"
+          : matchedLowValueContentTerms.length > 0
+            ? "vendors_profile_low_value_content_noise"
           : matchedHardNoiseTerms.length > 0
             ? "vendors_profile_tutorial_or_setup_noise"
           : "vendors_profile_guard_rejected",
@@ -4927,6 +4987,7 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
       noiseTerms: Object.freeze(matchedNoiseTerms.slice(0, 12)),
       hardNoiseTerms: Object.freeze(matchedHardNoiseTerms.slice(0, 12)),
       lowValueSourceTerms: Object.freeze(matchedLowValueSourceTerms.slice(0, 12)),
+      lowValueContentTerms: Object.freeze(matchedLowValueContentTerms.slice(0, 12)),
       professionalSourceOnly,
       professionalVendorNewsSource,
       professionalSourceVendorEvent,
