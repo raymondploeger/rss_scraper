@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-137";
+const APP_BUILD = "intelligence-profile-ux-sprint-138";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4904,6 +4904,43 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
       officialProducerSourceArticle,
     };
   });
+}
+
+function isVendorsProfileActive(interests = state.personalDashboard.interests) {
+  return getMatchingPersonalDashboardTemplateId(interests) === "vendors";
+}
+
+function getVendorsProfileProducerPriority(article) {
+  if (!article) {
+    return 0;
+  }
+  const assessment = getVendorsProfileProfessionalGuard(article);
+  if (!assessment?.applies || !assessment.passed) {
+    return 0;
+  }
+  let priority = 0;
+  if (assessment.officialProducerSourceArticle) {
+    priority += 180;
+  }
+  if (Array.isArray(assessment.producerVendorTerms) && assessment.producerVendorTerms.length) {
+    priority += 120;
+  }
+  if (Array.isArray(assessment.eventTerms) && assessment.eventTerms.length) {
+    priority += 60;
+  }
+  if (Array.isArray(assessment.industryContextTerms) && assessment.industryContextTerms.length) {
+    priority += 30;
+  }
+  return priority;
+}
+
+function compareVendorsProfileArticlesByProducerPriority(left, right, fallbackComparator) {
+  const leftPriority = getVendorsProfileProducerPriority(left);
+  const rightPriority = getVendorsProfileProducerPriority(right);
+  if (leftPriority !== rightPriority) {
+    return rightPriority - leftPriority;
+  }
+  return fallbackComparator(left, right);
 }
 
 function applyIdentityDocumentBundleQualityGateToArticles(articles = []) {
@@ -19788,6 +19825,64 @@ function listSurvivingArticles() {
     }));
 }
 
+function getVendorCoverageArticleText(articleOrTrace) {
+  return [
+    articleOrTrace?.title,
+    articleOrTrace?.source,
+    articleOrTrace?.feedTitle,
+    articleOrTrace?.feedName,
+    articleOrTrace?.finalReason,
+    articleOrTrace?.rejectedCategory,
+  ].filter(Boolean).join(" ");
+}
+
+function listVendorCoverageDiagnostics() {
+  const traceMap = getActiveFilterDecisionTraceMap();
+  const traceValues = traceMap ? Array.from(traceMap.values()) : [];
+  const vendorTerms = VENDORS_PROFILE_PRODUCER_VENDOR_TERMS.map((term) => String(term || "").trim()).filter(Boolean);
+  const diagnostics = vendorTerms.map((term) => {
+    const matches = traceValues.filter((trace) => textMatchesKeyword(getVendorCoverageArticleText(trace), term));
+    const survivors = matches.filter((trace) => trace.finalResult !== "rejected");
+    const visible = survivors.filter(isTraceVisible);
+    const grouped = survivors.filter(isTraceGrouped);
+    const rejected = matches.filter((trace) => trace.finalResult === "rejected");
+    return {
+      vendor: term,
+      traced: matches.length,
+      surviving: survivors.length,
+      visible: visible.length,
+      grouped: grouped.length,
+      rejected: rejected.length,
+      exampleVisibleTitles: visible.slice(0, 5).map((trace) => trace.title),
+      exampleSurvivingTitles: survivors.slice(0, 5).map((trace) => trace.title),
+      exampleRejectedTitles: rejected.slice(0, 5).map((trace) => ({
+        title: trace.title,
+        reason: trace.finalReason || "",
+      })),
+    };
+  });
+
+  return {
+    enabled: Boolean(traceMap),
+    profileActive: isVendorsProfileActive(),
+    tracedArticles: traceValues.length,
+    note: traceMap
+      ? "Coverage is based on the current filter decision trace."
+      : "Enable/export filter pipeline diagnostics first, then run this helper again.",
+    vendors: diagnostics
+      .filter((entry) => entry.traced || entry.surviving || entry.visible || entry.rejected)
+      .sort((left, right) =>
+        (right.visible - left.visible) ||
+        (right.surviving - left.surviving) ||
+        (right.traced - left.traced) ||
+        left.vendor.localeCompare(right.vendor)
+      ),
+    missingVendors: diagnostics
+      .filter((entry) => !entry.traced)
+      .map((entry) => entry.vendor),
+  };
+}
+
 function explainArticleDecisionByTitle(titlePart) {
   const needle = String(titlePart || "").trim().toLowerCase();
   const traceMap = getActiveFilterDecisionTraceMap();
@@ -23772,6 +23867,10 @@ function ensureFilterPipelineDiagnosticsExportTools() {
 
   if (typeof window.listSurvivingArticles !== "function") {
     window.listSurvivingArticles = () => listSurvivingArticles();
+  }
+
+  if (typeof window.listVendorCoverageDiagnostics !== "function") {
+    window.listVendorCoverageDiagnostics = () => listVendorCoverageDiagnostics();
   }
 
   if (typeof window.explainArticleDecisionByTitle !== "function") {
@@ -40412,6 +40511,14 @@ function sortPersonalDashboardResults(articles, options = {}) {
 
   const sortMode = options.sortMode || getPersonalDashboardSortMode();
   const sortedArticles = articles.slice().sort((left, right) => {
+    if (isVendorsProfileActive()) {
+      return compareVendorsProfileArticlesByProducerPriority(left, right, (fallbackLeft, fallbackRight) => {
+        if (sortMode === "relevance") {
+          return comparePersonalDashboardArticlesByRelevance(fallbackLeft, fallbackRight);
+        }
+        return comparePersonalDashboardArticlesByNewest(fallbackLeft, fallbackRight);
+      });
+    }
     if (sortMode === "relevance") {
       return comparePersonalDashboardArticlesByRelevance(left, right);
     }
