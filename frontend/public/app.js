@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-136";
+const APP_BUILD = "intelligence-profile-ux-sprint-137";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4599,8 +4599,13 @@ const VENDORS_PROFILE_BACKEND_SEARCH_TERMS = Object.freeze([
   "G+D banknote",
   "Louisenthal",
   "Bundesdruckerei",
+  "Bundesdruckerei Gruppe",
+  "Bundesdruckerei identity documents",
+  "Bundesdruckerei banknote",
   "Veridos",
   "IN Groupe",
+  "IDEMIA Public Security",
+  "IDEMIA card issuance",
   "Thales identity",
   "Thales digital identity",
   "IDEMIA",
@@ -4612,9 +4617,14 @@ const VENDORS_PROFILE_BACKEND_SEARCH_TERMS = Object.freeze([
   "Koenig & Bauer",
   "Oberthur",
   "OVD Kinegram",
+  "Kinegram security",
   "IQ Structures",
   "Toppan security printing",
+  "Toppan smart card",
+  "Toppan identity",
   "Covestro",
+  "Covestro identity document",
+  "EMPTECH Covestro",
   "Mühlbauer",
   "Muhlbauer",
   "Semlex",
@@ -4622,6 +4632,10 @@ const VENDORS_PROFILE_BACKEND_SEARCH_TERMS = Object.freeze([
   "Laxton",
   "NEC biometric",
   "DNP secure document",
+  "DNP secure document workflows",
+  "DNP P&I Cloud",
+  "KURZ banknotes",
+  "KURZ security",
 ]);
 
 const VENDORS_PROFILE_PRODUCER_CONTEXT_TERMS = Object.freeze([
