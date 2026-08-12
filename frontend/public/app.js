@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-135";
+const APP_BUILD = "intelligence-profile-ux-sprint-136";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4759,6 +4759,8 @@ const VENDORS_PROFILE_NOISE_TERMS = Object.freeze([
 ]);
 
 const VENDORS_PROFILE_HARD_NOISE_TERMS = Object.freeze([
+  "biometric update",
+  "biometricupdate.com",
   "tech insider",
   "free demo",
   "demo tool",
