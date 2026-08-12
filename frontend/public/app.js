@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-128";
+const APP_BUILD = "intelligence-profile-ux-sprint-129";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4545,6 +4545,9 @@ const VENDORS_PROFILE_VENDOR_TERMS = Object.freeze([
   "persona",
   "trulioo",
   "socure",
+  "signicat",
+  "authsignal",
+  "idenfy",
 ]);
 
 const VENDORS_PROFILE_PRODUCER_CONTEXT_TERMS = Object.freeze([
@@ -4586,6 +4589,8 @@ const VENDORS_PROFILE_EVENT_TERMS = Object.freeze([
   "launched",
   "introduces",
   "introduced",
+  "releases",
+  "released",
   "unveils",
   "unveiled",
   "partners",
@@ -4608,6 +4613,8 @@ const VENDORS_PROFILE_EVENT_TERMS = Object.freeze([
   "acquisition",
   "certified",
   "certification",
+  "study",
+  "report",
   "supplies",
   "supply",
   "production",
@@ -4710,6 +4717,10 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
       context.tagText,
       context.bodyText,
     ].filter(Boolean).join(" ");
+    const articleTitleText = [
+      context.titleText,
+      context.tagText,
+    ].filter(Boolean).join(" ");
 
     const matchedVendorTerms = VENDORS_PROFILE_VENDOR_TERMS.filter((term) => textMatchesKeyword(haystack, term));
     const matchedProducerContextTerms = VENDORS_PROFILE_PRODUCER_CONTEXT_TERMS.filter((term) => textMatchesKeyword(haystack, term));
@@ -4717,19 +4728,25 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
     const matchedIndustryContextTerms = VENDORS_PROFILE_INDUSTRY_CONTEXT_TERMS.filter((term) => textMatchesKeyword(haystack, term));
     const matchedNoiseTerms = VENDORS_PROFILE_NOISE_TERMS.filter((term) => textMatchesKeyword(haystack, term));
     const vendorNameInArticle = VENDORS_PROFILE_VENDOR_TERMS.some((term) => textMatchesKeyword(articleBodyText, term));
-    const professionalSourceOnly = [
+    const vendorNameInTitle = VENDORS_PROFILE_VENDOR_TERMS.some((term) => textMatchesKeyword(articleTitleText, term));
+    const professionalVendorNewsSource = [
       "biometric update",
       "security document world",
       "securitydocumentworld",
-    ].some((term) => textMatchesKeyword(sourceOnlyText, term)) && !vendorNameInArticle;
+    ].some((term) => textMatchesKeyword(sourceOnlyText, term));
+    const professionalSourceOnly = professionalVendorNewsSource && !vendorNameInArticle;
+    const professionalSourceVendorEvent = !professionalVendorNewsSource ||
+      vendorNameInTitle ||
+      (vendorNameInArticle && matchedEventTerms.length > 0);
     const explicitVendorArticle = vendorNameInArticle &&
-      (matchedEventTerms.length > 0 || matchedIndustryContextTerms.length > 0);
+      (matchedEventTerms.length > 0 || (!professionalVendorNewsSource && matchedIndustryContextTerms.length > 0));
     const producerContextArticle = matchedProducerContextTerms.length > 0 &&
       matchedIndustryContextTerms.length > 0 &&
       (matchedEventTerms.length > 0 || vendorNameInArticle);
     const passed = (explicitVendorArticle || producerContextArticle)
       && !(matchedNoiseTerms.length > 0 && matchedVendorTerms.length === 0)
-      && !professionalSourceOnly;
+      && !professionalSourceOnly
+      && professionalSourceVendorEvent;
 
     return {
       applies: true,
@@ -4745,6 +4762,8 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
       industryContextTerms: Object.freeze(matchedIndustryContextTerms.slice(0, 12)),
       noiseTerms: Object.freeze(matchedNoiseTerms.slice(0, 12)),
       professionalSourceOnly,
+      professionalVendorNewsSource,
+      professionalSourceVendorEvent,
     };
   });
 }
