@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-151";
+const APP_BUILD = "intelligence-profile-ux-sprint-152";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4511,6 +4511,22 @@ function getIdentityDocumentBundleQualityGateAssessment(article) {
 
 function getIdentityDocumentAuthorityProfileGuardAssessment(article) {
   return getIdentityDocumentBundleQualityGateAssessment(article);
+}
+
+function isSecurityPrinterProfileActive(interests = state.personalDashboard.interests) {
+  const normalizedInterests = normalizePersonalDashboardInterests(interests);
+  const templateInterests = normalizePersonalDashboardInterests(
+    PERSONAL_DASHBOARD_PROFILE_TEMPLATES.security_printer?.interests || []
+  );
+  const activeTemplateId = String(
+    state.personalDashboard.activeTemplateId ||
+    (typeof localStorage !== "undefined"
+      ? localStorage.getItem(PERSONAL_DASHBOARD_ACTIVE_TEMPLATE_STORAGE_KEY)
+      : "") ||
+    ""
+  ).trim();
+  return activeTemplateId === "security_printer" &&
+    samePersonalDashboardInterestSet(normalizedInterests, templateInterests);
 }
 
 const VENDORS_PROFILE_VENDOR_TERMS = Object.freeze([
@@ -39138,8 +39154,7 @@ function getVisaResidencePermitServiceNoiseGuard(article, selectedIdentityIntere
 }
 
 function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests = state.personalDashboard.interests) {
-  const templateId = getMatchingPersonalDashboardTemplateId(selectedInterests);
-  if (templateId !== "security_printer") {
+  if (!isSecurityPrinterProfileActive(selectedInterests)) {
     return {
       applies: false,
       passed: true,
