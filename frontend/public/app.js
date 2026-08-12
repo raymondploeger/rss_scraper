@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-153";
+const APP_BUILD = "intelligence-profile-ux-sprint-154";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -39465,6 +39465,9 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
     const matchedProfileTechnologyAnchorTerms = profileTechnologyAnchorTerms.filter((term) =>
       textMatchesKeyword(haystack, term)
     );
+    const matchedTitleProfileTechnologyAnchorTerms = profileTechnologyAnchorTerms.filter((term) =>
+      textMatchesKeyword(articleTitleText, term)
+    );
     const matchedBroadPolymerBanknoteNoiseTerms = broadPolymerBanknoteNoiseTerms.filter((term) =>
       textMatchesKeyword(haystack, term)
     );
@@ -39481,7 +39484,7 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       textMatchesKeyword(`${context.sourceText} ${context.domainText} ${context.metadataText}`, term)
     );
     const broadPolymerOnly = matchedTitleBroadPolymerBanknoteNoiseTerms.length > 0 &&
-      matchedProfileTechnologyAnchorTerms.length === 0 &&
+      matchedTitleProfileTechnologyAnchorTerms.length === 0 &&
       matchedTitleProfileProducerContextTerms.length === 0;
     const passed = matchedProfessionalTerms.length > 0
       && !(matchedHardOffDomainNoiseTerms.length > 0 && matchedSecureContextTerms.length === 0)
@@ -39514,6 +39517,7 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       printingTechnologyContextTerms: Object.freeze(matchedPrintingTechnologyContextTerms.slice(0, 10)),
       explicitSecurityPrintingTechnologyTerms: Object.freeze(matchedExplicitSecurityPrintingTechnologyTerms.slice(0, 10)),
       profileTechnologyAnchorTerms: Object.freeze(matchedProfileTechnologyAnchorTerms.slice(0, 10)),
+      titleProfileTechnologyAnchorTerms: Object.freeze(matchedTitleProfileTechnologyAnchorTerms.slice(0, 10)),
       broadPolymerBanknoteNoiseTerms: Object.freeze(matchedBroadPolymerBanknoteNoiseTerms.slice(0, 10)),
       titleBroadPolymerBanknoteNoiseTerms: Object.freeze(matchedTitleBroadPolymerBanknoteNoiseTerms.slice(0, 10)),
       profileProducerContextTerms: Object.freeze(matchedProfileProducerContextTerms.slice(0, 10)),
