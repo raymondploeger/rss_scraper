@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-147";
+const APP_BUILD = "intelligence-profile-ux-sprint-148";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -5050,7 +5050,8 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
     };
   }
 
-  return getCachedArticleValue(article, "vendorsProfileProfessionalGuard", () => {
+  const signature = normalizePersonalDashboardInterests(selectedInterests).join("|") || "none";
+  return getCachedArticleValue(article, `vendorsProfileProfessionalGuard:${signature}`, () => {
     const context = getPersonalBoostContext(article, "getVendorsProfileProfessionalGuard", { interest: "vendors" });
     const haystack = [
       context.titleText,
@@ -21085,6 +21086,7 @@ function listRejectionReasons() {
 
 function getPersonalDashboardTraceMetadata(article, rejection = null, personalDashboardScore = null) {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const vendorsProfileActive = isVendorsProfileActive(selectedInterests);
   const selectedMainDomains = getSelectedMainDomains(selectedInterests);
   const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
   const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedInterests);
@@ -21135,11 +21137,11 @@ function getPersonalDashboardTraceMetadata(article, rejection = null, personalDa
   const polymerChildMatchDiagnostics = isFilterPipelineDiagnosticsEnabled() && isPolymerPersonalDashboardSelected(selectedInterests)
     ? getPolymerChildMatchDiagnostics(article)
     : null;
-  const identityDecisionDiagnostics = isFilterPipelineDiagnosticsEnabled() && isIdentityDocumentsPersonalDashboardSelected(selectedInterests)
+  const identityDecisionDiagnostics = isFilterPipelineDiagnosticsEnabled() && !vendorsProfileActive && isIdentityDocumentsPersonalDashboardSelected(selectedInterests)
     ? getIdentityDecisionDiagnostics(article, { rejection })
     : null;
   const identityNoiseGuardDiagnostics = personalDashboardScore?.metadata?.identityNoiseGuardDiagnostics ||
-    (isFilterPipelineDiagnosticsEnabled() && isIdentityDocumentsPersonalDashboardSelected(selectedInterests)
+    (isFilterPipelineDiagnosticsEnabled() && !vendorsProfileActive && isIdentityDocumentsPersonalDashboardSelected(selectedInterests)
       ? getIdentityNoiseGuardDiagnostics(article, {
           ...(personalDashboardScore
             ? { personalDashboardPassed: Boolean(personalDashboardScore.passed) }
@@ -23143,6 +23145,15 @@ function getIdentityDocumentConjunctiveInterestAssessment(article, selectedInter
 
 function classifyPersonalDashboardRejection(article) {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const vendorsProfileAssessment = getVendorsProfileProfessionalGuard(article, selectedInterests);
+  if (vendorsProfileAssessment.applies) {
+    return {
+      category: "vendorsProfileProfessionalGuard",
+      reason: vendorsProfileAssessment.passed
+        ? "vendors_profile_unexpected_post_guard_rejection"
+        : vendorsProfileAssessment.rejectionReason || "vendors_profile_guard_rejected",
+    };
+  }
   const selectedMainDomains = getSelectedMainDomains(selectedInterests);
   const selectedSharedInterests = getSelectedSharedSecuritySubinterests(selectedInterests);
   const selectedIdentityInterests = getSelectedIdentityDashboardInterests(selectedInterests);
@@ -23189,7 +23200,7 @@ function classifyPersonalDashboardRejection(article) {
     };
   }
 
-  if (selectedMainDomains.includes("identity_documents") && shouldUseIdentityDocumentBundleQualityGate(selectedInterests)) {
+  if (!isVendorsProfileActive(selectedInterests) && selectedMainDomains.includes("identity_documents") && shouldUseIdentityDocumentBundleQualityGate(selectedInterests)) {
     const identityDocumentBundleQualityGate = getIdentityDocumentBundleQualityGateAssessment(article);
     if (!identityDocumentBundleQualityGate.passed) {
       return {
@@ -40463,7 +40474,7 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
     }
   }
 
-  if (selectedMainDomains.includes("identity_documents") && measurePersonalDashboardSegment("identityDocumentBundleQualityGateActive", () =>
+  if (!isVendorsProfileActive(selectedInterests) && selectedMainDomains.includes("identity_documents") && measurePersonalDashboardSegment("identityDocumentBundleQualityGateActive", () =>
     shouldUseIdentityDocumentBundleQualityGate(selectedInterests)
   )) {
     const identityDocumentBundleQualityGate = measurePersonalDashboardSegment("identityDocumentBundleQualityGate", () =>
