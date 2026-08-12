@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-134";
+const APP_BUILD = "intelligence-profile-ux-sprint-135";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4832,6 +4832,7 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
     const vendorNameInTitle = VENDORS_PROFILE_VENDOR_TERMS.some((term) => textMatchesKeyword(articleTitleText, term));
     const producerVendorNameInArticle = VENDORS_PROFILE_PRODUCER_VENDOR_TERMS.some((term) => textMatchesKeyword(articleBodyText, term));
     const producerVendorNameInTitle = VENDORS_PROFILE_PRODUCER_VENDOR_TERMS.some((term) => textMatchesKeyword(articleTitleText, term));
+    const producerVendorNameInSource = VENDORS_PROFILE_PRODUCER_VENDOR_TERMS.some((term) => textMatchesKeyword(sourceOnlyText, term));
     const professionalVendorNewsSource = [
       "biometric update",
       "security document world",
@@ -4846,6 +4847,9 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
           ? producerVendorNameInTitle && matchedTitleEventTerms.length > 0
           : matchedEventTerms.length > 0 || matchedIndustryContextTerms.length > 0
       );
+    const officialProducerSourceArticle = producerVendorNameInSource &&
+      !professionalVendorNewsSource &&
+      (matchedEventTerms.length > 0 || matchedIndustryContextTerms.length > 0);
     const producerContextArticle = matchedProducerContextTerms.length > 0 &&
       matchedIndustryContextTerms.length > 0 &&
       producerVendorNameInArticle &&
@@ -4854,7 +4858,7 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
           ? producerVendorNameInTitle && matchedTitleEventTerms.length > 0
           : matchedEventTerms.length > 0 || producerVendorNameInArticle
       );
-    const passed = (explicitVendorArticle || producerContextArticle)
+    const passed = (explicitVendorArticle || officialProducerSourceArticle || producerContextArticle)
       && matchedHardNoiseTerms.length === 0
       && !(matchedNoiseTerms.length > 0 && matchedVendorTerms.length === 0)
       && !professionalSourceOnly
@@ -4881,6 +4885,7 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
       professionalSourceOnly,
       professionalVendorNewsSource,
       professionalSourceVendorEvent,
+      officialProducerSourceArticle,
     };
   });
 }
