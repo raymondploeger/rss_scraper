@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-141";
+const APP_BUILD = "intelligence-profile-ux-sprint-142";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4777,6 +4777,20 @@ const VENDORS_PROFILE_NOISE_TERMS = Object.freeze([
 const VENDORS_PROFILE_HARD_NOISE_TERMS = Object.freeze([
   "biometric update",
   "biometricupdate.com",
+  "linkedin",
+  "linkedin.com",
+  "banknotenews",
+  "banknotenews.com",
+  "owen linzmayer",
+  "numismatic news",
+  "collector banknote",
+  "collectors banknote",
+  "banknote collector",
+  "banknote collectors",
+  "auction",
+  "for sale",
+  "newsletter",
+  "author at",
   "tech insider",
   "free demo",
   "demo tool",
@@ -4794,6 +4808,15 @@ const VENDORS_PROFILE_HARD_NOISE_TERMS = Object.freeze([
   "igaming",
   "casino",
   "sportsbook",
+]);
+
+const VENDORS_PROFILE_LOW_VALUE_SOURCE_TERMS = Object.freeze([
+  "linkedin",
+  "linkedin.com",
+  "banknotenews",
+  "banknotenews.com",
+  "owen linzmayer",
+  "numismatic news",
 ]);
 
 function getVendorsProfileProfessionalGuard(article, selectedInterests = state.personalDashboard.interests) {
@@ -4846,6 +4869,7 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
     const matchedIndustryContextTerms = VENDORS_PROFILE_INDUSTRY_CONTEXT_TERMS.filter((term) => textMatchesKeyword(haystack, term));
     const matchedNoiseTerms = VENDORS_PROFILE_NOISE_TERMS.filter((term) => textMatchesKeyword(haystack, term));
     const matchedHardNoiseTerms = VENDORS_PROFILE_HARD_NOISE_TERMS.filter((term) => textMatchesKeyword(haystack, term));
+    const matchedLowValueSourceTerms = VENDORS_PROFILE_LOW_VALUE_SOURCE_TERMS.filter((term) => textMatchesKeyword(sourceOnlyText, term) || textMatchesKeyword(articleTitleText, term));
     const vendorNameInArticle = VENDORS_PROFILE_VENDOR_TERMS.some((term) => textMatchesKeyword(articleBodyText, term));
     const vendorNameInTitle = VENDORS_PROFILE_VENDOR_TERMS.some((term) => textMatchesKeyword(articleTitleText, term));
     const producerVendorNameInArticle = VENDORS_PROFILE_PRODUCER_VENDOR_TERMS.some((term) => textMatchesKeyword(articleBodyText, term));
@@ -4889,6 +4913,8 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
         ? ""
         : professionalSourceOnly
           ? "vendors_profile_professional_source_only"
+          : matchedLowValueSourceTerms.length > 0
+            ? "vendors_profile_low_value_source_noise"
           : matchedHardNoiseTerms.length > 0
             ? "vendors_profile_tutorial_or_setup_noise"
           : "vendors_profile_guard_rejected",
@@ -4900,6 +4926,7 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
       industryContextTerms: Object.freeze(matchedIndustryContextTerms.slice(0, 12)),
       noiseTerms: Object.freeze(matchedNoiseTerms.slice(0, 12)),
       hardNoiseTerms: Object.freeze(matchedHardNoiseTerms.slice(0, 12)),
+      lowValueSourceTerms: Object.freeze(matchedLowValueSourceTerms.slice(0, 12)),
       professionalSourceOnly,
       professionalVendorNewsSource,
       professionalSourceVendorEvent,
