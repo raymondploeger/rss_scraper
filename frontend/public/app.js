@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-143";
+const APP_BUILD = "intelligence-profile-ux-sprint-144";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4876,6 +4876,89 @@ const VENDORS_PROFILE_LOW_VALUE_CONTENT_TERMS = Object.freeze([
   "physical payment cards",
 ]);
 
+const VENDORS_PROFILE_BUSINESS_EVENT_TERMS = Object.freeze([
+  "contract",
+  "major contract",
+  "tender",
+  "wins tender",
+  "selected",
+  "selects",
+  "selects crane",
+  "selected crane",
+  "deploys",
+  "deployed",
+  "implements",
+  "implemented",
+  "launches",
+  "launched",
+  "releases",
+  "released",
+  "unveils",
+  "unveiled",
+  "introduces",
+  "introduced",
+  "partners",
+  "partnership",
+  "joint venture",
+  "strategic partnership",
+  "acquires",
+  "acquired",
+  "acquisition",
+  "expands production",
+  "production of security features",
+  "printing plan",
+  "printed by",
+  "produced by",
+  "supplies",
+  "supply",
+  "certified",
+  "certification",
+]);
+
+const VENDORS_PROFILE_PRODUCER_OUTPUT_TERMS = Object.freeze([
+  "banknote security",
+  "banknote design",
+  "banknote printing",
+  "currency printing",
+  "currency printing plan",
+  "security feature",
+  "security features",
+  "security thread",
+  "security threads",
+  "security ink",
+  "security inks",
+  "hologram",
+  "holograms",
+  "holography",
+  "dovid",
+  "micro optics",
+  "intaglio",
+  "polycarbonate",
+  "polymer banknote",
+  "passport",
+  "e-passport",
+  "e-passports",
+  "epassport",
+  "epassports",
+  "id card",
+  "id cards",
+  "identity card",
+  "identity document",
+  "identity documents",
+  "secure document",
+  "secure documents",
+  "document security",
+  "foreign nationals identity document",
+  "card issuance",
+  "card issuance api",
+  "fingerprint tech",
+  "identity verification",
+  "document verification",
+  "biometric licence",
+  "biometric licences",
+  "biometric id",
+]);
+
 function getVendorsProfileProfessionalGuard(article, selectedInterests = state.personalDashboard.interests) {
   const templateId = getMatchingPersonalDashboardTemplateId(selectedInterests);
   if (templateId !== "vendors") {
@@ -4928,6 +5011,10 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
     const matchedHardNoiseTerms = VENDORS_PROFILE_HARD_NOISE_TERMS.filter((term) => textMatchesKeyword(haystack, term));
     const matchedLowValueSourceTerms = VENDORS_PROFILE_LOW_VALUE_SOURCE_TERMS.filter((term) => textMatchesKeyword(sourceOnlyText, term) || textMatchesKeyword(articleTitleText, term));
     const matchedLowValueContentTerms = VENDORS_PROFILE_LOW_VALUE_CONTENT_TERMS.filter((term) => textMatchesKeyword(haystack, term));
+    const matchedBusinessEventTerms = VENDORS_PROFILE_BUSINESS_EVENT_TERMS.filter((term) => textMatchesKeyword(haystack, term));
+    const matchedTitleBusinessEventTerms = VENDORS_PROFILE_BUSINESS_EVENT_TERMS.filter((term) => textMatchesKeyword(articleTitleText, term));
+    const matchedProducerOutputTerms = VENDORS_PROFILE_PRODUCER_OUTPUT_TERMS.filter((term) => textMatchesKeyword(haystack, term));
+    const matchedTitleProducerOutputTerms = VENDORS_PROFILE_PRODUCER_OUTPUT_TERMS.filter((term) => textMatchesKeyword(articleTitleText, term));
     const vendorNameInArticle = VENDORS_PROFILE_VENDOR_TERMS.some((term) => textMatchesKeyword(articleBodyText, term));
     const vendorNameInTitle = VENDORS_PROFILE_VENDOR_TERMS.some((term) => textMatchesKeyword(articleTitleText, term));
     const producerVendorNameInArticle = VENDORS_PROFILE_PRODUCER_VENDOR_TERMS.some((term) => textMatchesKeyword(articleBodyText, term));
@@ -4958,7 +5045,16 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
           ? producerVendorNameInTitle && matchedTitleEventTerms.length > 0
           : matchedEventTerms.length > 0 || producerVendorNameInArticle
       );
+    const vendorNamedStory = producerVendorNameInTitle &&
+      (matchedTitleBusinessEventTerms.length > 0 || matchedTitleProducerOutputTerms.length > 0);
+    const officialProducerOutputStory = producerVendorNameInSource &&
+      matchedProducerOutputTerms.length > 0 &&
+      (matchedBusinessEventTerms.length > 0 || producerVendorNameInTitle);
+    const producerEventStory = producerVendorNameInArticle &&
+      matchedProducerOutputTerms.length > 0 &&
+      matchedBusinessEventTerms.length > 0;
     const passed = (explicitVendorArticle || officialProducerSourceArticle || producerContextArticle)
+      && (vendorNamedStory || officialProducerOutputStory || producerEventStory)
       && matchedHardNoiseTerms.length === 0
       && !(matchedNoiseTerms.length > 0 && matchedVendorTerms.length === 0)
       && !professionalSourceOnly
@@ -4977,6 +5073,8 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
             ? "vendors_profile_low_value_content_noise"
           : matchedHardNoiseTerms.length > 0
             ? "vendors_profile_tutorial_or_setup_noise"
+          : !(vendorNamedStory || officialProducerOutputStory || producerEventStory)
+            ? "vendors_profile_missing_vendor_event_context"
           : "vendors_profile_guard_rejected",
       vendorTerms: Object.freeze(matchedVendorTerms.slice(0, 12)),
       producerVendorTerms: Object.freeze(matchedProducerVendorTerms.slice(0, 12)),
@@ -4988,6 +5086,13 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
       hardNoiseTerms: Object.freeze(matchedHardNoiseTerms.slice(0, 12)),
       lowValueSourceTerms: Object.freeze(matchedLowValueSourceTerms.slice(0, 12)),
       lowValueContentTerms: Object.freeze(matchedLowValueContentTerms.slice(0, 12)),
+      businessEventTerms: Object.freeze(matchedBusinessEventTerms.slice(0, 12)),
+      titleBusinessEventTerms: Object.freeze(matchedTitleBusinessEventTerms.slice(0, 12)),
+      producerOutputTerms: Object.freeze(matchedProducerOutputTerms.slice(0, 12)),
+      titleProducerOutputTerms: Object.freeze(matchedTitleProducerOutputTerms.slice(0, 12)),
+      vendorNamedStory,
+      officialProducerOutputStory,
+      producerEventStory,
       professionalSourceOnly,
       professionalVendorNewsSource,
       professionalSourceVendorEvent,
