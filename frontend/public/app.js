@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-148";
+const APP_BUILD = "intelligence-profile-ux-sprint-149";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4706,6 +4706,10 @@ const VENDORS_PROFILE_EVENT_TERMS = Object.freeze([
   "partnership",
   "selected",
   "selects",
+  "approve",
+  "approves",
+  "approved",
+  "deploy",
   "deploys",
   "deployed",
   "implements",
@@ -4730,6 +4734,8 @@ const VENDORS_PROFILE_EVENT_TERMS = Object.freeze([
   "facility",
   "plant",
   "factory",
+  "produced by",
+  "upgrade tender",
 ]);
 
 const VENDORS_PROFILE_INDUSTRY_CONTEXT_TERMS = Object.freeze([
@@ -4950,6 +4956,26 @@ const VENDORS_PROFILE_LOW_VALUE_CONTENT_TERMS = Object.freeze([
   "tomorrow's cash",
 ]);
 
+const VENDORS_PROFILE_TUTORIAL_SETUP_TERMS = Object.freeze([
+  "tech insider",
+  "free demo",
+  "demo tool",
+  "step-by-step",
+  "setup",
+  "production setup",
+  "integration guide",
+  "developer guide",
+  "developer example",
+  "react",
+  "api setup",
+  "api tutorial",
+  "sdk integration guide",
+  "igaming setup",
+  "igaming",
+  "casino",
+  "sportsbook",
+]);
+
 const VENDORS_PROFILE_BUSINESS_EVENT_TERMS = Object.freeze([
   "contract",
   "major contract",
@@ -4959,6 +4985,10 @@ const VENDORS_PROFILE_BUSINESS_EVENT_TERMS = Object.freeze([
   "selects",
   "selects crane",
   "selected crane",
+  "approve",
+  "approves",
+  "approved",
+  "deploy",
   "deploys",
   "deployed",
   "implements",
@@ -4983,6 +5013,7 @@ const VENDORS_PROFILE_BUSINESS_EVENT_TERMS = Object.freeze([
   "printing plan",
   "printed by",
   "produced by",
+  "upgrade tender",
   "supplies",
   "supply",
   "certified",
@@ -5086,6 +5117,7 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
     const matchedHardNoiseTerms = VENDORS_PROFILE_HARD_NOISE_TERMS.filter((term) => textMatchesKeyword(haystack, term));
     const matchedLowValueSourceTerms = VENDORS_PROFILE_LOW_VALUE_SOURCE_TERMS.filter((term) => textMatchesKeyword(sourceOnlyText, term) || textMatchesKeyword(articleTitleText, term));
     const matchedLowValueContentTerms = VENDORS_PROFILE_LOW_VALUE_CONTENT_TERMS.filter((term) => textMatchesKeyword(haystack, term));
+    const matchedTutorialSetupTerms = VENDORS_PROFILE_TUTORIAL_SETUP_TERMS.filter((term) => textMatchesKeyword(haystack, term));
     const matchedBusinessEventTerms = VENDORS_PROFILE_BUSINESS_EVENT_TERMS.filter((term) => textMatchesKeyword(haystack, term));
     const matchedTitleBusinessEventTerms = VENDORS_PROFILE_BUSINESS_EVENT_TERMS.filter((term) => textMatchesKeyword(articleTitleText, term));
     const matchedProducerOutputTerms = VENDORS_PROFILE_PRODUCER_OUTPUT_TERMS.filter((term) => textMatchesKeyword(haystack, term));
@@ -5128,9 +5160,18 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
     const producerEventStory = producerVendorNameInArticle &&
       matchedProducerOutputTerms.length > 0 &&
       matchedBusinessEventTerms.length > 0;
-    const passed = (explicitVendorArticle || officialProducerSourceArticle || producerContextArticle)
-      && (vendorNamedStory || officialProducerOutputStory || producerEventStory)
-      && matchedHardNoiseTerms.length === 0
+    const vendorDeploymentRescue = producerVendorNameInTitle &&
+      matchedTitleBusinessEventTerms.length > 0 &&
+      matchedTitleProducerOutputTerms.length > 0;
+    const lowValueNoiseMatched = matchedLowValueSourceTerms.length > 0 ||
+      matchedLowValueContentTerms.length > 0 ||
+      matchedTutorialSetupTerms.length > 0;
+    const passed = (
+      ((explicitVendorArticle || officialProducerSourceArticle || producerContextArticle)
+        && (vendorNamedStory || officialProducerOutputStory || producerEventStory))
+      || vendorDeploymentRescue
+    )
+      && !lowValueNoiseMatched
       && !(matchedNoiseTerms.length > 0 && matchedVendorTerms.length === 0)
       && !professionalSourceOnly
       && professionalSourceVendorEvent;
@@ -5146,8 +5187,10 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
             ? "vendors_profile_low_value_source_noise"
           : matchedLowValueContentTerms.length > 0
             ? "vendors_profile_low_value_content_noise"
-          : matchedHardNoiseTerms.length > 0
+          : matchedTutorialSetupTerms.length > 0
             ? "vendors_profile_tutorial_or_setup_noise"
+          : matchedHardNoiseTerms.length > 0
+            ? "vendors_profile_professional_source_without_vendor_story"
           : !(vendorNamedStory || officialProducerOutputStory || producerEventStory)
             ? "vendors_profile_missing_vendor_event_context"
           : "vendors_profile_guard_rejected",
@@ -5161,6 +5204,7 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
       hardNoiseTerms: Object.freeze(matchedHardNoiseTerms.slice(0, 12)),
       lowValueSourceTerms: Object.freeze(matchedLowValueSourceTerms.slice(0, 12)),
       lowValueContentTerms: Object.freeze(matchedLowValueContentTerms.slice(0, 12)),
+      tutorialSetupTerms: Object.freeze(matchedTutorialSetupTerms.slice(0, 12)),
       businessEventTerms: Object.freeze(matchedBusinessEventTerms.slice(0, 12)),
       titleBusinessEventTerms: Object.freeze(matchedTitleBusinessEventTerms.slice(0, 12)),
       producerOutputTerms: Object.freeze(matchedProducerOutputTerms.slice(0, 12)),
@@ -5168,6 +5212,7 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
       vendorNamedStory,
       officialProducerOutputStory,
       producerEventStory,
+      vendorDeploymentRescue,
       professionalSourceOnly,
       professionalVendorNewsSource,
       professionalSourceVendorEvent,
