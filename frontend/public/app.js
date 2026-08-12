@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-154";
+const APP_BUILD = "intelligence-profile-ux-sprint-155";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4518,14 +4518,13 @@ function isSecurityPrinterProfileActive(interests = state.personalDashboard.inte
   const templateInterests = normalizePersonalDashboardInterests(
     PERSONAL_DASHBOARD_PROFILE_TEMPLATES.security_printer?.interests || []
   );
-  const activeTemplateId = String(
-    state.personalDashboard.activeTemplateId ||
-    (typeof localStorage !== "undefined"
-      ? localStorage.getItem(PERSONAL_DASHBOARD_ACTIVE_TEMPLATE_STORAGE_KEY)
-      : "") ||
-    ""
+  const stateTemplateId = String(state.personalDashboard.activeTemplateId || "").trim();
+  const storedTemplateId = String(
+    typeof localStorage !== "undefined"
+      ? localStorage.getItem(PERSONAL_DASHBOARD_ACTIVE_TEMPLATE_STORAGE_KEY) || ""
+      : ""
   ).trim();
-  return activeTemplateId === "security_printer" &&
+  return (stateTemplateId === "security_printer" || storedTemplateId === "security_printer") &&
     samePersonalDashboardInterestSet(normalizedInterests, templateInterests);
 }
 
