@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-133";
+const APP_BUILD = "intelligence-profile-ux-sprint-134";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4550,6 +4550,46 @@ const VENDORS_PROFILE_VENDOR_TERMS = Object.freeze([
   "idenfy",
 ]);
 
+const VENDORS_PROFILE_PRODUCER_VENDOR_TERMS = Object.freeze([
+  "de la rue",
+  "de-la-rue",
+  "thales",
+  "thalis",
+  "in groupe",
+  "ingroupe",
+  "bundesdruckerei",
+  "bunderDruckerei",
+  "veridos",
+  "giesecke+devrient",
+  "giesecke devrient",
+  "g+d",
+  "gi-de",
+  "idemia",
+  "hid",
+  "entrust",
+  "regula forensics",
+  "regulaforensics",
+  "sicpa",
+  "crane currency",
+  "crane authentication",
+  "koenig & bauer",
+  "koenig-bauer",
+  "louisenthal",
+  "oberthur",
+  "ovd kinegram",
+  "kinegram",
+  "iq structures",
+  "covestro",
+  "dnp",
+  "toppan",
+  "muhlbauer",
+  "mühlbauer",
+  "semlex",
+  "iris corporation",
+  "laxton",
+  "nec",
+]);
+
 const VENDORS_PROFILE_BACKEND_SEARCH_TERMS = Object.freeze([
   "De La Rue",
   "Crane Currency",
@@ -4582,22 +4622,6 @@ const VENDORS_PROFILE_BACKEND_SEARCH_TERMS = Object.freeze([
   "Laxton",
   "NEC biometric",
   "DNP secure document",
-  "Signicat",
-  "Authsignal",
-  "iDenfy",
-  "Shufti",
-  "Socure",
-  "Jumio",
-  "Onfido",
-  "Veriff",
-  "Mitek",
-  "Facephi",
-  "iProov",
-  "Innovatrics",
-  "Sumsub",
-  "IDnow",
-  "Persona",
-  "Trulioo",
 ]);
 
 const VENDORS_PROFILE_PRODUCER_CONTEXT_TERMS = Object.freeze([
@@ -4736,6 +4760,8 @@ const VENDORS_PROFILE_NOISE_TERMS = Object.freeze([
 
 const VENDORS_PROFILE_HARD_NOISE_TERMS = Object.freeze([
   "tech insider",
+  "free demo",
+  "demo tool",
   "step-by-step",
   "setup",
   "production setup",
@@ -4765,6 +4791,7 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
       industryContextTerms: Object.freeze([]),
       noiseTerms: Object.freeze([]),
       hardNoiseTerms: Object.freeze([]),
+      producerVendorTerms: Object.freeze([]),
     };
   }
 
@@ -4794,6 +4821,7 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
     ].filter(Boolean).join(" ");
 
     const matchedVendorTerms = VENDORS_PROFILE_VENDOR_TERMS.filter((term) => textMatchesKeyword(haystack, term));
+    const matchedProducerVendorTerms = VENDORS_PROFILE_PRODUCER_VENDOR_TERMS.filter((term) => textMatchesKeyword(haystack, term));
     const matchedProducerContextTerms = VENDORS_PROFILE_PRODUCER_CONTEXT_TERMS.filter((term) => textMatchesKeyword(haystack, term));
     const matchedEventTerms = VENDORS_PROFILE_EVENT_TERMS.filter((term) => textMatchesKeyword(haystack, term));
     const matchedTitleEventTerms = VENDORS_PROFILE_EVENT_TERMS.filter((term) => textMatchesKeyword(articleTitleText, term));
@@ -4802,26 +4830,29 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
     const matchedHardNoiseTerms = VENDORS_PROFILE_HARD_NOISE_TERMS.filter((term) => textMatchesKeyword(haystack, term));
     const vendorNameInArticle = VENDORS_PROFILE_VENDOR_TERMS.some((term) => textMatchesKeyword(articleBodyText, term));
     const vendorNameInTitle = VENDORS_PROFILE_VENDOR_TERMS.some((term) => textMatchesKeyword(articleTitleText, term));
+    const producerVendorNameInArticle = VENDORS_PROFILE_PRODUCER_VENDOR_TERMS.some((term) => textMatchesKeyword(articleBodyText, term));
+    const producerVendorNameInTitle = VENDORS_PROFILE_PRODUCER_VENDOR_TERMS.some((term) => textMatchesKeyword(articleTitleText, term));
     const professionalVendorNewsSource = [
       "biometric update",
       "security document world",
       "securitydocumentworld",
     ].some((term) => textMatchesKeyword(sourceOnlyText, term));
-    const professionalSourceOnly = professionalVendorNewsSource && !vendorNameInArticle;
+    const professionalSourceOnly = professionalVendorNewsSource && !producerVendorNameInArticle;
     const professionalSourceVendorEvent = !professionalVendorNewsSource ||
-      (vendorNameInTitle && matchedTitleEventTerms.length > 0);
-    const explicitVendorArticle = vendorNameInArticle &&
+      (producerVendorNameInTitle && matchedTitleEventTerms.length > 0);
+    const explicitVendorArticle = producerVendorNameInArticle &&
       (
         professionalVendorNewsSource
-          ? vendorNameInTitle && matchedTitleEventTerms.length > 0
+          ? producerVendorNameInTitle && matchedTitleEventTerms.length > 0
           : matchedEventTerms.length > 0 || matchedIndustryContextTerms.length > 0
       );
     const producerContextArticle = matchedProducerContextTerms.length > 0 &&
       matchedIndustryContextTerms.length > 0 &&
+      producerVendorNameInArticle &&
       (
         professionalVendorNewsSource
-          ? vendorNameInTitle && matchedTitleEventTerms.length > 0
-          : matchedEventTerms.length > 0 || vendorNameInArticle
+          ? producerVendorNameInTitle && matchedTitleEventTerms.length > 0
+          : matchedEventTerms.length > 0 || producerVendorNameInArticle
       );
     const passed = (explicitVendorArticle || producerContextArticle)
       && matchedHardNoiseTerms.length === 0
@@ -4840,6 +4871,7 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
             ? "vendors_profile_tutorial_or_setup_noise"
           : "vendors_profile_guard_rejected",
       vendorTerms: Object.freeze(matchedVendorTerms.slice(0, 12)),
+      producerVendorTerms: Object.freeze(matchedProducerVendorTerms.slice(0, 12)),
       producerContextTerms: Object.freeze(matchedProducerContextTerms.slice(0, 12)),
       eventTerms: Object.freeze(matchedEventTerms.slice(0, 12)),
       titleEventTerms: Object.freeze(matchedTitleEventTerms.slice(0, 12)),
