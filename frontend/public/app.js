@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-150";
+const APP_BUILD = "intelligence-profile-ux-sprint-151";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -39395,6 +39395,42 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       "anti-counterfeit",
       "counterfeit prevention",
     ];
+    const profileTechnologyAnchorTerms = explicitSecurityPrintingTechnologyTerms.filter((term) => term !== "polymer banknote");
+    const broadPolymerBanknoteNoiseTerms = [
+      "polymer banknote",
+      "polymer banknotes",
+      "plastic notes",
+      "plastic currency",
+      "field trial",
+      "field trials",
+      "govt approves",
+      "government approves",
+      "centre approves",
+      "rbi",
+      "reserve bank",
+    ];
+    const profileProducerContextTerms = [
+      "security printer",
+      "security printing",
+      "banknote printer",
+      "currency printer",
+      "printing arm",
+      "currency printing arm",
+      "producer",
+      "supplier",
+      "manufacturer",
+      "procurement",
+      "tender",
+      "expression of interest",
+      "eoi",
+      "material",
+      "substrate",
+      "security feature",
+      "security features",
+      "security thread",
+      "security ink",
+      "security inks",
+    ];
     const matchedProfessionalTerms = professionalTerms.filter((term) => textMatchesKeyword(haystack, term));
     const matchedNoiseTerms = noiseTerms.filter((term) => textMatchesKeyword(haystack, term));
     const matchedHardOffDomainNoiseTerms = hardOffDomainNoiseTerms.filter((term) => textMatchesKeyword(haystack, term));
@@ -39407,11 +39443,24 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
     const matchedExplicitSecurityPrintingTechnologyTerms = explicitSecurityPrintingTechnologyTerms.filter((term) =>
       textMatchesKeyword(haystack, term)
     );
+    const matchedProfileTechnologyAnchorTerms = profileTechnologyAnchorTerms.filter((term) =>
+      textMatchesKeyword(haystack, term)
+    );
+    const matchedBroadPolymerBanknoteNoiseTerms = broadPolymerBanknoteNoiseTerms.filter((term) =>
+      textMatchesKeyword(haystack, term)
+    );
+    const matchedProfileProducerContextTerms = profileProducerContextTerms.filter((term) =>
+      textMatchesKeyword(haystack, term)
+    );
     const sourceNoiseTerms = CENTRAL_BANK_PROFILE_SOURCE_NOISE_TERMS.filter((term) =>
       textMatchesKeyword(`${context.sourceText} ${context.domainText} ${context.metadataText}`, term)
     );
+    const broadPolymerOnly = matchedBroadPolymerBanknoteNoiseTerms.length > 0 &&
+      matchedProfileTechnologyAnchorTerms.length === 0 &&
+      matchedProfileProducerContextTerms.length === 0;
     const passed = matchedProfessionalTerms.length > 0
       && !(matchedHardOffDomainNoiseTerms.length > 0 && matchedSecureContextTerms.length === 0)
+      && !broadPolymerOnly
       && !(matchedSemiNoiseTerms.length > 0 && matchedPrintingTechnologyContextTerms.length === 0)
       && !(matchedEducationalNoiseTerms.length > 0 && matchedExplicitSecurityPrintingTechnologyTerms.length === 0)
       && !(matchedLowTrustSourceNoiseTerms.length > 0 && matchedExplicitSecurityPrintingTechnologyTerms.length === 0)
@@ -39421,7 +39470,11 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
     return {
       applies: true,
       passed,
-      rejectionReason: passed ? "" : "security_printer_profile_guard_rejected",
+      rejectionReason: passed
+        ? ""
+        : broadPolymerOnly
+          ? "security_printer_profile_broad_polymer_banknote_noise"
+          : "security_printer_profile_guard_rejected",
       noiseTerms: Object.freeze([
         ...matchedNoiseTerms,
         ...matchedHardOffDomainNoiseTerms,
@@ -39435,6 +39488,10 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       strongProfessionalContextTerms: Object.freeze(matchedStrongProfessionalContextTerms.slice(0, 10)),
       printingTechnologyContextTerms: Object.freeze(matchedPrintingTechnologyContextTerms.slice(0, 10)),
       explicitSecurityPrintingTechnologyTerms: Object.freeze(matchedExplicitSecurityPrintingTechnologyTerms.slice(0, 10)),
+      profileTechnologyAnchorTerms: Object.freeze(matchedProfileTechnologyAnchorTerms.slice(0, 10)),
+      broadPolymerBanknoteNoiseTerms: Object.freeze(matchedBroadPolymerBanknoteNoiseTerms.slice(0, 10)),
+      profileProducerContextTerms: Object.freeze(matchedProfileProducerContextTerms.slice(0, 10)),
+      broadPolymerOnly,
     };
   });
 }
