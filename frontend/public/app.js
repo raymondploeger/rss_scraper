@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-152";
+const APP_BUILD = "intelligence-profile-ux-sprint-153";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -5108,6 +5108,10 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
       context.sourceText,
       context.domainText,
     ].filter(Boolean).join(" ");
+    const articleTitleText = [
+      context.titleText,
+      context.tagText,
+    ].filter(Boolean).join(" ");
     const sourceOnlyText = [
       context.sourceText,
       context.domainText,
@@ -5117,10 +5121,6 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
       context.titleText,
       context.tagText,
       context.bodyText,
-    ].filter(Boolean).join(" ");
-    const articleTitleText = [
-      context.titleText,
-      context.tagText,
     ].filter(Boolean).join(" ");
 
     const matchedVendorTerms = VENDORS_PROFILE_VENDOR_TERMS.filter((term) => textMatchesKeyword(haystack, term));
@@ -39174,6 +39174,10 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       context.sourceText,
       context.domainText,
     ].filter(Boolean).join(" ");
+    const articleTitleText = [
+      context.titleText,
+      context.tagText,
+    ].filter(Boolean).join(" ");
     const professionalTerms = [
       "security printing",
       "security printer",
@@ -39464,15 +39468,21 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
     const matchedBroadPolymerBanknoteNoiseTerms = broadPolymerBanknoteNoiseTerms.filter((term) =>
       textMatchesKeyword(haystack, term)
     );
+    const matchedTitleBroadPolymerBanknoteNoiseTerms = broadPolymerBanknoteNoiseTerms.filter((term) =>
+      textMatchesKeyword(articleTitleText, term)
+    );
     const matchedProfileProducerContextTerms = profileProducerContextTerms.filter((term) =>
       textMatchesKeyword(haystack, term)
+    );
+    const matchedTitleProfileProducerContextTerms = profileProducerContextTerms.filter((term) =>
+      textMatchesKeyword(articleTitleText, term)
     );
     const sourceNoiseTerms = CENTRAL_BANK_PROFILE_SOURCE_NOISE_TERMS.filter((term) =>
       textMatchesKeyword(`${context.sourceText} ${context.domainText} ${context.metadataText}`, term)
     );
-    const broadPolymerOnly = matchedBroadPolymerBanknoteNoiseTerms.length > 0 &&
+    const broadPolymerOnly = matchedTitleBroadPolymerBanknoteNoiseTerms.length > 0 &&
       matchedProfileTechnologyAnchorTerms.length === 0 &&
-      matchedProfileProducerContextTerms.length === 0;
+      matchedTitleProfileProducerContextTerms.length === 0;
     const passed = matchedProfessionalTerms.length > 0
       && !(matchedHardOffDomainNoiseTerms.length > 0 && matchedSecureContextTerms.length === 0)
       && !broadPolymerOnly
@@ -39505,7 +39515,9 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       explicitSecurityPrintingTechnologyTerms: Object.freeze(matchedExplicitSecurityPrintingTechnologyTerms.slice(0, 10)),
       profileTechnologyAnchorTerms: Object.freeze(matchedProfileTechnologyAnchorTerms.slice(0, 10)),
       broadPolymerBanknoteNoiseTerms: Object.freeze(matchedBroadPolymerBanknoteNoiseTerms.slice(0, 10)),
+      titleBroadPolymerBanknoteNoiseTerms: Object.freeze(matchedTitleBroadPolymerBanknoteNoiseTerms.slice(0, 10)),
       profileProducerContextTerms: Object.freeze(matchedProfileProducerContextTerms.slice(0, 10)),
+      titleProfileProducerContextTerms: Object.freeze(matchedTitleProfileProducerContextTerms.slice(0, 10)),
       broadPolymerOnly,
     };
   });
