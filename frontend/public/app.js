@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-130";
+const APP_BUILD = "intelligence-profile-ux-sprint-131";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4548,6 +4548,45 @@ const VENDORS_PROFILE_VENDOR_TERMS = Object.freeze([
   "signicat",
   "authsignal",
   "idenfy",
+]);
+
+const VENDORS_PROFILE_BACKEND_SEARCH_TERMS = Object.freeze([
+  "De La Rue",
+  "Thales",
+  "IN Groupe",
+  "Bundesdruckerei",
+  "Veridos",
+  "Giesecke+Devrient",
+  "Giesecke Devrient",
+  "G+D",
+  "IDEMIA",
+  "HID",
+  "Entrust",
+  "SICPA",
+  "Crane Currency",
+  "Crane Authentication",
+  "Koenig & Bauer",
+  "Louisenthal",
+  "Oberthur",
+  "OVD Kinegram",
+  "IQ Structures",
+  "Toppan",
+  "Covestro",
+  "Regula",
+  "Signicat",
+  "Authsignal",
+  "iDenfy",
+  "Shufti",
+  "Socure",
+  "Jumio",
+  "Onfido",
+  "Veriff",
+  "Mitek",
+  "Facephi",
+  "iProov",
+  "Innovatrics",
+  "Laxton",
+  "NEC",
 ]);
 
 const VENDORS_PROFILE_PRODUCER_CONTEXT_TERMS = Object.freeze([
@@ -26925,6 +26964,16 @@ function getPersonalDashboardBackendDomainPlan() {
     return null;
   }
 
+  if (getMatchingPersonalDashboardTemplateId(selectedInterests) === "vendors") {
+    return {
+      domain: "vendors",
+      topic: "",
+      includeTopicBaseline: false,
+      searches: limitMultiDomainPersonalDashboardBackendSearches(VENDORS_PROFILE_BACKEND_SEARCH_TERMS),
+      vendorProfileTargetedRetrieval: true,
+    };
+  }
+
   if (selectedMainDomains.length === 1 && selectedMainDomains[0] === "banknotes") {
     const banknoteSearches = new Set(
       selectedBanknoteInterests.length === 1 ? [] : BANKNOTE_BACKEND_RETRIEVAL_BASE_SEARCH_TERMS
@@ -27541,6 +27590,9 @@ function getBackendRequestOriginDetails(params, plan, selectedInterests = normal
   const isDigitalPlan = plan?.domain === "digital_identity_biometrics";
   const broadDigitalBaseline = isDigitalPlan && selectedDigitalInterests.length > 1 &&
     DIGITAL_IDENTITY_BACKEND_RETRIEVAL_BASE_SEARCH_TERMS.includes(search);
+  if (plan?.domain === "vendors" && search && VENDORS_PROFILE_BACKEND_SEARCH_TERMS.includes(search)) {
+    origins.push("vendor_profile_targeted_search");
+  }
   if (!search && topic) {
     origins.push(`topic_baseline:${topic}`);
   }
@@ -27563,6 +27615,8 @@ function getBackendRequestOriginDetails(params, plan, selectedInterests = normal
   let requestType = "other";
   if (origins.some((origin) => origin.startsWith("topic_baseline"))) {
     requestType = "topic_baseline";
+  } else if (origins.includes("vendor_profile_targeted_search")) {
+    requestType = "vendor_profile_targeted_search";
   } else if (origins.includes("broad_digital_baseline") && selectedInterestOrigins.length) {
     requestType = "shared_exact_term";
   } else if (origins.includes("broad_digital_baseline")) {
