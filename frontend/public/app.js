@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-180";
+const APP_BUILD = "intelligence-profile-ux-sprint-181";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -25832,6 +25832,14 @@ function openFirstSelectedPersonalDashboardGroup() {
     ?.focus();
 }
 
+function keepPersonalDashboardEditorOpenForInterests(interests) {
+  const activeInterests = new Set(normalizePersonalDashboardInterests(interests));
+  const firstSelectedGroup = getPersonalDashboardSelectedGroups(activeInterests)[0];
+  const groupToOpen = firstSelectedGroup?.id || PERSONAL_DASHBOARD_GROUPS[0]?.id || "";
+  state.personalDashboard.editing = true;
+  state.personalDashboard.expandedGroups = groupToOpen ? [groupToOpen] : [];
+}
+
 function finishPersonalDashboardEditing() {
   state.personalDashboard.editing = false;
   state.personalDashboard.expandedGroups = [];
@@ -26079,8 +26087,7 @@ function applyPersonalDashboardTemplate(templateId) {
   }
 
   state.personalDashboard.interests = normalizePersonalDashboardInterests(template.interests);
-  state.personalDashboard.expandedGroups = [];
-  state.personalDashboard.editing = false;
+  keepPersonalDashboardEditorOpenForInterests(state.personalDashboard.interests);
   state.personalDashboard.activeCustomProfileId = "";
   state.personalDashboard.activeTemplateId = templateId;
   state.personalDashboard.explicitlyCleared = false;
@@ -26102,8 +26109,7 @@ function applyPersonalDashboardCustomProfile(profileId) {
   }
 
   state.personalDashboard.interests = normalizePersonalDashboardInterests(profile.interests);
-  state.personalDashboard.expandedGroups = [];
-  state.personalDashboard.editing = false;
+  keepPersonalDashboardEditorOpenForInterests(state.personalDashboard.interests);
   state.personalDashboard.activeCustomProfileId = profile.id;
   state.personalDashboard.activeTemplateId = "";
   state.personalDashboard.explicitlyCleared = false;
@@ -57977,6 +57983,18 @@ function bindEvents() {
         return;
       }
       applyPersonalDashboardTemplate(option.dataset.profileTemplate || "");
+    });
+  }
+
+  if (elements.identityDocumentAuthorityStrictnessEditor) {
+    elements.identityDocumentAuthorityStrictnessEditor.addEventListener("click", (event) => {
+      const strictnessButton = event.target instanceof Element
+        ? event.target.closest("[data-identity-document-authority-strictness]")
+        : null;
+      if (!strictnessButton) {
+        return;
+      }
+      setIdentityDocumentAuthorityStrictness(strictnessButton.dataset.identityDocumentAuthorityStrictness || "");
     });
   }
 
