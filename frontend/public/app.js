@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-169";
+const APP_BUILD = "intelligence-profile-ux-sprint-170";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -35604,6 +35604,11 @@ const SHARED_SECURITY_STANDALONE_RULES = {
       "central bank",
       "passport",
       "passports",
+      "national id",
+      "national id card",
+      "national identity card",
+      "enic",
+      "e-nic",
       "id card",
       "id cards",
       "eid card",
@@ -35981,6 +35986,12 @@ const SHARED_SECURITY_STANDALONE_RULES = {
       "security features",
       "security printing",
       "secure printing",
+      "card issuance",
+      "card printing",
+      "id printing",
+      "laser id printing",
+      "color laser id",
+      "colour laser id",
       "personalization",
       "personalisation",
       "laser engraving",
@@ -36000,6 +36011,8 @@ const SHARED_SECURITY_STANDALONE_RULES = {
       "eyewear",
       "medical device",
       "helmet",
+      "chromebook",
+      "laptop",
     ],
     requiresSupportContext: true,
     allowForegroundStrongWithoutSupport: true,
@@ -36248,12 +36261,27 @@ const SHARED_SECURITY_STANDALONE_RULES = {
     support: [
       "passport",
       "passports",
+      "national id",
+      "national id card",
+      "national identity card",
+      "enic",
+      "e-nic",
       "id card",
       "id cards",
       "identity card",
       "identity cards",
       "identity document",
       "identity documents",
+      "residence permit",
+      "residence permits",
+      "visa",
+      "visas",
+      "driver license",
+      "driver licenses",
+      "driver's license",
+      "driver's licenses",
+      "driving licence",
+      "driving licences",
       "secure document",
       "secure documents",
       "security document",
@@ -36287,6 +36315,10 @@ const SHARED_SECURITY_STANDALONE_RULES = {
       "veneers",
       "social security card",
       "social security cards",
+      "hotel",
+      "mini bar",
+      "cocktail",
+      "reddit",
     ],
     requiresSupportContext: true,
     allowForegroundStrongWithoutSupport: true,
@@ -36814,7 +36846,8 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       (
         foregroundStrongHits > 0 ||
         bodyStrongHits > 0 ||
-        (foregroundWeakHits > 0 && contentOnlyScore >= 1)
+        (foregroundWeakHits > 0 && contentOnlyScore >= 1) ||
+        (directWeakHits > 0 && supportHits >= 2 && effectiveContentScore >= 0)
       );
     const hardNegativeRejected = Boolean(tunedRule?.rejectNegativeMatches) && negativeHits > 0;
     const sourceFingerprint = `${context.sourceText} ${context.domainText} ${metadataTextForMatching}`;
