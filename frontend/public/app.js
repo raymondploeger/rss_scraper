@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-160";
+const APP_BUILD = "intelligence-profile-ux-sprint-161";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -36344,6 +36344,9 @@ const SHARED_SECURITY_POLYMER_LOW_VALUE_SOURCE_TERMS = [
 const SHARED_SECURITY_POLYMER_EXPLAINER_NOISE_TERMS = [
   "upsc",
   "ias",
+  "clearias",
+  "clear ias",
+  "academy",
   "current affairs",
   "exam",
   "knowledge nugget",
