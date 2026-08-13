@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-161";
+const APP_BUILD = "intelligence-profile-ux-sprint-162";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -36356,6 +36356,7 @@ const SHARED_SECURITY_POLYMER_EXPLAINER_NOISE_TERMS = [
   "when will they reach your wallet",
   "travel diary",
   "travel inspiration",
+  "polymer banknotes in india",
 ];
 
 const SHARED_SECURITY_POLYMER_FIELD_TRIAL_NOISE_TERMS = [
