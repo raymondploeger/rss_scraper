@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-175";
+const APP_BUILD = "intelligence-profile-ux-sprint-176";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -30511,6 +30511,9 @@ function computePersonalInterestBoostMeasured(article, interestId, options = {})
       const borderNewsPriority = selectedSubinterest === "border_control"
         ? measureBoostSegment("borderNewsPriority", () => getBorderControlNewsPriority(article))
         : { boost: 0, penalty: 0 };
+      const borderGuidancePenalty = selectedSubinterest === "border_control"
+        ? measureBoostSegment("borderGuidancePenalty", () => getBorderControlGuidancePenalty(article))
+        : { penalty: 0, hasOperationalContext: false, matchedQueueTravelTerms: [], matchedOperationalDetailTerms: [] };
       const residencePermitIntentAdjustment = selectedSubinterest === "residence_permits" || interestId === "residence_permits"
         ? measureBoostSegment("residencePermitIntentAdjustment", () => getResidencePermitIntentAdjustment(article))
         : { hasCardIntent: false, cardBoost: 0, officialSourceBoost: 0, guidePenalty: 0 };
@@ -30536,6 +30539,12 @@ function computePersonalInterestBoostMeasured(article, interestId, options = {})
       if (selectedSubinterest === "border_control") {
         score += borderNewsPriority.boost;
         score -= borderNewsPriority.penalty;
+        score -= borderGuidancePenalty.penalty;
+        if ((borderGuidancePenalty.matchedQueueTravelTerms?.length || 0) && !(borderGuidancePenalty.matchedOperationalDetailTerms?.length || 0)) {
+          score -= 900;
+        } else if ((borderGuidancePenalty.matchedQueueTravelTerms?.length || 0) >= 2) {
+          score -= 260;
+        }
       }
       score -= Math.min(90, Math.round(signals.noisyHits * 0.8));
       score += Math.max(-120, subinterestScore.score);
@@ -40933,6 +40942,11 @@ function calculatePersonalDomainScoreMeasured(article, selectedInterests = norma
           score -= borderNewsPriority.penalty;
           score += borderRecencyAdjustment.boost;
           score -= borderGuidancePenalty.penalty;
+          if ((borderGuidancePenalty.matchedQueueTravelTerms?.length || 0) && !(borderGuidancePenalty.matchedOperationalDetailTerms?.length || 0)) {
+            score -= 900;
+          } else if ((borderGuidancePenalty.matchedQueueTravelTerms?.length || 0) >= 2) {
+            score -= 260;
+          }
         }
         score += Math.max(-140, identitySubinterest.score);
         score -= Math.min(150, Math.round(identitySignals.noisyHits * 0.95));
