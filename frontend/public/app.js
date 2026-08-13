@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-163";
+const APP_BUILD = "intelligence-profile-ux-sprint-164";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -35753,6 +35753,15 @@ const SHARED_SECURITY_STANDALONE_RULES = {
       "white house",
       "ballroom",
       "real estate",
+      "cash circulation",
+      "circulation hits record high",
+      "record high",
+      "plastic makeover",
+      "plastic notes",
+      "polymer notes",
+      "polymer banknotes",
+      "field trial",
+      "field trials",
       "travel guide",
       "tourism",
       "iata",
@@ -35777,8 +35786,12 @@ const SHARED_SECURITY_STANDALONE_RULES = {
       "conference participation",
       "conference announcement",
       "event participation",
+      "expo 2020",
+      "world expo",
       "unconference",
       "dice",
+      "vinyl records",
+      "holographic effects",
       "digital travel experience",
       "travel experience initiative",
       "company milestone",
