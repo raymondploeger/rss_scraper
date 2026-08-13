@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-171";
+const APP_BUILD = "intelligence-profile-ux-sprint-172";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -35701,9 +35701,20 @@ const SHARED_SECURITY_STANDALONE_RULES = {
       "trillion dollars",
       "consecutive unc",
       "collector banknote",
+      "souvenir banknote",
+      "souvenir banknotes",
+      "euronotesouvenir",
       "planetbanknote",
       "facebook",
       "instagram",
+      "linkedin",
+      "youtube",
+      "pinterest",
+      "house note",
+      "sap quality awards",
+      "grand winner",
+      "akhilesh yadav",
+      "privatisation",
       "cybersecurity",
       "cloud security",
       "it security",
