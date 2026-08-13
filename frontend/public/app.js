@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-167";
+const APP_BUILD = "intelligence-profile-ux-sprint-168";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -35606,10 +35606,24 @@ const SHARED_SECURITY_STANDALONE_RULES = {
       "passports",
       "id card",
       "id cards",
+      "eid card",
+      "eid cards",
+      "electronic id card",
+      "electronic id cards",
       "identity card",
       "identity cards",
       "identity document",
       "identity documents",
+      "residence permit",
+      "residence permits",
+      "visa",
+      "visas",
+      "driver license",
+      "driver licenses",
+      "driver's license",
+      "driver's licenses",
+      "driving licence",
+      "driving licences",
       "secure document",
       "secure documents",
       "security document",
@@ -35934,10 +35948,24 @@ const SHARED_SECURITY_STANDALONE_RULES = {
       "passports",
       "id card",
       "id cards",
+      "eid card",
+      "eid cards",
+      "electronic id card",
+      "electronic id cards",
       "identity card",
       "identity cards",
       "identity document",
       "identity documents",
+      "residence permit",
+      "residence permits",
+      "visa",
+      "visas",
+      "driver license",
+      "driver licenses",
+      "driver's license",
+      "driver's licenses",
+      "driving licence",
+      "driving licences",
       "secure document",
       "secure documents",
       "security document",
@@ -36774,6 +36802,15 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
           supportHits >= 2
         )
       );
+    const materialContextBridgeMatch =
+      SHARED_SECURITY_MATERIAL_BRIDGE_INTERESTS.has(interestId) &&
+      negativeHits === 0 &&
+      supportHits > 0 &&
+      (
+        foregroundStrongHits > 0 ||
+        bodyStrongHits > 0 ||
+        (foregroundWeakHits > 0 && contentOnlyScore >= 1)
+      );
     const hardNegativeRejected = Boolean(tunedRule?.rejectNegativeMatches) && negativeHits > 0;
     const sourceFingerprint = `${context.sourceText} ${context.domainText} ${metadataTextForMatching}`;
     const polymerProfessionalContextHits = interestId === "polymer"
@@ -36853,7 +36890,7 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       hasBridgeDrivenSupportContext &&
       effectiveContentScore >= weakOnlyMinScore + 2 &&
       (foregroundWeakHits > 0 || bodyStrongHits >= minimumBodyStrongHits + 1 || bridgeBodyHits >= 2);
-    const included = (directMatch || hybridMatch || bodyContextBridgeMatch) && !(
+    const included = (directMatch || hybridMatch || bodyContextBridgeMatch || materialContextBridgeMatch) && !(
       negativeHits > 0 &&
       foregroundStrongHits === 0 &&
       bridgeEvidenceHits === 0
@@ -36870,6 +36907,7 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       directMatch,
       hybridMatch,
       bodyContextBridgeMatch,
+      materialContextBridgeMatch,
       umbrellaChildIncluded,
       foregroundStrongHits,
       foregroundWeakHits,
