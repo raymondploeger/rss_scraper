@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-168";
+const APP_BUILD = "intelligence-profile-ux-sprint-169";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -35912,6 +35912,9 @@ const SHARED_SECURITY_STANDALONE_RULES = {
       "how to verify",
       "counterfeit bills",
       "counterfeit $",
+      "linkedin",
+      "house note",
+      "iota award",
     ],
     requiresSupportContext: true,
     allowForegroundStrongWithoutSupport: true,
@@ -36282,6 +36285,8 @@ const SHARED_SECURITY_STANDALONE_RULES = {
       "laminate sheets",
       "dental",
       "veneers",
+      "social security card",
+      "social security cards",
     ],
     requiresSupportContext: true,
     allowForegroundStrongWithoutSupport: true,
