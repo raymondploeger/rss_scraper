@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-176";
+const APP_BUILD = "intelligence-profile-ux-sprint-177";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -30473,6 +30473,12 @@ function computePersonalInterestBoostMeasured(article, interestId, options = {})
       );
       const selectedIdentityInterests = measureBoostSegment("selectedIdentitySubinterests", () => getSelectedIdentityDocumentSubinterests());
       const selectedSubinterest = getEffectiveIdentitySubinterestForScoring(selectedIdentityInterests);
+      const borderControlTemplateSelection =
+        getMatchingPersonalDashboardTemplateId(state.personalDashboard.interests) === "border_control" &&
+        selectedIdentityInterests.includes("border_control");
+      const shouldApplyBorderControlGuidance =
+        selectedSubinterest === "border_control" ||
+        (borderControlTemplateSelection && interestId === "icao");
       const borderAuthorityAdjustment = selectedSubinterest === "border_control"
         ? measureBoostSegment("borderAuthorityAdjustment", () => getBorderControlAuthorityAdjustment(article, authority))
         : { multiplier: authority.multiplier, sourceBoostScale: 1 };
@@ -30508,10 +30514,10 @@ function computePersonalInterestBoostMeasured(article, interestId, options = {})
       const borderMarketingPenalty = selectedSubinterest === "border_control"
         ? measureBoostSegment("borderMarketingPenalty", () => getBorderControlMarketingPagePenalty(article))
         : { penalty: 0 };
-      const borderNewsPriority = selectedSubinterest === "border_control"
+      const borderNewsPriority = shouldApplyBorderControlGuidance
         ? measureBoostSegment("borderNewsPriority", () => getBorderControlNewsPriority(article))
         : { boost: 0, penalty: 0 };
-      const borderGuidancePenalty = selectedSubinterest === "border_control"
+      const borderGuidancePenalty = shouldApplyBorderControlGuidance
         ? measureBoostSegment("borderGuidancePenalty", () => getBorderControlGuidancePenalty(article))
         : { penalty: 0, hasOperationalContext: false, matchedQueueTravelTerms: [], matchedOperationalDetailTerms: [] };
       const residencePermitIntentAdjustment = selectedSubinterest === "residence_permits" || interestId === "residence_permits"
@@ -30536,7 +30542,7 @@ function computePersonalInterestBoostMeasured(article, interestId, options = {})
       score += Math.round(selectedProfileSourcePriority.boost * borderAuthorityAdjustment.sourceBoostScale);
       score += recencyAdjustment.boost;
       score -= selectedSoftNoise.penalty;
-      if (selectedSubinterest === "border_control") {
+      if (shouldApplyBorderControlGuidance) {
         score += borderNewsPriority.boost;
         score -= borderNewsPriority.penalty;
         score -= borderGuidancePenalty.penalty;
@@ -40853,6 +40859,12 @@ function calculatePersonalDomainScoreMeasured(article, selectedInterests = norma
         const identitySubinterest = getIdentityDocumentSubinterestScore(article, normalizedInterests);
         const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(normalizedInterests);
         const selectedSubinterest = getEffectiveIdentitySubinterestForScoring(selectedIdentityInterests, normalizedInterests);
+        const borderControlTemplateSelection =
+          getMatchingPersonalDashboardTemplateId(normalizedInterests) === "border_control" &&
+          selectedIdentityInterests.includes("border_control");
+        const shouldApplyBorderControlGuidance =
+          selectedSubinterest === "border_control" ||
+          (borderControlTemplateSelection && interestId === "icao");
         const borderAuthorityAdjustment = selectedSubinterest === "border_control"
           ? getBorderControlAuthorityAdjustment(article, identityAuthority)
           : { multiplier: identityAuthority.multiplier, sourceBoostScale: 1 };
@@ -40882,10 +40894,10 @@ function calculatePersonalDomainScoreMeasured(article, selectedInterests = norma
         const borderMarketingPenalty = selectedSubinterest === "border_control"
           ? getBorderControlMarketingPagePenalty(article)
           : { penalty: 0 };
-        const borderNewsPriority = selectedSubinterest === "border_control"
+        const borderNewsPriority = shouldApplyBorderControlGuidance
           ? getBorderControlNewsPriority(article)
           : { boost: 0, penalty: 0 };
-        const borderGuidancePenalty = selectedSubinterest === "border_control"
+        const borderGuidancePenalty = shouldApplyBorderControlGuidance
           ? getBorderControlGuidancePenalty(article)
           : { penalty: 0, hasOperationalContext: false };
         const borderRecencyAdjustment = selectedSubinterest === "border_control"
@@ -40937,7 +40949,7 @@ function calculatePersonalDomainScoreMeasured(article, selectedInterests = norma
         score += Math.round(selectedProfileSourcePriority.boost * borderAuthorityAdjustment.sourceBoostScale);
         score += recencyAdjustment.boost;
         score -= selectedSoftNoise.penalty;
-        if (selectedSubinterest === "border_control") {
+        if (shouldApplyBorderControlGuidance) {
           score += borderNewsPriority.boost;
           score -= borderNewsPriority.penalty;
           score += borderRecencyAdjustment.boost;
