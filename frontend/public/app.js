@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-172";
+const APP_BUILD = "intelligence-profile-ux-sprint-173";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -37114,7 +37114,10 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
         childInterestId !== "security_features" &&
           getSharedSecurityStandaloneAssessment(article, childInterestId).included
       );
-    const effectiveIncluded = included || umbrellaChildIncluded;
+    const effectiveIncluded = (included || umbrellaChildIncluded) && !(
+      interestId === "security_features" &&
+      hardNegativeRejected
+    );
 
     return {
       included: effectiveIncluded,
