@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-159";
+const APP_BUILD = "intelligence-profile-ux-sprint-160";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -36375,6 +36375,50 @@ const SHARED_SECURITY_POLYMER_FIELD_TRIAL_NOISE_TERMS = [
   "when will they reach your wallet",
 ];
 
+const SHARED_SECURITY_POLYMER_GENERIC_RBI_ROLLOUT_TERMS = [
+  "rbi",
+  "reserve bank",
+  "polymer note plan",
+  "polymer banknote initiative",
+  "polymer currency",
+  "plastic currency",
+  "plastic notes",
+  "pilot succeeds",
+  "fy28",
+  "rollout",
+  "roll out",
+  "enter circulation",
+  "may enter circulation",
+  "to test",
+  "to pilot",
+  "approved",
+  "approves",
+  "government nod",
+  "govt nod",
+  "gets govt nod",
+  "field trial",
+  "field trials",
+];
+
+const SHARED_SECURITY_POLYMER_TITLE_HIGH_VALUE_TERMS = [
+  "polymer substrate",
+  "banknote substrate",
+  "currency substrate",
+  "security substrate",
+  "printing arm",
+  "currency printing arm",
+  "invites bids",
+  "global bids",
+  "bids for polymer",
+  "procurement",
+  "tender",
+  "expression of interest",
+  "eoi",
+  "supplier",
+  "manufacturer",
+  "material",
+];
+
 function getSharedSecurityStandaloneAssessment(article, interestId) {
   return getCachedArticleValue(article, `sharedSecurityStandalone:${interestId}`, () => {
     const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
@@ -36563,11 +36607,24 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
         countBoostKeywordMatches(context.bodyText, SHARED_SECURITY_POLYMER_FIELD_TRIAL_NOISE_TERMS)
       )
       : 0;
+    const polymerGenericRbiRolloutHits = interestId === "polymer"
+      ? (
+        countBoostKeywordMatches(context.titleText, SHARED_SECURITY_POLYMER_GENERIC_RBI_ROLLOUT_TERMS) +
+        countBoostKeywordMatches(metadataTextForMatching, SHARED_SECURITY_POLYMER_GENERIC_RBI_ROLLOUT_TERMS)
+      )
+      : 0;
+    const polymerTitleHighValueHits = interestId === "polymer"
+      ? (
+        countBoostKeywordMatches(context.titleText, SHARED_SECURITY_POLYMER_TITLE_HIGH_VALUE_TERMS) +
+        countBoostKeywordMatches(context.tagText, SHARED_SECURITY_POLYMER_TITLE_HIGH_VALUE_TERMS)
+      )
+      : 0;
     const polymerProfessionalGateRejected = interestId === "polymer" &&
       (
         (polymerLowValueSourceHits > 0 && polymerHighValueContextHits < 2) ||
         (polymerExplainerNoiseHits > 0 && polymerHighValueContextHits < 3) ||
         (polymerFieldTrialNoiseHits > 0 && polymerHighValueContextHits < 2) ||
+        (polymerGenericRbiRolloutHits > 0 && polymerTitleHighValueHits === 0) ||
         (supportHits <= 1 && polymerHighValueContextHits < 2)
       );
 
@@ -36619,6 +36676,8 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       polymerLowValueSourceHits,
       polymerExplainerNoiseHits,
       polymerFieldTrialNoiseHits,
+      polymerGenericRbiRolloutHits,
+      polymerTitleHighValueHits,
       polymerProfessionalGateRejected,
       bridgeDocumentContextHits,
       bridgeEvidenceHits,
