@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-179";
+const APP_BUILD = "intelligence-profile-ux-sprint-180";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -6406,6 +6406,7 @@ const elements = {
   personalDashboard: document.getElementById("personal-dashboard"),
   personalDashboardTemplateSelect: document.getElementById("personal-dashboard-template-select"),
   personalDashboardTemplateOptions: document.getElementById("personal-dashboard-template-options"),
+  identityDocumentAuthorityStrictnessEditor: document.getElementById("identity-document-authority-strictness-editor"),
   personalDashboardCustomProfiles: document.getElementById("personal-dashboard-custom-profiles"),
   personalDashboardUpdateCustom: document.getElementById("personal-dashboard-update-custom"),
   personalDashboardSaveCustom: document.getElementById("personal-dashboard-save-custom"),
@@ -25950,6 +25951,12 @@ function renderPersonalDashboard() {
 
   if (elements.personalDashboardCustomProfiles) {
     elements.personalDashboardCustomProfiles.innerHTML = renderPersonalDashboardCustomProfileOptions();
+  }
+  if (elements.identityDocumentAuthorityStrictnessEditor) {
+    elements.identityDocumentAuthorityStrictnessEditor.innerHTML =
+      profileDisplay?.id === "passport_authority"
+        ? renderIdentityDocumentAuthorityStrictnessControl(profileDisplay)
+        : "";
   }
   if (elements.personalDashboardUpdateCustom) {
     const editableCustomProfile = getEditablePersonalDashboardCustomProfile();
