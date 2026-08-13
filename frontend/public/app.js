@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-174";
+const APP_BUILD = "intelligence-profile-ux-sprint-175";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -3516,6 +3516,39 @@ const BORDER_CONTROL_OPERATIONAL_PRIORITY_TERMS = [
   "entry exit system",
   "entry-exit system",
   "entry/exit system",
+];
+const BORDER_CONTROL_OPERATIONAL_DETAIL_TERMS = [
+  "egate deployment",
+  "egates",
+  "automated border control",
+  "automated border-control",
+  "automated border control kiosk",
+  "automated border-control kiosk",
+  "automated border control kiosks",
+  "automated border-control kiosks",
+  "mobile passport control",
+  "mpc",
+  "document verification",
+  "document inspection",
+  "passport verification",
+  "border biometrics",
+  "biometric border system",
+  "border management system",
+  "border control system",
+  "border control platform",
+  "border processing",
+  "biometric passport checks",
+  "biometric screening",
+  "facial recognition",
+  "implementation",
+  "implemented",
+  "deployment",
+  "deploys",
+  "deployed",
+  "pilot",
+  "installed",
+  "airport modernization",
+  "airport border-control modernization",
 ];
 const RESIDENCE_PERMIT_CARD_PRIORITY_TERMS = [
   "residence permit card",
@@ -38020,6 +38053,9 @@ function getBorderControlGuidancePenalty(article) {
     const matchedOperationalTerms = BORDER_CONTROL_OPERATIONAL_PRIORITY_TERMS.filter((term) =>
       textMatchesKeyword(haystack, term)
     );
+    const matchedOperationalDetailTerms = BORDER_CONTROL_OPERATIONAL_DETAIL_TERMS.filter((term) =>
+      textMatchesKeyword(haystack, term)
+    );
 
     let penalty = 0;
     if (matchedGuidanceTerms.length) {
@@ -38032,8 +38068,10 @@ function getBorderControlGuidancePenalty(article) {
     }
     if (matchedQueueTravelTerms.length) {
       penalty += 110 + (matchedQueueTravelTerms.length * 30);
-      if (matchedOperationalTerms.length < 2) {
-        penalty += 90;
+      if (!matchedOperationalDetailTerms.length) {
+        penalty += 360;
+      } else if (matchedOperationalTerms.length < 2) {
+        penalty += 120;
       } else {
         penalty -= Math.min(45, matchedOperationalTerms.length * 8);
       }
@@ -38044,6 +38082,7 @@ function getBorderControlGuidancePenalty(article) {
       matchedGuidanceTerms,
       matchedQueueTravelTerms,
       matchedOperationalTerms,
+      matchedOperationalDetailTerms,
       hasOperationalContext: matchedOperationalTerms.length > 0,
     };
   });
