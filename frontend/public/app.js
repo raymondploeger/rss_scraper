@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-177";
+const APP_BUILD = "intelligence-profile-ux-sprint-178";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -30683,6 +30683,11 @@ function computePersonalInterestBoostMeasured(article, interestId, options = {})
         score += Math.min(95, Math.round(signals.laminateHits * 1.5));
         score -= Math.min(140, Math.round(signals.driverLicenseHits * 0.7));
       }
+      if ((borderGuidancePenalty.matchedQueueTravelTerms?.length || 0) && !(borderGuidancePenalty.matchedOperationalDetailTerms?.length || 0)) {
+        score = Math.min(score, 0);
+      } else if ((borderGuidancePenalty.matchedQueueTravelTerms?.length || 0) >= 2) {
+        score = Math.min(score, 12);
+      }
       score -= measureBoostSegment("strongBanknoteIdentityPenalty", () =>
         getStrongBanknoteDomainSignalAssessment(article).identityPenalty
       );
@@ -41057,6 +41062,11 @@ function calculatePersonalDomainScoreMeasured(article, selectedInterests = norma
           ["banknote", "banknotes", "central bank", "currency", "commemorative note", "cash circulation"]
         ) * 32;
         score -= strongBanknoteSignals.identityPenalty * 4;
+        if ((borderGuidancePenalty.matchedQueueTravelTerms?.length || 0) && !(borderGuidancePenalty.matchedOperationalDetailTerms?.length || 0)) {
+          score = Math.min(score, 0);
+        } else if ((borderGuidancePenalty.matchedQueueTravelTerms?.length || 0) >= 2) {
+          score = Math.min(score, 12);
+        }
         score = Math.round(score * borderAuthorityAdjustment.multiplier);
       } else if (groupId === "digital_identity_biometrics") {
         if (context.topicType === "digital_identity" || context.domain === "digital_identity") {
