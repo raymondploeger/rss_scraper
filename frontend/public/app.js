@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-173";
+const APP_BUILD = "intelligence-profile-ux-sprint-174";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1517,8 +1517,8 @@ const IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_OPTIONS = Object.freeze({
     description: "Also includes broader government ID document context.",
   }),
   broad: Object.freeze({
-    label: "Broad",
-    description: "Allows adjacent authority and civil identity context.",
+    label: "Research mode",
+    description: "Research mode for adjacent authority and civil identity context.",
   }),
 });
 const PERSONAL_DASHBOARD_GENERIC_INTEREST_IDS = new Set(["rollout", "release", "issuance", "redesign"]);
@@ -3416,14 +3416,74 @@ const BORDER_CONTROL_GUIDANCE_NOISE_TERMS = [
   "travel authorization",
   "visa requirements",
   "entry requirements",
+  "passport rules",
+  "passport rule",
+  "passport queue",
+  "passport queues",
+  "passport control queue",
+  "passport control queues",
+  "passport control wait",
+  "passport control waits",
+  "passport control wait times",
+  "border queue",
+  "border queues",
+  "border chaos",
+  "airport queues",
+  "airport queue",
+  "wait times double",
+  "wait times triple",
+  "holidaymakers warned",
+  "uk travellers warned",
+  "uk travelers warned",
+  "travel alert",
+  "travel warning",
   "tourist travel guidance",
   "travel advice",
   "travel guidance",
+  "what tourists need to know",
+  "what travelers need to know",
+  "what travellers need to know",
+  "here's what canadians need to know",
+  "easyjet",
+  "ryanair",
+  "jet2",
+  "tui",
+  "before europe holidays",
+];
+const BORDER_CONTROL_QUEUE_TRAVEL_NOISE_TERMS = [
+  "passport queue",
+  "passport queues",
+  "passport control queue",
+  "passport control queues",
+  "passport control wait",
+  "passport control waits",
+  "passport control wait times",
+  "border queue",
+  "border queues",
+  "border chaos",
+  "airport queues",
+  "airport queue",
+  "wait times double",
+  "wait times triple",
+  "holidaymakers warned",
+  "uk travellers warned",
+  "uk travelers warned",
+  "travel alert",
+  "travel warning",
+  "easyjet",
+  "ryanair",
+  "jet2",
+  "tui",
 ];
 const BORDER_CONTROL_OPERATIONAL_PRIORITY_TERMS = [
   "egate deployment",
   "egates",
   "automated border control",
+  "automated border-control",
+  "automated border control kiosk",
+  "automated border-control kiosk",
+  "automated border control kiosks",
+  "automated border-control kiosks",
   "mobile passport control",
   "mpc",
   "ees",
@@ -3438,9 +3498,24 @@ const BORDER_CONTROL_OPERATIONAL_PRIORITY_TERMS = [
   "border biometrics",
   "biometric border system",
   "border management system",
+  "border control system",
+  "border control platform",
+  "border processing",
+  "biometric passport checks",
+  "biometric screening",
+  "implementation",
+  "implemented",
+  "deployment",
+  "deploys",
+  "deployed",
+  "pilot",
+  "installed",
+  "rollout",
   "airport modernization",
   "airport border-control modernization",
   "entry exit system",
+  "entry-exit system",
+  "entry/exit system",
 ];
 const RESIDENCE_PERMIT_CARD_PRIORITY_TERMS = [
   "residence permit card",
@@ -37939,6 +38014,9 @@ function getBorderControlGuidancePenalty(article) {
     const matchedGuidanceTerms = BORDER_CONTROL_GUIDANCE_NOISE_TERMS.filter((term) =>
       textMatchesKeyword(haystack, term)
     );
+    const matchedQueueTravelTerms = BORDER_CONTROL_QUEUE_TRAVEL_NOISE_TERMS.filter((term) =>
+      textMatchesKeyword(haystack, term)
+    );
     const matchedOperationalTerms = BORDER_CONTROL_OPERATIONAL_PRIORITY_TERMS.filter((term) =>
       textMatchesKeyword(haystack, term)
     );
@@ -37952,10 +38030,19 @@ function getBorderControlGuidancePenalty(article) {
         penalty -= Math.min(70, matchedOperationalTerms.length * 14);
       }
     }
+    if (matchedQueueTravelTerms.length) {
+      penalty += 110 + (matchedQueueTravelTerms.length * 30);
+      if (matchedOperationalTerms.length < 2) {
+        penalty += 90;
+      } else {
+        penalty -= Math.min(45, matchedOperationalTerms.length * 8);
+      }
+    }
 
     return {
       penalty: Math.max(0, penalty),
       matchedGuidanceTerms,
+      matchedQueueTravelTerms,
       matchedOperationalTerms,
       hasOperationalContext: matchedOperationalTerms.length > 0,
     };
