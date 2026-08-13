@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-178";
+const APP_BUILD = "intelligence-profile-ux-sprint-179";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -41501,6 +41501,23 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
         timingContext: personalDashboardTimingContext,
       })
     );
+    const borderControlProfileSelection =
+      getMatchingPersonalDashboardTemplateId(selectedInterests) === "border_control" &&
+      selectedIdentityInterests.includes("border_control");
+    if (identityScopeAssessment.passed && borderControlProfileSelection) {
+      const borderGuidancePenalty = measurePersonalDashboardSegment("borderControlGuidancePenalty", () =>
+        getBorderControlGuidancePenalty(article)
+      );
+      if (
+        (borderGuidancePenalty.matchedQueueTravelTerms?.length || 0) &&
+        !(borderGuidancePenalty.matchedOperationalDetailTerms?.length || 0)
+      ) {
+        return finishPersonalDashboardTiming(false, "border_control_travel_queue_noise");
+      }
+      if ((borderGuidancePenalty.matchedQueueTravelTerms?.length || 0) >= 2) {
+        return finishPersonalDashboardTiming(false, "border_control_travel_queue_noise");
+      }
+    }
     const visaResidencePermitServiceNoiseGuard = measurePersonalDashboardSegment("visaResidencePermitServiceNoiseGuard", () =>
       getVisaResidencePermitServiceNoiseGuard(article, selectedIdentityInterests)
     );
