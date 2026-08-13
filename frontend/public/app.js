@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-164";
+const APP_BUILD = "intelligence-profile-ux-sprint-165";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -35796,6 +35796,7 @@ const SHARED_SECURITY_STANDALONE_RULES = {
       "travel experience initiative",
       "company milestone",
     ],
+    rejectNegativeMatches: true,
     weakOnlyMinScore: 24,
     minimumBodyStrongHits: 2,
   },
