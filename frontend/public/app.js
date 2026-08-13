@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-157";
+const APP_BUILD = "intelligence-profile-ux-sprint-158";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -25806,7 +25806,7 @@ function renderPersonalDashboard() {
               ${summaryCollapsed ? "Show details" : "Hide details"}
             </button>
             <button class="ghost-button personal-dashboard-summary-edit" type="button" data-edit-personal-profile>
-              Edit Profile
+              Show profile
             </button>
           </div>
         </div>
@@ -36257,6 +36257,73 @@ const SECURITY_PRINTING_TECHNIQUE_BRIDGE_DOCUMENT_CONTEXT = [
   "physical documents",
 ];
 
+const SHARED_SECURITY_POLYMER_PROFESSIONAL_CONTEXT_TERMS = [
+  "polymer substrate",
+  "secure substrate",
+  "banknote substrate",
+  "security substrate",
+  "currency substrate",
+  "security printer",
+  "security printing",
+  "currency printing",
+  "banknote printing",
+  "printing arm",
+  "procurement",
+  "tender",
+  "expression of interest",
+  "eoi",
+  "supplier",
+  "manufacturer",
+  "material",
+  "security feature",
+  "security features",
+  "central bank",
+  "reserve bank",
+  "banknote series",
+  "new series",
+  "issuance",
+  "issued",
+  "circulation",
+  "de la rue",
+  "giesecke",
+  "g+d",
+  "crane currency",
+  "louisenthal",
+  "ccl secure",
+  "oberthur",
+  "orell fussli",
+];
+
+const SHARED_SECURITY_POLYMER_LOW_VALUE_SOURCE_TERMS = [
+  "instagram",
+  "instagram.com",
+  "facebook",
+  "facebook.com",
+  "threads",
+  "threads.com",
+  "x.com",
+  "twitter",
+  "youtube",
+  "reddit",
+  "travel blog",
+  "indianeagle",
+  "planetbanknote",
+];
+
+const SHARED_SECURITY_POLYMER_EXPLAINER_NOISE_TERMS = [
+  "upsc",
+  "ias",
+  "current affairs",
+  "exam",
+  "knowledge nugget",
+  "what are plastic notes",
+  "plastic money coming",
+  "plastic notes coming",
+  "when will they reach your wallet",
+  "travel diary",
+  "travel inspiration",
+];
+
 function getSharedSecurityStandaloneAssessment(article, interestId) {
   return getCachedArticleValue(article, `sharedSecurityStandalone:${interestId}`, () => {
     const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
@@ -36411,6 +36478,31 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
         )
       );
     const hardNegativeRejected = Boolean(tunedRule?.rejectNegativeMatches) && negativeHits > 0;
+    const sourceFingerprint = `${context.sourceText} ${context.domainText} ${metadataTextForMatching}`;
+    const polymerProfessionalContextHits = interestId === "polymer"
+      ? (
+        countBoostKeywordMatches(context.titleText, SHARED_SECURITY_POLYMER_PROFESSIONAL_CONTEXT_TERMS) +
+        countBoostKeywordMatches(context.tagText, SHARED_SECURITY_POLYMER_PROFESSIONAL_CONTEXT_TERMS) +
+        countBoostKeywordMatches(metadataTextForMatching, SHARED_SECURITY_POLYMER_PROFESSIONAL_CONTEXT_TERMS) +
+        countBoostKeywordMatches(context.bodyText, SHARED_SECURITY_POLYMER_PROFESSIONAL_CONTEXT_TERMS)
+      )
+      : 0;
+    const polymerLowValueSourceHits = interestId === "polymer"
+      ? countBoostKeywordMatches(sourceFingerprint, SHARED_SECURITY_POLYMER_LOW_VALUE_SOURCE_TERMS)
+      : 0;
+    const polymerExplainerNoiseHits = interestId === "polymer"
+      ? (
+        countBoostKeywordMatches(context.titleText, SHARED_SECURITY_POLYMER_EXPLAINER_NOISE_TERMS) +
+        countBoostKeywordMatches(metadataTextForMatching, SHARED_SECURITY_POLYMER_EXPLAINER_NOISE_TERMS) +
+        countBoostKeywordMatches(context.bodyText, SHARED_SECURITY_POLYMER_EXPLAINER_NOISE_TERMS)
+      )
+      : 0;
+    const polymerProfessionalGateRejected = interestId === "polymer" &&
+      (
+        (polymerLowValueSourceHits > 0 && polymerProfessionalContextHits < 2) ||
+        (polymerExplainerNoiseHits > 0 && polymerProfessionalContextHits < 3) ||
+        (supportHits <= 1 && polymerProfessionalContextHits < 2)
+      );
 
     // Standalone technique filters should depend on explicit technique language,
     // not merely on vendor/source affinity inside the broader shared-security layer.
@@ -36435,7 +36527,7 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       negativeHits > 0 &&
       foregroundStrongHits === 0 &&
       bridgeEvidenceHits === 0
-    ) && !hardNegativeRejected;
+    ) && !hardNegativeRejected && !polymerProfessionalGateRejected;
     const umbrellaChildIncluded = interestId === "security_features" &&
       SHARED_SECURITY_FEATURE_UMBRELLA_INTERESTS.some((childInterestId) =>
         childInterestId !== "security_features" &&
@@ -36455,6 +36547,10 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       bodyWeakHits,
       supportHits,
       sourceSecurityContextHits,
+      polymerProfessionalContextHits,
+      polymerLowValueSourceHits,
+      polymerExplainerNoiseHits,
+      polymerProfessionalGateRejected,
       bridgeDocumentContextHits,
       bridgeEvidenceHits,
       negativeHits,
