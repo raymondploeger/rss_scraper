@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-162";
+const APP_BUILD = "intelligence-profile-ux-sprint-163";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -36604,6 +36604,9 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
         countBoostKeywordMatches(context.bodyText, SHARED_SECURITY_POLYMER_EXPLAINER_NOISE_TERMS)
       )
       : 0;
+    const polymerTitleExplainerNoiseHits = interestId === "polymer"
+      ? countBoostKeywordMatches(context.titleText, SHARED_SECURITY_POLYMER_EXPLAINER_NOISE_TERMS)
+      : 0;
     const polymerFieldTrialNoiseHits = interestId === "polymer"
       ? (
         countBoostKeywordMatches(context.titleText, SHARED_SECURITY_POLYMER_FIELD_TRIAL_NOISE_TERMS) +
@@ -36627,6 +36630,7 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       (
         (polymerLowValueSourceHits > 0 && polymerHighValueContextHits < 2) ||
         (polymerExplainerNoiseHits > 0 && polymerHighValueContextHits < 3) ||
+        (polymerTitleExplainerNoiseHits > 0 && polymerTitleHighValueHits === 0) ||
         (polymerFieldTrialNoiseHits > 0 && polymerHighValueContextHits < 2) ||
         (polymerGenericRbiRolloutHits > 0 && polymerTitleHighValueHits === 0) ||
         (supportHits <= 1 && polymerHighValueContextHits < 2)
@@ -36679,6 +36683,7 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       polymerHighValueContextHits,
       polymerLowValueSourceHits,
       polymerExplainerNoiseHits,
+      polymerTitleExplainerNoiseHits,
       polymerFieldTrialNoiseHits,
       polymerGenericRbiRolloutHits,
       polymerTitleHighValueHits,
