@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-166";
+const APP_BUILD = "intelligence-profile-ux-sprint-167";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -27352,11 +27352,11 @@ const SHARED_SECURITY_BACKEND_RETRIEVAL_SEARCH_TERMS = {
     "color-shifting ink",
     "optically variable ink",
     "intaglio ink",
-    "counterfeit cash",
     "Inkjet Passport Printer",
     "UV curable inks",
   ],
   polycarbonate: [
+    "polycarbonate",
     "polycarbonate card",
     "polycarbonate id card",
     "polycarbonate identity card",
@@ -27376,6 +27376,9 @@ const SHARED_SECURITY_BACKEND_RETRIEVAL_SEARCH_TERMS = {
     "polymer document",
   ],
   laminate: [
+    "laminate",
+    "laminated",
+    "lamination",
     "security laminate",
     "secure laminate",
     "passport laminate",
@@ -35887,6 +35890,14 @@ const SHARED_SECURITY_STANDALONE_RULES = {
       "pronunciation",
       "synonyms",
       "glosbe",
+      "planet banknote",
+      "youtube",
+      "buy",
+      "shop",
+      "how to spot",
+      "how to verify",
+      "counterfeit bills",
+      "counterfeit $",
     ],
     requiresSupportContext: true,
     allowForegroundStrongWithoutSupport: true,
