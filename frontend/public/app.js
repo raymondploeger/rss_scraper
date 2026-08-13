@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-158";
+const APP_BUILD = "intelligence-profile-ux-sprint-159";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -36277,13 +36277,44 @@ const SHARED_SECURITY_POLYMER_PROFESSIONAL_CONTEXT_TERMS = [
   "material",
   "security feature",
   "security features",
-  "central bank",
-  "reserve bank",
   "banknote series",
   "new series",
   "issuance",
   "issued",
   "circulation",
+  "de la rue",
+  "giesecke",
+  "g+d",
+  "crane currency",
+  "louisenthal",
+  "ccl secure",
+  "oberthur",
+  "orell fussli",
+];
+
+const SHARED_SECURITY_POLYMER_HIGH_VALUE_CONTEXT_TERMS = [
+  "polymer substrate",
+  "secure substrate",
+  "banknote substrate",
+  "security substrate",
+  "currency substrate",
+  "printing arm",
+  "currency printing arm",
+  "security printer",
+  "security printing",
+  "banknote printing",
+  "currency printing",
+  "procurement",
+  "tender",
+  "bids",
+  "global bids",
+  "expression of interest",
+  "eoi",
+  "supplier",
+  "manufacturer",
+  "material",
+  "security feature",
+  "security features",
   "de la rue",
   "giesecke",
   "g+d",
@@ -36322,6 +36353,26 @@ const SHARED_SECURITY_POLYMER_EXPLAINER_NOISE_TERMS = [
   "when will they reach your wallet",
   "travel diary",
   "travel inspiration",
+];
+
+const SHARED_SECURITY_POLYMER_FIELD_TRIAL_NOISE_TERMS = [
+  "field trial",
+  "field trials",
+  "govt approves",
+  "government approves",
+  "centre approves",
+  "approved introduction",
+  "one billion polymer banknotes",
+  "one billion",
+  "rs 10",
+  "rs. 10",
+  "rs 20",
+  "rs. 20",
+  "nirmala sitharaman",
+  "plastic notes",
+  "plastic money",
+  "what will change from paper currency",
+  "when will they reach your wallet",
 ];
 
 function getSharedSecurityStandaloneAssessment(article, interestId) {
@@ -36487,6 +36538,14 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
         countBoostKeywordMatches(context.bodyText, SHARED_SECURITY_POLYMER_PROFESSIONAL_CONTEXT_TERMS)
       )
       : 0;
+    const polymerHighValueContextHits = interestId === "polymer"
+      ? (
+        countBoostKeywordMatches(context.titleText, SHARED_SECURITY_POLYMER_HIGH_VALUE_CONTEXT_TERMS) +
+        countBoostKeywordMatches(context.tagText, SHARED_SECURITY_POLYMER_HIGH_VALUE_CONTEXT_TERMS) +
+        countBoostKeywordMatches(metadataTextForMatching, SHARED_SECURITY_POLYMER_HIGH_VALUE_CONTEXT_TERMS) +
+        countBoostKeywordMatches(context.bodyText, SHARED_SECURITY_POLYMER_HIGH_VALUE_CONTEXT_TERMS)
+      )
+      : 0;
     const polymerLowValueSourceHits = interestId === "polymer"
       ? countBoostKeywordMatches(sourceFingerprint, SHARED_SECURITY_POLYMER_LOW_VALUE_SOURCE_TERMS)
       : 0;
@@ -36497,11 +36556,19 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
         countBoostKeywordMatches(context.bodyText, SHARED_SECURITY_POLYMER_EXPLAINER_NOISE_TERMS)
       )
       : 0;
+    const polymerFieldTrialNoiseHits = interestId === "polymer"
+      ? (
+        countBoostKeywordMatches(context.titleText, SHARED_SECURITY_POLYMER_FIELD_TRIAL_NOISE_TERMS) +
+        countBoostKeywordMatches(metadataTextForMatching, SHARED_SECURITY_POLYMER_FIELD_TRIAL_NOISE_TERMS) +
+        countBoostKeywordMatches(context.bodyText, SHARED_SECURITY_POLYMER_FIELD_TRIAL_NOISE_TERMS)
+      )
+      : 0;
     const polymerProfessionalGateRejected = interestId === "polymer" &&
       (
-        (polymerLowValueSourceHits > 0 && polymerProfessionalContextHits < 2) ||
-        (polymerExplainerNoiseHits > 0 && polymerProfessionalContextHits < 3) ||
-        (supportHits <= 1 && polymerProfessionalContextHits < 2)
+        (polymerLowValueSourceHits > 0 && polymerHighValueContextHits < 2) ||
+        (polymerExplainerNoiseHits > 0 && polymerHighValueContextHits < 3) ||
+        (polymerFieldTrialNoiseHits > 0 && polymerHighValueContextHits < 2) ||
+        (supportHits <= 1 && polymerHighValueContextHits < 2)
       );
 
     // Standalone technique filters should depend on explicit technique language,
@@ -36548,8 +36615,10 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       supportHits,
       sourceSecurityContextHits,
       polymerProfessionalContextHits,
+      polymerHighValueContextHits,
       polymerLowValueSourceHits,
       polymerExplainerNoiseHits,
+      polymerFieldTrialNoiseHits,
       polymerProfessionalGateRejected,
       bridgeDocumentContextHits,
       bridgeEvidenceHits,
