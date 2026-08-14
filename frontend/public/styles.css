@@ -318,10 +318,10 @@ img {
 
 .personal-dashboard-template-option {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 9px;
   width: 100%;
-  min-height: 38px;
+  min-height: 44px;
   padding: 9px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -332,6 +332,18 @@ img {
   font-weight: 700;
   text-align: left;
   cursor: pointer;
+}
+
+.personal-dashboard-template-option-copy {
+  display: grid;
+  gap: 3px;
+}
+
+.personal-dashboard-template-option-copy small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 500;
+  line-height: 1.35;
 }
 
 .personal-dashboard-template-option:hover {

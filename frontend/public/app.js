@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-181";
+const APP_BUILD = "intelligence-profile-ux-sprint-182";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4103,6 +4103,7 @@ const SHARED_SECURITY_REFINEMENT_INTEREST_IDS = new Set([
 const PERSONAL_DASHBOARD_PROFILE_TEMPLATES = Object.freeze({
   central_bank: Object.freeze({
     label: "Central Bank",
+    description: "Banknotes, issuance, withdrawals, counterfeiting and central-bank signals.",
     interests: Object.freeze([
       "banknotes",
       "redesign",
@@ -4114,6 +4115,7 @@ const PERSONAL_DASHBOARD_PROFILE_TEMPLATES = Object.freeze({
   }),
   passport_authority: Object.freeze({
     label: "Identity Document Authority",
+    description: "Passport, ID card, visa, residence permit and driver licence lifecycle.",
     interests: Object.freeze([
       "passports",
       "id_cards",
@@ -4124,6 +4126,7 @@ const PERSONAL_DASHBOARD_PROFILE_TEMPLATES = Object.freeze({
   }),
   border_control: Object.freeze({
     label: "Border Control",
+    description: "Border operations, ICAO, travel-document checks and entry systems.",
     interests: Object.freeze([
       "border_control",
       "icao",
@@ -4131,12 +4134,14 @@ const PERSONAL_DASHBOARD_PROFILE_TEMPLATES = Object.freeze({
   }),
   security_printer: Object.freeze({
     label: "Security Printer",
+    description: "Security features, printing technologies, inks, holography and materials.",
     interests: Object.freeze([
       "security_features",
     ]),
   }),
   vendors: Object.freeze({
     label: "Vendors",
+    description: "Producer, supplier and platform-company intelligence across the industry.",
     interests: Object.freeze([
       "banknotes",
       "passports",
@@ -4149,6 +4154,7 @@ const PERSONAL_DASHBOARD_PROFILE_TEMPLATES = Object.freeze({
   }),
   identity_verification: Object.freeze({
     label: "Identity Verification",
+    description: "Identity verification, biometric verification, authentication and age assurance.",
     interests: Object.freeze([
       "biometric_verification",
       "identity_verification",
@@ -4157,7 +4163,8 @@ const PERSONAL_DASHBOARD_PROFILE_TEMPLATES = Object.freeze({
     ]),
   }),
   researcher: Object.freeze({
-    label: "Researcher",
+    label: "Industry Research",
+    description: "Broad market monitoring across banknotes, documents, digital identity and fraud.",
     interests: Object.freeze([
       "banknotes",
       "passports",
@@ -25780,6 +25787,20 @@ function renderIdentityDocumentAuthorityStrictnessControl(profileDisplay) {
   `;
 }
 
+function renderPersonalDashboardTemplateOptions() {
+  return Object.entries(PERSONAL_DASHBOARD_PROFILE_TEMPLATES)
+    .map(([templateId, template]) => `
+      <button type="button" class="personal-dashboard-template-option" data-profile-template="${escapeHtml(templateId)}" role="radio" aria-checked="false">
+        <span class="profile-template-radio" aria-hidden="true"></span>
+        <span class="personal-dashboard-template-option-copy">
+          <span>${escapeHtml(template.label)}</span>
+          ${template.description ? `<small>${escapeHtml(template.description)}</small>` : ""}
+        </span>
+      </button>
+    `)
+    .join("");
+}
+
 function renderPersonalDashboardCustomProfileOptions() {
   const profiles = normalizePersonalDashboardCustomProfiles(state.personalDashboard.customProfiles || []);
   if (!profiles.length) {
@@ -25959,6 +25980,9 @@ function renderPersonalDashboard() {
 
   if (elements.personalDashboardCustomProfiles) {
     elements.personalDashboardCustomProfiles.innerHTML = renderPersonalDashboardCustomProfileOptions();
+  }
+  if (elements.personalDashboardTemplateOptions) {
+    elements.personalDashboardTemplateOptions.innerHTML = renderPersonalDashboardTemplateOptions();
   }
   if (elements.identityDocumentAuthorityStrictnessEditor) {
     elements.identityDocumentAuthorityStrictnessEditor.innerHTML =
