@@ -44,6 +44,12 @@ function isPresentableArticleThumbnail(value) {
     if (!pathname || pathname === "/" || /\.(?:html?|php|aspx?)(?:$|[?#])/i.test(pathname)) {
       return false;
     }
+    if (
+      pathname.includes("/binaries/content/gallery/") &&
+      /\.(?:jpg|jpeg|png|gif|webp|avif|svg)(?:\/|$)/i.test(pathname)
+    ) {
+      return true;
+    }
     return ["/image/", "/images/", "/media/", "/uploads/", "/files/", "/assets/"].some((segment) =>
       pathname.includes(segment)
     );
