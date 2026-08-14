@@ -5,6 +5,11 @@ function buildGoogleNewsRssUrl(query) {
   return `https://news.google.com/rss/search?q=${encodedQuery}&hl=en-US&gl=US&ceid=US:en`;
 }
 
+function buildBingNewsRssUrl(query) {
+  const encodedQuery = encodeURIComponent(String(query || "").trim());
+  return `https://www.bing.com/news/search?q=${encodedQuery}&format=rss`;
+}
+
 const PHASE_ONE_STRATEGIC_FEEDS = [
   // ICAO
   {
@@ -285,6 +290,120 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     rssUrl: "https://www.genkey.com/news/",
     sourceType: "website",
     phase: "phase2-vendor-sources",
+  },
+
+  // Google Alerts alternatives: Bing News RSS searches
+  {
+    name: "Bing News - De La Rue Banknotes",
+    topic: "Banknotes",
+    rssUrl: buildBingNewsRssUrl('"De La Rue" banknotes'),
+    sourceType: "rss",
+    phase: "phase3-news-search-alternatives",
+  },
+  {
+    name: "Bing News - Crane Currency Banknotes",
+    topic: "Banknotes",
+    rssUrl: buildBingNewsRssUrl('"Crane Currency" banknotes'),
+    sourceType: "rss",
+    phase: "phase3-news-search-alternatives",
+  },
+  {
+    name: "Bing News - Banknote Security Printing",
+    topic: "Banknotes",
+    rssUrl: buildBingNewsRssUrl('"security printing" banknotes'),
+    sourceType: "rss",
+    phase: "phase3-news-search-alternatives",
+  },
+  {
+    name: "Bing News - Banknote Withdrawal",
+    topic: "Banknotes",
+    rssUrl: buildBingNewsRssUrl('"banknote withdrawal" "central bank"'),
+    sourceType: "rss",
+    phase: "phase3-news-search-alternatives",
+  },
+  {
+    name: "Bing News - New Banknote Central Bank",
+    topic: "Banknotes",
+    rssUrl: buildBingNewsRssUrl('"new banknote" "central bank"'),
+    sourceType: "rss",
+    phase: "phase3-news-search-alternatives",
+  },
+  {
+    name: "Bing News - Passport Security Features",
+    topic: "Identity Documents",
+    rssUrl: buildBingNewsRssUrl('"passport" "security features"'),
+    sourceType: "rss",
+    phase: "phase3-news-search-alternatives",
+  },
+  {
+    name: "Bing News - ePassport Border Control",
+    topic: "Identity Documents",
+    rssUrl: buildBingNewsRssUrl('"e-passport" "border control"'),
+    sourceType: "rss",
+    phase: "phase3-news-search-alternatives",
+  },
+  {
+    name: "Bing News - National ID Card",
+    topic: "Identity Documents",
+    rssUrl: buildBingNewsRssUrl('"national ID card"'),
+    sourceType: "rss",
+    phase: "phase3-news-search-alternatives",
+  },
+  {
+    name: "Bing News - Digital Identity Wallet",
+    topic: "Digital Identity & Biometrics",
+    rssUrl: buildBingNewsRssUrl('"digital identity wallet"'),
+    sourceType: "rss",
+    phase: "phase3-news-search-alternatives",
+  },
+  {
+    name: "Bing News - Identity Verification Liveness",
+    topic: "Digital Identity & Biometrics",
+    rssUrl: buildBingNewsRssUrl('"identity verification" liveness'),
+    sourceType: "rss",
+    phase: "phase3-news-search-alternatives",
+  },
+  {
+    name: "Bing News - IDEMIA Public Security",
+    topic: "Digital Identity & Biometrics",
+    rssUrl: buildBingNewsRssUrl('"IDEMIA" "public security"'),
+    sourceType: "rss",
+    phase: "phase3-news-search-alternatives",
+  },
+  {
+    name: "Bing News - IN Groupe Identity",
+    topic: "Identity Documents",
+    rssUrl: buildBingNewsRssUrl('"IN Groupe" identity'),
+    sourceType: "rss",
+    phase: "phase3-news-search-alternatives",
+  },
+  {
+    name: "Bing News - Bundesdruckerei Identity Documents",
+    topic: "Identity Documents",
+    rssUrl: buildBingNewsRssUrl('"Bundesdruckerei" "identity documents"'),
+    sourceType: "rss",
+    phase: "phase3-news-search-alternatives",
+  },
+  {
+    name: "Bing News - Hologram Security Document",
+    topic: "Shared Security Printing",
+    rssUrl: buildBingNewsRssUrl('"hologram" "security document"'),
+    sourceType: "rss",
+    phase: "phase3-news-search-alternatives",
+  },
+  {
+    name: "Bing News - Polycarbonate Identity Card",
+    topic: "Shared Security Printing",
+    rssUrl: buildBingNewsRssUrl('"polycarbonate" "identity card"'),
+    sourceType: "rss",
+    phase: "phase3-news-search-alternatives",
+  },
+  {
+    name: "Bing News - DOVID Security Feature",
+    topic: "Shared Security Printing",
+    rssUrl: buildBingNewsRssUrl('"DOVID" "security feature"'),
+    sourceType: "rss",
+    phase: "phase3-news-search-alternatives",
   },
   {
     name: "SICPA Newsroom",
