@@ -58,6 +58,8 @@
     "google-news:analyze-url": "node scripts/google-news-analyze-url.js",
     "google-news:thumbnail-backfill": "node scripts/google-news-thumbnail-backfill.js",
     "google-news:thumbnail-backfill:execute": "node scripts/google-news-thumbnail-backfill.js --execute",
+    "sources:bing-mirror-google-alerts": "node scripts/bing-mirror-google-alerts.js",
+    "sources:bing-mirror-google-alerts:apply": "node scripts/bing-mirror-google-alerts.js --apply",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
