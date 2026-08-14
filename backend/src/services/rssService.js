@@ -293,7 +293,41 @@ function isMeaningfulImageCandidate(candidate) {
     return false;
   }
 
-  return !["logo", "icon", "avatar", "pixel", "tracking"].some((token) => normalized.includes(token));
+  if (["logo", "icon", "avatar", "pixel", "tracking"].some((token) => normalized.includes(token))) {
+    return false;
+  }
+
+  const imageFilePattern = /\.(?:jpg|jpeg|png|gif|webp|avif|svg)(?:$|[?#])/i;
+  if (imageFilePattern.test(normalized)) {
+    return true;
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    const pathname = parsed.pathname.toLowerCase();
+    if (!pathname || pathname === "/") {
+      return false;
+    }
+    if (/\.(?:html?|php|aspx?)(?:$|[?#])/i.test(pathname)) {
+      return false;
+    }
+    return ["/image/", "/images/", "/media/", "/uploads/", "/files/", "/assets/"].some((segment) =>
+      pathname.includes(segment)
+    );
+  } catch {
+    return ["/image/", "/images/", "/media/", "/uploads/", "/files/", "/assets/"].some((segment) =>
+      normalized.includes(segment)
+    );
+  }
+}
+
+function hasUsableStoredThumbnail(value) {
+  return (
+    Boolean(value) &&
+    value !== env.placeholderImage &&
+    !isGoogleNewsPlaceholderImage(value) &&
+    isMeaningfulImageCandidate(value)
+  );
 }
 
 function resolveFeedImageCandidate(link, candidate) {
@@ -2018,9 +2052,8 @@ async function upsertArticle(article) {
   }
 
   const shouldBackfillThumbnail =
-    (existing.thumbnail === env.placeholderImage || isGoogleNewsPlaceholderImage(existing.thumbnail)) &&
-    article.thumbnail !== env.placeholderImage &&
-    !isGoogleNewsPlaceholderImage(article.thumbnail);
+    !hasUsableStoredThumbnail(existing.thumbnail) &&
+    hasUsableStoredThumbnail(article.thumbnail);
   const shouldBackfillSnippet = (!existing.contentSnippet || existing.contentSnippet.length < 40) && article.contentSnippet;
 
   if (shouldBackfillThumbnail || shouldBackfillSnippet) {
@@ -2101,9 +2134,7 @@ function queueThumbnailEnrichment(article) {
   }
 
   if (
-    article.thumbnail &&
-    article.thumbnail !== env.placeholderImage &&
-    !isGoogleNewsPlaceholderImage(article.thumbnail)
+    hasUsableStoredThumbnail(article.thumbnail)
   ) {
     if (isNotafiliaUrl(article.link) || isNotafiliaUrl(article.canonicalLink) || isNotafiliaUrl(article.thumbnail)) {
       console.log(

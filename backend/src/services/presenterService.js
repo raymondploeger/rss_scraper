@@ -24,6 +24,34 @@ function resolveCanonicalLink(canonicalLink, link) {
   }
 }
 
+function isPresentableArticleThumbnail(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized || normalized === env.placeholderImage) {
+    return false;
+  }
+
+  const lower = normalized.toLowerCase();
+  if (["logo", "icon", "avatar", "pixel", "tracking"].some((token) => lower.includes(token))) {
+    return false;
+  }
+  if (/\.(?:jpg|jpeg|png|gif|webp|avif|svg)(?:$|[?#])/i.test(lower)) {
+    return true;
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    const pathname = parsed.pathname.toLowerCase();
+    if (!pathname || pathname === "/" || /\.(?:html?|php|aspx?)(?:$|[?#])/i.test(pathname)) {
+      return false;
+    }
+    return ["/image/", "/images/", "/media/", "/uploads/", "/files/", "/assets/"].some((segment) =>
+      pathname.includes(segment)
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function toFeedDto(feed) {
   const dmvCatalogEntry = getDmvCatalogEntry(feed);
   const dmvCountry = dmvCatalogEntry ? getCatalogEntryCountry(dmvCatalogEntry) : null;
@@ -66,7 +94,7 @@ export function toArticleDto(article) {
     source: article.source,
     topic: article.topic,
     feedId: String(article.feedId),
-    thumbnail: article.thumbnail || env.placeholderImage,
+    thumbnail: isPresentableArticleThumbnail(article.thumbnail) ? article.thumbnail : env.placeholderImage,
     summary: article.summary || "",
     summaryShort: article.summaryShort || "",
     keywords: Array.isArray(article.keywords) ? article.keywords : [],
