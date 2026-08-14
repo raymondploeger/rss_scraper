@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-189";
+const APP_BUILD = "intelligence-profile-ux-sprint-190";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -6518,6 +6518,10 @@ const elements = {
   feedPanel: document.getElementById("feed-panel"),
   feedPanelToggle: document.getElementById("feed-panel-toggle"),
   feedPanelContent: document.getElementById("feed-panel-content"),
+  feedPanelContext: document.getElementById("feed-panel-context"),
+  feedPanelContextLabel: document.getElementById("feed-panel-context-label"),
+  feedPanelBackToList: document.getElementById("feed-panel-back-to-list"),
+  feedPanelClearView: document.getElementById("feed-panel-clear-view"),
   addSourceToggle: document.getElementById("add-source-toggle"),
   addSourceContent: document.getElementById("add-source-content"),
   summaryCardTemplate: document.getElementById("summary-card-template"),
@@ -48963,6 +48967,67 @@ function getVisibleFeeds() {
   );
 }
 
+function getSourcePanelContextLabel() {
+  const parts = [];
+  const selectedFeed = state.filters.feedId ? resolveFeedByIdentity(state.filters.feedId) : null;
+  const sourceSearch = String(elements.feedPanelSearch?.value || "").trim();
+  const sourceStatus = elements.feedVisibilityFilter?.value || "all";
+  const sourceGroup = state.filters.sourceGroup || "all";
+
+  if (selectedFeed) {
+    parts.push(`Viewing ${selectedFeed.name || "selected source"}`);
+  } else if (state.dashboardMode === "usa") {
+    parts.push("Viewing USA DMV sources");
+  } else if (state.dashboardMode === "canada") {
+    parts.push("Viewing Canada DMV sources");
+  }
+
+  if (sourceSearch) {
+    parts.push(`search: ${sourceSearch}`);
+  }
+  if (sourceStatus !== "all") {
+    parts.push(getSelectedOptionText(elements.feedVisibilityFilter) || sourceStatus);
+  }
+  if (sourceGroup !== "all") {
+    parts.push(`${sourceGroup} sources`);
+  }
+
+  return parts.join(" - ");
+}
+
+function syncSourcePanelContextActions() {
+  if (!elements.feedPanelContext) {
+    return;
+  }
+
+  const sourceSearch = String(elements.feedPanelSearch?.value || "").trim();
+  const sourceStatus = elements.feedVisibilityFilter?.value || "all";
+  const sourceGroup = state.filters.sourceGroup || "all";
+  const hasSelectedSourceView = Boolean(
+    state.filters.feedId ||
+    state.filters.dmvFeedId ||
+    state.filters.canadaDmvFeedPath ||
+    state.filters.canadaDmvAll ||
+    state.dashboardMode === "usa" ||
+    state.dashboardMode === "canada"
+  );
+  const hasSourceListFilter = Boolean(sourceSearch || sourceStatus !== "all" || sourceGroup !== "all");
+  const shouldShow = hasSelectedSourceView || hasSourceListFilter;
+
+  elements.feedPanelContext.hidden = !shouldShow;
+  if (elements.feedPanelContextLabel) {
+    elements.feedPanelContextLabel.textContent = getSourcePanelContextLabel() || "Source list filtered";
+  }
+  if (elements.feedPanelBackToList) {
+    elements.feedPanelBackToList.hidden = !hasSelectedSourceView;
+    const groupLabel = sourceGroup !== "all" ? `${sourceGroup} sources` : "source list";
+    elements.feedPanelBackToList.textContent = `Back to ${groupLabel}`;
+  }
+  if (elements.feedPanelClearView) {
+    elements.feedPanelClearView.hidden = !shouldShow;
+  }
+}
+
 function updateDmvToggleButton() {
   if (!elements.dmvToggleButton) return;
 
@@ -49129,6 +49194,60 @@ function resetDashboardState() {
   if (elements.dateFilter) {
     elements.dateFilter.value = "";
   }
+}
+
+function clearSelectedSourceView() {
+  state.filters.feedId = "";
+  state.filters.dmvFeedId = "";
+  state.filters.canadaDmvFeedPath = "";
+  state.filters.canadaDmvAll = false;
+  state.dashboardMode = "normal";
+
+  if (elements.feedFilter) {
+    elements.feedFilter.value = "";
+  }
+  if (elements.dmvFeedFilter) {
+    elements.dmvFeedFilter.value = "";
+  }
+  if (elements.canadaDmvFilter) {
+    elements.canadaDmvFilter.value = "";
+  }
+
+  renderFeedList();
+  renderDmvOfficialLink();
+  renderDmvModeIndicator();
+  scheduleRenderArticles("source-list-back", { mode: "frame" });
+}
+
+function clearSourcePanelView() {
+  clearExactArticleFilter();
+  state.filters.feedId = "";
+  state.filters.dmvFeedId = "";
+  state.filters.canadaDmvFeedPath = "";
+  state.filters.canadaDmvAll = false;
+  state.filters.sourceGroup = "all";
+  state.dashboardMode = "normal";
+
+  if (elements.feedPanelSearch) {
+    elements.feedPanelSearch.value = "";
+  }
+  if (elements.feedVisibilityFilter) {
+    elements.feedVisibilityFilter.value = "all";
+  }
+  if (elements.feedFilter) {
+    elements.feedFilter.value = "";
+  }
+  if (elements.dmvFeedFilter) {
+    elements.dmvFeedFilter.value = "";
+  }
+  if (elements.canadaDmvFilter) {
+    elements.canadaDmvFilter.value = "";
+  }
+
+  renderFeedList();
+  renderDmvOfficialLink();
+  renderDmvModeIndicator();
+  scheduleRenderArticles("source-list-clear-view", { mode: "frame" });
 }
 
 function resetFeedForm(options = {}) {
@@ -49306,6 +49425,7 @@ function renderFeedItem(feed) {
 
 function renderFeedList() {
   syncSourceGroupTabs();
+  syncSourcePanelContextActions();
   const visibleFeeds = getVisibleFeeds();
   const renderedFeeds = visibleFeeds.slice(0, MAX_VISIBLE_SOURCES_IN_LIST);
   const activeGroup = state.filters.sourceGroup || "all";
@@ -58717,6 +58837,18 @@ function bindEvents() {
 
       state.filters.sourceGroup = button.dataset.sourceGroup || "all";
       renderFeedList();
+    });
+  }
+
+  if (elements.feedPanelBackToList) {
+    elements.feedPanelBackToList.addEventListener("click", () => {
+      clearSelectedSourceView();
+    });
+  }
+
+  if (elements.feedPanelClearView) {
+    elements.feedPanelClearView.addEventListener("click", () => {
+      clearSourcePanelView();
     });
   }
 

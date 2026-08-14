@@ -1568,6 +1568,31 @@ h3 {
   gap: 7px;
 }
 
+.feed-panel-context {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+
+.feed-panel-context[hidden] {
+  display: none !important;
+}
+
+.feed-panel-context-label {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.feed-panel-context-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .feed-panel-content[hidden] {
   display: none !important;
 }
