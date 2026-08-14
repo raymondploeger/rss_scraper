@@ -292,119 +292,6 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase2-vendor-sources",
   },
 
-  // Google Alerts alternatives: Bing News RSS searches
-  {
-    name: "Bing News - De La Rue Banknotes",
-    topic: "Banknotes",
-    rssUrl: buildBingNewsRssUrl('"De La Rue" banknotes'),
-    sourceType: "rss",
-    phase: "phase3-news-search-alternatives",
-  },
-  {
-    name: "Bing News - Crane Currency Banknotes",
-    topic: "Banknotes",
-    rssUrl: buildBingNewsRssUrl('"Crane Currency" banknotes'),
-    sourceType: "rss",
-    phase: "phase3-news-search-alternatives",
-  },
-  {
-    name: "Bing News - Banknote Security Printing",
-    topic: "Banknotes",
-    rssUrl: buildBingNewsRssUrl('"security printing" banknotes'),
-    sourceType: "rss",
-    phase: "phase3-news-search-alternatives",
-  },
-  {
-    name: "Bing News - Banknote Withdrawal",
-    topic: "Banknotes",
-    rssUrl: buildBingNewsRssUrl('"banknote withdrawal" "central bank"'),
-    sourceType: "rss",
-    phase: "phase3-news-search-alternatives",
-  },
-  {
-    name: "Bing News - New Banknote Central Bank",
-    topic: "Banknotes",
-    rssUrl: buildBingNewsRssUrl('"new banknote" "central bank"'),
-    sourceType: "rss",
-    phase: "phase3-news-search-alternatives",
-  },
-  {
-    name: "Bing News - Passport Security Features",
-    topic: "Identity Documents",
-    rssUrl: buildBingNewsRssUrl('"passport" "security features"'),
-    sourceType: "rss",
-    phase: "phase3-news-search-alternatives",
-  },
-  {
-    name: "Bing News - ePassport Border Control",
-    topic: "Identity Documents",
-    rssUrl: buildBingNewsRssUrl('"e-passport" "border control"'),
-    sourceType: "rss",
-    phase: "phase3-news-search-alternatives",
-  },
-  {
-    name: "Bing News - National ID Card",
-    topic: "Identity Documents",
-    rssUrl: buildBingNewsRssUrl('"national ID card"'),
-    sourceType: "rss",
-    phase: "phase3-news-search-alternatives",
-  },
-  {
-    name: "Bing News - Digital Identity Wallet",
-    topic: "Digital Identity & Biometrics",
-    rssUrl: buildBingNewsRssUrl('"digital identity wallet"'),
-    sourceType: "rss",
-    phase: "phase3-news-search-alternatives",
-  },
-  {
-    name: "Bing News - Identity Verification Liveness",
-    topic: "Digital Identity & Biometrics",
-    rssUrl: buildBingNewsRssUrl('"identity verification" liveness'),
-    sourceType: "rss",
-    phase: "phase3-news-search-alternatives",
-  },
-  {
-    name: "Bing News - IDEMIA Public Security",
-    topic: "Digital Identity & Biometrics",
-    rssUrl: buildBingNewsRssUrl('"IDEMIA" "public security"'),
-    sourceType: "rss",
-    phase: "phase3-news-search-alternatives",
-  },
-  {
-    name: "Bing News - IN Groupe Identity",
-    topic: "Identity Documents",
-    rssUrl: buildBingNewsRssUrl('"IN Groupe" identity'),
-    sourceType: "rss",
-    phase: "phase3-news-search-alternatives",
-  },
-  {
-    name: "Bing News - Bundesdruckerei Identity Documents",
-    topic: "Identity Documents",
-    rssUrl: buildBingNewsRssUrl('"Bundesdruckerei" "identity documents"'),
-    sourceType: "rss",
-    phase: "phase3-news-search-alternatives",
-  },
-  {
-    name: "Bing News - Hologram Security Document",
-    topic: "Shared Security Printing",
-    rssUrl: buildBingNewsRssUrl('"hologram" "security document"'),
-    sourceType: "rss",
-    phase: "phase3-news-search-alternatives",
-  },
-  {
-    name: "Bing News - Polycarbonate Identity Card",
-    topic: "Shared Security Printing",
-    rssUrl: buildBingNewsRssUrl('"polycarbonate" "identity card"'),
-    sourceType: "rss",
-    phase: "phase3-news-search-alternatives",
-  },
-  {
-    name: "Bing News - DOVID Security Feature",
-    topic: "Shared Security Printing",
-    rssUrl: buildBingNewsRssUrl('"DOVID" "security feature"'),
-    sourceType: "rss",
-    phase: "phase3-news-search-alternatives",
-  },
   {
     name: "SICPA Newsroom",
     topic: "Shared Security Printing",
@@ -429,6 +316,70 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
 ];
 
 const RETIRED_STRATEGIC_FEEDS = [
+  {
+    name: "Bing News - De La Rue Banknotes",
+    rssUrl: buildBingNewsRssUrl('"De La Rue" banknotes'),
+  },
+  {
+    name: "Bing News - Crane Currency Banknotes",
+    rssUrl: buildBingNewsRssUrl('"Crane Currency" banknotes'),
+  },
+  {
+    name: "Bing News - Banknote Security Printing",
+    rssUrl: buildBingNewsRssUrl('"security printing" banknotes'),
+  },
+  {
+    name: "Bing News - Banknote Withdrawal",
+    rssUrl: buildBingNewsRssUrl('"banknote withdrawal" "central bank"'),
+  },
+  {
+    name: "Bing News - New Banknote Central Bank",
+    rssUrl: buildBingNewsRssUrl('"new banknote" "central bank"'),
+  },
+  {
+    name: "Bing News - Passport Security Features",
+    rssUrl: buildBingNewsRssUrl('"passport" "security features"'),
+  },
+  {
+    name: "Bing News - ePassport Border Control",
+    rssUrl: buildBingNewsRssUrl('"e-passport" "border control"'),
+  },
+  {
+    name: "Bing News - National ID Card",
+    rssUrl: buildBingNewsRssUrl('"national ID card"'),
+  },
+  {
+    name: "Bing News - Digital Identity Wallet",
+    rssUrl: buildBingNewsRssUrl('"digital identity wallet"'),
+  },
+  {
+    name: "Bing News - Identity Verification Liveness",
+    rssUrl: buildBingNewsRssUrl('"identity verification" liveness'),
+  },
+  {
+    name: "Bing News - IDEMIA Public Security",
+    rssUrl: buildBingNewsRssUrl('"IDEMIA" "public security"'),
+  },
+  {
+    name: "Bing News - IN Groupe Identity",
+    rssUrl: buildBingNewsRssUrl('"IN Groupe" identity'),
+  },
+  {
+    name: "Bing News - Bundesdruckerei Identity Documents",
+    rssUrl: buildBingNewsRssUrl('"Bundesdruckerei" "identity documents"'),
+  },
+  {
+    name: "Bing News - Hologram Security Document",
+    rssUrl: buildBingNewsRssUrl('"hologram" "security document"'),
+  },
+  {
+    name: "Bing News - Polycarbonate Identity Card",
+    rssUrl: buildBingNewsRssUrl('"polycarbonate" "identity card"'),
+  },
+  {
+    name: "Bing News - DOVID Security Feature",
+    rssUrl: buildBingNewsRssUrl('"DOVID" "security feature"'),
+  },
   {
     name: "Cetis RSS",
     rssUrl: "http://www.cetis.si/?mod=aktualno&action=rss&lang=en",
