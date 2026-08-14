@@ -780,6 +780,7 @@ async function validateWebsiteArticleCandidate(link, title) {
 
   const publishedDate = extractWebsitePublishedDate($, link);
   const articleBody = extractWebsiteArticleBody($);
+  const articleImage = extractFirstMeaningfulHtmlImage(html, link);
   const hasNewsroomContext = hasWebsiteNewsroomContext($, link);
   const hasArticleBody = articleBody.length >= 140;
   const hasRequiredSignal = Boolean(publishedDate || hasArticleBody || hasNewsroomContext);
@@ -881,6 +882,7 @@ async function validateWebsiteArticleCandidate(link, title) {
     accepted: true,
     title: pageTitle,
     link,
+    image: articleImage,
     isoDate: (publishedDate || new Date()).toISOString(),
     contentSnippet: sanitizeFeedText(articleBody, ""),
     hasNewsroomContext,
@@ -1832,6 +1834,7 @@ async function extractWebsiteItems(feed) {
       title: validated.title || text,
       link,
       isoDate: validated.isoDate || inferWebsiteItemDate($, anchor).toISOString(),
+      image: validated.image || "",
       contentSnippet:
         validated.contentSnippet || sanitizeFeedText($(anchor).closest("article, li, div").text(), ""),
       author: "",
