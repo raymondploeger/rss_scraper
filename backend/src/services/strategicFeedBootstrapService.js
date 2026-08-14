@@ -210,6 +210,41 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase1",
   },
   {
+    name: "OVD Kinegram Insights",
+    topic: "Shared Security Printing",
+    rssUrl: "https://www.kinegram.com/events-insights/insights",
+    sourceType: "website",
+    phase: "phase2-vendor-sources",
+  },
+  {
+    name: "Louisenthal Press Releases",
+    topic: "Shared Security Printing",
+    rssUrl: "https://www.louisenthal.com/highlights/news/press-releases",
+    sourceType: "website",
+    phase: "phase2-vendor-sources",
+  },
+  {
+    name: "Koenig & Bauer Newsroom",
+    topic: "Shared Security Printing",
+    rssUrl: "https://www.koenig-bauer.com/en/newsroom",
+    sourceType: "website",
+    phase: "phase2-vendor-sources",
+  },
+  {
+    name: "IDEMIA Pressroom",
+    topic: "Digital Identity & Biometrics",
+    rssUrl: "https://www.idemia.com/pressroom",
+    sourceType: "website",
+    phase: "phase2-vendor-sources",
+  },
+  {
+    name: "Thales Digital Identity Newsroom",
+    topic: "Digital Identity & Biometrics",
+    rssUrl: "https://cpl.thalesgroup.com/about-us/newsroom",
+    sourceType: "website",
+    phase: "phase2-vendor-sources",
+  },
+  {
     name: "SICPA Newsroom",
     topic: "Shared Security Printing",
     rssUrl: "https://www.sicpa.com/all-press-releases",
@@ -252,10 +287,6 @@ const RETIRED_STRATEGIC_FEEDS = [
   {
     name: "SURYS RSS",
     rssUrl: "https://surys.com/feed/",
-  },
-  {
-    name: "IDEMIA Pressroom",
-    rssUrl: "https://www.idemia.com/pressroom",
   },
 ];
 
