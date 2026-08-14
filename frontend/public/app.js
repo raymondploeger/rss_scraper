@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-190";
+const APP_BUILD = "intelligence-profile-ux-sprint-191";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -49392,9 +49392,11 @@ function renderFeedItem(feed) {
   item.classList.toggle("is-link-only-source", isLinkOnly);
   item.classList.toggle("is-rss-backed-source", isRssBacked);
   title.textContent = feed.name || "Untitled feed";
-  meta.textContent = [feed.topic || "General", sourceKind, lastFetched, feed.rssUrl || ""]
+  const metaText = [feed.topic || "General", sourceKind, lastFetched, feed.rssUrl || ""]
     .filter(Boolean)
     .join(" - ");
+  meta.textContent = metaText;
+  meta.title = metaText;
   status.textContent = statusPresentation.text;
   status.classList.add(statusPresentation.tone);
 
