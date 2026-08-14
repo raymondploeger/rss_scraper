@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-185";
+const APP_BUILD = "intelligence-profile-ux-sprint-189";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1480,7 +1480,7 @@ const BACKEND_ARTICLE_QUERY_CONCURRENCY_LIMIT = 8;
 const PERSONAL_DASHBOARD_BACKEND_SEARCH_LIMIT = 16;
 const IDENTITY_DOCUMENT_OR_BACKEND_SEARCH_LIMIT = 32;
 const PERSONAL_DASHBOARD_MULTI_DOMAIN_BACKEND_SEARCH_LIMIT = 48;
-const VENDORS_PROFILE_BACKEND_SEARCH_LIMIT = 28;
+const VENDORS_PROFILE_BACKEND_SEARCH_LIMIT = 34;
 const VENDORS_PROFILE_BACKEND_PER_REQUEST_LIMIT = 60;
 const SUMMARY_METRICS = [
   { label: "Active feeds", key: "activeFeeds" },
@@ -4671,6 +4671,9 @@ const VENDORS_PROFILE_VENDOR_TERMS = Object.freeze([
   "sicpa",
   "crane currency",
   "crane authentication",
+  "polish security printing works",
+  "pwpw",
+  "atlantic zeiser",
   "koenig & bauer",
   "koenig-bauer",
   "louisenthal",
@@ -4683,6 +4686,9 @@ const VENDORS_PROFILE_VENDOR_TERMS = Object.freeze([
   "toppan",
   "muhlbauer",
   "mühlbauer",
+  "masktech",
+  "daon",
+  "genkey",
   "semlex",
   "iris corporation",
   "shufti",
@@ -4718,6 +4724,9 @@ const VENDORS_PROFILE_PRODUCER_VENDOR_TERMS = Object.freeze([
   "sicpa",
   "crane currency",
   "crane authentication",
+  "polish security printing works",
+  "pwpw",
+  "atlantic zeiser",
   "koenig & bauer",
   "koenig-bauer",
   "louisenthal",
@@ -4730,11 +4739,47 @@ const VENDORS_PROFILE_PRODUCER_VENDOR_TERMS = Object.freeze([
   "toppan",
   "muhlbauer",
   "mühlbauer",
+  "masktech",
+  "daon",
+  "genkey",
   "semlex",
   "iris corporation",
   "laxton",
   "nec",
 ]);
+
+const VENDORS_PROFILE_COVERAGE_VENDOR_ALIASES = Object.freeze({
+  "de la rue": ["de la rue", "de-la-rue"],
+  "thales": ["thales", "thalis"],
+  "in groupe": ["in groupe", "ingroupe"],
+  "bundesdruckerei": ["bundesdruckerei", "bunderDruckerei", "bundesdruckerei gruppe"],
+  "veridos": ["veridos"],
+  "giesecke+devrient": ["giesecke+devrient", "giesecke devrient", "g+d", "gi-de"],
+  "idemia": ["idemia"],
+  "hid": ["hid"],
+  "entrust": ["entrust"],
+  "regula forensics": ["regula forensics", "regulaforensics", "regula"],
+  "sicpa": ["sicpa"],
+  "crane currency": ["crane currency", "crane authentication"],
+  "pwpw": ["pwpw", "polish security printing works"],
+  "atlantic zeiser": ["atlantic zeiser"],
+  "koenig & bauer": ["koenig & bauer", "koenig-bauer"],
+  "louisenthal": ["louisenthal"],
+  "oberthur": ["oberthur"],
+  "ovd kinegram": ["ovd kinegram", "kinegram"],
+  "iq structures": ["iq structures"],
+  "covestro": ["covestro"],
+  "dnp": ["dnp", "dai nippon printing"],
+  "toppan": ["toppan"],
+  "mühlbauer": ["mühlbauer", "muhlbauer"],
+  "masktech": ["masktech"],
+  "daon": ["daon"],
+  "genkey": ["genkey"],
+  "semlex": ["semlex"],
+  "iris corporation": ["iris corporation"],
+  "laxton": ["laxton"],
+  "nec": ["nec"],
+});
 
 const VENDORS_PROFILE_BACKEND_SEARCH_TERMS = Object.freeze([
   "De La Rue",
@@ -4760,6 +4805,10 @@ const VENDORS_PROFILE_BACKEND_SEARCH_TERMS = Object.freeze([
   "Regula Forensics",
   "Regula document verification",
   "Crane Authentication",
+  "Polish Security Printing Works",
+  "PWPW identity documents",
+  "Atlantic Zeiser banknote",
+  "Atlantic Zeiser security printing",
   "Koenig & Bauer",
   "Oberthur",
   "OVD Kinegram",
@@ -4773,6 +4822,9 @@ const VENDORS_PROFILE_BACKEND_SEARCH_TERMS = Object.freeze([
   "EMPTECH Covestro",
   "Mühlbauer",
   "Muhlbauer",
+  "MaskTech eID",
+  "Daon identity verification",
+  "GenKey biometrics",
   "Semlex",
   "Iris Corporation",
   "Laxton",
@@ -4987,6 +5039,8 @@ const VENDORS_PROFILE_HARD_NOISE_TERMS = Object.freeze([
   "credit card format is making its way",
   "shortlisted among world's best",
   "ibns bank note of the year award",
+  "tribute paid",
+  "insurgents who captured",
   "currency manager award",
   "how to prepare your banknote design",
   "story behind the new",
@@ -5301,6 +5355,7 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
       || vendorDeploymentRescue
     )
       && vendorCentralStory
+      && matchedHardNoiseTerms.length === 0
       && !lowValueNoiseMatched
       && !(matchedNoiseTerms.length > 0 && matchedVendorTerms.length === 0)
       && !professionalSourceOnly
@@ -20288,15 +20343,23 @@ function getVendorCoverageArticleText(articleOrTrace) {
 function listVendorCoverageDiagnostics() {
   const traceMap = getActiveFilterDecisionTraceMap();
   const traceValues = traceMap ? Array.from(traceMap.values()) : [];
-  const vendorTerms = VENDORS_PROFILE_PRODUCER_VENDOR_TERMS.map((term) => String(term || "").trim()).filter(Boolean);
-  const diagnostics = vendorTerms.map((term) => {
-    const matches = traceValues.filter((trace) => textMatchesKeyword(getVendorCoverageArticleText(trace), term));
+  const vendorGroups = Object.entries(VENDORS_PROFILE_COVERAGE_VENDOR_ALIASES)
+    .map(([vendor, aliases]) => ({
+      vendor,
+      aliases: (aliases || []).map((term) => String(term || "").trim()).filter(Boolean),
+    }))
+    .filter((entry) => entry.aliases.length);
+  const diagnostics = vendorGroups.map(({ vendor, aliases }) => {
+    const matches = traceValues.filter((trace) =>
+      aliases.some((term) => textMatchesKeyword(getVendorCoverageArticleText(trace), term))
+    );
     const survivors = matches.filter((trace) => trace.finalResult !== "rejected");
     const visible = survivors.filter(isTraceVisible);
     const grouped = survivors.filter(isTraceGrouped);
     const rejected = matches.filter((trace) => trace.finalResult === "rejected");
     return {
-      vendor: term,
+      vendor,
+      aliases,
       traced: matches.length,
       surviving: survivors.length,
       visible: visible.length,
