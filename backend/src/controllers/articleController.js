@@ -1,5 +1,6 @@
 import {
   countArticles,
+  listCanonicalDedupedArticles,
   listArticles as listArticleRecords,
   listDistinctArticleTopics
 } from "../database/articleRepository.js";
@@ -117,6 +118,7 @@ export async function listArticles(request, response) {
     const dateFrom = date ? startOfDay(date) : null;
     const dateTo = date ? endOfDay(date) : null;
 
+    const includeDuplicates = String(showDuplicates || "").trim().toLowerCase() === "true";
     const filters = {
       topic,
       feedId: resolvedFeedId || null,
@@ -125,16 +127,24 @@ export async function listArticles(request, response) {
       search,
       tag,
       signalKeywords,
-      excludeDuplicates: false
+      excludeDuplicates: !includeDuplicates
     };
 
-    const [items, total] = await Promise.all([
-      listArticleRecords(filters, {
+    const shouldCanonicalDedupe = !includeDuplicates && Boolean(resolvedFeedId);
+    const offset = (pageNumber - 1) * pageSize;
+    const { items, total } = shouldCanonicalDedupe
+      ? await listCanonicalDedupedArticles(filters, {
         limit: pageSize,
-        offset: (pageNumber - 1) * pageSize
-      }),
-      countArticles(filters)
-    ]);
+        offset,
+        candidateLimit: 10000,
+      })
+      : {
+        items: await listArticleRecords(filters, {
+          limit: pageSize,
+          offset,
+        }),
+        total: await countArticles(filters),
+      };
 
     if (request.query.includePagination === "true") {
       const articleDtos = items.map(toArticleDto);

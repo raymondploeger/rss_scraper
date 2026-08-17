@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-192";
+const APP_BUILD = "bing-source-canonical-dedupe-193";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -53842,7 +53842,6 @@ function getBackendArticleQueryKey() {
 function applyBackendArticleQueryBaseParams(options = {}) {
   const params = new URLSearchParams();
   params.set("includePagination", "true");
-  params.set("showDuplicates", "true");
   params.set("limit", String(options.limit || MAX_ARTICLES_IN_MEMORY));
   params.set("page", "1");
 
@@ -53886,7 +53885,6 @@ function getSelectedFeedFullPoolKey(feedIdentity) {
 function getSelectedFeedFullPoolQueryParams(feedIdentity) {
   const params = new URLSearchParams();
   params.set("includePagination", "true");
-  params.set("showDuplicates", "true");
   params.set("limit", String(MAX_ARTICLES_IN_MEMORY));
   params.set("page", "1");
 
@@ -57815,7 +57813,7 @@ async function apiRequest(path, options = {}) {
 async function loadAllArticles() {
   // TODO: Personal Dashboard can only inspect this frontend working set unless another backend query path is active.
   const response = await apiRequest(
-    `/api/articles?includePagination=true&showDuplicates=true&limit=${MAX_ARTICLES_IN_MEMORY}&page=1`
+    `/api/articles?includePagination=true&limit=${MAX_ARTICLES_IN_MEMORY}&page=1`
   );
   const items = Array.isArray(response?.items) ? response.items : [];
   logPersonalDashboardSourceStage("[personal-dashboard-api-response]", items, {

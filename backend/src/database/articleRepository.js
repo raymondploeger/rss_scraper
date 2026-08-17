@@ -185,6 +185,50 @@ export async function listArticles(filters = {}, options = {}) {
   return items.map(mapArticleRecord);
 }
 
+function getCanonicalArticleDedupeKey(article) {
+  return String(
+    article?.normalizedTitle ||
+    article?.title ||
+    article?.canonicalLink ||
+    article?.link ||
+    article?.id ||
+    ""
+  ).trim().toLowerCase();
+}
+
+export async function listCanonicalDedupedArticles(filters = {}, options = {}) {
+  const prisma = getDatabase();
+  const pageSize = Math.min(env.maxArticlePageSize, Math.max(1, Number(options.limit || env.maxArticlePageSize)));
+  const offset = Math.max(0, Number(options.offset || 0));
+  const candidateLimit = Math.min(
+    10000,
+    Math.max(pageSize + offset, Number(options.candidateLimit || env.maxArticlePageSize))
+  );
+  const candidates = await prisma.article.findMany({
+    where: buildArticleWhere(filters),
+    orderBy: [{ pubDate: "desc" }, { createdAt: "desc" }],
+    take: candidateLimit,
+  });
+  const seen = new Set();
+  const deduped = [];
+
+  candidates.forEach((article) => {
+    const key = getCanonicalArticleDedupeKey(article);
+    if (!key || seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    deduped.push(article);
+  });
+
+  return {
+    items: deduped.slice(offset, offset + pageSize).map(mapArticleRecord),
+    total: deduped.length,
+    candidateLimit,
+    truncated: candidates.length >= candidateLimit,
+  };
+}
+
 export async function countArticles(filters = {}) {
   const prisma = getDatabase();
   return prisma.article.count({
