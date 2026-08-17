@@ -81,8 +81,15 @@ export function resolveArticleLink(link) {
     const parsed = new URL(link);
     const isGoogleRedirect =
       parsed.hostname.includes("google.") && parsed.pathname === "/url" && parsed.searchParams.has("url");
+    const isBingNewsRedirect =
+      parsed.hostname.replace(/^www\./, "").toLowerCase() === "bing.com" &&
+      parsed.pathname.toLowerCase() === "/news/apiclick.aspx" &&
+      parsed.searchParams.has("url");
 
     if (isGoogleRedirect) {
+      return parsed.searchParams.get("url") || link;
+    }
+    if (isBingNewsRedirect) {
       return parsed.searchParams.get("url") || link;
     }
 
