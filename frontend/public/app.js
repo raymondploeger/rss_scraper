@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "intelligence-profile-ux-sprint-191";
+const APP_BUILD = "intelligence-profile-ux-sprint-192";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -6342,6 +6342,7 @@ const state = {
     tag: "",
     signalCategory: "",
     feedId: "",
+    sourceOnly: false,
     dmvFeedId: "",
     canadaDmvFeedPath: "",
     canadaDmvAll: false,
@@ -6996,13 +6997,14 @@ function createNormalizedFilterState() {
       id: state.filters.feedId || "",
       resolvedId: selectedFeed?.id || "",
       name: getSelectedFeedLabel(),
+      sourceOnly: isSourceOnlyFeedViewActive(),
       sourceGroup: state.filters.sourceGroup || "all",
       dmvFeedId: state.filters.dmvFeedId || "",
       canadaDmvFeedPath: state.filters.canadaDmvFeedPath || "",
       canadaDmvAll: Boolean(state.filters.canadaDmvAll),
     },
     dashboard: {
-      enabled: selectedPersonalInterests.length > 0,
+      enabled: hasPersonalDashboardSelections(),
       mode: normalizePersonalDashboardMode(state.personalDashboard.mode),
       mainDomains: getSelectedMainDomains(selectedPersonalInterests),
       selectedInterests: selectedPersonalInterests,
@@ -7025,7 +7027,7 @@ function createNormalizedFilterState() {
       exclude: Array.isArray(state.keywordFilters?.exclude) ? state.keywordFilters.exclude.slice() : [],
     },
     sorting: {
-      mode: selectedPersonalInterests.length ? "date_desc_personal_dashboard" : "date_desc",
+      mode: hasPersonalDashboardSelections() ? "date_desc_personal_dashboard" : "date_desc",
     },
     pagination: {
       page: Number(state.pagination?.page) || 1,
@@ -25383,6 +25385,7 @@ function savePersonalDashboardCustomProfiles() {
 
 function clearPersonalDashboardPreferences() {
   state.personalDashboard.interests = [];
+  state.filters.sourceOnly = false;
   state.personalDashboard.mode = "balanced";
   state.personalDashboard.identityDocumentAuthorityStrictness = "focused";
   state.personalDashboard.activeCustomProfileId = "";
@@ -26157,6 +26160,7 @@ function setPersonalDashboardInterest(interestId, enabled) {
   }
 
   state.personalDashboard.interests = Array.from(nextInterests);
+  state.filters.sourceOnly = false;
   state.personalDashboard.activeTemplateId = "";
   state.personalDashboard.activeCustomProfileId = "";
   state.personalDashboard.explicitlyCleared = false;
@@ -26178,6 +26182,7 @@ function applyPersonalDashboardTemplate(templateId) {
   }
 
   state.personalDashboard.interests = normalizePersonalDashboardInterests(template.interests);
+  state.filters.sourceOnly = false;
   keepPersonalDashboardEditorOpenForInterests(state.personalDashboard.interests);
   state.personalDashboard.activeCustomProfileId = "";
   state.personalDashboard.activeTemplateId = templateId;
@@ -26200,6 +26205,7 @@ function applyPersonalDashboardCustomProfile(profileId) {
   }
 
   state.personalDashboard.interests = normalizePersonalDashboardInterests(profile.interests);
+  state.filters.sourceOnly = false;
   keepPersonalDashboardEditorOpenForInterests(state.personalDashboard.interests);
   state.personalDashboard.activeCustomProfileId = profile.id;
   state.personalDashboard.activeTemplateId = "";
@@ -26230,7 +26236,13 @@ function setIdentityDocumentAuthorityStrictness(strictness) {
 }
 
 function hasPersonalDashboardSelections() {
-  return Array.isArray(state.personalDashboard.interests) && state.personalDashboard.interests.length > 0;
+  return !isSourceOnlyFeedViewActive() &&
+    Array.isArray(state.personalDashboard.interests) &&
+    state.personalDashboard.interests.length > 0;
+}
+
+function isSourceOnlyFeedViewActive() {
+  return Boolean(state.filters?.sourceOnly && state.filters?.feedId);
 }
 
 function hasActiveAdvancedSearchFilters() {
@@ -45127,6 +45139,7 @@ function applyAlertArticleFilter(alert) {
   state.filters.tag = "";
   state.filters.date = "";
   state.filters.feedId = "";
+  state.filters.sourceOnly = false;
   state.filters.dmvFeedId = "";
   state.filters.canadaDmvFeedPath = "";
   state.filters.canadaDmvAll = false;
@@ -45179,6 +45192,7 @@ function applyAnalyticsFilter({ topic, todayOnly = false }) {
   state.filters.tag = "";
   state.filters.date = todayOnly ? toDateInputValue(new Date()) : "";
   state.filters.feedId = "";
+  state.filters.sourceOnly = false;
   state.filters.dmvFeedId = "";
   state.filters.canadaDmvFeedPath = "";
   state.filters.canadaDmvAll = false;
@@ -45220,6 +45234,7 @@ function applyAnalyticsFeedFilter({ feedId, todayOnly = false }) {
   state.filters.tag = "";
   state.filters.date = todayOnly ? toDateInputValue(new Date()) : "";
   state.filters.feedId = "";
+  state.filters.sourceOnly = false;
   state.filters.dmvFeedId = "";
   state.filters.canadaDmvFeedPath = "";
   state.filters.canadaDmvAll = false;
@@ -45264,6 +45279,7 @@ function applySourceListFeedFilter(feedId) {
 
   clearExactArticleFilter();
   state.filters.feedId = getUniqueFeedIdentity(selectedFeed);
+  state.filters.sourceOnly = true;
   state.filters.dmvFeedId = "";
   state.filters.canadaDmvFeedPath = "";
   state.filters.canadaDmvAll = false;
@@ -48477,7 +48493,12 @@ function syncFilterUx() {
     advancedSearchActiveCount += 1;
   }
   if (state.filters.feedId) {
-    addActiveFilterChip(fragment, "Feed", getSelectedOptionText(elements.feedFilter) || "Selected feed", "feed");
+    addActiveFilterChip(
+      fragment,
+      isSourceOnlyFeedViewActive() ? "Source view" : "Feed",
+      getSelectedOptionText(elements.feedFilter) || "Selected feed",
+      "feed"
+    );
     advancedSearchActiveCount += 1;
   }
   if (state.filters.dmvFeedId) {
@@ -48562,6 +48583,7 @@ function clearActiveFilter(filterKey) {
     setKeywordFilters({ exclude: MANUAL_KEYWORD_FILTER_DEFAULTS.exclude });
   } else if (filterKey === "feed") {
     state.filters.feedId = "";
+    state.filters.sourceOnly = false;
     elements.feedFilter.value = "";
   } else if (filterKey === "usa") {
     state.filters.dmvFeedId = "";
@@ -48623,6 +48645,7 @@ function renderFeedOptions() {
     !nonDmvFeeds.some((feed) => getUniqueFeedIdentity(feed) === state.filters.feedId)
   ) {
     state.filters.feedId = "";
+    state.filters.sourceOnly = false;
   }
 
   if (
@@ -49163,6 +49186,7 @@ function resetDashboardState() {
   state.filters.tag = "";
   state.filters.signalCategory = "";
   state.filters.feedId = "";
+  state.filters.sourceOnly = false;
   state.filters.dmvFeedId = "";
   state.filters.canadaDmvFeedPath = "";
   state.filters.canadaDmvAll = false;
@@ -49198,6 +49222,7 @@ function resetDashboardState() {
 
 function clearSelectedSourceView() {
   state.filters.feedId = "";
+  state.filters.sourceOnly = false;
   state.filters.dmvFeedId = "";
   state.filters.canadaDmvFeedPath = "";
   state.filters.canadaDmvAll = false;
@@ -49222,6 +49247,7 @@ function clearSelectedSourceView() {
 function clearSourcePanelView() {
   clearExactArticleFilter();
   state.filters.feedId = "";
+  state.filters.sourceOnly = false;
   state.filters.dmvFeedId = "";
   state.filters.canadaDmvFeedPath = "";
   state.filters.canadaDmvAll = false;
@@ -53188,7 +53214,11 @@ function updateArticleFilterContext(articles) {
 
   const contextParts = [];
   if (state.filters.feedId) {
-    contextParts.push(`feed: ${getSelectedOptionText(elements.feedFilter) || "Selected feed"}`);
+    contextParts.push(
+      isSourceOnlyFeedViewActive()
+        ? `source view: ${getSelectedOptionText(elements.feedFilter) || "Selected source"}`
+        : `feed: ${getSelectedOptionText(elements.feedFilter) || "Selected feed"}`
+    );
   }
   if (state.filters.dmvFeedId) {
     contextParts.push(`USA feed: ${getSelectedOptionText(elements.dmvFeedFilter) || "Selected state"}`);
@@ -53797,6 +53827,7 @@ function getBackendArticleQueryKey() {
   const personalDomainPlan = getPersonalDashboardBackendDomainPlan();
   return JSON.stringify({
     feedId: state.filters.feedId || "",
+    sourceOnly: isSourceOnlyFeedViewActive(),
     topic: state.filters.topic || "",
     tag: state.filters.tag || "",
     signal: state.filters.signalCategory || "",
@@ -54647,6 +54678,29 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
 
 function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
   const inputArticles = Array.isArray(articles) ? articles : [];
+  if (isSourceOnlyFeedViewActive()) {
+    inputArticles.forEach((article) => {
+      recordFilterDecisionStage(diagnostics, article, {
+        stage: "personal_dashboard",
+        result: "passed",
+        reason: "source_only_feed_view_bypassed_personal_dashboard",
+        notes: ["Source list View articles shows the selected source without applying the saved profile"],
+        metadata: {
+          sourceOnlyFeedView: true,
+          selectedFeed: state.filters.feedId || "",
+        },
+      });
+    });
+    return {
+      articles: inputArticles,
+      stage: createFilterPipelineStageResult(
+        "personal_dashboard",
+        inputArticles.length,
+        inputArticles.length,
+        ["Source-only feed view bypassed Personal Dashboard profile filtering"]
+      ),
+    };
+  }
   const outputArticles = [];
   inputArticles.forEach((article) => {
     const digitalIdentityGuardBooleanAssessment = getDigitalIdentityProfessionalGuardBooleanGateAssessment(article);
@@ -55081,6 +55135,17 @@ function applyAdvancedFiltersStage({ articles, advancedFilterOptions, diagnostic
 
 function applyIdentityProfessionalRelevanceGuardStage({ articles, branch, diagnostics } = {}) {
   const inputArticles = Array.isArray(articles) ? articles : [];
+  if (isSourceOnlyFeedViewActive()) {
+    return {
+      articles: inputArticles,
+      stage: createFilterPipelineStageResult(
+        "identity_professional_relevance_guard",
+        inputArticles.length,
+        inputArticles.length,
+        ["Source-only feed view bypassed profile professional relevance guards"]
+      ),
+    };
+  }
   if (!shouldApplyIdentityProfessionalRelevanceGuard({ branch })) {
     return {
       articles: inputArticles,
@@ -55162,6 +55227,17 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
 
 function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, diagnostics } = {}) {
   const inputArticles = Array.isArray(articles) ? articles : [];
+  if (isSourceOnlyFeedViewActive()) {
+    return {
+      articles: inputArticles,
+      stage: createFilterPipelineStageResult(
+        "digital_identity_professional_guard",
+        inputArticles.length,
+        inputArticles.length,
+        ["Source-only feed view bypassed Digital Identity profile professional guards"]
+      ),
+    };
+  }
   if (isVendorsProfileActive()) {
     inputArticles.forEach((article) => {
       recordFilterDecisionStage(diagnostics, article, {
@@ -58295,6 +58371,7 @@ function bindEvents() {
     const rawValue = String(event.target.value || "").trim();
     const resolvedFeed = resolveFeedForDiagnostics(rawValue);
     state.filters.feedId = resolvedFeed ? getUniqueFeedIdentity(resolvedFeed) : rawValue;
+    state.filters.sourceOnly = false;
     debugFeedFilterLog("[selected-feed-change]", {
       rawValue,
       selectedFeedState: state.filters.feedId,
@@ -58320,6 +58397,7 @@ function bindEvents() {
       clearExactArticleFilter();
       state.filters.dmvFeedId = event.target.value;
       state.filters.feedId = "";
+      state.filters.sourceOnly = false;
       state.filters.canadaDmvFeedPath = "";
       state.filters.canadaDmvAll = false;
       state.dashboardMode = "normal";
@@ -58340,6 +58418,7 @@ function bindEvents() {
       state.filters.canadaDmvFeedPath = event.target.value;
       state.filters.canadaDmvAll = event.target.value === "";
       state.filters.feedId = "";
+      state.filters.sourceOnly = false;
       state.filters.dmvFeedId = "";
       state.dashboardMode = "normal";
       elements.feedFilter.value = "";
@@ -58776,6 +58855,7 @@ function bindEvents() {
       clearExactArticleFilter();
       state.dashboardMode = state.dashboardMode === "usa" ? "normal" : "usa";
       state.filters.feedId = "";
+      state.filters.sourceOnly = false;
       state.filters.dmvFeedId = "";
       state.filters.canadaDmvFeedPath = "";
       state.filters.canadaDmvAll = false;
@@ -58798,6 +58878,7 @@ function bindEvents() {
       clearExactArticleFilter();
       state.dashboardMode = state.dashboardMode === "canada" ? "normal" : "canada";
       state.filters.feedId = "";
+      state.filters.sourceOnly = false;
       state.filters.dmvFeedId = "";
       state.filters.canadaDmvFeedPath = "";
       state.filters.canadaDmvAll = false;
