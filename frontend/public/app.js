@@ -1466,7 +1466,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "bing-source-canonical-dedupe-193";
+const APP_BUILD = "bing-placeholder-fallback-images-194";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -25102,13 +25102,104 @@ function normalizeArticleImageUrl(value) {
 
   try {
     const url = new URL(raw, window.location.origin);
-    if (!["http:", "https:"].includes(url.protocol) || isKnownBrokenImageUrl(url)) {
+    if (
+      !["http:", "https:"].includes(url.protocol) ||
+      isKnownBrokenImageUrl(url) ||
+      isPlaceholderArticleImageUrl(url)
+    ) {
       return "";
     }
     return url.href;
   } catch {
     return "";
   }
+}
+
+function isPlaceholderArticleImageUrl(value) {
+  try {
+    const url = value instanceof URL ? value : new URL(String(value || ""), window.location.origin);
+    const host = url.hostname.toLowerCase();
+    const fingerprint = `${host} ${url.pathname.toLowerCase()} ${url.search.toLowerCase()}`;
+    return (
+      host === "placehold.co" ||
+      host === "placeholder.com" ||
+      fingerprint.includes("text=no+image") ||
+      fingerprint.includes("text=no%20image") ||
+      fingerprint.includes("no-image") ||
+      fingerprint.includes("no_image")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function escapeSvgText(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function getFallbackImageTheme(article) {
+  const fingerprint = [
+    article?.topic,
+    article?.feedName,
+    article?.source,
+    article?.title,
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  if (/\b(banknote|banknotes|currency|central bank|cash)\b/.test(fingerprint)) {
+    return { label: "Banknote Intelligence", accent: "#f2b84b", background: "#172033" };
+  }
+  if (/\b(passport|id card|identity document|visa|residence permit|border|icao)\b/.test(fingerprint)) {
+    return { label: "Identity Documents", accent: "#6ea8ff", background: "#142034" };
+  }
+  if (/\b(digital identity|identity verification|credential|eid|wallet|biometric)\b/.test(fingerprint)) {
+    return { label: "Digital Identity", accent: "#71d7c7", background: "#102938" };
+  }
+  if (/\b(security feature|security printing|holography|dovid|ovd|polymer|polycarbonate|ink)\b/.test(fingerprint)) {
+    return { label: "Security Features", accent: "#b899ff", background: "#1d1a33" };
+  }
+
+  return { label: "Industry Intelligence", accent: "#8ab4ff", background: "#141d2b" };
+}
+
+function getArticleFallbackImageSrc(article) {
+  const theme = getFallbackImageTheme(article);
+  const source = String(article?.source || article?.feedName || "RSS intelligence").replace(/\s+/g, " ").trim();
+  const label = escapeSvgText(theme.label);
+  const sourceLabel = escapeSvgText(source.length > 34 ? `${source.slice(0, 31)}...` : source);
+  const titleWords = String(article?.title || "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 5)
+    .join(" ");
+  const titleLabel = escapeSvgText(titleWords || "No publisher image");
+  const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450" role="img" aria-label="${label}">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="${theme.background}"/>
+      <stop offset="1" stop-color="#07111d"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="75%" cy="18%" r="60%">
+      <stop offset="0" stop-color="${theme.accent}" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="${theme.accent}" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="800" height="450" fill="url(#bg)"/>
+  <rect width="800" height="450" fill="url(#glow)"/>
+  <rect x="54" y="54" width="692" height="342" rx="28" fill="none" stroke="${theme.accent}" stroke-opacity="0.35" stroke-width="2"/>
+  <circle cx="120" cy="122" r="34" fill="${theme.accent}" fill-opacity="0.22"/>
+  <path d="M105 122h30M120 107v30" stroke="${theme.accent}" stroke-width="5" stroke-linecap="round"/>
+  <text x="84" y="210" fill="#f8fbff" font-family="Inter, Arial, sans-serif" font-size="34" font-weight="700">${label}</text>
+  <text x="84" y="258" fill="${theme.accent}" font-family="Inter, Arial, sans-serif" font-size="21" font-weight="700">${sourceLabel}</text>
+  <text x="84" y="312" fill="#c7d7ee" font-family="Inter, Arial, sans-serif" font-size="24">${titleLabel}</text>
+  <text x="84" y="358" fill="#8fa4bf" font-family="Inter, Arial, sans-serif" font-size="18">Publisher image unavailable</text>
+</svg>`.trim();
+
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
 
 function isGoogleNewsArticle(article) {
@@ -25219,7 +25310,7 @@ function getPreferredArticleImageSrc(article) {
 }
 
 function getArticleImageSrc(article) {
-  return getPreferredArticleImageSrc(article);
+  return getPreferredArticleImageSrc(article) || getArticleFallbackImageSrc(article);
 }
 
 function toDateInputValue(value) {
