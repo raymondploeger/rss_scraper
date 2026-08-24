@@ -4672,6 +4672,11 @@ function isSecurityPrinterProfileActive(interests = state.personalDashboard.inte
 const VENDORS_PROFILE_VENDOR_TERMS = Object.freeze([
   "de la rue",
   "de-la-rue",
+  "landqart",
+  "linxens",
+  "polyvantis",
+  "vtt",
+  "vtt research",
   "thales",
   "thalis",
   "in groupe",
@@ -4733,6 +4738,11 @@ const VENDORS_PROFILE_VENDOR_TERMS = Object.freeze([
 const VENDORS_PROFILE_PRODUCER_VENDOR_TERMS = Object.freeze([
   "de la rue",
   "de-la-rue",
+  "landqart",
+  "linxens",
+  "polyvantis",
+  "vtt",
+  "vtt research",
   "thales",
   "thalis",
   "in groupe",
@@ -4778,6 +4788,10 @@ const VENDORS_PROFILE_PRODUCER_VENDOR_TERMS = Object.freeze([
 
 const VENDORS_PROFILE_COVERAGE_VENDOR_ALIASES = Object.freeze({
   "de la rue": ["de la rue", "de-la-rue"],
+  "landqart": ["landqart"],
+  "linxens": ["linxens"],
+  "polyvantis": ["polyvantis"],
+  "vtt": ["vtt", "vtt research"],
   "thales": ["thales", "thalis"],
   "in groupe": ["in groupe", "ingroupe"],
   "bundesdruckerei": ["bundesdruckerei", "bunderDruckerei", "bundesdruckerei gruppe"],
@@ -4811,6 +4825,14 @@ const VENDORS_PROFILE_COVERAGE_VENDOR_ALIASES = Object.freeze({
 
 const VENDORS_PROFILE_BACKEND_SEARCH_TERMS = Object.freeze([
   "De La Rue",
+  "Landqart",
+  "Landqart banknotes",
+  "Linxens",
+  "Linxens identity documents",
+  "POLYVANTIS",
+  "POLYVANTIS LEXAN film",
+  "VTT security printing",
+  "VTT identity",
   "Crane Currency",
   "SICPA",
   "Giesecke+Devrient",
@@ -4863,6 +4885,35 @@ const VENDORS_PROFILE_BACKEND_SEARCH_TERMS = Object.freeze([
   "KURZ banknotes",
   "KURZ security",
 ]);
+
+const CURATED_VENDOR_WEBSITE_FEED_NAMES = Object.freeze([
+  "Landqart News",
+  "Linxens News & Events",
+  "POLYVANTIS Press",
+  "VTT News and Stories",
+]);
+
+const CURATED_VENDOR_WEBSITE_DOMAINS = Object.freeze([
+  "landqart.com",
+  "linxens.com",
+  "polyvantis.com",
+  "vttresearch.com",
+]);
+
+function isCuratedVendorWebsiteArticle(article) {
+  const feedName = String(getFeedName(article?.feedId) || "").trim();
+  if (CURATED_VENDOR_WEBSITE_FEED_NAMES.includes(feedName)) {
+    return true;
+  }
+
+  const fingerprint = [
+    article?.source,
+    article?.link,
+    article?.canonicalLink,
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  return CURATED_VENDOR_WEBSITE_DOMAINS.some((domain) => fingerprint.includes(domain));
+}
 
 const VENDORS_PROFILE_PRODUCER_CONTEXT_TERMS = Object.freeze([
   "security printer",
@@ -5377,12 +5428,17 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
     const lowValueNoiseMatched = matchedLowValueSourceTerms.length > 0 ||
       matchedLowValueContentTerms.length > 0 ||
       matchedTutorialSetupTerms.length > 0;
+    const curatedVendorWebsiteArticle = isCuratedVendorWebsiteArticle(article);
+    const curatedVendorWebsitePass = curatedVendorWebsiteArticle &&
+      matchedHardNoiseTerms.length === 0 &&
+      !lowValueNoiseMatched;
     const passed = (
+      curatedVendorWebsitePass ||
       ((explicitVendorArticle || officialProducerSourceArticle || producerContextArticle)
         && (vendorNamedStory || officialProducerOutputStory || producerEventStory))
       || vendorDeploymentRescue
     )
-      && vendorCentralStory
+      && (curatedVendorWebsitePass || vendorCentralStory)
       && matchedHardNoiseTerms.length === 0
       && !lowValueNoiseMatched
       && !(matchedNoiseTerms.length > 0 && matchedVendorTerms.length === 0)
@@ -5429,6 +5485,8 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
       producerEventStory,
       vendorDeploymentRescue,
       vendorCentralStory,
+      curatedVendorWebsiteArticle,
+      curatedVendorWebsitePass,
       professionalSourceOnly,
       professionalVendorNewsSource,
       professionalSourceVendorEvent,
@@ -25131,6 +25189,12 @@ function normalizeArticleImageUrl(value) {
   try {
     const url = new URL(raw, window.location.origin);
     if (
+      url.hostname.toLowerCase().includes("landqart.com") &&
+      /-\d+x-q\d+(?=\.(?:avif|gif|jpe?g|png|webp)$)/i.test(url.pathname)
+    ) {
+      url.pathname = url.pathname.replace(/-\d+x-q\d+(?=\.(?:avif|gif|jpe?g|png|webp)$)/i, "");
+    }
+    if (
       !["http:", "https:"].includes(url.protocol) ||
       isKnownBrokenImageUrl(url) ||
       isPlaceholderArticleImageUrl(url)
@@ -25254,6 +25318,7 @@ function assessArticleImageQuality(article) {
 
     try {
       const url = new URL(normalizedImageUrl);
+      const feedName = String(getFeedName(article?.feedId) || "");
       const fingerprint = `${url.hostname.toLowerCase()} ${url.pathname.toLowerCase()} ${url.search.toLowerCase()}`;
       let score = 10;
 
@@ -25279,6 +25344,15 @@ function assessArticleImageQuality(article) {
         "tracking",
       ].some((value) => fingerprint.includes(value))) {
         score -= 7;
+      }
+
+      if (
+        feedName === "Linxens News & Events" &&
+        url.hostname.toLowerCase().includes("linxens.com") &&
+        url.pathname.toLowerCase().startsWith("/storage/") &&
+        url.pathname.toLowerCase().endsWith(".png")
+      ) {
+        score = 0;
       }
 
       return {
