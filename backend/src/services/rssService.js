@@ -206,6 +206,30 @@ function shouldReplaceArticlesOnSync(feed) {
   );
 }
 
+function isTrackedVendorWebsiteFeed(feed) {
+  return (
+    isLandqartNewsFeed(feed) ||
+    isPolyvantisPressFeed(feed) ||
+    isLinxensNewsFeed(feed) ||
+    isVttNewsFeed(feed)
+  );
+}
+
+function logTrackedVendorWebsiteFeedState(feed, stage, extra = {}) {
+  if (!isTrackedVendorWebsiteFeed(feed)) {
+    return;
+  }
+
+  console.log(
+    `[vendor-debug] stage=${stage} feedId=${feed.id} name=${JSON.stringify(feed.name || "")} rssUrl=${feed.rssUrl || ""} ` +
+      `sourceType=${feed.sourceType || ""} isLandqart=${isLandqartNewsFeed(feed)} isPolyvantis=${isPolyvantisPressFeed(feed)} ` +
+      `isLinxens=${isLinxensNewsFeed(feed)} isVtt=${isVttNewsFeed(feed)} shouldReplace=${shouldReplaceArticlesOnSync(feed)} ` +
+      `${Object.entries(extra)
+        .map(([key, value]) => `${key}=${typeof value === "string" ? JSON.stringify(value) : String(value)}`)
+        .join(" ")}`
+  );
+}
+
 function matchesWebsiteSourceCandidatePolicy(feed, link) {
   const lowerLink = String(link || "").toLowerCase();
 
@@ -2000,6 +2024,12 @@ async function extractLandqartNewsItems(feed, $, pageUrl) {
     });
   }
 
+  logTrackedVendorWebsiteFeedState(feed, "extract-landqart-complete", {
+    discoveredCount: discoveredCandidates.length,
+    validatedCount: validatedItems.length,
+    pageUrl,
+  });
+
   return validatedItems;
 }
 
@@ -2057,6 +2087,12 @@ async function extractPolyvantisPressItems(feed, $, pageUrl) {
       source: getSourceName(candidate.link),
     });
   }
+
+  logTrackedVendorWebsiteFeedState(feed, "extract-polyvantis-complete", {
+    discoveredCount: discoveredCandidates.length,
+    validatedCount: validatedItems.length,
+    pageUrl,
+  });
 
   return validatedItems;
 }
@@ -2118,6 +2154,12 @@ async function extractLinxensNewsItems(feed, $, pageUrl) {
     });
   }
 
+  logTrackedVendorWebsiteFeedState(feed, "extract-linxens-complete", {
+    discoveredCount: discoveredCandidates.length,
+    validatedCount: validatedItems.length,
+    pageUrl,
+  });
+
   return validatedItems;
 }
 
@@ -2174,6 +2216,12 @@ async function extractVttNewsItems(feed, $, pageUrl) {
       source: getSourceName(candidate.link),
     });
   }
+
+  logTrackedVendorWebsiteFeedState(feed, "extract-vtt-complete", {
+    discoveredCount: discoveredCandidates.length,
+    validatedCount: validatedItems.length,
+    pageUrl,
+  });
 
   return validatedItems;
 }
@@ -2613,6 +2661,7 @@ export async function syncFeed(feed) {
 
   try {
     console.log(`Starting feed sync for ${feed.id} (${feed.name || feed.rssUrl})`);
+    logTrackedVendorWebsiteFeedState(feed, "sync-start");
     if (vendorFeedLogLabel) {
       console.log(
         `[${vendorFeedLogLabel}] source id=${feed.id} name=${feed.name || ""} sourceType=${feed.sourceType || ""} rssUrl=${feed.rssUrl || ""}`
@@ -2626,6 +2675,9 @@ export async function syncFeed(feed) {
     let resolvedItems = [];
     if (feed.sourceType === "website") {
       resolvedItems = await extractWebsiteItems(feed);
+      logTrackedVendorWebsiteFeedState(feed, "post-extract-website-items", {
+        resolvedCount: resolvedItems.length,
+      });
       if (vendorFeedLogLabel) {
         console.log(`[${vendorFeedLogLabel}] feed_loaded feedId=${feed.id} rssUrl=${feed.rssUrl}`);
       }
@@ -2645,12 +2697,19 @@ export async function syncFeed(feed) {
     if (feed.sourceType === "website" && shouldReplaceArticlesOnSync(feed)) {
       const deletedCount = await deleteArticlesByFeedId(feed.id);
       console.log(`Replaced existing website-source articles for ${feed.id}: deleted=${deletedCount}`);
+      logTrackedVendorWebsiteFeedState(feed, "post-delete-existing", {
+        deletedCount,
+      });
     }
 
     for (const item of resolvedItems) {
       try {
         let normalized = normalizeItem(feed, item);
         if (!normalized) {
+          logTrackedVendorWebsiteFeedState(feed, "normalize-item-null", {
+            itemLink: resolveItemLink(item) || "",
+            itemTitle: String(item?.title || ""),
+          });
           continue;
         }
 
