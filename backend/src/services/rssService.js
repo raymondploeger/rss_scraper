@@ -283,6 +283,50 @@ function findNearbyWebsiteHeadingText($, node) {
   return "";
 }
 
+function findNearbyWebsiteDate($, node) {
+  const dateSelectors = "time, [datetime], .date, [class*='date'], [class*='meta']";
+  const directCandidates = [
+    node.prevAll(dateSelectors).first(),
+    node.parent().prevAll(dateSelectors).first(),
+    node.closest("article, li, section").find(dateSelectors).first(),
+    node.closest("div").parent().find(dateSelectors).first(),
+  ];
+
+  for (const candidateNode of directCandidates) {
+    const structuredValue =
+      candidateNode?.attr?.("datetime") ||
+      candidateNode?.attr?.("content") ||
+      candidateNode?.text?.() ||
+      "";
+    const parsed =
+      parseWebsiteDate(structuredValue) ||
+      parseWebsiteDateFromText(structuredValue);
+    if (parsed) {
+      return parsed;
+    }
+  }
+
+  const ancestorBlocks = node.parents("div, article, li, section").toArray().slice(0, 6);
+  for (const ancestor of ancestorBlocks) {
+    const ancestorNode = $(ancestor);
+    const structuredValue =
+      ancestorNode.find(dateSelectors).first().attr("datetime") ||
+      ancestorNode.find(dateSelectors).first().attr("content") ||
+      ancestorNode.find(dateSelectors).first().text() ||
+      ancestorNode.prevAll(dateSelectors).first().attr("datetime") ||
+      ancestorNode.prevAll(dateSelectors).first().text() ||
+      ancestorNode.text();
+    const parsed =
+      parseWebsiteDate(structuredValue) ||
+      parseWebsiteDateFromText(structuredValue);
+    if (parsed) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
 async function fetchWebsitePublishedDateForLink(link) {
   if (!link) {
     return null;
@@ -2048,6 +2092,7 @@ function buildLandqartNewsCandidate($, anchor, pageUrl) {
     sanitizeFeedText(node.prevAll("p").first().text(), "") ||
     sanitizeFeedText(node.closest("li, article, div").find("p").first().text(), "");
   const date =
+    findNearbyWebsiteDate($, node) ||
     parseWebsiteDate(node.closest("li, article, div").find("time").first().attr("datetime") || "") ||
     parseWebsiteDateFromText(node.prevAll().text()) ||
     parseWebsiteDateFromText(node.closest("li, article, div").text());
@@ -2089,7 +2134,6 @@ async function extractLandqartNewsItems(feed, $, pageUrl) {
 
   const validatedItems = [];
   for (const candidate of discoveredCandidates) {
-    const resolvedDate = candidate.date || (await fetchWebsitePublishedDateForLink(candidate.link));
     if (!shouldBypassDedicatedVendorSourceRelevance(feed) && !articleMatchesSourceRelevanceRule(feed, {
       title: candidate.title,
       link: candidate.link,
@@ -2101,7 +2145,7 @@ async function extractLandqartNewsItems(feed, $, pageUrl) {
     validatedItems.push({
       title: candidate.title,
       link: candidate.link,
-      isoDate: resolvedDate ? resolvedDate.toISOString() : new Date().toISOString(),
+      isoDate: candidate.date ? candidate.date.toISOString() : new Date().toISOString(),
       contentSnippet: candidate.excerpt || "",
       author: "",
       source: getSourceName(candidate.link),
@@ -2233,6 +2277,7 @@ async function extractLinxensNewsItems(feed, $, pageUrl) {
 
   const validatedItems = [];
   for (const candidate of discoveredCandidates) {
+    const resolvedDate = candidate.date || (await fetchWebsitePublishedDateForLink(candidate.link));
     if (!shouldBypassDedicatedVendorSourceRelevance(feed) && !articleMatchesSourceRelevanceRule(feed, {
       title: candidate.title,
       link: candidate.link,
@@ -2244,7 +2289,7 @@ async function extractLinxensNewsItems(feed, $, pageUrl) {
     validatedItems.push({
       title: candidate.title,
       link: candidate.link,
-      isoDate: candidate.date ? candidate.date.toISOString() : new Date().toISOString(),
+      isoDate: resolvedDate ? resolvedDate.toISOString() : new Date().toISOString(),
       contentSnippet: candidate.excerpt || "",
       author: "",
       source: getSourceName(candidate.link),
@@ -2298,6 +2343,7 @@ async function extractVttNewsItems(feed, $, pageUrl) {
 
   const validatedItems = [];
   for (const candidate of discoveredCandidates) {
+    const resolvedDate = candidate.date || (await fetchWebsitePublishedDateForLink(candidate.link));
     if (!shouldBypassDedicatedVendorSourceRelevance(feed) && !articleMatchesSourceRelevanceRule(feed, {
       title: candidate.title,
       link: candidate.link,
@@ -2309,7 +2355,7 @@ async function extractVttNewsItems(feed, $, pageUrl) {
     validatedItems.push({
       title: candidate.title,
       link: candidate.link,
-      isoDate: candidate.date ? candidate.date.toISOString() : new Date().toISOString(),
+      isoDate: resolvedDate ? resolvedDate.toISOString() : new Date().toISOString(),
       contentSnippet: candidate.excerpt || "",
       author: "",
       source: getSourceName(candidate.link),
