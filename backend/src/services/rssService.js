@@ -52,6 +52,10 @@ const CRANE_CURRENCY_NEWSROOM_URL = "https://www.cranecurrency.com/news-insights
 const CRANE_CURRENCY_SITEMAP_URL = "https://www.cranecurrency.com/sitemap/";
 const CRANE_CURRENCY_MAX_ARCHIVE_PAGES = 8;
 const CRANE_CURRENCY_MAX_CANDIDATES = 80;
+const LANDQART_NEWS_URL = "https://www.landqart.com/en/stories/news";
+const POLYVANTIS_PRESS_URL = "https://www.polyvantis.com/en/press";
+const LINXENS_NEWS_URL = "https://www.linxens.com/en/news-events";
+const VTT_NEWS_URL = "https://www.vttresearch.com/en/news-stories/news-and-stories";
 
 const VENDOR_FEED_LOG_CONFIG = [
   {
@@ -122,6 +126,65 @@ function isCraneCurrencyNewsroomFeed(feed) {
     (String(feed.rssUrl || "").trim().toLowerCase() === CRANE_CURRENCY_NEWSROOM_URL.toLowerCase() ||
       String(feed.name || "").trim().toLowerCase() === "crane currency news & insights")
   );
+}
+
+function isLandqartNewsFeed(feed) {
+  return (
+    Boolean(feed) &&
+    (String(feed.rssUrl || "").trim().toLowerCase() === LANDQART_NEWS_URL.toLowerCase() ||
+      String(feed.name || "").trim().toLowerCase() === "landqart news")
+  );
+}
+
+function isPolyvantisPressFeed(feed) {
+  return (
+    Boolean(feed) &&
+    (String(feed.rssUrl || "").trim().toLowerCase() === POLYVANTIS_PRESS_URL.toLowerCase() ||
+      String(feed.name || "").trim().toLowerCase() === "polyvantis press")
+  );
+}
+
+function isLinxensNewsFeed(feed) {
+  return (
+    Boolean(feed) &&
+    (String(feed.rssUrl || "").trim().toLowerCase() === LINXENS_NEWS_URL.toLowerCase() ||
+      String(feed.name || "").trim().toLowerCase() === "linxens news & events")
+  );
+}
+
+function isVttNewsFeed(feed) {
+  return (
+    Boolean(feed) &&
+    (String(feed.rssUrl || "").trim().toLowerCase() === VTT_NEWS_URL.toLowerCase() ||
+      String(feed.name || "").trim().toLowerCase() === "vtt news and stories")
+  );
+}
+
+function matchesWebsiteSourceCandidatePolicy(feed, link) {
+  const lowerLink = String(link || "").toLowerCase();
+
+  if (isLandqartNewsFeed(feed)) {
+    return lowerLink.includes("/en/stories/news/") && !lowerLink.endsWith("/en/stories/news");
+  }
+
+  if (isPolyvantisPressFeed(feed)) {
+    return lowerLink.includes("/en/press/") && !lowerLink.endsWith("/en/press");
+  }
+
+  if (isLinxensNewsFeed(feed)) {
+    return lowerLink.includes("/en/news-events/") && !lowerLink.includes("/en/insight-hub/");
+  }
+
+  if (isVttNewsFeed(feed)) {
+    return (
+      lowerLink.includes("/en/news-stories/") &&
+      !lowerLink.includes("/services/") &&
+      !lowerLink.includes("/ourservices/") &&
+      !lowerLink.includes("/industries/")
+    );
+  }
+
+  return true;
 }
 
 const WEBSITE_NAV_TITLE_PATTERNS = [
@@ -889,7 +952,7 @@ async function validateWebsiteArticleCandidate(link, title) {
     title: pageTitle,
     link,
     image: articleImage,
-    isoDate: (publishedDate || new Date()).toISOString(),
+    isoDate: publishedDate ? publishedDate.toISOString() : "",
     contentSnippet: sanitizeFeedText(articleBody, ""),
     hasNewsroomContext,
     hasArticleBody,
@@ -1860,6 +1923,10 @@ async function extractWebsiteItems(feed) {
 
     const canonicalLink = canonicalizeUrl(link);
     if (!canonicalLink || seenLinks.has(canonicalLink)) {
+      continue;
+    }
+
+    if (!matchesWebsiteSourceCandidatePolicy(feed, link)) {
       continue;
     }
 
