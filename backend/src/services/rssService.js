@@ -1168,6 +1168,17 @@ function parseWebsiteDateFromText(value) {
     return null;
   }
 
+  const dayMonthYearMatch = text.match(
+    /\b\d{1,2}\.?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|January|February|March|April|June|July|August|September|October|November|December)[a-z]*\s+\d{4}\b/i
+  );
+  if (dayMonthYearMatch) {
+    const normalized = dayMonthYearMatch[0].replace(/\./g, "");
+    const parsed = parseWebsiteDate(normalized);
+    if (parsed) {
+      return parsed;
+    }
+  }
+
   const monthDateMatch = text.match(
     /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}\s+\d{4}\b/i
   );
@@ -2000,7 +2011,7 @@ async function extractLandqartNewsItems(feed, $, pageUrl) {
   const discoveredCandidates = [];
   const seenLinks = new Set();
 
-  $("a.feature-item-link-absolute[href]")
+  $("main a[href*='/en/stories/news/'], a[href*='/en/stories/news/']")
     .toArray()
     .forEach((anchor) => {
       const href = $(anchor).attr("href") || "";
@@ -2212,6 +2223,7 @@ async function extractVttNewsItems(feed, $, pageUrl) {
         return;
       }
 
+      const rawText = sanitizeFeedText(node.text(), "");
       const text = sanitizeFeedText(node.find(".node__title, .card__title--content").first().text(), "");
       if (!text) {
         return;
@@ -2224,7 +2236,8 @@ async function extractVttNewsItems(feed, $, pageUrl) {
         excerpt: sanitizeFeedText(node.find(".card__body, .card__content").text(), ""),
         date:
           parseWebsiteDate(node.find(".published-at time").first().attr("datetime") || "") ||
-          parseWebsiteDateFromText(node.find(".published-at time").first().text()),
+          parseWebsiteDateFromText(node.find(".published-at time").first().text()) ||
+          parseWebsiteDateFromText(rawText),
       });
     });
 
