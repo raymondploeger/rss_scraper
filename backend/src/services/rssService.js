@@ -1947,15 +1947,10 @@ async function extractLandqartNewsItems(feed, $, pageUrl) {
 
   const validatedItems = [];
   for (const candidate of discoveredCandidates) {
-    const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch(() => null);
-    if (!validated?.accepted) {
-      continue;
-    }
-
     if (!articleMatchesSourceRelevanceRule(feed, {
-      title: validated.title || candidate.title,
+      title: candidate.title,
       link: candidate.link,
-      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+      contentSnippet: candidate.excerpt || "",
     })) {
       continue;
     }
@@ -1963,8 +1958,8 @@ async function extractLandqartNewsItems(feed, $, pageUrl) {
     validatedItems.push({
       title: candidate.title,
       link: candidate.link,
-      isoDate: candidate.date ? candidate.date.toISOString() : validated.isoDate || new Date().toISOString(),
-      contentSnippet: candidate.excerpt || validated.contentSnippet || "",
+      isoDate: candidate.date ? candidate.date.toISOString() : new Date().toISOString(),
+      contentSnippet: candidate.excerpt || "",
       author: "",
       source: getSourceName(candidate.link),
     });
@@ -2010,15 +2005,10 @@ async function extractPolyvantisPressItems(feed, $, pageUrl) {
 
   const validatedItems = [];
   for (const candidate of discoveredCandidates) {
-    const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch(() => null);
-    if (!validated?.accepted) {
-      continue;
-    }
-
     if (!articleMatchesSourceRelevanceRule(feed, {
-      title: validated.title || candidate.title,
+      title: candidate.title,
       link: candidate.link,
-      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+      contentSnippet: candidate.excerpt || "",
     })) {
       continue;
     }
@@ -2026,8 +2016,8 @@ async function extractPolyvantisPressItems(feed, $, pageUrl) {
     validatedItems.push({
       title: candidate.title,
       link: candidate.link,
-      isoDate: candidate.date ? candidate.date.toISOString() : validated.isoDate || new Date().toISOString(),
-      contentSnippet: candidate.excerpt || validated.contentSnippet || "",
+      isoDate: candidate.date ? candidate.date.toISOString() : new Date().toISOString(),
+      contentSnippet: candidate.excerpt || "",
       author: "",
       source: getSourceName(candidate.link),
     });
@@ -2075,15 +2065,10 @@ async function extractLinxensNewsItems(feed, $, pageUrl) {
 
   const validatedItems = [];
   for (const candidate of discoveredCandidates) {
-    const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch(() => null);
-    if (!validated?.accepted) {
-      continue;
-    }
-
     if (!articleMatchesSourceRelevanceRule(feed, {
-      title: validated.title || candidate.title,
+      title: candidate.title,
       link: candidate.link,
-      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+      contentSnippet: candidate.excerpt || "",
     })) {
       continue;
     }
@@ -2091,8 +2076,8 @@ async function extractLinxensNewsItems(feed, $, pageUrl) {
     validatedItems.push({
       title: candidate.title,
       link: candidate.link,
-      isoDate: candidate.date ? candidate.date.toISOString() : validated.isoDate || new Date().toISOString(),
-      contentSnippet: candidate.excerpt || validated.contentSnippet || "",
+      isoDate: candidate.date ? candidate.date.toISOString() : new Date().toISOString(),
+      contentSnippet: candidate.excerpt || "",
       author: "",
       source: getSourceName(candidate.link),
     });
@@ -2137,15 +2122,10 @@ async function extractVttNewsItems(feed, $, pageUrl) {
 
   const validatedItems = [];
   for (const candidate of discoveredCandidates) {
-    const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch(() => null);
-    if (!validated?.accepted) {
-      continue;
-    }
-
     if (!articleMatchesSourceRelevanceRule(feed, {
-      title: validated.title || candidate.title,
+      title: candidate.title,
       link: candidate.link,
-      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+      contentSnippet: candidate.excerpt || "",
     })) {
       continue;
     }
@@ -2153,8 +2133,8 @@ async function extractVttNewsItems(feed, $, pageUrl) {
     validatedItems.push({
       title: candidate.title,
       link: candidate.link,
-      isoDate: candidate.date ? candidate.date.toISOString() : validated.isoDate || new Date().toISOString(),
-      contentSnippet: candidate.excerpt || validated.contentSnippet || "",
+      isoDate: candidate.date ? candidate.date.toISOString() : new Date().toISOString(),
+      contentSnippet: candidate.excerpt || "",
       author: "",
       source: getSourceName(candidate.link),
     });
@@ -2623,7 +2603,7 @@ export async function syncFeed(feed) {
       console.log(`[${vendorFeedLogLabel}] articles_found count=${resolvedItems.length}`);
     }
 
-    if (feed.sourceType === "website" && shouldReplaceArticlesOnSync(feed) && resolvedItems.length > 0) {
+    if (feed.sourceType === "website" && shouldReplaceArticlesOnSync(feed)) {
       const deletedCount = await deleteArticlesByFeedId(feed.id);
       console.log(`Replaced existing website-source articles for ${feed.id}: deleted=${deletedCount}`);
     }
