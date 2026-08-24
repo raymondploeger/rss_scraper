@@ -1488,7 +1488,36 @@ const SUMMARY_METRICS = [
   { label: "Articles today", key: "articlesToday" },
   { label: "Latest articles", key: "totalArticles" },
 ];
-const DEFAULT_SOURCE_GROUPS = ["USA", "Canada", "Google Alerts", "Other"];
+const DEFAULT_SOURCE_GROUPS = ["USA", "Canada", "Vendors", "Google Alerts", "Other"];
+const VENDOR_SOURCE_PATTERNS = Object.freeze([
+  "regulaforensics.com/news",
+  "veridos.com/en/about/press-media",
+  "ingroupe.com/newsroom",
+  "bundesdruckerei.de/en/newsroom/press-releases",
+  "gi-de.com/en/about-us/press/press-releases",
+  "cranecurrency.com/news-insights",
+  "newsroom.hidglobal.com/press-releases",
+  "kurz-world.com/en/newsroom/press",
+  "kinegram.com/events-insights/insights",
+  "louisenthal.com/highlights/news/press-releases",
+  "koenig-bauer.com/en/newsroom",
+  "idemia.com/pressroom",
+  "cpl.thalesgroup.com/about-us/newsroom",
+  "pwpw.pl/en/rss",
+  "atlanticzeiser.com/en/news",
+  "muehlbauer.de/company/company/press",
+  "masktech.com/press/60/en",
+  "daon.com/resources",
+  "genkey.com/news",
+  "sicpa.com/all-press-releases",
+  "surys.com/surys-blog",
+  "iqstructures.com/en/blog",
+  "landqart.com/en/stories/news",
+  "polyvantis.com/en/press",
+  "linxens.com/en/news-events",
+  "demax-holograms.com/news",
+  "vttresearch.com/en/news-stories/news-and-stories",
+]);
 const TAG_FILTER_MIN_COUNT = 0;
 const ARTICLE_RENDER_PAGE_SIZE = 30;
 const TAG_LIST_STORAGE_KEY = "dashboardTagList";
@@ -42827,6 +42856,22 @@ function isGoogleAlertsFeed(feed) {
   );
 }
 
+function isVendorSource(feed) {
+  const fingerprint = [
+    feed?.name,
+    feed?.rssUrl,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (!fingerprint || isDmvSource(feed) || isGoogleAlertsFeed(feed)) {
+    return false;
+  }
+
+  return VENDOR_SOURCE_PATTERNS.some((pattern) => fingerprint.includes(pattern));
+}
+
 function isCanadianDmvName(name) {
   return [
     "alberta",
@@ -42863,6 +42908,10 @@ function getFeedGroupName(feed) {
 
   if (name.includes("dmv")) {
     return "USA";
+  }
+
+  if (isVendorSource(feed)) {
+    return "Vendors";
   }
 
   if (isGoogleAlertsFeed(feed)) {
