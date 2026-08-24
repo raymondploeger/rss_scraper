@@ -2225,7 +2225,10 @@ async function extractPolyvantisPressItems(feed, $, pageUrl) {
           articlePage('link[rel="canonical"]').first().attr("href") ||
           fetchedUrl;
         const resolvedLink = resolveRelativeWebsiteLink(canonicalHref, fetchedUrl) || fetchedUrl;
-        if (!matchesWebsiteSourceCandidatePolicy(feed, resolvedLink)) {
+        if (
+          !matchesWebsiteSourceCandidatePolicy(feed, resolvedLink) ||
+          String(resolvedLink).toLowerCase().includes("-copy")
+        ) {
           return null;
         }
 
@@ -2289,41 +2292,63 @@ async function extractPolyvantisPressItems(feed, $, pageUrl) {
 }
 
 async function extractLinxensNewsItems(feed, $, pageUrl) {
-  const response = await fetchWebsiteHtml(LINXENS_NEWS_AJAX_URL);
-  const ajaxHtml = String(response.data || "");
-  const ajax$ = cheerio.load(ajaxHtml);
   const discoveredCandidates = [];
   const seenLinks = new Set();
+  let currentPage = 1;
+  let totalPages = 1;
 
-  ajax$("article.my-3, article.item")
-    .toArray()
-    .forEach((block) => {
-      const node = ajax$(block);
-      const href = node.find("a[href*='/en/news-events/']").first().attr("href") || "";
-      const link = resolveRelativeWebsiteLink(href, LINXENS_NEWS_AJAX_URL);
-      if (!matchesWebsiteSourceCandidatePolicy(feed, link)) {
-        return;
-      }
-      const canonicalLink = canonicalizeUrl(link);
-      if (!canonicalLink || seenLinks.has(canonicalLink)) {
-        return;
-      }
+  while (currentPage <= totalPages) {
+    const pageUrlWithPagination = `${LINXENS_NEWS_AJAX_URL}?page=${currentPage}`;
+    const response = await fetchWebsiteHtml(pageUrlWithPagination);
+    const ajaxHtml = String(response.data || "");
+    const ajax$ = cheerio.load(ajaxHtml);
 
-      const text =
-        sanitizeFeedText(node.find("h3").first().text(), "") ||
-        sanitizeFeedText(node.find("a[href*='/en/news-events/']").first().text(), "");
-      if (!text) {
-        return;
-      }
+    const discoveredPageCandidates = [];
+    ajax$("article.my-3, article.item")
+      .toArray()
+      .forEach((block) => {
+        const node = ajax$(block);
+        const href = node.find("a[href*='/en/news-events/']").first().attr("href") || "";
+        const link = resolveRelativeWebsiteLink(href, LINXENS_NEWS_AJAX_URL);
+        if (!matchesWebsiteSourceCandidatePolicy(feed, link)) {
+          return;
+        }
+        const canonicalLink = canonicalizeUrl(link);
+        if (!canonicalLink || seenLinks.has(canonicalLink)) {
+          return;
+        }
 
-      seenLinks.add(canonicalLink);
-      discoveredCandidates.push({
-        title: text,
-        link,
-        excerpt: sanitizeFeedText(node.find("p").first().text(), ""),
-        date: parseWebsiteDateFromText(node.find(".small.upper.green").first().text()),
+        const text =
+          sanitizeFeedText(node.find("h3").first().text(), "") ||
+          sanitizeFeedText(node.find("a[href*='/en/news-events/']").first().text(), "");
+        if (!text) {
+          return;
+        }
+
+        const image = resolveFeedImageCandidate(link, node.find("img").first().attr("src") || "");
+        seenLinks.add(canonicalLink);
+        discoveredPageCandidates.push({
+          title: text,
+          link,
+          excerpt: sanitizeFeedText(node.find("p").first().text(), ""),
+          date: parseWebsiteDateFromText(node.find(".small.upper.green").first().text()),
+          image,
+        });
       });
-    });
+
+    const paginationPages = ajax$("a[data-page]")
+      .toArray()
+      .map((element) => Number.parseInt(String(ajax$(element).attr("data-page") || ""), 10))
+      .filter((value) => Number.isFinite(value) && value > 0);
+    totalPages = Math.max(totalPages, paginationPages.length ? Math.max(...paginationPages) : currentPage);
+    discoveredCandidates.push(...discoveredPageCandidates);
+
+    if (!discoveredPageCandidates.length && currentPage > 1) {
+      break;
+    }
+
+    currentPage += 1;
+  }
 
   const validatedItems = [];
   for (const candidate of discoveredCandidates) {
@@ -2341,6 +2366,7 @@ async function extractLinxensNewsItems(feed, $, pageUrl) {
       link: candidate.link,
       isoDate: resolvedDate ? resolvedDate.toISOString() : new Date().toISOString(),
       contentSnippet: candidate.excerpt || "",
+      image: candidate.image || "",
       author: "",
       source: getSourceName(candidate.link),
     });

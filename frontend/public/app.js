@@ -4920,6 +4920,11 @@ function getCuratedVendorWebsiteArticlesFromState() {
   return articles.filter((article) => isCuratedVendorWebsiteArticle(article));
 }
 
+function getCuratedVendorWebsiteFeedsFromState() {
+  const feeds = Array.isArray(state.feeds) ? state.feeds : [];
+  return feeds.filter((feed) => CURATED_VENDOR_WEBSITE_FEED_NAMES.includes(String(feed?.name || "").trim()));
+}
+
 const VENDORS_PROFILE_PRODUCER_CONTEXT_TERMS = Object.freeze([
   "security printer",
   "security printers",
@@ -25198,6 +25203,12 @@ function normalizeArticleImageUrl(value) {
       /-\d+x-q\d+(?=\.(?:avif|gif|jpe?g|png|webp)$)/i.test(url.pathname)
     ) {
       url.pathname = url.pathname.replace(/-\d+x-q\d+(?=\.(?:avif|gif|jpe?g|png|webp)$)/i, "");
+    }
+    if (
+      url.hostname.toLowerCase().includes("polyvantis.com") &&
+      url.pathname.toLowerCase().includes("/produkte/produktfamilienbilder/")
+    ) {
+      return "";
     }
     if (
       !["http:", "https:"].includes(url.protocol) ||
@@ -54273,6 +54284,19 @@ function buildPersonalDashboardBackendQueryParamsList() {
       params.set("search", searchTerm);
     });
   });
+
+  if (plan.domain === "vendors") {
+    getCuratedVendorWebsiteFeedsFromState().forEach((feed) => {
+      if (!feed?.id) {
+        return;
+      }
+      addParams((params) => {
+        params.delete("search");
+        params.delete("topic");
+        params.set("feedId", String(feed.id));
+      });
+    });
+  }
 
   return requestParamsList;
 }
