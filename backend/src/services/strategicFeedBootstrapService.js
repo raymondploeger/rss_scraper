@@ -313,13 +313,6 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase2-vendor-sources",
   },
   {
-    name: "Demax Holograms News",
-    topic: "Shared Security Printing",
-    rssUrl: "https://demax-holograms.com/news/",
-    sourceType: "website",
-    phase: "phase2-vendor-sources",
-  },
-  {
     name: "VTT News and Stories",
     topic: "Shared Security Printing",
     rssUrl: "https://www.vttresearch.com/en/news-stories/news-and-stories",
@@ -434,6 +427,10 @@ const RETIRED_STRATEGIC_FEEDS = [
   {
     name: "SURYS RSS",
     rssUrl: "https://surys.com/feed/",
+  },
+  {
+    name: "Demax Holograms News",
+    rssUrl: "https://demax-holograms.com/news/",
   },
 ];
 

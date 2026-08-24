@@ -914,9 +914,56 @@ function inferWebsiteItemDate($, anchor) {
   return new Date();
 }
 
+function getWebsiteCandidateTitle($, anchor) {
+  const anchorText = sanitizeFeedText($(anchor).text(), "");
+  const genericAnchorText = [
+    "more",
+    "read more",
+    "learn more",
+    "discover more",
+    "discover",
+    "view more",
+  ];
+  const normalizedAnchorText = anchorText.toLowerCase();
+  const primaryContainers = [
+    $(anchor).closest("article"),
+    $(anchor).closest("li"),
+    $(anchor).closest("section"),
+    $(anchor).closest("div"),
+  ];
+
+  for (const container of primaryContainers) {
+    if (!container || !container.length) {
+      continue;
+    }
+
+    const headingText = sanitizeFeedText(
+      container.find("h1, h2, h3, h4, h5, h6, [class*='title'], [class*='headline']").first().text(),
+      ""
+    );
+    if (headingText && headingText.toLowerCase() !== normalizedAnchorText) {
+      return headingText;
+    }
+  }
+
+  if (!genericAnchorText.includes(normalizedAnchorText)) {
+    return anchorText;
+  }
+
+  const previousHeading = sanitizeFeedText(
+    $(anchor).prevAll("h1, h2, h3, h4, h5, h6").first().text(),
+    ""
+  );
+  if (previousHeading) {
+    return previousHeading;
+  }
+
+  return anchorText;
+}
+
 function scoreWebsiteAnchor($, anchor, pageUrl) {
   const href = $(anchor).attr("href") || "";
-  const text = sanitizeFeedText($(anchor).text(), "");
+  const text = getWebsiteCandidateTitle($, anchor);
   const lower = `${href} ${text}`.toLowerCase();
   if (!href || !text) {
     return -1;
@@ -1803,7 +1850,7 @@ async function extractWebsiteItems(feed) {
       continue;
     }
 
-    const text = sanitizeFeedText($(anchor).text(), "");
+    const text = getWebsiteCandidateTitle($, anchor);
     let link = "";
     try {
       link = new URL($(anchor).attr("href") || "", feed.rssUrl).toString();

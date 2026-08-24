@@ -1515,7 +1515,6 @@ const VENDOR_SOURCE_PATTERNS = Object.freeze([
   "landqart.com/en/stories/news",
   "polyvantis.com/en/press",
   "linxens.com/en/news-events",
-  "demax-holograms.com/news",
   "vttresearch.com/en/news-stories/news-and-stories",
 ]);
 const TAG_FILTER_MIN_COUNT = 0;
