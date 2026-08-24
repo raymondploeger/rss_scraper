@@ -57,6 +57,7 @@ const LANDQART_NEWS_URL = "https://www.landqart.com/en/stories/news";
 const POLYVANTIS_PRESS_URL = "https://www.polyvantis.com/en/press";
 const LINXENS_NEWS_URL = "https://www.linxens.com/en/news-events";
 const VTT_NEWS_URL = "https://www.vttresearch.com/en/news-stories/news-and-stories";
+const LINXENS_NEWS_AJAX_URL = "https://www.linxens.com/en/ajax/news-events";
 
 const VENDOR_FEED_LOG_CONFIG = [
   {
@@ -187,7 +188,7 @@ function matchesWebsiteSourceCandidatePolicy(feed, link) {
 
   if (isVttNewsFeed(feed)) {
     return (
-      lowerLink.includes("/en/news-stories/") &&
+      lowerLink.includes("/en/news-and-ideas/") &&
       !lowerLink.includes("/services/") &&
       !lowerLink.includes("/ourservices/") &&
       !lowerLink.includes("/industries/")
@@ -1918,10 +1919,10 @@ function buildLandqartNewsCandidate($, anchor, pageUrl) {
 }
 
 async function extractLandqartNewsItems(feed, $, pageUrl) {
-  const items = [];
+  const discoveredCandidates = [];
   const seenLinks = new Set();
 
-  $("a[href]")
+  $("a.feature-item-link-absolute[href]")
     .toArray()
     .forEach((anchor) => {
       const href = $(anchor).attr("href") || "";
@@ -1941,11 +1942,11 @@ async function extractLandqartNewsItems(feed, $, pageUrl) {
       }
 
       seenLinks.add(canonicalLink);
-      items.push(candidate);
+      discoveredCandidates.push(candidate);
     });
 
   const validatedItems = [];
-  for (const candidate of items) {
+  for (const candidate of discoveredCandidates) {
     const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch(() => null);
     if (!validated?.accepted) {
       continue;
@@ -1960,10 +1961,10 @@ async function extractLandqartNewsItems(feed, $, pageUrl) {
     }
 
     validatedItems.push({
-      title: validated.title || candidate.title,
+      title: candidate.title,
       link: candidate.link,
-      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
-      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+      isoDate: candidate.date ? candidate.date.toISOString() : validated.isoDate || new Date().toISOString(),
+      contentSnippet: candidate.excerpt || validated.contentSnippet || "",
       author: "",
       source: getSourceName(candidate.link),
     });
@@ -1973,13 +1974,14 @@ async function extractLandqartNewsItems(feed, $, pageUrl) {
 }
 
 async function extractPolyvantisPressItems(feed, $, pageUrl) {
-  const items = [];
+  const discoveredCandidates = [];
   const seenLinks = new Set();
 
-  $("a[href*='/en/press/']")
+  $(".mod_newsarchive a.plexiglas-teaser[href], .mod_newsarchive a[href*='/en/press/']")
     .toArray()
     .forEach((anchor) => {
-      const href = $(anchor).attr("href") || "";
+      const node = $(anchor);
+      const href = node.attr("href") || "";
       const link = resolveRelativeWebsiteLink(href, pageUrl);
       if (!matchesWebsiteSourceCandidatePolicy(feed, link)) {
         return;
@@ -1989,22 +1991,25 @@ async function extractPolyvantisPressItems(feed, $, pageUrl) {
         return;
       }
 
-      const text = sanitizeFeedText($(anchor).text(), "");
+      const text =
+        sanitizeFeedText(node.attr("title"), "") ||
+        sanitizeFeedText(node.find("h3").first().text(), "") ||
+        sanitizeFeedText(node.text(), "");
       if (!text || text.toLowerCase() === "more") {
         return;
       }
 
       seenLinks.add(canonicalLink);
-      items.push({
+      discoveredCandidates.push({
         title: text,
         link,
-        excerpt: text,
-        date: parseWebsiteDateFromText(text) || parseWebsiteDateFromText($(anchor).parent().text()),
+        excerpt: sanitizeFeedText(node.find("p").first().text(), "") || text,
+        date: parseWebsiteDateFromText(node.find(".plexiglas-teaser__date").first().text()),
       });
     });
 
   const validatedItems = [];
-  for (const candidate of items) {
+  for (const candidate of discoveredCandidates) {
     const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch(() => null);
     if (!validated?.accepted) {
       continue;
@@ -2019,10 +2024,10 @@ async function extractPolyvantisPressItems(feed, $, pageUrl) {
     }
 
     validatedItems.push({
-      title: validated.title || candidate.title,
+      title: candidate.title,
       link: candidate.link,
-      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
-      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+      isoDate: candidate.date ? candidate.date.toISOString() : validated.isoDate || new Date().toISOString(),
+      contentSnippet: candidate.excerpt || validated.contentSnippet || "",
       author: "",
       source: getSourceName(candidate.link),
     });
@@ -2032,14 +2037,18 @@ async function extractPolyvantisPressItems(feed, $, pageUrl) {
 }
 
 async function extractLinxensNewsItems(feed, $, pageUrl) {
-  const items = [];
+  const response = await fetchWebsiteHtml(LINXENS_NEWS_AJAX_URL);
+  const ajaxHtml = String(response.data || "");
+  const ajax$ = cheerio.load(ajaxHtml);
+  const discoveredCandidates = [];
   const seenLinks = new Set();
 
-  $("a[href*='/en/news-events/']")
+  ajax$("article.my-3, article.item")
     .toArray()
-    .forEach((anchor) => {
-      const href = $(anchor).attr("href") || "";
-      const link = resolveRelativeWebsiteLink(href, pageUrl);
+    .forEach((block) => {
+      const node = ajax$(block);
+      const href = node.find("a[href*='/en/news-events/']").first().attr("href") || "";
+      const link = resolveRelativeWebsiteLink(href, LINXENS_NEWS_AJAX_URL);
       if (!matchesWebsiteSourceCandidatePolicy(feed, link)) {
         return;
       }
@@ -2048,22 +2057,24 @@ async function extractLinxensNewsItems(feed, $, pageUrl) {
         return;
       }
 
-      const text = sanitizeFeedText($(anchor).text(), "");
-      if (!text || text.toLowerCase() === "read more") {
+      const text =
+        sanitizeFeedText(node.find("h3").first().text(), "") ||
+        sanitizeFeedText(node.find("a[href*='/en/news-events/']").first().text(), "");
+      if (!text) {
         return;
       }
 
       seenLinks.add(canonicalLink);
-      items.push({
+      discoveredCandidates.push({
         title: text,
         link,
-        excerpt: sanitizeFeedText($(anchor).closest("article, li, div").text(), ""),
-        date: parseWebsiteDateFromText($(anchor).closest("article, li, div").text()),
+        excerpt: sanitizeFeedText(node.find("p").first().text(), ""),
+        date: parseWebsiteDateFromText(node.find(".small.upper.green").first().text()),
       });
     });
 
   const validatedItems = [];
-  for (const candidate of items) {
+  for (const candidate of discoveredCandidates) {
     const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch(() => null);
     if (!validated?.accepted) {
       continue;
@@ -2078,10 +2089,10 @@ async function extractLinxensNewsItems(feed, $, pageUrl) {
     }
 
     validatedItems.push({
-      title: validated.title || candidate.title,
+      title: candidate.title,
       link: candidate.link,
-      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
-      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+      isoDate: candidate.date ? candidate.date.toISOString() : validated.isoDate || new Date().toISOString(),
+      contentSnippet: candidate.excerpt || validated.contentSnippet || "",
       author: "",
       source: getSourceName(candidate.link),
     });
@@ -2091,13 +2102,14 @@ async function extractLinxensNewsItems(feed, $, pageUrl) {
 }
 
 async function extractVttNewsItems(feed, $, pageUrl) {
-  const items = [];
+  const discoveredCandidates = [];
   const seenLinks = new Set();
 
-  $("a[href*='/en/news-stories/']")
+  $(".view--news-and-ideas .views-row, .views-infinite-scroll-content-wrapper .views-row")
     .toArray()
-    .forEach((anchor) => {
-      const href = $(anchor).attr("href") || "";
+    .forEach((block) => {
+      const node = $(block);
+      const href = node.find("a.card__url[href*='/en/news-and-ideas/']").first().attr("href") || "";
       const link = resolveRelativeWebsiteLink(href, pageUrl);
       if (!matchesWebsiteSourceCandidatePolicy(feed, link)) {
         return;
@@ -2107,22 +2119,24 @@ async function extractVttNewsItems(feed, $, pageUrl) {
         return;
       }
 
-      const text = sanitizeFeedText($(anchor).text(), "");
-      if (!text || text.toLowerCase().includes("load more")) {
+      const text = sanitizeFeedText(node.find(".node__title, .card__title--content").first().text(), "");
+      if (!text) {
         return;
       }
 
       seenLinks.add(canonicalLink);
-      items.push({
+      discoveredCandidates.push({
         title: text,
         link,
-        excerpt: text,
-        date: parseWebsiteDateFromText(text) || parseWebsiteDateFromText($(anchor).parent().text()),
+        excerpt: sanitizeFeedText(node.find(".card__body, .card__content").text(), ""),
+        date:
+          parseWebsiteDate(node.find(".published-at time").first().attr("datetime") || "") ||
+          parseWebsiteDateFromText(node.find(".published-at time").first().text()),
       });
     });
 
   const validatedItems = [];
-  for (const candidate of items) {
+  for (const candidate of discoveredCandidates) {
     const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch(() => null);
     if (!validated?.accepted) {
       continue;
@@ -2137,10 +2151,10 @@ async function extractVttNewsItems(feed, $, pageUrl) {
     }
 
     validatedItems.push({
-      title: validated.title || candidate.title,
+      title: candidate.title,
       link: candidate.link,
-      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
-      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+      isoDate: candidate.date ? candidate.date.toISOString() : validated.isoDate || new Date().toISOString(),
+      contentSnippet: candidate.excerpt || validated.contentSnippet || "",
       author: "",
       source: getSourceName(candidate.link),
     });
