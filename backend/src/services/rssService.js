@@ -5,6 +5,7 @@ import { URL } from "url";
 import { env } from "../config/env.js";
 import {
   createArticle,
+  deleteArticlesByFeedId,
   findArticleById,
   listPendingArticles,
   updateArticle
@@ -160,6 +161,15 @@ function isVttNewsFeed(feed) {
   );
 }
 
+function shouldReplaceArticlesOnSync(feed) {
+  return (
+    isLandqartNewsFeed(feed) ||
+    isPolyvantisPressFeed(feed) ||
+    isLinxensNewsFeed(feed) ||
+    isVttNewsFeed(feed)
+  );
+}
+
 function matchesWebsiteSourceCandidatePolicy(feed, link) {
   const lowerLink = String(link || "").toLowerCase();
 
@@ -185,6 +195,14 @@ function matchesWebsiteSourceCandidatePolicy(feed, link) {
   }
 
   return true;
+}
+
+function resolveRelativeWebsiteLink(href, pageUrl) {
+  try {
+    return href ? new URL(href, pageUrl).toString() : "";
+  } catch {
+    return "";
+  }
 }
 
 const WEBSITE_NAV_TITLE_PATTERNS = [
@@ -1872,6 +1890,265 @@ async function extractIqStructuresNewsroomItems(feed, $, pageUrl) {
   return items;
 }
 
+function buildLandqartNewsCandidate($, anchor, pageUrl) {
+  const node = $(anchor);
+  const href = node.attr("href") || "";
+  const link = resolveRelativeWebsiteLink(href, pageUrl);
+  if (!link) {
+    return null;
+  }
+
+  const title =
+    sanitizeFeedText(node.prevAll("h2, h3").first().text(), "") ||
+    sanitizeFeedText(node.closest("li, article, div").find("h2, h3").first().text(), "") ||
+    sanitizeFeedText(node.text(), "");
+  const excerpt =
+    sanitizeFeedText(node.prevAll("p").first().text(), "") ||
+    sanitizeFeedText(node.closest("li, article, div").find("p").first().text(), "");
+  const date =
+    parseWebsiteDateFromText(node.prevAll().text()) ||
+    parseWebsiteDateFromText(node.closest("li, article, div").text());
+
+  return {
+    title,
+    link,
+    excerpt,
+    date,
+  };
+}
+
+async function extractLandqartNewsItems(feed, $, pageUrl) {
+  const items = [];
+  const seenLinks = new Set();
+
+  $("a[href]")
+    .toArray()
+    .forEach((anchor) => {
+      const href = $(anchor).attr("href") || "";
+      const link = resolveRelativeWebsiteLink(href, pageUrl);
+      if (!matchesWebsiteSourceCandidatePolicy(feed, link)) {
+        return;
+      }
+
+      const canonicalLink = canonicalizeUrl(link);
+      if (!canonicalLink || seenLinks.has(canonicalLink)) {
+        return;
+      }
+
+      const candidate = buildLandqartNewsCandidate($, anchor, pageUrl);
+      if (!candidate?.title || !candidate.link) {
+        return;
+      }
+
+      seenLinks.add(canonicalLink);
+      items.push(candidate);
+    });
+
+  const validatedItems = [];
+  for (const candidate of items) {
+    const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch(() => null);
+    if (!validated?.accepted) {
+      continue;
+    }
+
+    if (!articleMatchesSourceRelevanceRule(feed, {
+      title: validated.title || candidate.title,
+      link: candidate.link,
+      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+    })) {
+      continue;
+    }
+
+    validatedItems.push({
+      title: validated.title || candidate.title,
+      link: candidate.link,
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
+      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+      author: "",
+      source: getSourceName(candidate.link),
+    });
+  }
+
+  return validatedItems;
+}
+
+async function extractPolyvantisPressItems(feed, $, pageUrl) {
+  const items = [];
+  const seenLinks = new Set();
+
+  $("a[href*='/en/press/']")
+    .toArray()
+    .forEach((anchor) => {
+      const href = $(anchor).attr("href") || "";
+      const link = resolveRelativeWebsiteLink(href, pageUrl);
+      if (!matchesWebsiteSourceCandidatePolicy(feed, link)) {
+        return;
+      }
+      const canonicalLink = canonicalizeUrl(link);
+      if (!canonicalLink || seenLinks.has(canonicalLink)) {
+        return;
+      }
+
+      const text = sanitizeFeedText($(anchor).text(), "");
+      if (!text || text.toLowerCase() === "more") {
+        return;
+      }
+
+      seenLinks.add(canonicalLink);
+      items.push({
+        title: text,
+        link,
+        excerpt: text,
+        date: parseWebsiteDateFromText(text) || parseWebsiteDateFromText($(anchor).parent().text()),
+      });
+    });
+
+  const validatedItems = [];
+  for (const candidate of items) {
+    const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch(() => null);
+    if (!validated?.accepted) {
+      continue;
+    }
+
+    if (!articleMatchesSourceRelevanceRule(feed, {
+      title: validated.title || candidate.title,
+      link: candidate.link,
+      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+    })) {
+      continue;
+    }
+
+    validatedItems.push({
+      title: validated.title || candidate.title,
+      link: candidate.link,
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
+      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+      author: "",
+      source: getSourceName(candidate.link),
+    });
+  }
+
+  return validatedItems;
+}
+
+async function extractLinxensNewsItems(feed, $, pageUrl) {
+  const items = [];
+  const seenLinks = new Set();
+
+  $("a[href*='/en/news-events/']")
+    .toArray()
+    .forEach((anchor) => {
+      const href = $(anchor).attr("href") || "";
+      const link = resolveRelativeWebsiteLink(href, pageUrl);
+      if (!matchesWebsiteSourceCandidatePolicy(feed, link)) {
+        return;
+      }
+      const canonicalLink = canonicalizeUrl(link);
+      if (!canonicalLink || seenLinks.has(canonicalLink)) {
+        return;
+      }
+
+      const text = sanitizeFeedText($(anchor).text(), "");
+      if (!text || text.toLowerCase() === "read more") {
+        return;
+      }
+
+      seenLinks.add(canonicalLink);
+      items.push({
+        title: text,
+        link,
+        excerpt: sanitizeFeedText($(anchor).closest("article, li, div").text(), ""),
+        date: parseWebsiteDateFromText($(anchor).closest("article, li, div").text()),
+      });
+    });
+
+  const validatedItems = [];
+  for (const candidate of items) {
+    const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch(() => null);
+    if (!validated?.accepted) {
+      continue;
+    }
+
+    if (!articleMatchesSourceRelevanceRule(feed, {
+      title: validated.title || candidate.title,
+      link: candidate.link,
+      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+    })) {
+      continue;
+    }
+
+    validatedItems.push({
+      title: validated.title || candidate.title,
+      link: candidate.link,
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
+      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+      author: "",
+      source: getSourceName(candidate.link),
+    });
+  }
+
+  return validatedItems;
+}
+
+async function extractVttNewsItems(feed, $, pageUrl) {
+  const items = [];
+  const seenLinks = new Set();
+
+  $("a[href*='/en/news-stories/']")
+    .toArray()
+    .forEach((anchor) => {
+      const href = $(anchor).attr("href") || "";
+      const link = resolveRelativeWebsiteLink(href, pageUrl);
+      if (!matchesWebsiteSourceCandidatePolicy(feed, link)) {
+        return;
+      }
+      const canonicalLink = canonicalizeUrl(link);
+      if (!canonicalLink || seenLinks.has(canonicalLink)) {
+        return;
+      }
+
+      const text = sanitizeFeedText($(anchor).text(), "");
+      if (!text || text.toLowerCase().includes("load more")) {
+        return;
+      }
+
+      seenLinks.add(canonicalLink);
+      items.push({
+        title: text,
+        link,
+        excerpt: text,
+        date: parseWebsiteDateFromText(text) || parseWebsiteDateFromText($(anchor).parent().text()),
+      });
+    });
+
+  const validatedItems = [];
+  for (const candidate of items) {
+    const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch(() => null);
+    if (!validated?.accepted) {
+      continue;
+    }
+
+    if (!articleMatchesSourceRelevanceRule(feed, {
+      title: validated.title || candidate.title,
+      link: candidate.link,
+      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+    })) {
+      continue;
+    }
+
+    validatedItems.push({
+      title: validated.title || candidate.title,
+      link: candidate.link,
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
+      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+      author: "",
+      source: getSourceName(candidate.link),
+    });
+  }
+
+  return validatedItems;
+}
+
 async function extractWebsiteItems(feed) {
   console.log(`Parsing website source ${feed.id} (${feed.rssUrl})`);
   const response = await fetchWebsiteHtml(feed.rssUrl);
@@ -1899,6 +2176,30 @@ async function extractWebsiteItems(feed) {
 
   if (isCraneCurrencyNewsroomFeed(feed)) {
     const items = await extractCraneCurrencyNewsroomItems(feed);
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isLandqartNewsFeed(feed)) {
+    const items = await extractLandqartNewsItems(feed, $, fetchedUrl);
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isPolyvantisPressFeed(feed)) {
+    const items = await extractPolyvantisPressItems(feed, $, fetchedUrl);
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isLinxensNewsFeed(feed)) {
+    const items = await extractLinxensNewsItems(feed, $, fetchedUrl);
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isVttNewsFeed(feed)) {
+    const items = await extractVttNewsItems(feed, $, fetchedUrl);
     console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
     return items;
   }
@@ -2306,6 +2607,11 @@ export async function syncFeed(feed) {
 
     if (vendorFeedLogLabel) {
       console.log(`[${vendorFeedLogLabel}] articles_found count=${resolvedItems.length}`);
+    }
+
+    if (feed.sourceType === "website" && shouldReplaceArticlesOnSync(feed) && resolvedItems.length > 0) {
+      const deletedCount = await deleteArticlesByFeedId(feed.id);
+      console.log(`Replaced existing website-source articles for ${feed.id}: deleted=${deletedCount}`);
     }
 
     for (const item of resolvedItems) {
