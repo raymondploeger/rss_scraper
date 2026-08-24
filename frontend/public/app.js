@@ -4915,6 +4915,11 @@ function isCuratedVendorWebsiteArticle(article) {
   return CURATED_VENDOR_WEBSITE_DOMAINS.some((domain) => fingerprint.includes(domain));
 }
 
+function getCuratedVendorWebsiteArticlesFromState() {
+  const articles = Array.isArray(state.articles) ? state.articles : [];
+  return articles.filter((article) => isCuratedVendorWebsiteArticle(article));
+}
+
 const VENDORS_PROFILE_PRODUCER_CONTEXT_TERMS = Object.freeze([
   "security printer",
   "security printers",
@@ -25351,6 +25356,14 @@ function assessArticleImageQuality(article) {
         url.hostname.toLowerCase().includes("linxens.com") &&
         url.pathname.toLowerCase().startsWith("/storage/") &&
         url.pathname.toLowerCase().endsWith(".png")
+      ) {
+        score = 0;
+      }
+
+      if (
+        feedName === "POLYVANTIS Press" &&
+        url.hostname.toLowerCase().includes("polyvantis.com") &&
+        url.pathname.toLowerCase().includes("/produkte/produktfamilienbilder/")
       ) {
         score = 0;
       }
@@ -57060,11 +57073,31 @@ function resolveBackendPendingStage({ cachedQuery, queryKey, backendRequests } =
 }
 
 function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendRequests, diagnostics } = {}) {
-  const candidatePool = cachedQuery.articles;
+  const vendorsProfileActive = isVendorsProfileActive();
+  const candidatePoolMap = new Map();
+  const cachedArticles = Array.isArray(cachedQuery?.articles) ? cachedQuery.articles : [];
+  const curatedVendorArticles = vendorsProfileActive ? getCuratedVendorWebsiteArticlesFromState() : [];
+
+  cachedArticles.forEach((article) => {
+    const key = String(article?.id || article?.canonicalLink || article?.link || "").trim().toLowerCase();
+    if (key && !candidatePoolMap.has(key)) {
+      candidatePoolMap.set(key, article);
+    }
+  });
+
+  curatedVendorArticles.forEach((article) => {
+    const key = String(article?.id || article?.canonicalLink || article?.link || "").trim().toLowerCase();
+    if (key && !candidatePoolMap.has(key)) {
+      candidatePoolMap.set(key, article);
+    }
+  });
+
+  const candidatePool = Array.from(candidatePoolMap.values())
+    .sort((left, right) => new Date(right?.pubDate || 0) - new Date(left?.pubDate || 0));
   markProductionLoadTiming("backendNormalizationAdvancedFiltersStart", {
     inputCount: candidatePool.length,
   });
-  const advancedFilteredBackendArticles = cachedQuery.articles
+  const advancedFilteredBackendArticles = candidatePool
     .filter((article) => articleMatchesFilters(article, {
       ignoreFeedId: true,
       timingContext: "backend_normalization",
@@ -57073,7 +57106,6 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
     inputCount: candidatePool.length,
     outputCount: advancedFilteredBackendArticles.length,
   });
-  const vendorsProfileActive = isVendorsProfileActive();
   const identityDocumentBundleQualityGateStage = vendorsProfileActive
     ? {
         active: false,

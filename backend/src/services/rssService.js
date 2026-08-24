@@ -2210,22 +2210,72 @@ async function extractPolyvantisPressItems(feed, $, pageUrl) {
 
   const validatedItems = [];
   for (const candidate of discoveredCandidates) {
-    const resolvedDate = candidate.date || (await fetchWebsitePublishedDateForLink(candidate.link));
+    const resolvedCandidate = await (async () => {
+      try {
+        const response = await fetchWebsiteHtml(candidate.link);
+        const fetchedUrl = response.request?.res?.responseUrl || candidate.link;
+        const html = String(response.data || "");
+        if (!html) {
+          return candidate;
+        }
+
+        const articlePage = cheerio.load(html);
+        const canonicalHref =
+          articlePage("link[rel='canonical']").first().attr("href") ||
+          articlePage('link[rel="canonical"]').first().attr("href") ||
+          fetchedUrl;
+        const resolvedLink = resolveRelativeWebsiteLink(canonicalHref, fetchedUrl) || fetchedUrl;
+        if (!matchesWebsiteSourceCandidatePolicy(feed, resolvedLink)) {
+          return null;
+        }
+
+        const resolvedTitle =
+          sanitizeFeedText(articlePage("h1").first().text(), "") ||
+          sanitizeFeedText(articlePage('meta[property="og:title"]').attr("content"), "") ||
+          sanitizeFeedText(articlePage("title").first().text(), "") ||
+          candidate.title;
+        const resolvedExcerpt =
+          extractWebsiteArticleBody(articlePage) ||
+          sanitizeFeedText(articlePage('meta[property="og:description"]').attr("content"), "") ||
+          candidate.excerpt ||
+          resolvedTitle;
+        const resolvedDate =
+          extractWebsitePublishedDate(articlePage, resolvedLink) ||
+          candidate.date ||
+          null;
+
+        return {
+          ...candidate,
+          title: resolvedTitle || candidate.title,
+          link: resolvedLink,
+          excerpt: resolvedExcerpt || candidate.excerpt || "",
+          date: resolvedDate,
+        };
+      } catch {
+        return null;
+      }
+    })();
+
+    if (!resolvedCandidate?.title || !resolvedCandidate.link) {
+      continue;
+    }
+
+    const resolvedDate = resolvedCandidate.date || (await fetchWebsitePublishedDateForLink(resolvedCandidate.link));
     if (!shouldBypassDedicatedVendorSourceRelevance(feed) && !articleMatchesSourceRelevanceRule(feed, {
-      title: candidate.title,
-      link: candidate.link,
-      contentSnippet: candidate.excerpt || "",
+      title: resolvedCandidate.title,
+      link: resolvedCandidate.link,
+      contentSnippet: resolvedCandidate.excerpt || "",
     })) {
       continue;
     }
 
     validatedItems.push({
-      title: candidate.title,
-      link: candidate.link,
+      title: resolvedCandidate.title,
+      link: resolvedCandidate.link,
       isoDate: resolvedDate ? resolvedDate.toISOString() : new Date().toISOString(),
-      contentSnippet: candidate.excerpt || "",
+      contentSnippet: resolvedCandidate.excerpt || "",
       author: "",
-      source: getSourceName(candidate.link),
+      source: getSourceName(resolvedCandidate.link),
     });
   }
 
