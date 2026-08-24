@@ -244,6 +244,10 @@ function getTrackedVendorWebsiteFeedDebugSnapshot(feed) {
   };
 }
 
+function shouldBypassDedicatedVendorSourceRelevance(feed) {
+  return isTrackedVendorWebsiteFeed(feed);
+}
+
 function matchesWebsiteSourceCandidatePolicy(feed, link) {
   const lowerLink = String(link || "").toLowerCase();
 
@@ -1980,6 +1984,7 @@ function buildLandqartNewsCandidate($, anchor, pageUrl) {
     sanitizeFeedText(node.prevAll("p").first().text(), "") ||
     sanitizeFeedText(node.closest("li, article, div").find("p").first().text(), "");
   const date =
+    parseWebsiteDate(node.closest("li, article, div").find("time").first().attr("datetime") || "") ||
     parseWebsiteDateFromText(node.prevAll().text()) ||
     parseWebsiteDateFromText(node.closest("li, article, div").text());
 
@@ -2020,7 +2025,7 @@ async function extractLandqartNewsItems(feed, $, pageUrl) {
 
   const validatedItems = [];
   for (const candidate of discoveredCandidates) {
-    if (!articleMatchesSourceRelevanceRule(feed, {
+    if (!shouldBypassDedicatedVendorSourceRelevance(feed) && !articleMatchesSourceRelevanceRule(feed, {
       title: candidate.title,
       link: candidate.link,
       contentSnippet: candidate.excerpt || "",
@@ -2051,7 +2056,7 @@ async function extractPolyvantisPressItems(feed, $, pageUrl) {
   const discoveredCandidates = [];
   const seenLinks = new Set();
 
-  $(".mod_newsarchive a.plexiglas-teaser[href], .mod_newsarchive a[href*='/en/press/']")
+  $(".mod_newsarchive a[href*='/en/press/'], main a[href*='/en/press/']")
     .toArray()
     .forEach((anchor) => {
       const node = $(anchor);
@@ -2065,26 +2070,38 @@ async function extractPolyvantisPressItems(feed, $, pageUrl) {
         return;
       }
 
-      const text =
+      const container = node.closest("article, li, div");
+      const rawText = sanitizeFeedText(
+        container.text() || node.text(),
+        ""
+      );
+      const dateMatch = rawText.match(/\b\d{1,2}\.\s+[A-Za-z]+\s+\d{4}\b/);
+      const title =
         sanitizeFeedText(node.attr("title"), "") ||
-        sanitizeFeedText(node.find("h3").first().text(), "") ||
+        sanitizeFeedText(node.find("h1, h2, h3, h4").first().text(), "") ||
+        sanitizeFeedText(container.find("h1, h2, h3, h4").first().text(), "") ||
         sanitizeFeedText(node.text(), "");
-      if (!text || text.toLowerCase() === "more") {
+      if (!title || title.toLowerCase() === "more") {
         return;
       }
 
       seenLinks.add(canonicalLink);
       discoveredCandidates.push({
-        title: text,
+        title,
         link,
-        excerpt: sanitizeFeedText(node.find("p").first().text(), "") || text,
-        date: parseWebsiteDateFromText(node.find(".plexiglas-teaser__date").first().text()),
+        excerpt:
+          sanitizeFeedText(container.find("p").first().text(), "") ||
+          sanitizeFeedText(rawText.replace(title, "").replace(/\s*More\s*$/i, ""), "") ||
+          title,
+        date:
+          parseWebsiteDateFromText(container.find(".plexiglas-teaser__date").first().text()) ||
+          parseWebsiteDateFromText(dateMatch?.[0] || ""),
       });
     });
 
   const validatedItems = [];
   for (const candidate of discoveredCandidates) {
-    if (!articleMatchesSourceRelevanceRule(feed, {
+    if (!shouldBypassDedicatedVendorSourceRelevance(feed) && !articleMatchesSourceRelevanceRule(feed, {
       title: candidate.title,
       link: candidate.link,
       contentSnippet: candidate.excerpt || "",
@@ -2150,7 +2167,7 @@ async function extractLinxensNewsItems(feed, $, pageUrl) {
 
   const validatedItems = [];
   for (const candidate of discoveredCandidates) {
-    if (!articleMatchesSourceRelevanceRule(feed, {
+    if (!shouldBypassDedicatedVendorSourceRelevance(feed) && !articleMatchesSourceRelevanceRule(feed, {
       title: candidate.title,
       link: candidate.link,
       contentSnippet: candidate.excerpt || "",
@@ -2213,7 +2230,7 @@ async function extractVttNewsItems(feed, $, pageUrl) {
 
   const validatedItems = [];
   for (const candidate of discoveredCandidates) {
-    if (!articleMatchesSourceRelevanceRule(feed, {
+    if (!shouldBypassDedicatedVendorSourceRelevance(feed) && !articleMatchesSourceRelevanceRule(feed, {
       title: candidate.title,
       link: candidate.link,
       contentSnippet: candidate.excerpt || "",
