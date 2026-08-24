@@ -3,7 +3,7 @@ import { connectDatabase, disconnectDatabase } from "./config/db.js";
 import { env, envFilePath } from "./config/env.js";
 import { startScheduler } from "./services/schedulerService.js";
 import { ensureStrategicFeeds } from "./services/strategicFeedBootstrapService.js";
-import { syncFeed } from "./services/rssService.js";
+import { syncFeed, syncTrackedVendorWebsiteFeeds } from "./services/rssService.js";
 import { spawn } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -71,6 +71,15 @@ async function bootstrapRuntime() {
         error?.stack || error
       );
     }
+  }
+
+  try {
+    const vendorRefreshResult = await syncTrackedVendorWebsiteFeeds();
+    console.log(
+      `[vendor-feeds] bootstrap refresh complete feedsProcessed=${vendorRefreshResult.feedsProcessed}`
+    );
+  } catch (error) {
+    console.error("[vendor-feeds] bootstrap refresh failed:", error?.stack || error);
   }
 
   if (!schedulerStarted) {

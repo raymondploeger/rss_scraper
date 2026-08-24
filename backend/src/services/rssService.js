@@ -215,6 +215,11 @@ function isTrackedVendorWebsiteFeed(feed) {
   );
 }
 
+function isBrokenPolyvantisPressLink(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized.includes("/en/press/") && normalized.includes("-copy");
+}
+
 function logTrackedVendorWebsiteFeedState(feed, stage, extra = {}) {
   if (!isTrackedVendorWebsiteFeed(feed)) {
     return;
@@ -2705,6 +2710,10 @@ function normalizeItem(feed, item) {
     return null;
   }
 
+  if (isPolyvantisPressFeed(feed) && isBrokenPolyvantisPressLink(link)) {
+    return null;
+  }
+
   const pubDate = new Date(String(item.isoDate || item.pubDate || new Date().toISOString()));
   const contentSnippet = sanitizeFeedText(item.contentSnippet || item.content || item.summary || item.description, "");
   const title = sanitizeFeedText(item.title, "Untitled Article");
@@ -3047,6 +3056,22 @@ export async function syncAllFeeds() {
   return {
     feedsProcessed: feeds.length,
     results
+  };
+}
+
+export async function syncTrackedVendorWebsiteFeeds() {
+  console.log("Starting bootstrap refresh for tracked vendor website feeds");
+  const feeds = await listFeedRecords({ activeOnly: true, order: "ASC" });
+  const vendorFeeds = feeds.filter((feed) => isTrackedVendorWebsiteFeed(feed));
+  const results = [];
+
+  for (const feed of vendorFeeds) {
+    results.push(await syncFeed(feed));
+  }
+
+  return {
+    feedsProcessed: vendorFeeds.length,
+    results,
   };
 }
 
