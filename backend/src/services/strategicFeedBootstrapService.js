@@ -291,6 +291,41 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     sourceType: "website",
     phase: "phase2-vendor-sources",
   },
+  {
+    name: "Landqart News",
+    topic: "Banknotes",
+    rssUrl: "https://www.landqart.com/en/stories/news",
+    sourceType: "website",
+    phase: "phase2-vendor-sources",
+  },
+  {
+    name: "POLYVANTIS Press",
+    topic: "Shared Security Printing",
+    rssUrl: "https://www.polyvantis.com/en/press",
+    sourceType: "website",
+    phase: "phase2-vendor-sources",
+  },
+  {
+    name: "Linxens News & Events",
+    topic: "Identity Documents",
+    rssUrl: "https://www.linxens.com/en/news-events",
+    sourceType: "website",
+    phase: "phase2-vendor-sources",
+  },
+  {
+    name: "Demax Holograms News",
+    topic: "Shared Security Printing",
+    rssUrl: "https://demax-holograms.com/news/",
+    sourceType: "website",
+    phase: "phase2-vendor-sources",
+  },
+  {
+    name: "VTT News and Stories",
+    topic: "Shared Security Printing",
+    rssUrl: "https://www.vttresearch.com/en/news-stories/news-and-stories",
+    sourceType: "website",
+    phase: "phase2-vendor-sources",
+  },
 
   {
     name: "SICPA Newsroom",
