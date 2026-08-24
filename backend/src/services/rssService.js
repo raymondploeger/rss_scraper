@@ -248,6 +248,60 @@ function shouldBypassDedicatedVendorSourceRelevance(feed) {
   return isTrackedVendorWebsiteFeed(feed);
 }
 
+function isGenericWebsiteActionLabel(value) {
+  const normalized = sanitizeFeedText(value, "").toLowerCase();
+  return ["more", "read more", "discover more", "learn more"].includes(normalized);
+}
+
+function findNearbyWebsiteHeadingText($, node) {
+  const directCandidates = [
+    node.prevAll("h1, h2, h3, h4, .feature-title, [class*='title']").first(),
+    node.parent().prevAll("h1, h2, h3, h4, .feature-title, [class*='title']").first(),
+    node.closest("article, li, section").find("h1, h2, h3, h4, .feature-title, [class*='title']").first(),
+    node.closest("div").parent().find("h1, h2, h3, h4, .feature-title, [class*='title']").first(),
+  ];
+
+  for (const candidateNode of directCandidates) {
+    const text = sanitizeFeedText(candidateNode?.text?.() || "", "");
+    if (text && !isGenericWebsiteActionLabel(text)) {
+      return text;
+    }
+  }
+
+  const ancestorBlocks = node.parents("div, article, li, section").toArray().slice(0, 6);
+  for (const ancestor of ancestorBlocks) {
+    const ancestorNode = $(ancestor);
+    const text = sanitizeFeedText(
+      ancestorNode.find("h1, h2, h3, h4, .feature-title, [class*='title']").first().text(),
+      ""
+    );
+    if (text && !isGenericWebsiteActionLabel(text)) {
+      return text;
+    }
+  }
+
+  return "";
+}
+
+async function fetchWebsitePublishedDateForLink(link) {
+  if (!link) {
+    return null;
+  }
+
+  try {
+    const response = await fetchWebsiteHtml(link);
+    const html = String(response.data || "");
+    if (!html) {
+      return null;
+    }
+
+    const $ = cheerio.load(html);
+    return extractWebsitePublishedDate($, link);
+  } catch {
+    return null;
+  }
+}
+
 function matchesWebsiteSourceCandidatePolicy(feed, link) {
   const lowerLink = String(link || "").toLowerCase();
 
@@ -1988,9 +2042,8 @@ function buildLandqartNewsCandidate($, anchor, pageUrl) {
   }
 
   const title =
-    sanitizeFeedText(node.prevAll("h2, h3").first().text(), "") ||
-    sanitizeFeedText(node.closest("li, article, div").find("h2, h3").first().text(), "") ||
-    sanitizeFeedText(node.text(), "");
+    findNearbyWebsiteHeadingText($, node) ||
+    (isGenericWebsiteActionLabel(node.text()) ? "" : sanitizeFeedText(node.text(), ""));
   const excerpt =
     sanitizeFeedText(node.prevAll("p").first().text(), "") ||
     sanitizeFeedText(node.closest("li, article, div").find("p").first().text(), "");
@@ -2036,6 +2089,7 @@ async function extractLandqartNewsItems(feed, $, pageUrl) {
 
   const validatedItems = [];
   for (const candidate of discoveredCandidates) {
+    const resolvedDate = candidate.date || (await fetchWebsitePublishedDateForLink(candidate.link));
     if (!shouldBypassDedicatedVendorSourceRelevance(feed) && !articleMatchesSourceRelevanceRule(feed, {
       title: candidate.title,
       link: candidate.link,
@@ -2047,7 +2101,7 @@ async function extractLandqartNewsItems(feed, $, pageUrl) {
     validatedItems.push({
       title: candidate.title,
       link: candidate.link,
-      isoDate: candidate.date ? candidate.date.toISOString() : new Date().toISOString(),
+      isoDate: resolvedDate ? resolvedDate.toISOString() : new Date().toISOString(),
       contentSnippet: candidate.excerpt || "",
       author: "",
       source: getSourceName(candidate.link),
@@ -2112,6 +2166,7 @@ async function extractPolyvantisPressItems(feed, $, pageUrl) {
 
   const validatedItems = [];
   for (const candidate of discoveredCandidates) {
+    const resolvedDate = candidate.date || (await fetchWebsitePublishedDateForLink(candidate.link));
     if (!shouldBypassDedicatedVendorSourceRelevance(feed) && !articleMatchesSourceRelevanceRule(feed, {
       title: candidate.title,
       link: candidate.link,
@@ -2123,7 +2178,7 @@ async function extractPolyvantisPressItems(feed, $, pageUrl) {
     validatedItems.push({
       title: candidate.title,
       link: candidate.link,
-      isoDate: candidate.date ? candidate.date.toISOString() : new Date().toISOString(),
+      isoDate: resolvedDate ? resolvedDate.toISOString() : new Date().toISOString(),
       contentSnippet: candidate.excerpt || "",
       author: "",
       source: getSourceName(candidate.link),
