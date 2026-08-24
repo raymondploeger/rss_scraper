@@ -17,8 +17,10 @@ import {
 import { asyncHandler } from "./utils/asyncHandler.js";
 import { canonicalizeUrl, normalizeText } from "./utils/text.js";
 import { importDmvFeeds } from "./controllers/dmvImportController.js";
+import { listFeeds as listFeedRecords } from "./database/feedRepository.js";
 import { loadDmvCatalog, toDmvCatalogDto } from "./services/dmvCatalogService.js";
 import { cleanupLegacyCanadaFeeds } from "./services/legacyCanadaFeedCleanupService.js";
+import { inspectTrackedVendorWebsiteFeed } from "./services/rssService.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,6 +58,27 @@ export function createApp() {
   app.put("/api/feeds/:feedId", asyncHandler(updateFeed));
   app.delete("/api/feeds/:feedId", asyncHandler(deleteFeed));
   app.post("/api/feeds/:feedId/refresh", asyncHandler(refreshFeed));
+  app.get("/api/debug/vendor-feeds", asyncHandler(async (_request, response) => {
+    const targetNames = new Set([
+      "Landqart News",
+      "Linxens News & Events",
+      "POLYVANTIS Press",
+      "VTT News and Stories",
+    ]);
+    const feeds = await listFeedRecords({ activeOnly: false, order: "ASC" });
+    const vendorFeeds = feeds.filter((feed) => targetNames.has(String(feed?.name || "")));
+    const results = [];
+
+    for (const feed of vendorFeeds) {
+      results.push(await inspectTrackedVendorWebsiteFeed(feed));
+    }
+
+    response.json({
+      generatedAt: new Date().toISOString(),
+      count: results.length,
+      results,
+    });
+  }));
   app.get("/api/articles", asyncHandler(listArticles));
   app.get("/api/image", asyncHandler(async (request, response) => {
     const targetUrl = normalizeText(request.query.url, "");

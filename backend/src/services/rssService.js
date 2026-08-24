@@ -230,6 +230,20 @@ function logTrackedVendorWebsiteFeedState(feed, stage, extra = {}) {
   );
 }
 
+function getTrackedVendorWebsiteFeedDebugSnapshot(feed) {
+  return {
+    feedId: String(feed?.id || ""),
+    name: feed?.name || "",
+    rssUrl: feed?.rssUrl || "",
+    sourceType: feed?.sourceType || "",
+    isLandqart: isLandqartNewsFeed(feed),
+    isPolyvantis: isPolyvantisPressFeed(feed),
+    isLinxens: isLinxensNewsFeed(feed),
+    isVtt: isVttNewsFeed(feed),
+    shouldReplace: shouldReplaceArticlesOnSync(feed),
+  };
+}
+
 function matchesWebsiteSourceCandidatePolicy(feed, link) {
   const lowerLink = String(link || "").toLowerCase();
 
@@ -2869,4 +2883,39 @@ export async function processArticleBacklog(limit = 20) {
   }
 
   return pendingArticles.length;
+}
+
+export async function inspectTrackedVendorWebsiteFeed(feed) {
+  const snapshot = getTrackedVendorWebsiteFeedDebugSnapshot(feed);
+  if (!isTrackedVendorWebsiteFeed(feed)) {
+    return {
+      ...snapshot,
+      matchedTrackedVendorFeed: false,
+      extractor: "generic",
+      extractedCount: 0,
+      sampleItems: [],
+    };
+  }
+
+  const items = await extractWebsiteItems(feed);
+  return {
+    ...snapshot,
+    matchedTrackedVendorFeed: true,
+    extractor: snapshot.isLandqart
+      ? "landqart"
+      : snapshot.isPolyvantis
+        ? "polyvantis"
+        : snapshot.isLinxens
+          ? "linxens"
+          : snapshot.isVtt
+            ? "vtt"
+            : "generic",
+    extractedCount: items.length,
+    sampleItems: items.slice(0, 5).map((item) => ({
+      title: item.title || "",
+      link: item.link || "",
+      isoDate: item.isoDate || item.pubDate || "",
+      contentSnippet: sanitizeFeedText(item.contentSnippet || "", "").slice(0, 280),
+    })),
+  };
 }
