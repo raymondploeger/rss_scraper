@@ -130,36 +130,71 @@ function isCraneCurrencyNewsroomFeed(feed) {
   );
 }
 
+function normalizeWebsiteFeedSignature(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\/(www\.)?/, "")
+    .replace(/[?#].*$/, "")
+    .replace(/\/+$/, "");
+}
+
+function matchesWebsiteFeedSignature(feed, { exactUrls = [], urlFragments = [], exactNames = [] } = {}) {
+  if (!feed) {
+    return false;
+  }
+
+  const normalizedUrl = normalizeWebsiteFeedSignature(feed.rssUrl);
+  const normalizedName = normalizeWebsiteFeedSignature(feed.name);
+
+  if (exactUrls.some((value) => normalizedUrl === normalizeWebsiteFeedSignature(value))) {
+    return true;
+  }
+
+  if (urlFragments.some((value) => normalizedUrl.includes(normalizeWebsiteFeedSignature(value)))) {
+    return true;
+  }
+
+  if (exactNames.some((value) => normalizedName === normalizeWebsiteFeedSignature(value))) {
+    return true;
+  }
+
+  return false;
+}
+
 function isLandqartNewsFeed(feed) {
-  return (
-    Boolean(feed) &&
-    (String(feed.rssUrl || "").trim().toLowerCase() === LANDQART_NEWS_URL.toLowerCase() ||
-      String(feed.name || "").trim().toLowerCase() === "landqart news")
-  );
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: [LANDQART_NEWS_URL],
+    urlFragments: ["landqart.com/en/stories/news"],
+    exactNames: ["Landqart News"],
+  });
 }
 
 function isPolyvantisPressFeed(feed) {
-  return (
-    Boolean(feed) &&
-    (String(feed.rssUrl || "").trim().toLowerCase() === POLYVANTIS_PRESS_URL.toLowerCase() ||
-      String(feed.name || "").trim().toLowerCase() === "polyvantis press")
-  );
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: [POLYVANTIS_PRESS_URL],
+    urlFragments: ["polyvantis.com/en/press"],
+    exactNames: ["POLYVANTIS Press"],
+  });
 }
 
 function isLinxensNewsFeed(feed) {
-  return (
-    Boolean(feed) &&
-    (String(feed.rssUrl || "").trim().toLowerCase() === LINXENS_NEWS_URL.toLowerCase() ||
-      String(feed.name || "").trim().toLowerCase() === "linxens news & events")
-  );
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: [LINXENS_NEWS_URL],
+    urlFragments: ["linxens.com/en/news-events"],
+    exactNames: ["Linxens News & Events"],
+  });
 }
 
 function isVttNewsFeed(feed) {
-  return (
-    Boolean(feed) &&
-    (String(feed.rssUrl || "").trim().toLowerCase() === VTT_NEWS_URL.toLowerCase() ||
-      String(feed.name || "").trim().toLowerCase() === "vtt news and stories")
-  );
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: [VTT_NEWS_URL],
+    urlFragments: [
+      "vttresearch.com/en/news-stories/news-and-stories",
+      "vttresearch.com/en/news-and-ideas",
+    ],
+    exactNames: ["VTT News and Stories"],
+  });
 }
 
 function shouldReplaceArticlesOnSync(feed) {
@@ -2175,24 +2210,28 @@ async function extractWebsiteItems(feed) {
   }
 
   if (isLandqartNewsFeed(feed)) {
+    console.log(`Using dedicated website extractor: landqart for source ${feed.id}`);
     const items = await extractLandqartNewsItems(feed, $, fetchedUrl);
     console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
     return items;
   }
 
   if (isPolyvantisPressFeed(feed)) {
+    console.log(`Using dedicated website extractor: polyvantis for source ${feed.id}`);
     const items = await extractPolyvantisPressItems(feed, $, fetchedUrl);
     console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
     return items;
   }
 
   if (isLinxensNewsFeed(feed)) {
+    console.log(`Using dedicated website extractor: linxens for source ${feed.id}`);
     const items = await extractLinxensNewsItems(feed, $, fetchedUrl);
     console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
     return items;
   }
 
   if (isVttNewsFeed(feed)) {
+    console.log(`Using dedicated website extractor: vtt for source ${feed.id}`);
     const items = await extractVttNewsItems(feed, $, fetchedUrl);
     console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
     return items;
