@@ -1496,7 +1496,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "favorites-vendors-refresh-collapse-199";
+const APP_BUILD = "favorites-list-full-render-200";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -25699,7 +25699,7 @@ function renderFavoritesPanel() {
   }
 
   const fragment = document.createDocumentFragment();
-  records.slice(0, 8).forEach((record) => {
+  records.forEach((record) => {
     const row = document.createElement("div");
     row.className = "saved-article-item";
 
@@ -57914,6 +57914,7 @@ function renderArticlesFallback(error) {
 }
 
 function renderArticles() {
+  runtime.renderedFavoriteArticleLookup.clear();
   const shouldDebugFeedRender = DEBUG_FEED_FILTER;
   const shouldDebugPersonalDashboard = DEBUG_PERSONAL_DASHBOARD && hasPersonalDashboardSelections();
   const feedRenderStartedAt = shouldDebugFeedRender ? performance.now() : 0;

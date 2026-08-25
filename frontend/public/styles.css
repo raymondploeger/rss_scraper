@@ -1028,6 +1028,10 @@ h3 {
 .saved-articles-list {
   display: grid;
   gap: 10px;
+  max-height: min(48vh, 520px);
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
 }
 
 .saved-article-item {
