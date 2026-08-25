@@ -375,6 +375,35 @@ function getProfessionalGuardRunLocalArticleIdentity(article) {
   return String(identity || "").trim();
 }
 
+function getPreferredArticleOpenUrl(article) {
+  const rawLink = String(article?.link || "").trim();
+  const rawCanonicalLink = String(article?.canonicalLink || "").trim();
+  if (!rawLink) {
+    return rawCanonicalLink;
+  }
+  if (!rawCanonicalLink) {
+    return rawLink;
+  }
+
+  try {
+    const linkUrl = new URL(rawLink, window.location.origin);
+    const canonicalUrl = new URL(rawCanonicalLink, window.location.origin);
+    const normalizedLinkHost = linkUrl.hostname.replace(/^www\./i, "").toLowerCase();
+    const normalizedCanonicalHost = canonicalUrl.hostname.replace(/^www\./i, "").toLowerCase();
+    const sameDocumentTarget =
+      normalizedLinkHost === normalizedCanonicalHost &&
+      linkUrl.pathname === canonicalUrl.pathname &&
+      linkUrl.search === canonicalUrl.search;
+    if (sameDocumentTarget) {
+      return rawLink;
+    }
+  } catch {
+    return rawLink || rawCanonicalLink;
+  }
+
+  return rawCanonicalLink || rawLink;
+}
+
 function buildProfessionalGuardRunLocalOptionSignature(run, assessmentType, options = {}) {
   return JSON.stringify({
     assessmentType: String(assessmentType || ""),
@@ -1466,7 +1495,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "bing-placeholder-fallback-images-194";
+const APP_BUILD = "vendor-link-canonical-fallback-195";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -53813,7 +53842,9 @@ function renderArticleCard(article) {
     card.classList.add("article-card--sources-expanded");
   }
 
-  link.href = article.canonicalLink || article.link;
+  link.href = getPreferredArticleOpenUrl(article);
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
   image.src = finalImageSrc || PLACEHOLDER_IMAGE;
   image.alt = article.title || "Article thumbnail";
   image.loading = "lazy";
@@ -53897,7 +53928,7 @@ function renderArticleCard(article) {
 
       row.append(header, sourceTitle);
 
-      const sourceLink = sourceArticle.canonicalLink || sourceArticle.link;
+      const sourceLink = getPreferredArticleOpenUrl(sourceArticle);
       if (sourceLink) {
         const openLink = document.createElement("a");
         openLink.className = "grouped-source-open";
