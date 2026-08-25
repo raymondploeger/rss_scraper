@@ -1497,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "favorites-saved-articles-collapsible-197";
+const APP_BUILD = "favorites-clear-all-198";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -6611,6 +6611,7 @@ const elements = {
   personalDashboardClear: document.getElementById("personal-dashboard-clear"),
   favoritesCount: document.getElementById("favorites-count"),
   favoritesCollapseToggle: document.getElementById("favorites-collapse-toggle"),
+  favoritesClearAll: document.getElementById("favorites-clear-all"),
   favoritesToggle: document.getElementById("favorites-toggle"),
   favoritesPanelContent: document.getElementById("favorites-panel-content"),
   favoritesList: document.getElementById("favorites-list"),
@@ -25565,6 +25566,11 @@ function saveFavoriteArticles() {
   window.localStorage.setItem(FAVORITE_ARTICLES_STORAGE_KEY, JSON.stringify(state.favoriteArticles));
 }
 
+function clearAllFavoriteArticles() {
+  state.favoriteArticles = [];
+  saveFavoriteArticles();
+}
+
 function syncFavoritesPanelVisibility() {
   if (!elements.favoritesPanelContent || !elements.favoritesCollapseToggle) {
     return;
@@ -25649,7 +25655,8 @@ function renderFavoritesPanel() {
     !elements.favoritesCount ||
     !elements.favoritesToggle ||
     !elements.favoritesEmptyState ||
-    !elements.favoritesCollapseToggle
+    !elements.favoritesCollapseToggle ||
+    !elements.favoritesClearAll
   ) {
     return;
   }
@@ -25658,6 +25665,7 @@ function renderFavoritesPanel() {
   elements.favoritesToggle.textContent = state.filters.favoritesOnly ? "Show all" : "Show saved";
   elements.favoritesToggle.setAttribute("aria-pressed", String(Boolean(state.filters.favoritesOnly)));
   elements.favoritesCollapseToggle.hidden = records.length === 0;
+  elements.favoritesClearAll.hidden = records.length === 0;
   elements.favoritesList.innerHTML = "";
   elements.favoritesEmptyState.hidden = records.length > 0;
   elements.favoritesList.hidden = records.length === 0;
@@ -58995,6 +59003,23 @@ function bindEvents() {
         FAVORITES_PANEL_COLLAPSED_STORAGE_KEY,
         String(state.favoritesPanelCollapsed)
       );
+    });
+  }
+
+  if (elements.favoritesClearAll) {
+    elements.favoritesClearAll.addEventListener("click", () => {
+      if (!state.favoriteArticles.length) {
+        return;
+      }
+      const confirmed = window.confirm("Clear all saved articles?");
+      if (!confirmed) {
+        return;
+      }
+      clearAllFavoriteArticles();
+      state.filters.favoritesOnly = false;
+      renderFavoritesPanel();
+      renderSummary();
+      scheduleRenderArticles("favorites-clear-all", { mode: "frame" });
     });
   }
 
