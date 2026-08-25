@@ -1,7 +1,6 @@
 const PLACEHOLDER_IMAGE = "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image";
 const THEME_STORAGE_KEY = "rss-monitor-theme";
 const FEED_PANEL_COLLAPSED_STORAGE_KEY = "feedPanelCollapsed";
-const FAVORITES_PANEL_COLLAPSED_STORAGE_KEY = "favoritesPanelCollapsed";
 const ALERT_SNAPSHOT_STORAGE_KEY = "prevSnapshot";
 const ALERT_DEDUPE_STORAGE_KEY = "recentAlertKeys";
 const ALERT_ARTICLE_FILTER_STORAGE_KEY = "activeAlertArticleFilter";
@@ -1497,7 +1496,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "favorites-clear-all-198";
+const APP_BUILD = "favorites-vendors-refresh-collapse-199";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -6538,6 +6537,7 @@ const runtime = {
   personalDashboardScoreMap: new Map(),
   activeProductionDecisionLedger: null,
   latestProductionDecisionLedgerSummary: null,
+  renderedFavoriteArticleLookup: new Map(),
   paginationContextKey: "",
   scheduledRenderFrame: 0,
   scheduledRenderTimeout: 0,
@@ -25555,11 +25555,7 @@ function loadFavoriteArticles() {
 }
 
 function isFavoritesPanelCollapsed() {
-  try {
-    return window.localStorage.getItem(FAVORITES_PANEL_COLLAPSED_STORAGE_KEY) !== "false";
-  } catch {
-    return true;
-  }
+  return true;
 }
 
 function saveFavoriteArticles() {
@@ -25628,7 +25624,10 @@ function handleFavoriteArticleButton(button) {
     return false;
   }
   const favoriteId = button.dataset.favoriteId || "";
-  const article = state.articles.find((candidate) => getFavoriteArticleIdentity(candidate) === favoriteId);
+  const article =
+    state.articles.find((candidate) => getFavoriteArticleIdentity(candidate) === favoriteId) ||
+    runtime.renderedFavoriteArticleLookup.get(favoriteId) ||
+    null;
   if (!article) {
     return false;
   }
@@ -54139,11 +54138,15 @@ function renderArticleCard(article) {
 
   if (favoriteButton) {
     const saved = isFavoriteArticle(article);
-    favoriteButton.dataset.favoriteId = getFavoriteArticleIdentity(article);
+    const favoriteIdentity = getFavoriteArticleIdentity(article);
+    favoriteButton.dataset.favoriteId = favoriteIdentity;
     favoriteButton.dataset.saved = String(saved);
     favoriteButton.setAttribute("aria-pressed", String(saved));
     favoriteButton.setAttribute("aria-label", saved ? "Remove saved article" : "Save article");
     favoriteButton.textContent = saved ? "Saved" : "Save";
+    if (favoriteIdentity) {
+      runtime.renderedFavoriteArticleLookup.set(favoriteIdentity, article);
+    }
   }
 
   if (card && isGroupedSourcesExpanded && groupedSources.length) {
@@ -59019,10 +59022,6 @@ function bindEvents() {
     elements.favoritesCollapseToggle.addEventListener("click", () => {
       state.favoritesPanelCollapsed = !state.favoritesPanelCollapsed;
       syncFavoritesPanelVisibility();
-      window.localStorage.setItem(
-        FAVORITES_PANEL_COLLAPSED_STORAGE_KEY,
-        String(state.favoritesPanelCollapsed)
-      );
     });
   }
 
