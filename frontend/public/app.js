@@ -1496,7 +1496,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "favorites-feed-mode-shows-all-saved-203";
+const APP_BUILD = "favorites-memory-strategy-204";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -7256,7 +7256,13 @@ function resolveCandidateStrategy(normalizedFilterState, candidatePoolContext = 
   let expectedCompleteness = "partial";
   let expectedCandidateSource = "legacy global in-memory candidate source";
 
-  if (hasDate) {
+  if (filters.favoritesOnly) {
+    strategy = "favorites_memory_pool";
+    reason = "favorites-only view active";
+    sourceScope = "all_feeds";
+    expectedCompleteness = "complete";
+    expectedCandidateSource = "full in-memory article snapshot";
+  } else if (hasDate) {
     strategy = "date_scoped_pool";
     reason = "date filter active";
     sourceScope = hasFeedScope ? "selected_feed" : "all_feeds";
@@ -7348,15 +7354,18 @@ function resolveCandidateSource(candidateStrategy, normalizedFilterState, candid
   let supported = true;
 
   if (
+    strategy === "favorites_memory_pool" ||
     strategy === "dashboard_targeted_pool" ||
     strategy === "backend_query_pool" ||
     strategy === "search_scoped_pool" ||
     strategy === "date_scoped_pool"
   ) {
-    sourceType = "backend_query";
-    sourceName = "Backend article query";
-    provider = "/api/articles";
-    legacyBranch = "backend-query";
+    if (strategy !== "favorites_memory_pool") {
+      sourceType = "backend_query";
+      sourceName = "Backend article query";
+      provider = "/api/articles";
+      legacyBranch = "backend-query";
+    }
   } else if (strategy === "selected_feed_full_pool" || strategy === "selected_feed_dashboard_full_pool") {
     sourceType = "selected_feed_backend";
     sourceName = "Selected feed article pool";
@@ -7597,6 +7606,11 @@ function resolveCandidateProvider(candidateStrategy, candidateSource, normalized
     providerId = "selected_feed_provider";
     providerType = "backend_or_cache";
   } else if (
+    strategy === "favorites_memory_pool"
+  ) {
+    providerId = "global_memory_provider";
+    providerType = "memory";
+  } else if (
     sourceType === "backend_query" ||
     legacyBranch === "backend-query" ||
     strategy === "backend_query_pool" ||
@@ -7671,6 +7685,10 @@ function buildStrategyExecutionPlan(candidateStrategy, candidateProvider, normal
     dispatchMode = "selected_feed_full_pool_then_legacy";
     selectedProvider = "selected_feed_provider";
     executionReason = "selected feed full pool feature flag can attempt before legacy provider dispatch";
+  } else if (candidateStrategy?.strategy === "favorites_memory_pool") {
+    dispatchMode = "global_memory";
+    selectedProvider = "global_memory_provider";
+    executionReason = "favorites-only view must use full in-memory article snapshot";
   } else if (useBackendQuery) {
     dispatchMode = "backend_query";
     selectedProvider = "backend_query_provider";
