@@ -25623,6 +25623,28 @@ function toggleFavoriteArticle(article) {
   return true;
 }
 
+function handleFavoriteArticleButton(button) {
+  if (!(button instanceof HTMLElement)) {
+    return false;
+  }
+  const favoriteId = button.dataset.favoriteId || "";
+  const article = state.articles.find((candidate) => getFavoriteArticleIdentity(candidate) === favoriteId);
+  if (!article) {
+    return false;
+  }
+  const saved = toggleFavoriteArticle(article);
+  button.dataset.saved = String(saved);
+  button.setAttribute("aria-pressed", String(saved));
+  button.setAttribute("aria-label", saved ? "Remove saved article" : "Save article");
+  button.textContent = saved ? "Saved" : "Save";
+  renderFavoritesPanel();
+  renderSummary();
+  if (state.filters.favoritesOnly && !saved) {
+    scheduleRenderArticles("favorites-remove", { mode: "frame" });
+  }
+  return true;
+}
+
 function setFavoritesOnlyFilter(enabled) {
   state.filters.favoritesOnly = Boolean(enabled);
   renderSummary();
@@ -58616,6 +58638,18 @@ async function importDmvFeeds() {
 }
 
 function bindEvents() {
+  document.addEventListener("click", (event) => {
+    const favoriteButton = event.target instanceof Element
+      ? event.target.closest("[data-favorite-id]")
+      : null;
+    if (!favoriteButton || elements.articlesGrid?.contains(favoriteButton)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    handleFavoriteArticleButton(favoriteButton);
+  });
+
   if (elements.connectionStatus) {
     elements.connectionStatus.addEventListener("click", async (event) => {
       const target = event.target instanceof Element ? event.target.closest("[data-apply-refresh]") : null;
@@ -58643,21 +58677,7 @@ function bindEvents() {
       }
       event.preventDefault();
       event.stopPropagation();
-      const favoriteId = favoriteButton.dataset.favoriteId || "";
-      const article = state.articles.find((candidate) => getFavoriteArticleIdentity(candidate) === favoriteId);
-      if (!article) {
-        return;
-      }
-      const saved = toggleFavoriteArticle(article);
-      favoriteButton.dataset.saved = String(saved);
-      favoriteButton.setAttribute("aria-pressed", String(saved));
-      favoriteButton.setAttribute("aria-label", saved ? "Remove saved article" : "Save article");
-      favoriteButton.textContent = saved ? "Saved" : "Save";
-      renderFavoritesPanel();
-      renderSummary();
-      if (state.filters.favoritesOnly && !saved) {
-        scheduleRenderArticles("favorites-remove", { mode: "frame" });
-      }
+      handleFavoriteArticleButton(favoriteButton);
     });
     elements.articlesGrid.addEventListener("mouseenter", () => {
       runtime.articleGridHovered = true;
