@@ -1007,6 +1007,17 @@ h3 {
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.saved-articles-content {
+  display: grid;
+  gap: 10px;
+}
+
+.saved-articles-content[hidden] {
+  display: none !important;
 }
 
 .saved-articles-empty {

@@ -1,6 +1,7 @@
 const PLACEHOLDER_IMAGE = "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image";
 const THEME_STORAGE_KEY = "rss-monitor-theme";
 const FEED_PANEL_COLLAPSED_STORAGE_KEY = "feedPanelCollapsed";
+const FAVORITES_PANEL_COLLAPSED_STORAGE_KEY = "favoritesPanelCollapsed";
 const ALERT_SNAPSHOT_STORAGE_KEY = "prevSnapshot";
 const ALERT_DEDUPE_STORAGE_KEY = "recentAlertKeys";
 const ALERT_ARTICLE_FILTER_STORAGE_KEY = "activeAlertArticleFilter";
@@ -1496,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "favorites-saved-articles-196";
+const APP_BUILD = "favorites-saved-articles-collapsible-197";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -6463,6 +6464,7 @@ const state = {
     explicitlyCleared: false,
   },
   favoriteArticles: [],
+  favoritesPanelCollapsed: true,
   filters: {
     search: "",
     topic: "",
@@ -6608,7 +6610,9 @@ const elements = {
   personalDashboardInterests: document.getElementById("personal-dashboard-interests"),
   personalDashboardClear: document.getElementById("personal-dashboard-clear"),
   favoritesCount: document.getElementById("favorites-count"),
+  favoritesCollapseToggle: document.getElementById("favorites-collapse-toggle"),
   favoritesToggle: document.getElementById("favorites-toggle"),
+  favoritesPanelContent: document.getElementById("favorites-panel-content"),
   favoritesList: document.getElementById("favorites-list"),
   favoritesEmptyState: document.getElementById("favorites-empty-state"),
   advancedFiltersToggle: document.getElementById("advanced-filters-toggle"),
@@ -25549,8 +25553,26 @@ function loadFavoriteArticles() {
   }
 }
 
+function isFavoritesPanelCollapsed() {
+  try {
+    return window.localStorage.getItem(FAVORITES_PANEL_COLLAPSED_STORAGE_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
+
 function saveFavoriteArticles() {
   window.localStorage.setItem(FAVORITE_ARTICLES_STORAGE_KEY, JSON.stringify(state.favoriteArticles));
+}
+
+function syncFavoritesPanelVisibility() {
+  if (!elements.favoritesPanelContent || !elements.favoritesCollapseToggle) {
+    return;
+  }
+  const collapsed = Boolean(state.favoritesPanelCollapsed);
+  elements.favoritesPanelContent.hidden = collapsed;
+  elements.favoritesCollapseToggle.textContent = collapsed ? "Show list" : "Hide list";
+  elements.favoritesCollapseToggle.setAttribute("aria-expanded", String(!collapsed));
 }
 
 function isFavoriteArticle(article) {
@@ -25622,16 +25644,27 @@ function getFavoriteArticleRecords() {
 }
 
 function renderFavoritesPanel() {
-  if (!elements.favoritesList || !elements.favoritesCount || !elements.favoritesToggle || !elements.favoritesEmptyState) {
+  if (
+    !elements.favoritesList ||
+    !elements.favoritesCount ||
+    !elements.favoritesToggle ||
+    !elements.favoritesEmptyState ||
+    !elements.favoritesCollapseToggle
+  ) {
     return;
   }
   const records = getFavoriteArticleRecords();
   elements.favoritesCount.textContent = String(records.length);
   elements.favoritesToggle.textContent = state.filters.favoritesOnly ? "Show all" : "Show saved";
   elements.favoritesToggle.setAttribute("aria-pressed", String(Boolean(state.filters.favoritesOnly)));
+  elements.favoritesCollapseToggle.hidden = records.length === 0;
   elements.favoritesList.innerHTML = "";
   elements.favoritesEmptyState.hidden = records.length > 0;
   elements.favoritesList.hidden = records.length === 0;
+  if (!records.length) {
+    state.favoritesPanelCollapsed = true;
+  }
+  syncFavoritesPanelVisibility();
   if (!records.length) {
     return;
   }
@@ -58954,6 +58987,17 @@ function bindEvents() {
     });
   }
 
+  if (elements.favoritesCollapseToggle) {
+    elements.favoritesCollapseToggle.addEventListener("click", () => {
+      state.favoritesPanelCollapsed = !state.favoritesPanelCollapsed;
+      syncFavoritesPanelVisibility();
+      window.localStorage.setItem(
+        FAVORITES_PANEL_COLLAPSED_STORAGE_KEY,
+        String(state.favoritesPanelCollapsed)
+      );
+    });
+  }
+
   if (elements.favoritesList) {
     elements.favoritesList.addEventListener("click", (event) => {
       const removeButton = event.target instanceof Element
@@ -59638,6 +59682,7 @@ async function init() {
   console.info("APP_BUILD", APP_BUILD);
   loadTheme();
   loadFavoriteArticles();
+  state.favoritesPanelCollapsed = isFavoritesPanelCollapsed();
   loadActiveTags();
   loadKeywordFilters();
   loadPersonalDashboardPreferences();

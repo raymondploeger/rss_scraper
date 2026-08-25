@@ -51,11 +51,22 @@
               </div>
               <div class="saved-articles-actions">
                 <span id="favorites-count" class="pill">0</span>
+                <button
+                  id="favorites-collapse-toggle"
+                  class="ghost-button"
+                  type="button"
+                  aria-expanded="false"
+                  aria-controls="favorites-panel-content"
+                >
+                  Show list
+                </button>
                 <button id="favorites-toggle" class="ghost-button" type="button" aria-pressed="false">Show saved</button>
               </div>
             </div>
-            <div id="favorites-empty-state" class="saved-articles-empty">Save articles to keep them handy.</div>
-            <div id="favorites-list" class="saved-articles-list" aria-live="polite"></div>
+            <div id="favorites-panel-content" class="saved-articles-content" hidden>
+              <div id="favorites-empty-state" class="saved-articles-empty">Save articles to keep them handy.</div>
+              <div id="favorites-list" class="saved-articles-list" aria-live="polite"></div>
+            </div>
           </section>
 
           <section id="profile-builder-panel" class="panel profile-builder-panel">
@@ -439,6 +450,6 @@
       </article>
     </template>
 
-    <script type="module" src="/app.js?v=20260825-favorites-196"></script>
+    <script type="module" src="/app.js?v=20260825-favorites-197"></script>
   </body>
 </html>
