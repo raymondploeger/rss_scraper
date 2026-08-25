@@ -54459,6 +54459,7 @@ function renderSkeletons() {
 
 function shouldUseBackendArticleQuery() {
   return Boolean(
+    !state.filters.favoritesOnly &&
     !state.filters.articleIds?.length &&
     !state.filters.dmvFeedId &&
     !state.filters.canadaDmvFeedPath &&
