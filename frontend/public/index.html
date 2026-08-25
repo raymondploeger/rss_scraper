@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>IN Security Document Scraper</title>
     <link rel="icon" type="image/png" href="/images/in-group-logo.png" />
-    <link rel="stylesheet" href="/styles.css?v=20260810-intelligence-profile-ux-104" />
+    <link rel="stylesheet" href="/styles.css?v=20260825-favorites-196" />
   </head>
   <body>
     <div id="notification-region" class="notification-region" aria-live="polite" aria-label="Notifications"></div>
@@ -41,6 +41,21 @@
         <aside class="sidebar">
           <section class="panel profile-summary-panel" aria-label="Selected intelligence profile">
             <div id="personal-dashboard-summary" class="personal-dashboard-summary" aria-live="polite"></div>
+          </section>
+
+          <section class="panel saved-articles-panel" aria-label="Saved articles">
+            <div class="panel-head saved-articles-head">
+              <div>
+                <p class="eyebrow">Saved Articles</p>
+                <h2>Favorites</h2>
+              </div>
+              <div class="saved-articles-actions">
+                <span id="favorites-count" class="pill">0</span>
+                <button id="favorites-toggle" class="ghost-button" type="button" aria-pressed="false">Show saved</button>
+              </div>
+            </div>
+            <div id="favorites-empty-state" class="saved-articles-empty">Save articles to keep them handy.</div>
+            <div id="favorites-list" class="saved-articles-list" aria-live="polite"></div>
           </section>
 
           <section id="profile-builder-panel" class="panel profile-builder-panel">
@@ -405,6 +420,7 @@
 
     <template id="article-card-template">
       <article class="article-card">
+        <button class="article-favorite-button" type="button" aria-pressed="false" title="Save article">Save</button>
         <a class="article-link" target="_blank" rel="noopener noreferrer">
           <div class="article-media">
             <img class="article-image" alt="" loading="lazy" />
@@ -423,6 +439,6 @@
       </article>
     </template>
 
-    <script type="module" src="/app.js?v=20260814-intelligence-profile-ux-182"></script>
+    <script type="module" src="/app.js?v=20260825-favorites-196"></script>
   </body>
 </html>

@@ -994,6 +994,68 @@ h3 {
   padding: 0;
 }
 
+.saved-articles-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.saved-articles-head {
+  margin-bottom: 0;
+}
+
+.saved-articles-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.saved-articles-empty {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.saved-articles-list {
+  display: grid;
+  gap: 10px;
+}
+
+.saved-article-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.saved-article-copy {
+  min-width: 0;
+}
+
+.saved-article-link {
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.saved-article-link:hover {
+  color: var(--accent);
+}
+
+.saved-article-meta {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.saved-article-remove {
+  align-self: start;
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+}
+
 .add-source-content {
   display: grid;
   gap: 14px;
@@ -2360,6 +2422,36 @@ h3 {
   box-shadow: 0 24px 56px rgba(15, 23, 42, 0.12);
 }
 
+.article-favorite-button {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 2;
+  min-width: 44px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.68);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+
+.article-favorite-button[data-saved="true"] {
+  background: rgba(22, 96, 255, 0.92);
+  border-color: rgba(22, 96, 255, 0.92);
+  color: #fff;
+}
+
+.article-favorite-button:focus-visible {
+  outline: 2px solid rgba(22, 96, 255, 0.32);
+  outline-offset: 2px;
+}
+
 .article-link {
   display: grid;
   min-height: 100%;
@@ -2410,6 +2502,18 @@ h3 {
 :root[data-theme="dark"] .article-thumbnail-state {
   background: rgba(7, 17, 26, 0.86);
   color: var(--text);
+}
+
+:root[data-theme="dark"] .article-favorite-button {
+  background: rgba(7, 17, 26, 0.86);
+  border-color: rgba(143, 164, 191, 0.28);
+  color: var(--text);
+}
+
+:root[data-theme="dark"] .article-favorite-button[data-saved="true"] {
+  background: rgba(22, 96, 255, 0.92);
+  border-color: rgba(22, 96, 255, 0.92);
+  color: #fff;
 }
 
 .article-topic {
@@ -2773,6 +2877,11 @@ button.grouped-sources-more {
 
   .feed-item {
     grid-template-columns: 1fr;
+  }
+
+  .saved-articles-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .feed-item-side,

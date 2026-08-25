@@ -5,6 +5,7 @@ const ALERT_SNAPSHOT_STORAGE_KEY = "prevSnapshot";
 const ALERT_DEDUPE_STORAGE_KEY = "recentAlertKeys";
 const ALERT_ARTICLE_FILTER_STORAGE_KEY = "activeAlertArticleFilter";
 const ACTIVITY_LOG_STORAGE_KEY = "dashboardActivityLog";
+const FAVORITE_ARTICLES_STORAGE_KEY = "favoriteArticles";
 const ALERT_DEDUPE_WINDOW_MS = 10 * 60 * 1000;
 const ACTIVITY_LOG_TTL_MS = 24 * 60 * 60 * 1000;
 const POLLING_INTERVAL_MS = 60 * 60 * 1000;
@@ -1495,7 +1496,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "vendor-link-canonical-fallback-195";
+const APP_BUILD = "favorites-saved-articles-196";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -6461,6 +6462,7 @@ const state = {
     identityDocumentAuthorityStrictness: "focused",
     explicitlyCleared: false,
   },
+  favoriteArticles: [],
   filters: {
     search: "",
     topic: "",
@@ -6473,6 +6475,7 @@ const state = {
     canadaDmvAll: false,
     sourceGroup: "all",
     date: "",
+    favoritesOnly: false,
     articleIds: [],
     alertLabel: "",
   },
@@ -6604,6 +6607,10 @@ const elements = {
   personalDashboardGroups: document.getElementById("personal-dashboard-groups"),
   personalDashboardInterests: document.getElementById("personal-dashboard-interests"),
   personalDashboardClear: document.getElementById("personal-dashboard-clear"),
+  favoritesCount: document.getElementById("favorites-count"),
+  favoritesToggle: document.getElementById("favorites-toggle"),
+  favoritesList: document.getElementById("favorites-list"),
+  favoritesEmptyState: document.getElementById("favorites-empty-state"),
   advancedFiltersToggle: document.getElementById("advanced-filters-toggle"),
   advancedFiltersContent: document.getElementById("advanced-filters-content"),
   feedFilter: document.getElementById("feed-filter"),
@@ -7144,6 +7151,7 @@ function createNormalizedFilterState() {
       tag: state.filters.tag || "",
       signal: state.filters.signalCategory || "",
       date: state.filters.date || "",
+      favoritesOnly: Boolean(state.filters.favoritesOnly),
       articleIds: Array.isArray(state.filters.articleIds) ? state.filters.articleIds.slice() : [],
       alertLabel: state.filters.alertLabel || "",
     },
@@ -7186,6 +7194,7 @@ function serializeNormalizedFilterState(normalizedFilterState) {
       tag: normalizedFilterState.filters?.tag || "",
       signal: normalizedFilterState.filters?.signal || "",
       date: normalizedFilterState.filters?.date || "",
+      favoritesOnly: Boolean(normalizedFilterState.filters?.favoritesOnly),
       articleIds: normalizedFilterState.filters?.articleIds || [],
       alertLabel: normalizedFilterState.filters?.alertLabel || "",
     },
@@ -8050,6 +8059,7 @@ function getActiveFilterPipelineSnapshot(normalizedFilterState = createNormalize
     tag: normalizedFilterState.filters.tag,
     signal: normalizedFilterState.filters.signal,
     date: normalizedFilterState.filters.date,
+    favoritesOnly: Boolean(normalizedFilterState.filters.favoritesOnly),
     sourceGroup: normalizedFilterState.feed.sourceGroup,
     selectedPersonalInterests: normalizedFilterState.dashboard.selectedInterests,
     sortingMode: normalizedFilterState.sorting.mode,
@@ -8066,6 +8076,7 @@ function getLegacyFilterPipelineSnapshot() {
     topic: state.filters.topic || "",
     tag: state.filters.tag || "",
     signal: state.filters.signalCategory || "",
+    favoritesOnly: Boolean(state.filters.favoritesOnly),
     date: state.filters.date || "",
     sourceGroup: state.filters.sourceGroup || "all",
     selectedPersonalInterests: normalizePersonalDashboardInterests(state.personalDashboard.interests),
@@ -25485,6 +25496,180 @@ function applyTheme(theme) {
 
 function loadTheme() {
   applyTheme(window.localStorage.getItem(THEME_STORAGE_KEY) || "light");
+}
+
+function getFavoriteArticleIdentity(article) {
+  return String(
+    article?.id ||
+    article?.articleId ||
+    article?.canonicalLink ||
+    article?.link ||
+    ""
+  ).trim();
+}
+
+function createFavoriteArticleRecord(article, savedAt = new Date().toISOString()) {
+  if (!article) {
+    return null;
+  }
+  const id = getFavoriteArticleIdentity(article);
+  if (!id) {
+    return null;
+  }
+  return {
+    id,
+    title: String(article.title || "Untitled article"),
+    link: String(article.link || ""),
+    canonicalLink: String(article.canonicalLink || article.link || ""),
+    pubDate: String(article.pubDate || ""),
+    source: String(article.source || ""),
+    feedName: String(getFeedName(article.feedId) || article.feedName || ""),
+    thumbnail: String(article.thumbnail || ""),
+    savedAt: String(savedAt || new Date().toISOString()),
+  };
+}
+
+function normalizeFavoriteArticleRecord(record) {
+  const normalized = createFavoriteArticleRecord(record, record?.savedAt);
+  if (!normalized) {
+    return null;
+  }
+  normalized.savedAt = String(record?.savedAt || normalized.savedAt || new Date().toISOString());
+  return normalized;
+}
+
+function loadFavoriteArticles() {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(FAVORITE_ARTICLES_STORAGE_KEY) || "[]");
+    state.favoriteArticles = Array.isArray(stored)
+      ? stored.map(normalizeFavoriteArticleRecord).filter(Boolean)
+      : [];
+  } catch {
+    state.favoriteArticles = [];
+  }
+}
+
+function saveFavoriteArticles() {
+  window.localStorage.setItem(FAVORITE_ARTICLES_STORAGE_KEY, JSON.stringify(state.favoriteArticles));
+}
+
+function isFavoriteArticle(article) {
+  const identity = getFavoriteArticleIdentity(article);
+  return Boolean(identity && state.favoriteArticles.some((record) => record.id === identity));
+}
+
+function syncFavoriteArticlesWithLoadedArticles() {
+  if (!Array.isArray(state.favoriteArticles) || !state.favoriteArticles.length) {
+    return;
+  }
+  const articleById = new Map(
+    (Array.isArray(state.articles) ? state.articles : [])
+      .map((article) => [getFavoriteArticleIdentity(article), article])
+      .filter(([id]) => Boolean(id))
+  );
+  state.favoriteArticles = state.favoriteArticles
+    .map((record) => {
+      const liveArticle = articleById.get(record.id);
+      return liveArticle ? createFavoriteArticleRecord(liveArticle, record.savedAt) : normalizeFavoriteArticleRecord(record);
+    })
+    .filter(Boolean)
+    .sort((left, right) => new Date(right.savedAt || 0) - new Date(left.savedAt || 0));
+  saveFavoriteArticles();
+}
+
+function toggleFavoriteArticle(article) {
+  const record = createFavoriteArticleRecord(article);
+  if (!record) {
+    return false;
+  }
+  const existingIndex = state.favoriteArticles.findIndex((entry) => entry.id === record.id);
+  if (existingIndex >= 0) {
+    state.favoriteArticles.splice(existingIndex, 1);
+    saveFavoriteArticles();
+    return false;
+  }
+  state.favoriteArticles = [record, ...state.favoriteArticles]
+    .filter((entry, index, entries) => entries.findIndex((candidate) => candidate.id === entry.id) === index)
+    .sort((left, right) => new Date(right.savedAt || 0) - new Date(left.savedAt || 0));
+  saveFavoriteArticles();
+  return true;
+}
+
+function setFavoritesOnlyFilter(enabled) {
+  state.filters.favoritesOnly = Boolean(enabled);
+  renderSummary();
+  renderFavoritesPanel();
+  scheduleRenderArticles("favorites-filter", { mode: "frame" });
+}
+
+function getFavoriteArticlesCount() {
+  return Array.isArray(state.favoriteArticles) ? state.favoriteArticles.length : 0;
+}
+
+function getFavoriteArticleRecords() {
+  const articleById = new Map(
+    (Array.isArray(state.articles) ? state.articles : [])
+      .map((article) => [getFavoriteArticleIdentity(article), article])
+      .filter(([id]) => Boolean(id))
+  );
+  return (Array.isArray(state.favoriteArticles) ? state.favoriteArticles : [])
+    .map((record) => {
+      const liveArticle = articleById.get(record.id);
+      return liveArticle ? createFavoriteArticleRecord(liveArticle, record.savedAt) : record;
+    })
+    .filter(Boolean)
+    .sort((left, right) => new Date(right.savedAt || 0) - new Date(left.savedAt || 0));
+}
+
+function renderFavoritesPanel() {
+  if (!elements.favoritesList || !elements.favoritesCount || !elements.favoritesToggle || !elements.favoritesEmptyState) {
+    return;
+  }
+  const records = getFavoriteArticleRecords();
+  elements.favoritesCount.textContent = String(records.length);
+  elements.favoritesToggle.textContent = state.filters.favoritesOnly ? "Show all" : "Show saved";
+  elements.favoritesToggle.setAttribute("aria-pressed", String(Boolean(state.filters.favoritesOnly)));
+  elements.favoritesList.innerHTML = "";
+  elements.favoritesEmptyState.hidden = records.length > 0;
+  elements.favoritesList.hidden = records.length === 0;
+  if (!records.length) {
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  records.slice(0, 8).forEach((record) => {
+    const row = document.createElement("div");
+    row.className = "saved-article-item";
+
+    const copy = document.createElement("div");
+    copy.className = "saved-article-copy";
+
+    const link = document.createElement("a");
+    link.className = "saved-article-link";
+    link.href = getPreferredArticleOpenUrl(record);
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = record.title || "Untitled article";
+
+    const meta = document.createElement("div");
+    meta.className = "saved-article-meta";
+    meta.textContent = [record.source || "Unknown source", formatDate(record.pubDate), record.feedName]
+      .filter(Boolean)
+      .join(" • ");
+
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.className = "ghost-button saved-article-remove";
+    removeButton.dataset.favoriteRemoveId = record.id;
+    removeButton.textContent = "×";
+    removeButton.title = "Remove saved article";
+    removeButton.setAttribute("aria-label", `Remove saved article ${record.title || ""}`.trim());
+
+    copy.append(link, meta);
+    row.append(copy, removeButton);
+    fragment.appendChild(row);
+  });
+  elements.favoritesList.appendChild(fragment);
 }
 
 function normalizePersonalDashboardInterestId(value) {
@@ -43316,6 +43501,7 @@ function getTodayInFeedSummarySignature() {
     signalCategory: state.filters.signalCategory || "",
     feedId: state.filters.feedId || "",
     sourceGroup: state.filters.sourceGroup || "all",
+    favoritesOnly: Boolean(state.filters.favoritesOnly),
     dashboardMode: state.dashboardMode || "normal",
     includeKeywords: Array.isArray(state.keywordFilters?.include) ? state.keywordFilters.include.slice().sort() : [],
     excludeKeywords: Array.isArray(state.keywordFilters?.exclude) ? state.keywordFilters.exclude.slice().sort() : [],
@@ -45302,6 +45488,28 @@ function renderSummary() {
     fragment.appendChild(card);
   });
 
+  const favoritesCard = elements.summaryCardTemplate.content.cloneNode(true);
+  const favoritesSummaryCard = favoritesCard.querySelector(".summary-card");
+  const favoriteCount = getFavoriteArticlesCount();
+  favoritesCard.querySelector(".summary-label").textContent = "Saved articles";
+  favoritesCard.querySelector(".summary-value").textContent = String(favoriteCount);
+  if (favoriteCount > 0) {
+    favoritesSummaryCard.classList.add("is-clickable");
+    favoritesSummaryCard.classList.toggle("is-active", Boolean(state.filters.favoritesOnly));
+    favoritesSummaryCard.dataset.action = "filter-favorites";
+    favoritesSummaryCard.setAttribute("role", "button");
+    favoritesSummaryCard.setAttribute("tabindex", "0");
+    favoritesSummaryCard.setAttribute("aria-pressed", String(Boolean(state.filters.favoritesOnly)));
+    favoritesSummaryCard.setAttribute("aria-label", "Show saved articles");
+    favoritesSummaryCard.setAttribute("title", "Show saved articles");
+  } else {
+    favoritesSummaryCard.classList.add("is-disabled");
+    favoritesSummaryCard.setAttribute("aria-disabled", "true");
+    favoritesSummaryCard.dataset.disabledReason = " · save articles first";
+    favoritesSummaryCard.setAttribute("title", "Save articles first");
+  }
+  fragment.appendChild(favoritesCard);
+
   const analyticsCard = renderAnalyticsCard();
   if (analyticsCard) {
     fragment.appendChild(analyticsCard);
@@ -45324,6 +45532,18 @@ function applyTodayArticleFilter() {
   elements.dateFilter.value = nextDate;
   renderSummary();
   scheduleRenderArticles("today-filter");
+}
+
+function applyFavoritesArticleFilter() {
+  if (!getFavoriteArticlesCount()) {
+    renderSummary();
+    return;
+  }
+  clearExactArticleFilter();
+  state.filters.favoritesOnly = !state.filters.favoritesOnly;
+  renderSummary();
+  renderFavoritesPanel();
+  scheduleRenderArticles("favorites-filter");
 }
 
 function loadStoredExactArticleFilter() {
@@ -48793,6 +49013,10 @@ function syncFilterUx() {
     addActiveFilterChip(fragment, "Date", state.filters.date, "date");
     advancedSearchActiveCount += 1;
   }
+  if (state.filters.favoritesOnly) {
+    addActiveFilterChip(fragment, "Saved", "Favorites only", "favorites-only");
+    advancedSearchActiveCount += 1;
+  }
   if (sourceSearch) {
     addActiveFilterChip(fragment, "Source search", sourceSearch, "source-search");
   }
@@ -48865,6 +49089,8 @@ function clearActiveFilter(filterKey) {
   } else if (filterKey === "date") {
     state.filters.date = "";
     elements.dateFilter.value = "";
+  } else if (filterKey === "favorites-only") {
+    state.filters.favoritesOnly = false;
   } else if (filterKey === "mode") {
     state.dashboardMode = "normal";
   } else if (filterKey === "source-search" && elements.feedPanelSearch) {
@@ -49458,6 +49684,7 @@ function resetDashboardState() {
   state.filters.canadaDmvAll = false;
   state.filters.sourceGroup = "all";
   state.filters.date = "";
+  state.filters.favoritesOnly = false;
   clearExactArticleFilter({ clearStorage: false });
 
   if (elements.searchFilter) {
@@ -49518,6 +49745,7 @@ function clearSourcePanelView() {
   state.filters.canadaDmvFeedPath = "";
   state.filters.canadaDmvAll = false;
   state.filters.sourceGroup = "all";
+  state.filters.favoritesOnly = false;
   state.dashboardMode = "normal";
 
   if (elements.feedPanelSearch) {
@@ -49823,6 +50051,13 @@ function articleMatchesFilters(article, options = {}) {
     )
   ) {
     return finishFilterTiming(false, "legacy_false_positive_guard");
+  }
+
+  if (
+    state.filters.favoritesOnly &&
+    !measureFilterSegment("favoritesOnly", () => isFavoriteArticle(article))
+  ) {
+    return finishFilterTiming(false, "favorites_only");
   }
 
   const exactArticleIds = Array.isArray(state.filters.articleIds) ? state.filters.articleIds : [];
@@ -53818,6 +54053,7 @@ function patchSimpleArticleGrid(articlesToRender = []) {
 function renderArticleCard(article) {
   const node = elements.articleCardTemplate.content.cloneNode(true);
   const card = node.querySelector(".article-card");
+  const favoriteButton = node.querySelector(".article-favorite-button");
   const link = node.querySelector(".article-link");
   const image = node.querySelector(".article-image");
   const topic = node.querySelector(".article-topic");
@@ -53837,6 +54073,15 @@ function renderArticleCard(article) {
   card.dataset.articleStateKey = articleStateKey;
   card.dataset.articleRenderSignature = articleRenderSignature;
   card.classList.toggle("article-card--grouped", groupedSources.length > 0);
+
+  if (favoriteButton) {
+    const saved = isFavoriteArticle(article);
+    favoriteButton.dataset.favoriteId = getFavoriteArticleIdentity(article);
+    favoriteButton.dataset.saved = String(saved);
+    favoriteButton.setAttribute("aria-pressed", String(saved));
+    favoriteButton.setAttribute("aria-label", saved ? "Remove saved article" : "Save article");
+    favoriteButton.textContent = saved ? "Saved" : "Save";
+  }
 
   if (card && isGroupedSourcesExpanded && groupedSources.length) {
     card.classList.add("article-card--sources-expanded");
@@ -58095,6 +58340,7 @@ function renderArticles() {
 
 function renderDashboard() {
   renderSummary();
+  renderFavoritesPanel();
   renderPersonalDashboard();
   renderFeedOptions();
   renderTagManager();
@@ -58152,6 +58398,7 @@ function applySnapshotPayload(snapshotPayload, options = {}) {
   state.feeds = snapshotPayload.feeds;
   rebuildFeedLookupCaches();
   state.articles = snapshotPayload.normalizedArticles;
+  syncFavoriteArticlesWithLoadedArticles();
   logPersonalDashboardSourceStage("[personal-dashboard-frontend-state]", state.articles, {
     source: "loadSnapshot",
     totalAvailable: snapshotPayload.totalAvailable,
@@ -58346,6 +58593,31 @@ function bindEvents() {
   }
 
   if (elements.articlesGrid) {
+    elements.articlesGrid.addEventListener("click", (event) => {
+      const favoriteButton = event.target instanceof Element
+        ? event.target.closest("[data-favorite-id]")
+        : null;
+      if (!favoriteButton) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const favoriteId = favoriteButton.dataset.favoriteId || "";
+      const article = state.articles.find((candidate) => getFavoriteArticleIdentity(candidate) === favoriteId);
+      if (!article) {
+        return;
+      }
+      const saved = toggleFavoriteArticle(article);
+      favoriteButton.dataset.saved = String(saved);
+      favoriteButton.setAttribute("aria-pressed", String(saved));
+      favoriteButton.setAttribute("aria-label", saved ? "Remove saved article" : "Save article");
+      favoriteButton.textContent = saved ? "Saved" : "Save";
+      renderFavoritesPanel();
+      renderSummary();
+      if (state.filters.favoritesOnly && !saved) {
+        scheduleRenderArticles("favorites-remove", { mode: "frame" });
+      }
+    });
     elements.articlesGrid.addEventListener("mouseenter", () => {
       runtime.articleGridHovered = true;
       markRefreshInteraction("article-grid-hover");
@@ -58676,6 +58948,34 @@ function bindEvents() {
     });
   }
 
+  if (elements.favoritesToggle) {
+    elements.favoritesToggle.addEventListener("click", () => {
+      applyFavoritesArticleFilter();
+    });
+  }
+
+  if (elements.favoritesList) {
+    elements.favoritesList.addEventListener("click", (event) => {
+      const removeButton = event.target instanceof Element
+        ? event.target.closest("[data-favorite-remove-id]")
+        : null;
+      if (!removeButton) {
+        return;
+      }
+      const favoriteId = removeButton.dataset.favoriteRemoveId || "";
+      const existingRecord = state.favoriteArticles.find((record) => record.id === favoriteId);
+      if (!existingRecord) {
+        return;
+      }
+      toggleFavoriteArticle(existingRecord);
+      renderFavoritesPanel();
+      renderSummary();
+      if (state.filters.favoritesOnly) {
+        scheduleRenderArticles("favorites-remove", { mode: "frame" });
+      }
+    });
+  }
+
   elements.feedFilter.addEventListener("change", (event) => {
     clearExactArticleFilter();
     const rawValue = String(event.target.value || "").trim();
@@ -58833,6 +59133,12 @@ function bindEvents() {
     const todayCard = getTodaySummaryCardFromEvent(event);
     if (todayCard) {
       applyTodayArticleFilter();
+      return;
+    }
+
+    const favoritesCard = target?.closest('[data-action="filter-favorites"]');
+    if (favoritesCard) {
+      applyFavoritesArticleFilter();
     }
   });
 
@@ -58874,12 +59180,21 @@ function bindEvents() {
     }
 
     const todayCard = getTodaySummaryCardFromEvent(event);
-    if (!todayCard || (event.key !== "Enter" && event.key !== " ")) {
+    if (todayCard && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      applyTodayArticleFilter();
+      return;
+    }
+
+    const favoritesCard = event.target instanceof Element
+      ? event.target.closest('[data-action="filter-favorites"]')
+      : null;
+    if (!favoritesCard || (event.key !== "Enter" && event.key !== " ")) {
       return;
     }
 
     event.preventDefault();
-    applyTodayArticleFilter();
+    applyFavoritesArticleFilter();
   });
 
   elements.clearFilters.addEventListener("click", () => {
@@ -58894,6 +59209,7 @@ function bindEvents() {
       canadaDmvAll: false,
       sourceGroup: "all",
       date: "",
+      favoritesOnly: false,
       articleIds: [],
       alertLabel: "",
     };
@@ -58926,6 +59242,7 @@ function bindEvents() {
     renderDmvOfficialLink();
     renderDmvModeIndicator();
     renderSummary();
+    renderFavoritesPanel();
     scheduleRenderArticles("clear-filters", { mode: "frame" });
     renderFeedList();
   });
@@ -59320,6 +59637,7 @@ function bindEvents() {
 async function init() {
   console.info("APP_BUILD", APP_BUILD);
   loadTheme();
+  loadFavoriteArticles();
   loadActiveTags();
   loadKeywordFilters();
   loadPersonalDashboardPreferences();
