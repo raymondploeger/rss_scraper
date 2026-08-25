@@ -1496,7 +1496,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "favorites-list-full-render-200";
+const APP_BUILD = "favorites-list-no-height-cap-201";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
