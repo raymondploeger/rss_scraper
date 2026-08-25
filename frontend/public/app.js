@@ -1496,7 +1496,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "favorites-collapse-label-count-202";
+const APP_BUILD = "favorites-feed-mode-shows-all-saved-203";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -45599,13 +45599,61 @@ function applyTodayArticleFilter() {
   scheduleRenderArticles("today-filter");
 }
 
+function clearArticleViewFiltersForFavoritesMode() {
+  clearExactArticleFilter();
+  state.dashboardMode = "normal";
+  state.filters.search = "";
+  state.filters.topic = "";
+  state.filters.tag = "";
+  state.filters.signalCategory = "";
+  state.filters.feedId = "";
+  state.filters.sourceOnly = false;
+  state.filters.dmvFeedId = "";
+  state.filters.canadaDmvFeedPath = "";
+  state.filters.canadaDmvAll = false;
+  state.filters.date = "";
+
+  if (elements.searchFilter) {
+    elements.searchFilter.value = "";
+  }
+  if (elements.topicFilter) {
+    elements.topicFilter.value = "";
+  }
+  if (elements.tagFilter) {
+    elements.tagFilter.value = "";
+  }
+  if (elements.signalFilter) {
+    elements.signalFilter.value = "";
+  }
+  if (elements.feedFilter) {
+    elements.feedFilter.value = "";
+  }
+  if (elements.dmvFeedFilter) {
+    elements.dmvFeedFilter.value = "";
+  }
+  if (elements.canadaDmvFilter) {
+    elements.canadaDmvFilter.value = "";
+  }
+  if (elements.dateFilter) {
+    elements.dateFilter.value = "";
+  }
+  renderFeedList();
+  renderDmvOfficialLink();
+  renderDmvModeIndicator();
+}
+
 function applyFavoritesArticleFilter() {
   if (!getFavoriteArticlesCount()) {
     renderSummary();
     return;
   }
-  clearExactArticleFilter();
-  state.filters.favoritesOnly = !state.filters.favoritesOnly;
+  const nextEnabled = !state.filters.favoritesOnly;
+  if (nextEnabled) {
+    clearArticleViewFiltersForFavoritesMode();
+  } else {
+    clearExactArticleFilter();
+  }
+  state.filters.favoritesOnly = nextEnabled;
   renderSummary();
   renderFavoritesPanel();
   scheduleRenderArticles("favorites-filter");
@@ -50123,6 +50171,10 @@ function articleMatchesFilters(article, options = {}) {
     !measureFilterSegment("favoritesOnly", () => isFavoriteArticle(article))
   ) {
     return finishFilterTiming(false, "favorites_only");
+  }
+
+  if (state.filters.favoritesOnly) {
+    return finishFilterTiming(true, "favorites_only_match");
   }
 
   const exactArticleIds = Array.isArray(state.filters.articleIds) ? state.filters.articleIds : [];
