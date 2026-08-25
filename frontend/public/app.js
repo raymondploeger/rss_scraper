@@ -25795,11 +25795,79 @@ function renderFavoritesOnlyArticles() {
     if (!articlesToRender.length) {
       elements.articlesGrid.innerHTML = `<div class="empty-state">No saved articles yet.</div>`;
     } else {
-      patchSimpleArticleGrid(articlesToRender);
+      const fragment = document.createDocumentFragment();
+      articlesToRender.forEach((article) => {
+        fragment.appendChild(renderSavedArticleCard(article));
+      });
+      elements.articlesGrid.replaceChildren(fragment);
     }
   }
 
   renderPaginationControls(pagination);
+}
+
+function renderSavedArticleCard(article) {
+  const node = elements.articleCardTemplate.content.cloneNode(true);
+  const card = node.querySelector(".article-card");
+  const favoriteButton = node.querySelector(".article-favorite-button");
+  const link = node.querySelector(".article-link");
+  const image = node.querySelector(".article-image");
+  const topic = node.querySelector(".article-topic");
+  const source = node.querySelector(".article-source");
+  const date = node.querySelector(".article-date");
+  const title = node.querySelector(".article-title");
+  const feed = node.querySelector(".article-feed");
+
+  const favoriteIdentity = getFavoriteArticleIdentity(article);
+  if (card) {
+    card.dataset.articleStateKey = favoriteIdentity;
+    card.dataset.articleRenderSignature = [favoriteIdentity, article?.title || "", article?.savedAt || ""].join("|");
+  }
+
+  if (favoriteButton) {
+    favoriteButton.dataset.favoriteId = favoriteIdentity;
+    favoriteButton.dataset.saved = "true";
+    favoriteButton.setAttribute("aria-pressed", "true");
+    favoriteButton.setAttribute("aria-label", "Remove saved article");
+    favoriteButton.textContent = "Saved";
+    if (favoriteIdentity) {
+      runtime.renderedFavoriteArticleLookup.set(favoriteIdentity, article);
+    }
+  }
+
+  if (link) {
+    link.href = getPreferredArticleOpenUrl(article);
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+  }
+  if (image) {
+    image.src = getArticleImageSrc(article) || PLACEHOLDER_IMAGE;
+    image.alt = article.title || "Saved article thumbnail";
+    image.loading = "lazy";
+    image.decoding = "async";
+    image.onerror = () => {
+      image.onerror = null;
+      image.src = PLACEHOLDER_IMAGE;
+    };
+  }
+  if (topic) {
+    topic.textContent = "Saved article";
+  }
+  if (source) {
+    source.textContent = article.source || "Unknown source";
+  }
+  if (date) {
+    date.textContent = formatDate(article.pubDate || article.savedAt);
+  }
+  if (title) {
+    title.textContent = article.title || "Untitled article";
+  }
+  if (feed) {
+    feed.textContent = article.feedName || "Saved article";
+    feed.title = feed.textContent;
+  }
+
+  return node;
 }
 
 function normalizePersonalDashboardInterestId(value) {
