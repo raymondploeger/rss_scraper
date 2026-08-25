@@ -1496,7 +1496,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "favorites-memory-strategy-204";
+const APP_BUILD = "favorites-direct-local-feed-view-205";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -25691,6 +25691,25 @@ function getFavoriteArticleRecords() {
     .sort((left, right) => new Date(right.savedAt || 0) - new Date(left.savedAt || 0));
 }
 
+function getFavoriteArticlesForFeedView() {
+  return getFavoriteArticleRecords()
+    .map((record) => ({
+      id: record.id,
+      articleId: record.id,
+      title: record.title || "Untitled article",
+      link: record.link || record.canonicalLink || "",
+      canonicalLink: record.canonicalLink || record.link || "",
+      pubDate: record.pubDate || record.savedAt || "",
+      source: record.source || "Unknown source",
+      feedName: record.feedName || "",
+      thumbnail: record.thumbnail || "",
+      topic: "",
+      sourceCount: 1,
+      savedAt: record.savedAt || "",
+    }))
+    .sort((left, right) => new Date(right.savedAt || 0) - new Date(left.savedAt || 0));
+}
+
 function renderFavoritesPanel() {
   if (
     !elements.favoritesList ||
@@ -25753,6 +25772,34 @@ function renderFavoritesPanel() {
     fragment.appendChild(row);
   });
   elements.favoritesList.appendChild(fragment);
+}
+
+function renderFavoritesOnlyArticles() {
+  const favoriteArticles = getFavoriteArticlesForFeedView();
+  const pagination = getPaginatedItems(favoriteArticles);
+  const articlesToRender = Array.isArray(pagination.items) ? pagination.items : [];
+
+  syncFilterUx();
+  renderSummary();
+  renderFavoritesPanel();
+
+  if (elements.resultsCount) {
+    elements.resultsCount.textContent = `${pagination.totalCount} results`;
+  }
+
+  if (elements.articlesGrid) {
+    elements.articlesGrid.classList.remove("is-grouped-feed-view");
+    elements.articlesGrid.classList.remove("has-personal-lanes");
+    elements.articlesGrid.innerHTML = "";
+
+    if (!articlesToRender.length) {
+      elements.articlesGrid.innerHTML = `<div class="empty-state">No saved articles yet.</div>`;
+    } else {
+      patchSimpleArticleGrid(articlesToRender);
+    }
+  }
+
+  renderPaginationControls(pagination);
 }
 
 function normalizePersonalDashboardInterestId(value) {
@@ -57989,6 +58036,10 @@ function renderArticlesFallback(error) {
 
 function renderArticles() {
   runtime.renderedFavoriteArticleLookup.clear();
+  if (state.filters.favoritesOnly) {
+    renderFavoritesOnlyArticles();
+    return;
+  }
   const shouldDebugFeedRender = DEBUG_FEED_FILTER;
   const shouldDebugPersonalDashboard = DEBUG_PERSONAL_DASHBOARD && hasPersonalDashboardSelections();
   const feedRenderStartedAt = shouldDebugFeedRender ? performance.now() : 0;
