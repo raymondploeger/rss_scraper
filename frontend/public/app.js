@@ -1496,7 +1496,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "favorites-list-no-height-cap-201";
+const APP_BUILD = "favorites-collapse-label-count-202";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -25572,8 +25572,11 @@ function syncFavoritesPanelVisibility() {
     return;
   }
   const collapsed = Boolean(state.favoritesPanelCollapsed);
+  const favoriteCount = getFavoriteArticlesCount();
   elements.favoritesPanelContent.hidden = collapsed;
-  elements.favoritesCollapseToggle.textContent = collapsed ? "Show list" : "Hide list";
+  elements.favoritesCollapseToggle.textContent = collapsed
+    ? `Show list (${favoriteCount})`
+    : "Hide list";
   elements.favoritesCollapseToggle.setAttribute("aria-expanded", String(!collapsed));
 }
 
