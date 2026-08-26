@@ -26540,15 +26540,12 @@ function renderPersonalDashboardCustomProfileOptions() {
 }
 
 function openFirstSelectedPersonalDashboardGroup() {
-  const activeInterests = new Set(normalizePersonalDashboardInterests(state.personalDashboard.interests));
-  const firstSelectedGroup = getPersonalDashboardSelectedGroups(activeInterests)[0];
-  const groupToOpen = firstSelectedGroup?.id || PERSONAL_DASHBOARD_GROUPS[0]?.id || "";
   state.personalDashboard.editing = true;
-  state.personalDashboard.expandedGroups = groupToOpen ? [groupToOpen] : [];
+  state.personalDashboard.expandedGroups = [];
   renderPersonalDashboard();
   elements.profileBuilderPanel?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   elements.personalDashboardGroups
-    ?.querySelector(`[data-personal-group-toggle="${groupToOpen}"]`)
+    ?.querySelector("[data-personal-group-toggle]")
     ?.focus();
 }
 
