@@ -18,7 +18,7 @@ No Firebase is used anywhere in the runtime.
 ```env
 HOST=0.0.0.0
 CLIENT_ORIGIN=*
-POLL_CRON=*/5 * * * *
+POLL_CRON=0 * * * *
 POLL_CONCURRENCY=5
 REQUEST_TIMEOUT_MS=10000
 SCRAPE_RETRY_ATTEMPTS=2
