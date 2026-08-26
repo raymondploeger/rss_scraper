@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>IN Security Document Scraper</title>
     <link rel="icon" type="image/png" href="/images/in-group-logo.png" />
-    <link rel="stylesheet" href="/styles.css?v=20260825-favorites-196" />
+    <link rel="stylesheet" href="/styles.css?v=20260826-ux-layout-206" />
   </head>
   <body>
     <div id="notification-region" class="notification-region" aria-live="polite" aria-label="Notifications"></div>
@@ -35,8 +35,6 @@
         </div>
       </header>
 
-      <section class="summary-grid" id="summary-grid" aria-live="polite"></section>
-
       <section class="dashboard-layout">
         <aside class="sidebar">
           <section class="panel profile-summary-panel" aria-label="Selected intelligence profile">
@@ -48,9 +46,9 @@
               <div>
                 <p class="eyebrow">Saved Articles</p>
                 <h2>Favorites</h2>
+                <p class="saved-articles-countline"><strong id="favorites-count">0</strong> saved articles</p>
               </div>
               <div class="saved-articles-actions">
-                <span id="favorites-count" class="pill">0</span>
                 <button
                   id="favorites-collapse-toggle"
                   class="ghost-button"
@@ -404,6 +402,8 @@
           </div>
         </main>
       </section>
+
+      <section class="summary-grid summary-grid--secondary" id="summary-grid" aria-live="polite"></section>
     </div>
 
     <template id="summary-card-template">
@@ -451,6 +451,6 @@
       </article>
     </template>
 
-    <script type="module" src="/app.js?v=20260825-favorites-205"></script>
+    <script type="module" src="/app.js?v=20260826-ux-layout-206"></script>
   </body>
 </html>

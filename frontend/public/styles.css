@@ -970,6 +970,10 @@ h3 {
   margin: 22px 0 24px;
 }
 
+.summary-grid--secondary {
+  margin: 28px 0 0;
+}
+
 .panel,
 .summary-card,
 .article-card,
@@ -1003,12 +1007,39 @@ h3 {
   margin-bottom: 0;
 }
 
+.saved-articles-countline {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.saved-articles-countline strong {
+  color: var(--text);
+  font-size: 1.05rem;
+}
+
 .saved-articles-actions {
   display: inline-flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+#profile-builder-panel {
+  order: 1;
+}
+
+.profile-summary-panel {
+  order: 2;
+}
+
+.saved-articles-panel {
+  order: 3;
+}
+
+#feed-panel {
+  order: 4;
 }
 
 .saved-articles-content {

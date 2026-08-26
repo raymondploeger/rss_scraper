@@ -1496,7 +1496,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "favorites-direct-local-feed-view-205";
+const APP_BUILD = "ux-summary-lower-favorites-inline-206";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -45636,6 +45636,9 @@ function renderSummary() {
   const todayFilterActive = state.filters.date === toDateInputValue(new Date());
 
   SUMMARY_METRICS.forEach((item) => {
+    if (item.key === "savedArticles") {
+      return;
+    }
     const card = elements.summaryCardTemplate.content.cloneNode(true);
     const summaryCard = card.querySelector(".summary-card");
     card.querySelector(".summary-label").textContent = item.key === "articlesToday" && hasProfile
@@ -45685,29 +45688,6 @@ function renderSummary() {
 
     fragment.appendChild(card);
   });
-
-  const favoritesCard = elements.summaryCardTemplate.content.cloneNode(true);
-  const favoritesSummaryCard = favoritesCard.querySelector(".summary-card");
-  const favoriteCount = getFavoriteArticlesCount();
-  favoritesCard.querySelector(".summary-label").textContent = "Saved articles";
-  favoritesCard.querySelector(".summary-value").textContent = String(favoriteCount);
-  if (favoriteCount > 0) {
-    favoritesSummaryCard.classList.add("is-clickable");
-    favoritesSummaryCard.classList.toggle("is-active", Boolean(state.filters.favoritesOnly));
-    favoritesSummaryCard.dataset.action = "filter-favorites";
-    favoritesSummaryCard.setAttribute("role", "button");
-    favoritesSummaryCard.setAttribute("tabindex", "0");
-    favoritesSummaryCard.setAttribute("aria-pressed", String(Boolean(state.filters.favoritesOnly)));
-    favoritesSummaryCard.setAttribute("aria-label", "Show saved articles");
-    favoritesSummaryCard.setAttribute("title", "Show saved articles");
-  } else {
-    favoritesSummaryCard.classList.add("is-disabled");
-    favoritesSummaryCard.setAttribute("aria-disabled", "true");
-    favoritesSummaryCard.dataset.disabledReason = " · save articles first";
-    favoritesSummaryCard.setAttribute("title", "Save articles first");
-  }
-  fragment.appendChild(favoritesCard);
-
   const analyticsCard = renderAnalyticsCard();
   if (analyticsCard) {
     fragment.appendChild(analyticsCard);
