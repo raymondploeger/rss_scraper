@@ -3977,19 +3977,6 @@ const PERSONAL_DASHBOARD_MAIN_DOMAIN_GROUP_IDS = new Set([
 const PERSONAL_DASHBOARD_SHARED_GROUP_ID = "security_printing";
 const PERSONAL_DASHBOARD_GROUPS = [
   {
-    id: "banknote_intelligence",
-    label: "Banknote Intelligence",
-    description: "Banknotes broaden your feed. Themes refine it.",
-    interests: [
-      { id: "banknotes", label: "Banknotes", strong: ["banknote", "banknotes", "currency note", "commemorative note", "note issuance"], weak: ["cash", "payment"], topicSignals: ["banknotes"], tagSignals: ["banknotes"], eventTypes: ["banknote_withdrawal", "new_banknote_series", "banknote_redesign", "commemorative_issue"] },
-      { id: "counterfeit", label: "Counterfeiting", strong: ["counterfeit", "counterfeit notes", "counterfeit banknote", "fake note", "forged banknote"], weak: ["forged note"], eventTypes: ["counterfeit_banknotes", "central_bank_warning"], signalIds: ["counterfeit"] },
-      { id: "rollout", label: "Issuance", strong: ["new banknote launch", "banknote rollout", "circulation rollout", "new series launch", "release", "issued", "issue", "commemorative note issue", "new banknote released"], weak: ["rollout", "launch", "introduction"], signalIds: ["rollout", "new-releases", "commemorative"] },
-      { id: "withdrawal", label: "Withdrawal", strong: ["withdrawn from circulation", "withdrawal", "demonetisation", "demonetization", "legal tender deadline"], weak: ["withdrawn", "retired"], eventTypes: ["banknote_withdrawal", "demonetisation"], signalIds: ["withdrawal"] },
-      { id: "redesign", label: "Designs", strong: ["redesign", "new design", "new family", "new portrait", "new artwork"], weak: ["design refresh"], signalIds: ["redesign"] },
-      { id: "central_bank", label: "Central bank", strong: ["central bank", "national bank", "reserve bank", "issuer bank", "bank of england", "ecb", "rbi"], weak: ["bank notice"], eventTypes: ["central_bank_warning", "banknote_withdrawal", "new_banknote_series"] },
-    ],
-  },
-  {
     id: "identity_documents",
     label: "Identity Documents",
     description: "Document types broaden your feed. Themes refine it.",
@@ -4003,6 +3990,42 @@ const PERSONAL_DASHBOARD_GROUPS = [
       { id: "issuance", label: "Issuance", strong: ["issuance", "passport issuance", "passport renewal", "document issuance"], weak: ["issued", "renewal"], signalIds: ["regulations", "delay"] },
       { id: "icao", label: "ICAO", strong: ["icao", "doc 9303", "mrz", "passport verification"], weak: ["travel document security"], signalIds: ["technology"] },
       { id: "border_control", label: "Border control", strong: ["border control", "border checks", "immigration control", "entry exit system"], weak: ["customs"], signalIds: ["border-control", "delay", "rollout"] },
+    ],
+  },
+  {
+    id: "banknote_intelligence",
+    label: "Banknotes",
+    description: "Banknotes broaden your feed. Themes refine it.",
+    interests: [
+      { id: "banknotes", label: "Banknotes", strong: ["banknote", "banknotes", "currency note", "commemorative note", "note issuance"], weak: ["cash", "payment"], topicSignals: ["banknotes"], tagSignals: ["banknotes"], eventTypes: ["banknote_withdrawal", "new_banknote_series", "banknote_redesign", "commemorative_issue"] },
+      { id: "counterfeit", label: "Counterfeiting", strong: ["counterfeit", "counterfeit notes", "counterfeit banknote", "fake note", "forged banknote"], weak: ["forged note"], eventTypes: ["counterfeit_banknotes", "central_bank_warning"], signalIds: ["counterfeit"] },
+      { id: "rollout", label: "Issuance", strong: ["new banknote launch", "banknote rollout", "circulation rollout", "new series launch", "release", "issued", "issue", "commemorative note issue", "new banknote released"], weak: ["rollout", "launch", "introduction"], signalIds: ["rollout", "new-releases", "commemorative"] },
+      { id: "withdrawal", label: "Withdrawal", strong: ["withdrawn from circulation", "withdrawal", "demonetisation", "demonetization", "legal tender deadline"], weak: ["withdrawn", "retired"], eventTypes: ["banknote_withdrawal", "demonetisation"], signalIds: ["withdrawal"] },
+      { id: "redesign", label: "Designs", strong: ["redesign", "new design", "new family", "new portrait", "new artwork"], weak: ["design refresh"], signalIds: ["redesign"] },
+      { id: "central_bank", label: "Central bank", strong: ["central bank", "national bank", "reserve bank", "issuer bank", "bank of england", "ecb", "rbi"], weak: ["bank notice"], eventTypes: ["central_bank_warning", "banknote_withdrawal", "new_banknote_series"] },
+    ],
+  },
+  {
+    id: "security_printing",
+    label: "Security Features",
+    description: "Printing, inks, holography, substrates, materials and anti-counterfeit features.",
+    interests: [
+      { id: "security_features", label: "Security features", strong: ["security feature", "security features", "security thread", "watermark", "hologram"], weak: ["uv feature"], signalIds: ["security-features", "counterfeit"] },
+      { id: "security_printing", label: "Security printing", strong: ["security printing", "security printer", "banknote printing"], weak: ["secure print"], eventTypes: ["banknote_production", "security_feature_update"] },
+      { id: "security_inks", label: "Security inks", strong: ["security ink", "security inks", "optically variable ink"], weak: ["specialty ink"] },
+      { id: "holography", label: "Holography", strong: ["holography", "holographic", "hologram"], weak: ["diffractive"] },
+      { id: "ovd", label: "Optically variable features", strong: ["optically variable device", "optically variable feature"], weak: ["diffractive feature", "optical security feature"] },
+      { id: "dovid", label: "DOVID", strong: ["dovid", "diffractive optically variable image device", "diffractive feature"], weak: ["diffractive"] },
+      { id: "micro_optics", label: "Micro optics", strong: ["micro optics", "micro-optics", "micro optical"], weak: ["optical security"] },
+      { id: "intaglio", label: "Intaglio", strong: ["intaglio", "engraved printing"], weak: ["engraved"] },
+      { id: "polycarbonate", label: "Polycarbonate", strong: ["polycarbonate", "polycarbonate card", "polycarbonate cards", "polycarbonate id", "polycarbonate id card", "polycarbonate identity card", "polycarbonate data page", "polycarbonate datapage", "pc data page", "pc datapage", "laser engraved polycarbonate", "laser-engraved polycarbonate", "laser engraving", "laser engraved data page", "multilayer polycarbonate", "multi-layer polycarbonate", "fused polycarbonate", "polycarbonate substrate", "polycarbonate passport", "polycarbonate document"], weak: ["datapage", "card substrate"] },
+      { id: "polymer", label: "Polymer", strong: ["polymer note", "polymer banknote", "polymer banknotes", "polymer substrate", "polymer document"], weak: ["polymer"], eventTypes: ["polymer_migration", "banknote_redesign"] },
+      { id: "laminate", label: "Laminate", strong: ["laminate", "laminated", "lamination", "security laminate", "secure laminate", "passport laminate", "id card laminate", "identity card laminate", "protective laminate", "protective overlay", "security overlay", "secure overlay", "holographic laminate", "holographic overlay", "transparent overlay", "overlay film", "laminated data page", "laminated passport", "laminated identity document"], weak: ["laminated"] },
+      { id: "substrate", label: "Substrates", strong: ["substrate", "polymer substrate", "paper substrate", "document substrate", "secure substrate"], weak: ["substrate migration"], eventTypes: ["polymer_migration", "security_feature_update"] },
+      { id: "biometrics", label: "Biometrics", hidden: true, strong: ["biometric", "biometrics", "facial image", "fingerprint template", "iris image", "biometric passport", "biometric id"], weak: ["biometric data"], signalIds: ["biometric"] },
+      { id: "personalization", label: "Personalization", strong: ["personalization", "secure personalization", "card personalization"], weak: ["document personalization"] },
+      { id: "secure_documents", label: "Secure documents", strong: ["secure documents", "document security", "secure document"], weak: ["travel document security"] },
+      { id: "anti_counterfeit", label: "Anti-counterfeiting", strong: ["anti-counterfeit", "anti counterfeit", "counterfeit prevention"], weak: ["authentication feature"] },
     ],
   },
   {
@@ -4085,29 +4108,6 @@ const PERSONAL_DASHBOARD_GROUPS = [
       { id: "liveness", label: "Liveness / anti-spoofing", hidden: true, strong: ["liveness", "liveness detection", "presentation attack"], weak: ["face match"] },
       { id: "age_verification", label: "Age assurance", strong: ["age verification", "age assurance", "age estimation", "age check"], weak: ["minor safety", "age gate"] },
       { id: "artificial_intelligence", label: "AI for identity", strong: ["artificial intelligence", "ai identity", "ai-assisted identity"], weak: ["machine learning", "ai"] },
-    ],
-  },
-  {
-    id: "security_printing",
-    label: "Security Features",
-    description: "Printing, inks, holography, substrates, materials and anti-counterfeit features.",
-    interests: [
-      { id: "security_features", label: "Security features", strong: ["security feature", "security features", "security thread", "watermark", "hologram"], weak: ["uv feature"], signalIds: ["security-features", "counterfeit"] },
-      { id: "security_printing", label: "Security printing", strong: ["security printing", "security printer", "banknote printing"], weak: ["secure print"], eventTypes: ["banknote_production", "security_feature_update"] },
-      { id: "security_inks", label: "Security inks", strong: ["security ink", "security inks", "optically variable ink"], weak: ["specialty ink"] },
-      { id: "holography", label: "Holography", strong: ["holography", "holographic", "hologram"], weak: ["diffractive"] },
-      { id: "ovd", label: "Optically variable features", strong: ["optically variable device", "optically variable feature"], weak: ["diffractive feature", "optical security feature"] },
-      { id: "dovid", label: "DOVID", strong: ["dovid", "diffractive optically variable image device", "diffractive feature"], weak: ["diffractive"] },
-      { id: "micro_optics", label: "Micro optics", strong: ["micro optics", "micro-optics", "micro optical"], weak: ["optical security"] },
-      { id: "intaglio", label: "Intaglio", strong: ["intaglio", "engraved printing"], weak: ["engraved"] },
-      { id: "polycarbonate", label: "Polycarbonate", strong: ["polycarbonate", "polycarbonate card", "polycarbonate cards", "polycarbonate id", "polycarbonate id card", "polycarbonate identity card", "polycarbonate data page", "polycarbonate datapage", "pc data page", "pc datapage", "laser engraved polycarbonate", "laser-engraved polycarbonate", "laser engraving", "laser engraved data page", "multilayer polycarbonate", "multi-layer polycarbonate", "fused polycarbonate", "polycarbonate substrate", "polycarbonate passport", "polycarbonate document"], weak: ["datapage", "card substrate"] },
-      { id: "polymer", label: "Polymer", strong: ["polymer note", "polymer banknote", "polymer banknotes", "polymer substrate", "polymer document"], weak: ["polymer"], eventTypes: ["polymer_migration", "banknote_redesign"] },
-      { id: "laminate", label: "Laminate", strong: ["laminate", "laminated", "lamination", "security laminate", "secure laminate", "passport laminate", "id card laminate", "identity card laminate", "protective laminate", "protective overlay", "security overlay", "secure overlay", "holographic laminate", "holographic overlay", "transparent overlay", "overlay film", "laminated data page", "laminated passport", "laminated identity document"], weak: ["laminated"] },
-      { id: "substrate", label: "Substrates", strong: ["substrate", "polymer substrate", "paper substrate", "document substrate", "secure substrate"], weak: ["substrate migration"], eventTypes: ["polymer_migration", "security_feature_update"] },
-      { id: "biometrics", label: "Biometrics", hidden: true, strong: ["biometric", "biometrics", "facial image", "fingerprint template", "iris image", "biometric passport", "biometric id"], weak: ["biometric data"], signalIds: ["biometric"] },
-      { id: "personalization", label: "Personalization", strong: ["personalization", "secure personalization", "card personalization"], weak: ["document personalization"] },
-      { id: "secure_documents", label: "Secure documents", strong: ["secure documents", "document security", "secure document"], weak: ["travel document security"] },
-      { id: "anti_counterfeit", label: "Anti-counterfeiting", strong: ["anti-counterfeit", "anti counterfeit", "counterfeit prevention"], weak: ["authentication feature"] },
     ],
   },
 ];
@@ -25321,7 +25321,7 @@ function getFallbackImageTheme(article) {
   ].filter(Boolean).join(" ").toLowerCase();
 
   if (/\b(banknote|banknotes|currency|central bank|cash)\b/.test(fingerprint)) {
-    return { label: "Banknote Intelligence", accent: "#f2b84b", background: "#172033" };
+    return { label: "Banknotes", accent: "#f2b84b", background: "#172033" };
   }
   if (/\b(passport|id card|identity document|visa|residence permit|border|icao)\b/.test(fingerprint)) {
     return { label: "Identity Documents", accent: "#6ea8ff", background: "#142034" };
