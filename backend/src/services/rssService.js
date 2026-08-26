@@ -3134,8 +3134,19 @@ export async function syncAllFeeds() {
 
   for (let index = 0; index < feeds.length; index += batchSize) {
     const batch = feeds.slice(index, index + batchSize);
+    const batchNumber = Math.floor(index / batchSize) + 1;
+    const totalBatches = Math.max(1, Math.ceil(feeds.length / batchSize));
+    console.log(
+      `[syncAllFeeds] starting batch ${batchNumber}/${totalBatches} size=${batch.length} concurrency=${batchSize}`
+    );
     const batchResults = await Promise.all(batch.map((feed) => syncFeed(feed)));
     results.push(...batchResults);
+    console.log(
+      `[syncAllFeeds] completed batch ${batchNumber}/${totalBatches} processed=${results.length}/${feeds.length}`
+    );
+    if (index + batchSize < feeds.length) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
   }
 
   broadcast("refresh:complete", {
