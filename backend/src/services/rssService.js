@@ -387,6 +387,10 @@ function matchesWebsiteSourceCandidatePolicy(feed, link) {
     );
   }
 
+  if (isKinegramInsightsFeed(feed)) {
+    return lowerLink.includes("/events-insights/details/");
+  }
+
   return true;
 }
 
@@ -2878,18 +2882,41 @@ async function upsertArticle(article) {
     return { created: true, article: created };
   }
 
+  const nextPubDate = article.pubDate ? new Date(article.pubDate) : null;
+  const currentPubDate = existing.pubDate ? new Date(existing.pubDate) : null;
+  const shouldUpdatePubDate =
+    nextPubDate &&
+    !Number.isNaN(nextPubDate.getTime()) &&
+    (!currentPubDate || Number.isNaN(currentPubDate.getTime()) || nextPubDate.getTime() !== currentPubDate.getTime());
   const shouldBackfillThumbnail =
     !hasUsableStoredThumbnail(existing.thumbnail) &&
     hasUsableStoredThumbnail(article.thumbnail);
   const shouldBackfillSnippet = (!existing.contentSnippet || existing.contentSnippet.length < 40) && article.contentSnippet;
+  const shouldRefreshCoreMetadata =
+    shouldUpdatePubDate ||
+    (article.title && article.title !== existing.title) ||
+    (article.link && article.link !== existing.link) ||
+    (article.canonicalLink && article.canonicalLink !== existing.canonicalLink) ||
+    (article.source && article.source !== existing.source) ||
+    (article.feedName && article.feedName !== existing.feedName) ||
+    (article.summary && article.summary !== existing.summary) ||
+    (article.summaryShort && article.summaryShort !== existing.summaryShort) ||
+    (article.contentSnippet && article.contentSnippet !== existing.contentSnippet);
 
-  if (shouldBackfillThumbnail || shouldBackfillSnippet) {
+  if (shouldBackfillThumbnail || shouldBackfillSnippet || shouldRefreshCoreMetadata) {
     const updated = await updateArticle(existing.id, {
+      title: article.title || existing.title,
+      normalizedTitle: article.normalizedTitle || existing.normalizedTitle,
+      link: article.link || existing.link,
+      canonicalLink: article.canonicalLink || existing.canonicalLink,
+      source: article.source || existing.source,
+      feedName: article.feedName || existing.feedName,
+      pubDate: shouldUpdatePubDate ? nextPubDate.toISOString() : existing.pubDate,
       thumbnail: shouldBackfillThumbnail ? article.thumbnail : existing.thumbnail,
-      contentSnippet: shouldBackfillSnippet ? article.contentSnippet : existing.contentSnippet,
-      summary: shouldBackfillSnippet ? article.summary : existing.summary,
-      summaryShort: shouldBackfillSnippet ? article.summaryShort : existing.summaryShort,
-      keywords: existing.keywords?.length ? existing.keywords : article.keywords,
+      contentSnippet: article.contentSnippet || existing.contentSnippet,
+      summary: article.summary || existing.summary,
+      summaryShort: article.summaryShort || existing.summaryShort,
+      keywords: article.keywords?.length ? article.keywords : existing.keywords,
       fetchStatus: article.fetchStatus
     });
     broadcast("article:update", { type: "article:update", article: updated });
