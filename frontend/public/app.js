@@ -26657,15 +26657,20 @@ function renderPersonalDashboard() {
       `;
     } else {
       const localSaveLabel = getPersonalDashboardLocalSaveLabel(0);
+      const startProfileAction = editingProfile
+        ? ""
+        : `
+          <button class="ghost-button personal-dashboard-summary-edit" type="button" data-edit-personal-profile>
+            Start Profile
+          </button>
+        `;
       elements.personalDashboardSummary.innerHTML = `
         <div class="personal-dashboard-summary-header">
           <div class="personal-dashboard-summary-title-row">
             <span class="personal-dashboard-summary-label">Your profile</span>
             <span class="personal-dashboard-summary-save-state">${escapeHtml(localSaveLabel)}</span>
           </div>
-          <button class="ghost-button personal-dashboard-summary-edit" type="button" data-edit-personal-profile>
-            Start Profile
-          </button>
+          ${startProfileAction}
         </div>
         <div class="personal-dashboard-summary-main">
           <span class="personal-dashboard-summary-empty">No interests selected yet.</span>
