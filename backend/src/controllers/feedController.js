@@ -443,7 +443,9 @@ export async function refreshFeed(request, response) {
 export async function refreshAll(request, response) {
   try {
     console.log("Manual refresh requested for all feeds");
-    void syncAllFeeds();
+    void syncAllFeeds().catch((error) => {
+      console.error("Background refresh all error:", error?.stack || error);
+    });
     response.status(202).json({ started: true, message: "Feed refresh started in the background" });
   } catch (error) {
     console.error("Refresh all error:", error?.stack || error);

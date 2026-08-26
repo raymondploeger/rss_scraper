@@ -46,6 +46,9 @@ const parser = new Parser({
   }
 });
 
+const inFlightFeedSyncs = new Map();
+let allFeedsSyncPromise = null;
+
 const SICPA_NEWSROOM_URL = "https://www.sicpa.com/all-press-releases";
 const SURYS_NEWSROOM_URL = "https://surys.com/surys-blog/";
 const IQ_STRUCTURES_NEWSROOM_URL = "https://www.iqstructures.com/en/blog";
@@ -3003,7 +3006,7 @@ function queueThumbnailEnrichment(article) {
   });
 }
 
-export async function syncFeed(feed) {
+async function runFeedSync(feed) {
   const startedAt = new Date();
   let newArticles = 0;
   const vendorFeedLogLabel = getVendorFeedLogLabel(feed);
@@ -3154,39 +3157,70 @@ export async function syncFeed(feed) {
   }
 }
 
-export async function syncAllFeeds() {
-  console.log("Starting refresh for all active feeds");
-  const feeds = await listFeedRecords({ activeOnly: true, order: "ASC" });
-  const batchSize = env.pollConcurrency;
-  const results = [];
-
-  for (let index = 0; index < feeds.length; index += batchSize) {
-    const batch = feeds.slice(index, index + batchSize);
-    const batchNumber = Math.floor(index / batchSize) + 1;
-    const totalBatches = Math.max(1, Math.ceil(feeds.length / batchSize));
-    console.log(
-      `[syncAllFeeds] starting batch ${batchNumber}/${totalBatches} size=${batch.length} concurrency=${batchSize}`
-    );
-    const batchResults = await Promise.all(batch.map((feed) => syncFeed(feed)));
-    results.push(...batchResults);
-    console.log(
-      `[syncAllFeeds] completed batch ${batchNumber}/${totalBatches} processed=${results.length}/${feeds.length}`
-    );
-    if (index + batchSize < feeds.length) {
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
+export async function syncFeed(feed) {
+  const syncKey = String(feed?.id || feed?.rssUrl || "");
+  if (syncKey && inFlightFeedSyncs.has(syncKey)) {
+    console.log(`[syncFeed] Reusing in-flight sync for ${syncKey}`);
+    return inFlightFeedSyncs.get(syncKey);
   }
 
-  broadcast("refresh:complete", {
-    type: "refresh:complete",
-    feedsProcessed: feeds.length,
-    results
+  const promise = runFeedSync(feed).finally(() => {
+    if (syncKey) {
+      inFlightFeedSyncs.delete(syncKey);
+    }
   });
 
-  return {
-    feedsProcessed: feeds.length,
-    results
-  };
+  if (syncKey) {
+    inFlightFeedSyncs.set(syncKey, promise);
+  }
+
+  return promise;
+}
+
+export async function syncAllFeeds() {
+  if (allFeedsSyncPromise) {
+    console.log("[syncAllFeeds] Reusing in-flight full refresh");
+    return allFeedsSyncPromise;
+  }
+
+  allFeedsSyncPromise = (async () => {
+    console.log("Starting refresh for all active feeds");
+    const feeds = await listFeedRecords({ activeOnly: true, order: "ASC" });
+    const batchSize = env.pollConcurrency;
+    const results = [];
+
+    for (let index = 0; index < feeds.length; index += batchSize) {
+      const batch = feeds.slice(index, index + batchSize);
+      const batchNumber = Math.floor(index / batchSize) + 1;
+      const totalBatches = Math.max(1, Math.ceil(feeds.length / batchSize));
+      console.log(
+        `[syncAllFeeds] starting batch ${batchNumber}/${totalBatches} size=${batch.length} concurrency=${batchSize}`
+      );
+      const batchResults = await Promise.all(batch.map((feed) => syncFeed(feed)));
+      results.push(...batchResults);
+      console.log(
+        `[syncAllFeeds] completed batch ${batchNumber}/${totalBatches} processed=${results.length}/${feeds.length}`
+      );
+      if (index + batchSize < feeds.length) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+    }
+
+    broadcast("refresh:complete", {
+      type: "refresh:complete",
+      feedsProcessed: feeds.length,
+      results
+    });
+
+    return {
+      feedsProcessed: feeds.length,
+      results
+    };
+  })().finally(() => {
+    allFeedsSyncPromise = null;
+  });
+
+  return allFeedsSyncPromise;
 }
 
 export async function syncTrackedVendorWebsiteFeeds() {
