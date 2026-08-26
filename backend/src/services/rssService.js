@@ -927,6 +927,7 @@ function extractWebsitePublishedDate($, pageUrl = "") {
     'meta[name="publish-date"]',
     'meta[name="pubdate"]',
     'meta[name="date"]',
+    ".news-date",
     "time[datetime]",
     "time",
     "[datetime]",
@@ -2513,8 +2514,8 @@ async function extractKinegramInsightsItems(feed, $, pageUrl) {
 
     const resolvedDate =
       (validated.isoDate ? new Date(validated.isoDate) : null) ||
-      candidate.date ||
-      (await fetchWebsitePublishedDateForLink(resolvedLink));
+      (await fetchWebsitePublishedDateForLink(resolvedLink)) ||
+      candidate.date;
 
     validatedItems.push({
       title: validated.title || candidate.title,
