@@ -48,6 +48,8 @@ function buildArticleWhere(filters = {}) {
       { source: { contains: filters.search, mode: "insensitive" } },
       { topic: { contains: filters.search, mode: "insensitive" } },
       { feedName: { contains: filters.search, mode: "insensitive" } },
+      { link: { contains: filters.search, mode: "insensitive" } },
+      { canonicalLink: { contains: filters.search, mode: "insensitive" } },
       { contentSnippet: { contains: filters.search, mode: "insensitive" } },
       ],
     });

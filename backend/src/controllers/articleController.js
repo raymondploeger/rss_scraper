@@ -10,6 +10,8 @@ import { endOfDay, startOfDay } from "../utils/date.js";
 import { toArticleDto, toFeedDto } from "../services/presenterService.js";
 import { isRuntimeReady } from "../services/runtimeState.js";
 
+let articleQueryRequestCounter = 0;
+
 const SIGNAL_QUERY_KEYWORDS = {
   "new-releases": ["issued", "released", "launched", "introduced", "unveiled"],
   regulations: ["regulation", "law", "requirement", "compliance", "policy", "directive"],
@@ -88,9 +90,74 @@ async function resolveFeedIdFromQuery(feedQuery) {
   return matchedFeed ? String(matchedFeed.id || "").trim() : "";
 }
 
+function getArticleQueryMemorySnapshot() {
+  const usage = process.memoryUsage();
+  return {
+    rssMb: Math.round((Number(usage.rss || 0) / 1024 / 1024) * 10) / 10,
+    heapUsedMb: Math.round((Number(usage.heapUsed || 0) / 1024 / 1024) * 10) / 10,
+    heapTotalMb: Math.round((Number(usage.heapTotal || 0) / 1024 / 1024) * 10) / 10,
+    externalMb: Math.round((Number(usage.external || 0) / 1024 / 1024) * 10) / 10,
+  };
+}
+
+function serializeArticleQuery(value) {
+  if (value === undefined || value === null || value === "") {
+    return "";
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry)).join(",");
+  }
+
+  return String(value);
+}
+
+function buildArticleQueryDiagnostics(request, details = {}) {
+  const query = request?.query || {};
+  return {
+    requestId: details.requestId || 0,
+    page: Number(details.pageNumber || 1),
+    pageSize: Number(details.pageSize || 0),
+    offset: Number(details.offset || 0),
+    includePagination: String(query.includePagination || "").trim().toLowerCase() === "true",
+    feedId: serializeArticleQuery(query.feedId),
+    feed: serializeArticleQuery(query.feed),
+    resolvedFeedId: serializeArticleQuery(details.resolvedFeedId),
+    topic: serializeArticleQuery(query.topic),
+    tag: serializeArticleQuery(query.tag),
+    signal: serializeArticleQuery(query.signal),
+    search: serializeArticleQuery(query.search),
+    date: serializeArticleQuery(query.date),
+    from: serializeArticleQuery(query.from),
+    to: serializeArticleQuery(query.to),
+    includeDuplicates: Boolean(details.includeDuplicates),
+    canonicalDedupe: Boolean(details.shouldCanonicalDedupe),
+    candidateLimit: Number(details.candidateLimit || 0),
+    itemCount: Number(details.itemCount || 0),
+    totalCount: Number(details.totalCount || 0),
+    durationMs: Number(details.durationMs || 0),
+    memoryBefore: details.memoryBefore || null,
+    memoryAfter: details.memoryAfter || null,
+    error: details.error ? String(details.error) : "",
+  };
+}
+
+function logArticleQuery(stage, payload) {
+  console.log(`[article-query] stage=${stage} ${JSON.stringify(payload)}`);
+}
+
 export async function listArticles(request, response) {
+  const requestId = ++articleQueryRequestCounter;
+  const startedAt = Date.now();
+  const memoryBefore = getArticleQueryMemorySnapshot();
   try {
     if (!isRuntimeReady()) {
+      logArticleQuery("runtime-not-ready", buildArticleQueryDiagnostics(request, {
+        requestId,
+        durationMs: Date.now() - startedAt,
+        memoryBefore,
+        memoryAfter: getArticleQueryMemorySnapshot(),
+      }));
       response.json([]);
       return;
     }
@@ -132,11 +199,14 @@ export async function listArticles(request, response) {
 
     const shouldCanonicalDedupe = !includeDuplicates && Boolean(resolvedFeedId);
     const offset = (pageNumber - 1) * pageSize;
+    const candidateLimit = shouldCanonicalDedupe
+      ? Math.max(pageSize + offset, Math.min(env.canonicalDedupeCandidateLimit, 5000))
+      : 0;
     const { items, total } = shouldCanonicalDedupe
       ? await listCanonicalDedupedArticles(filters, {
         limit: pageSize,
         offset,
-        candidateLimit: 10000,
+        candidateLimit,
       })
       : {
         items: await listArticleRecords(filters, {
@@ -145,6 +215,31 @@ export async function listArticles(request, response) {
         }),
         total: await countArticles(filters),
       };
+    const durationMs = Date.now() - startedAt;
+    const memoryAfter = getArticleQueryMemorySnapshot();
+    const diagnostics = buildArticleQueryDiagnostics(request, {
+      requestId,
+      pageNumber,
+      pageSize,
+      offset,
+      resolvedFeedId,
+      includeDuplicates,
+      shouldCanonicalDedupe,
+      candidateLimit,
+      itemCount: Array.isArray(items) ? items.length : 0,
+      totalCount: total,
+      durationMs,
+      memoryBefore,
+      memoryAfter,
+    });
+
+    if (
+      durationMs >= env.articleQuerySlowMs ||
+      memoryAfter.rssMb - memoryBefore.rssMb >= 100 ||
+      diagnostics.totalCount >= 1000
+    ) {
+      logArticleQuery("completed", diagnostics);
+    }
 
     if (request.query.includePagination === "true") {
       const articleDtos = items.map(toArticleDto);
@@ -166,6 +261,13 @@ export async function listArticles(request, response) {
 
     response.json(items.map(toArticleDto));
   } catch (error) {
+    logArticleQuery("failed", buildArticleQueryDiagnostics(request, {
+      requestId,
+      durationMs: Date.now() - startedAt,
+      memoryBefore,
+      memoryAfter: getArticleQueryMemorySnapshot(),
+      error: error?.message || error,
+    }));
     console.error("Articles error:", error?.stack || error);
     response.status(500).json({ error: error?.message || "Failed to load articles" });
   }

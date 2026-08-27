@@ -1506,7 +1506,7 @@ const SHOW_ACTIVITY_LOG = false;
 const DASHBOARD_ALERT_LIMIT = 8;
 const ACTIVITY_LOG_LIMIT = 24;
 const LOW_VALUE_ARTICLE_THRESHOLD = 5;
-const BACKEND_ARTICLE_QUERY_CONCURRENCY_LIMIT = 8;
+const BACKEND_ARTICLE_QUERY_CONCURRENCY_LIMIT = 3;
 const PERSONAL_DASHBOARD_BACKEND_SEARCH_LIMIT = 16;
 const IDENTITY_DOCUMENT_OR_BACKEND_SEARCH_LIMIT = 32;
 const PERSONAL_DASHBOARD_MULTI_DOMAIN_BACKEND_SEARCH_LIMIT = 48;
@@ -54752,6 +54752,11 @@ function buildPersonalDashboardBackendQueryParamsList() {
   const plan = getPersonalDashboardBackendDomainPlan();
   if (!plan) {
     return [];
+  }
+
+  const explicitSearch = String(state.filters.search || "").trim();
+  if (explicitSearch) {
+    return [applyBackendArticleQueryBaseParams()];
   }
 
   const requestParamsList = [];

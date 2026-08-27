@@ -60,6 +60,7 @@ const CRANE_CURRENCY_NEWSROOM_URL = "https://www.cranecurrency.com/news-insights
 const CRANE_CURRENCY_SITEMAP_URL = "https://www.cranecurrency.com/sitemap/";
 const CRANE_CURRENCY_MAX_ARCHIVE_PAGES = 8;
 const CRANE_CURRENCY_MAX_CANDIDATES = 80;
+const IND_NEWS_URL = "https://ind.nl/en/news";
 const LANDQART_NEWS_URL = "https://www.landqart.com/en/stories/news";
 const POLYVANTIS_PRESS_URL = "https://www.polyvantis.com/en/press";
 const LINXENS_NEWS_URL = "https://www.linxens.com/en/news-events";
@@ -178,6 +179,14 @@ function isLandqartNewsFeed(feed) {
   });
 }
 
+function isIndNewsFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: [IND_NEWS_URL],
+    urlFragments: ["ind.nl/en/news"],
+    exactNames: ["Dutch IND Residence Updates"],
+  });
+}
+
 function isPolyvantisPressFeed(feed) {
   return matchesWebsiteFeedSignature(feed, {
     exactUrls: [POLYVANTIS_PRESS_URL],
@@ -215,6 +224,7 @@ function isKinegramInsightsFeed(feed) {
 
 function shouldReplaceArticlesOnSync(feed) {
   return (
+    isIndNewsFeed(feed) ||
     isLandqartNewsFeed(feed) ||
     isPolyvantisPressFeed(feed) ||
     isLinxensNewsFeed(feed) ||
@@ -2548,6 +2558,88 @@ async function extractKinegramInsightsItems(feed, $, pageUrl) {
   return validatedItems;
 }
 
+function buildIndNewsCandidate($, block, pageUrl) {
+  const node = $(block);
+  const anchor = node.find("a.article__link, .article__body a").first();
+  const href = anchor.attr("href") || "";
+  const link = resolveRelativeWebsiteLink(href, pageUrl);
+  if (!link) {
+    return null;
+  }
+
+  let pathname = "";
+  try {
+    pathname = new URL(link).pathname.toLowerCase();
+  } catch {
+    return null;
+  }
+
+  if (!pathname.startsWith("/en/news/") || pathname === "/en/news") {
+    return null;
+  }
+
+  const title =
+    sanitizeFeedText(anchor.text(), "") ||
+    sanitizeFeedText(node.find(".article__title").first().text(), "");
+  if (!title) {
+    return null;
+  }
+
+  return {
+    title,
+    link,
+    excerpt: sanitizeFeedText(node.find(".article__description").first().text(), ""),
+    date:
+      parseWebsiteDate(node.find("time").first().attr("datetime") || "") ||
+      parseWebsiteDateFromText(node.find("time").first().text()) ||
+      null,
+  };
+}
+
+async function extractIndNewsItems(feed, $, pageUrl) {
+  const discoveredCandidates = [];
+  const seenLinks = new Set();
+
+  $(".view-unformatted--news-search .views-row, .view-content article.article")
+    .toArray()
+    .forEach((block) => {
+      const candidate = buildIndNewsCandidate($, block, pageUrl);
+      if (!candidate?.link || !candidate.title) {
+        return;
+      }
+
+      const canonicalLink = canonicalizeUrl(candidate.link);
+      if (!canonicalLink || seenLinks.has(canonicalLink)) {
+        return;
+      }
+
+      seenLinks.add(canonicalLink);
+      discoveredCandidates.push(candidate);
+    });
+
+  const validatedItems = [];
+  for (const candidate of discoveredCandidates) {
+    const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch((error) => {
+      console.warn(`Website article validation failed for ${candidate.link}:`, error?.message || error);
+      return null;
+    });
+    if (!validated?.accepted) {
+      continue;
+    }
+
+    validatedItems.push({
+      title: validated.title || candidate.title,
+      link: candidate.link,
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
+      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+      author: "",
+      source: getSourceName(candidate.link),
+    });
+  }
+
+  return validatedItems;
+}
+
 async function extractWebsiteItems(feed) {
   console.log(`Parsing website source ${feed.id} (${feed.rssUrl})`);
   const response = await fetchWebsiteHtml(feed.rssUrl);
@@ -2575,6 +2667,13 @@ async function extractWebsiteItems(feed) {
 
   if (isCraneCurrencyNewsroomFeed(feed)) {
     const items = await extractCraneCurrencyNewsroomItems(feed);
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isIndNewsFeed(feed)) {
+    console.log(`Using dedicated website extractor: ind for source ${feed.id}`);
+    const items = await extractIndNewsItems(feed, $, fetchedUrl);
     console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
     return items;
   }

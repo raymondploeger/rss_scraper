@@ -24,6 +24,8 @@ export const env = {
   requestTimeoutMs: Math.max(1000, toNumber(process.env.REQUEST_TIMEOUT_MS, 10000)),
   maxFeeds: Math.max(MAX_RSS_FEEDS, toNumber(process.env.MAX_FEEDS, MAX_RSS_FEEDS)),
   maxArticlePageSize: Math.max(50, toNumber(process.env.MAX_ARTICLE_PAGE_SIZE, 200)),
+  canonicalDedupeCandidateLimit: Math.max(200, toNumber(process.env.CANONICAL_DEDUPE_CANDIDATE_LIMIT, 1500)),
+  articleQuerySlowMs: Math.max(250, toNumber(process.env.ARTICLE_QUERY_SLOW_MS, 1500)),
   scrapeRetryAttempts: Math.max(0, toNumber(process.env.SCRAPE_RETRY_ATTEMPTS, 2)),
   thumbnailEnrichmentConcurrency: Math.max(1, toNumber(process.env.THUMBNAIL_ENRICHMENT_CONCURRENCY, 2)),
   thumbnailEnrichmentMaxQueue: Math.max(10, toNumber(process.env.THUMBNAIL_ENRICHMENT_MAX_QUEUE, 150)),
