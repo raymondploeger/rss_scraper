@@ -23,8 +23,10 @@ export const env = {
   pollConcurrency: Math.max(1, toNumber(process.env.POLL_CONCURRENCY, 2)),
   requestTimeoutMs: Math.max(1000, toNumber(process.env.REQUEST_TIMEOUT_MS, 10000)),
   maxFeeds: Math.max(MAX_RSS_FEEDS, toNumber(process.env.MAX_FEEDS, MAX_RSS_FEEDS)),
-  maxArticlePageSize: Math.max(50, toNumber(process.env.MAX_ARTICLE_PAGE_SIZE, 1500)),
+  maxArticlePageSize: Math.max(50, toNumber(process.env.MAX_ARTICLE_PAGE_SIZE, 200)),
   scrapeRetryAttempts: Math.max(0, toNumber(process.env.SCRAPE_RETRY_ATTEMPTS, 2)),
+  thumbnailEnrichmentConcurrency: Math.max(1, toNumber(process.env.THUMBNAIL_ENRICHMENT_CONCURRENCY, 2)),
+  thumbnailEnrichmentMaxQueue: Math.max(10, toNumber(process.env.THUMBNAIL_ENRICHMENT_MAX_QUEUE, 150)),
   databaseUrl: process.env.DATABASE_URL || "",
   publicAppUrl: process.env.PUBLIC_APP_URL || "",
   placeholderImage: process.env.PLACEHOLDER_IMAGE || "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image"

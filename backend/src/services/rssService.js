@@ -48,6 +48,10 @@ const parser = new Parser({
 
 const inFlightFeedSyncs = new Map();
 let allFeedsSyncPromise = null;
+const thumbnailEnrichmentQueue = [];
+const queuedThumbnailEnrichmentIds = new Set();
+const activeThumbnailEnrichmentIds = new Set();
+let activeThumbnailEnrichmentCount = 0;
 
 const SICPA_NEWSROOM_URL = "https://www.sicpa.com/all-press-releases";
 const SURYS_NEWSROOM_URL = "https://surys.com/surys-blog/";
@@ -3001,9 +3005,48 @@ function queueThumbnailEnrichment(article) {
     return;
   }
 
-  void enrichArticle(article.id).catch((enrichmentError) => {
-    console.error(`Async thumbnail enrichment failed for article ${article.id}:`, enrichmentError?.stack || enrichmentError);
-  });
+  const articleId = String(article.id);
+  if (queuedThumbnailEnrichmentIds.has(articleId) || activeThumbnailEnrichmentIds.has(articleId)) {
+    return;
+  }
+
+  const totalQueuedWork = thumbnailEnrichmentQueue.length + activeThumbnailEnrichmentCount;
+  if (totalQueuedWork >= env.thumbnailEnrichmentMaxQueue) {
+    console.warn(
+      `[thumbnail-enrichment] skipped articleId=${articleId} reason=queue_full queued=${thumbnailEnrichmentQueue.length} active=${activeThumbnailEnrichmentCount} max=${env.thumbnailEnrichmentMaxQueue}`
+    );
+    return;
+  }
+
+  queuedThumbnailEnrichmentIds.add(articleId);
+  thumbnailEnrichmentQueue.push(articleId);
+  drainThumbnailEnrichmentQueue();
+}
+
+function drainThumbnailEnrichmentQueue() {
+  while (
+    activeThumbnailEnrichmentCount < env.thumbnailEnrichmentConcurrency &&
+    thumbnailEnrichmentQueue.length
+  ) {
+    const articleId = thumbnailEnrichmentQueue.shift();
+    if (!articleId) {
+      continue;
+    }
+
+    queuedThumbnailEnrichmentIds.delete(articleId);
+    activeThumbnailEnrichmentIds.add(articleId);
+    activeThumbnailEnrichmentCount += 1;
+
+    void enrichArticle(articleId)
+      .catch((enrichmentError) => {
+        console.error(`Async thumbnail enrichment failed for article ${articleId}:`, enrichmentError?.stack || enrichmentError);
+      })
+      .finally(() => {
+        activeThumbnailEnrichmentIds.delete(articleId);
+        activeThumbnailEnrichmentCount = Math.max(0, activeThumbnailEnrichmentCount - 1);
+        drainThumbnailEnrichmentQueue();
+      });
+  }
 }
 
 async function runFeedSync(feed) {
