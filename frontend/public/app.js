@@ -26896,8 +26896,23 @@ function hasActiveAdvancedSearchFilters() {
 }
 
 function shouldShowPersonalDashboardEmptyProfileState(renderDispatch = null) {
+  const hasActiveSearchOrFilter = Boolean(
+    String(state.filters.search || "").trim() ||
+      String(state.filters.topic || "").trim() ||
+      String(state.filters.tag || "").trim() ||
+      String(state.filters.signalCategory || "").trim() ||
+      String(state.filters.date || "").trim() ||
+      String(state.filters.feedId || "").trim() ||
+      (Array.isArray(state.filters.articleIds) && state.filters.articleIds.length > 0) ||
+      state.filters.favoritesOnly ||
+      state.filters.dmvFeedId ||
+      state.filters.canadaDmvFeedPath ||
+      state.filters.canadaDmvAll
+  );
+
   return Boolean(
     renderDispatch?.renderMode !== "selected_feed" &&
+      !hasActiveSearchOrFilter &&
       !hasPersonalDashboardSelections()
   );
 }
