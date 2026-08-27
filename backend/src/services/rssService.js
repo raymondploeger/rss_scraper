@@ -107,6 +107,34 @@ function getVendorFeedLogLabel(feed) {
   return matched?.label || "";
 }
 
+function getErrorMessage(error) {
+  if (error instanceof Error) {
+    return error.message || error.name || "Unknown error";
+  }
+
+  if (typeof error === "string" && error.trim()) {
+    return error;
+  }
+
+  if (error && typeof error === "object") {
+    const directMessage = String(error.message || error.error || "").trim();
+    if (directMessage) {
+      return directMessage;
+    }
+
+    try {
+      const serialized = JSON.stringify(error);
+      if (serialized && serialized !== "{}") {
+        return serialized;
+      }
+    } catch {
+      return "Unknown object error";
+    }
+  }
+
+  return "Unknown error";
+}
+
 function isSicpaNewsroomFeed(feed) {
   return (
     Boolean(feed) &&
@@ -3272,16 +3300,17 @@ async function runFeedSync(feed) {
     console.log(`Feed sync complete for ${feed.id}; inserted ${newArticles} new articles`);
     return { feedId: String(feed.id), newArticles };
   } catch (error) {
+    const errorMessage = getErrorMessage(error);
     if (vendorFeedLogLabel) {
       console.log(
-        `[${vendorFeedLogLabel}] feed_sync_error feedId=${feed.id} rssUrl=${feed.rssUrl} message=${error.message}`
+        `[${vendorFeedLogLabel}] feed_sync_error feedId=${feed.id} rssUrl=${feed.rssUrl} message=${JSON.stringify(errorMessage)}`
       );
     }
     console.error(`Feed sync error for ${feed.id}:`, error?.stack || error);
     const updatedFeed = await updateFeedRecord(feed.id, {
       lastFetchedAt: new Date(),
       lastStatus: "error",
-      lastError: error.message,
+      lastError: errorMessage,
       lastInsertedCount: newArticles
     });
     broadcast("feed:update", { type: "feed:update", feed: updatedFeed });
@@ -3292,10 +3321,10 @@ async function runFeedSync(feed) {
       finishedAt: new Date(),
       status: "error",
       newArticles: 0,
-      errorMessage: error.message
+      errorMessage
     });
 
-    return { feedId: String(feed.id), newArticles: 0, error: error.message };
+    return { feedId: String(feed.id), newArticles: 0, error: errorMessage };
   }
 }
 
