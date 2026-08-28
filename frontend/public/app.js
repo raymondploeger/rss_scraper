@@ -1518,7 +1518,7 @@ const SUMMARY_METRICS = [
   { label: "Articles today", key: "articlesToday" },
   { label: "Latest articles", key: "totalArticles" },
 ];
-const DEFAULT_SOURCE_GROUPS = ["USA", "Canada", "Vendors", "Government", "Google Alerts", "Bing Alerts", "Other"];
+const DEFAULT_SOURCE_GROUPS = ["USA", "Canada", "Vendors", "Government", "Google Alerts", "Google RSS", "Bing Alerts", "Other"];
 const VENDOR_SOURCE_PATTERNS = Object.freeze([
   "regulaforensics.com/news",
   "veridos.com/en/about/press-media",
@@ -1542,6 +1542,19 @@ const VENDOR_SOURCE_PATTERNS = Object.freeze([
   "sicpa.com/all-press-releases",
   "surys.com/surys-blog",
   "iqstructures.com/en/blog",
+  "dmaxholograms.com",
+  "demax",
+  "biometricupdate.com",
+  "biometric update",
+  "icao.int/news",
+  "icao.int/facilitation-programmes/assistance",
+  "platform.keesingtechnologies.com",
+  "keesingtechnologies.com",
+  "mriguide.com",
+  "banknotenews.com",
+  "news.notafilia.pl",
+  "notafilia",
+  "securitydocumentworld.com",
   "landqart.com/en/stories/news",
   "polyvantis.com/en/press",
   "linxens.com/en/news-events",
@@ -1568,6 +1581,9 @@ const GOVERNMENT_SOURCE_PATTERNS = Object.freeze([
   "eulisa.europa.eu/news-and-events",
   "frontex.europa.eu/media-centre/news",
   "migrationsverket.se/en/word-explanations/residence-permit-cards",
+]);
+const GOOGLE_RSS_SOURCE_PATTERNS = Object.freeze([
+  "news.google.com/rss/search",
 ]);
 const TAG_FILTER_MIN_COUNT = 0;
 const ARTICLE_RENDER_PAGE_SIZE = 30;
@@ -4939,16 +4955,41 @@ const VENDORS_PROFILE_BACKEND_SEARCH_TERMS = Object.freeze([
 ]);
 
 const CURATED_VENDOR_WEBSITE_FEED_NAMES = Object.freeze([
+  "BanknoteNews",
+  "Biometric Update",
+  "BiometricUpdate",
+  "Demax Holograms News",
+  "Dutch Demax Holograms News",
+  "ICAO Newsroom",
+  "ICAO TRIP",
+  "IDEMIA Pressroom",
+  "Keesing Platform",
   "Landqart News",
   "Linxens News & Events",
+  "MRIGuide",
+  "news.notafilia.pl",
   "POLYVANTIS Press",
+  "Regula",
+  "Regula News",
+  "Security Document World",
   "VTT News and Stories",
 ]);
 
 const CURATED_VENDOR_WEBSITE_DOMAINS = Object.freeze([
+  "banknotenews.com",
+  "biometricupdate.com",
+  "dmaxholograms.com",
+  "news.notafilia.pl",
+  "feeds.feedburner.com/nowocizewiatamonetibanknotw",
+  "icao.int",
+  "idemia.com",
+  "platform.keesingtechnologies.com",
   "landqart.com",
   "linxens.com",
+  "mriguide.com",
   "polyvantis.com",
+  "regulaforensics.com",
+  "securitydocumentworld.com",
   "vttresearch.com",
 ]);
 
@@ -5454,6 +5495,11 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
       "biometric update",
       "security document world",
       "securitydocumentworld",
+      "banknotenews",
+      "mriguide",
+      "keesing",
+      "notafilia",
+      "news.notafilia.pl",
     ].some((term) => textMatchesKeyword(sourceOnlyText, term));
     const professionalSourceOnly = professionalVendorNewsSource && !producerVendorNameInArticle;
     const professionalSourceVendorEvent = !professionalVendorNewsSource ||
@@ -43398,6 +43444,11 @@ function isGoogleAlertsFeed(feed) {
   );
 }
 
+function isGoogleRssFeed(feed) {
+  const rssUrl = String(feed?.rssUrl || "").toLowerCase();
+  return GOOGLE_RSS_SOURCE_PATTERNS.some((pattern) => rssUrl.includes(pattern));
+}
+
 function isBingAlertsFeed(feed) {
   const name = String(feed?.name || "").toLowerCase();
   const rssUrl = String(feed?.rssUrl || "").toLowerCase();
@@ -43418,7 +43469,7 @@ function isGovernmentSource(feed) {
     .join(" ")
     .toLowerCase();
 
-  if (!fingerprint || isDmvSource(feed) || isGoogleAlertsFeed(feed) || isBingAlertsFeed(feed)) {
+  if (!fingerprint || isDmvSource(feed) || isGoogleAlertsFeed(feed) || isGoogleRssFeed(feed) || isBingAlertsFeed(feed)) {
     return false;
   }
 
@@ -43434,7 +43485,7 @@ function isVendorSource(feed) {
     .join(" ")
     .toLowerCase();
 
-  if (!fingerprint || isDmvSource(feed) || isGoogleAlertsFeed(feed) || isBingAlertsFeed(feed)) {
+  if (!fingerprint || isDmvSource(feed) || isGoogleAlertsFeed(feed) || isGoogleRssFeed(feed) || isBingAlertsFeed(feed)) {
     return false;
   }
 
@@ -43489,6 +43540,10 @@ function getFeedGroupName(feed) {
 
   if (isGoogleAlertsFeed(feed)) {
     return "Google Alerts";
+  }
+
+  if (isGoogleRssFeed(feed)) {
+    return "Google RSS";
   }
 
   if (isBingAlertsFeed(feed)) {
