@@ -1090,6 +1090,11 @@ export const SOURCE_RELEVANCE_RULES = [
   {
     name: "CBP Newsroom",
     sourceKeys: ["cbp newsroom", "cbp.gov/newsroom", "cbp.gov/newsroom/media-releases/all"],
+    rejectPagePatterns: [
+      "/250",
+      "/travel/",
+      "/trusted-traveler-programs/",
+    ],
     rejectExactPaths: [
       "/newsroom",
       "/newsroom/media-releases",
