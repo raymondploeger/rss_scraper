@@ -3265,6 +3265,46 @@ async function enrichGoogleNewsThumbnailFromSourceUrl(article) {
   };
 }
 
+async function enrichDirectArticleThumbnail(feed, article) {
+  if (!article || hasUsableStoredThumbnail(article.thumbnail)) {
+    return article;
+  }
+
+  if (!isGovUkNewsFeed(feed)) {
+    return article;
+  }
+
+  const enriched = await scrapeArticleMetadata(
+    article.link,
+    article.contentSnippet || article.summary || "",
+    article.title || "",
+    {
+      existingThumbnail: article.thumbnail,
+      rssThumbnailSource:
+        article.thumbnail &&
+        article.thumbnail !== env.placeholderImage &&
+        !isGoogleNewsPlaceholderImage(article.thumbnail)
+          ? article.thumbnailSource || "article-existing"
+          : "",
+    }
+  ).catch(() => null);
+
+  const nextThumbnail = normalizeText(enriched?.thumbnail, "");
+  if (!hasUsableStoredThumbnail(nextThumbnail)) {
+    return article;
+  }
+
+  return {
+    ...article,
+    thumbnail: nextThumbnail,
+    thumbnailSource: enriched?.thumbnailSource || "website-direct-enrichment",
+    fetchStatus: "enriched",
+    canonicalLink: enriched?.canonicalLink || article.canonicalLink,
+    contentSnippet: enriched?.contentSnippet || article.contentSnippet,
+    language: enriched?.language || article.language,
+  };
+}
+
 function queueThumbnailEnrichment(article) {
   if (!article?.id) {
     return;
@@ -3385,6 +3425,7 @@ async function runFeedSync(feed) {
         }
 
         normalized = await enrichGoogleNewsThumbnailFromSourceUrl(normalized);
+        normalized = await enrichDirectArticleThumbnail(feed, normalized);
 
         console.log(
           `Thumbnail source for article ${normalized.id}: ${normalized.thumbnailSource || "placeholder"}`
