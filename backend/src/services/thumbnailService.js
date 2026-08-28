@@ -124,7 +124,7 @@ function tokenizeForMatch(value) {
     .filter((token) => token.length >= 4);
 }
 
-function isLikelyGenericMetadataImage(imageUrl) {
+export function isLikelyGenericMetadataImage(imageUrl) {
   const value = String(imageUrl || "").toLowerCase();
 
   if (isSicpaDrupalArticleImage(imageUrl)) {
@@ -1032,7 +1032,8 @@ export async function enrichArticle(articleId) {
   if (
     article.thumbnail &&
     article.thumbnail !== env.placeholderImage &&
-    !isGoogleNewsPlaceholderImage(article.thumbnail)
+    !isGoogleNewsPlaceholderImage(article.thumbnail) &&
+    !isLikelyGenericMetadataImage(article.thumbnail)
   ) {
     return article;
   }
@@ -1049,7 +1050,8 @@ export async function enrichArticle(articleId) {
   const nextThumbnail =
     article.thumbnail &&
     article.thumbnail !== env.placeholderImage &&
-    !isGoogleNewsPlaceholderImage(article.thumbnail)
+    !isGoogleNewsPlaceholderImage(article.thumbnail) &&
+    !isLikelyGenericMetadataImage(article.thumbnail)
       ? article.thumbnail
       : enriched.thumbnail || article.thumbnail;
 

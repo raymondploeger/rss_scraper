@@ -14,7 +14,12 @@ import { createPollLog } from "../database/pollLogRepository.js";
 import { listFeeds as listFeedRecords, updateFeed as updateFeedRecord } from "../database/feedRepository.js";
 import { broadcast } from "./realtimeService.js";
 import { articleMatchesSourceRelevanceRule, getSourceRelevanceAssessment } from "./sourceRelevanceService.js";
-import { enrichArticle, isGoogleNewsPlaceholderImage, scrapeArticleMetadata } from "./thumbnailService.js";
+import {
+  enrichArticle,
+  isGoogleNewsPlaceholderImage,
+  isLikelyGenericMetadataImage,
+  scrapeArticleMetadata
+} from "./thumbnailService.js";
 import {
   canonicalizeUrl,
   createDeterministicId,
@@ -695,6 +700,7 @@ function hasUsableStoredThumbnail(value) {
     Boolean(value) &&
     value !== env.placeholderImage &&
     !isGoogleNewsPlaceholderImage(value) &&
+    !isLikelyGenericMetadataImage(value) &&
     isMeaningfulImageCandidate(value)
   );
 }
@@ -3098,10 +3104,7 @@ function normalizeItem(feed, item) {
     ? ""
     : resolveFeedImageCandidate(link, feed.sourceFallbackImage || "");
   const thumbnail = normalizeText(extractedThumbnail.url || feedFallbackThumbnail, env.placeholderImage);
-  const hasUsableThumbnail =
-    Boolean(thumbnail) &&
-    thumbnail !== env.placeholderImage &&
-    !isGoogleNewsPlaceholderImage(thumbnail);
+  const hasUsableThumbnail = hasUsableStoredThumbnail(thumbnail);
   const thumbnailSource = extractedThumbnail.url
     ? extractedThumbnail.source
     : feedFallbackThumbnail
