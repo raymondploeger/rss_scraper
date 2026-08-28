@@ -1,4 +1,9 @@
-import { createFeed as createFeedRecord, findFeedByRssUrl, updateFeed as updateFeedRecord } from "../database/feedRepository.js";
+import {
+  createFeed as createFeedRecord,
+  findFeedByName,
+  findFeedByRssUrl,
+  updateFeed as updateFeedRecord,
+} from "../database/feedRepository.js";
 
 function buildGoogleNewsRssUrl(query) {
   const encodedQuery = encodeURIComponent(String(query || "").trim());
@@ -110,7 +115,7 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
   {
     name: "CBP Newsroom",
     topic: "Identity Documents",
-    rssUrl: "https://www.cbp.gov/newsroom",
+    rssUrl: "https://www.cbp.gov/newsroom/media-releases/all",
     sourceType: "website",
     phase: "phase1",
   },
@@ -464,7 +469,8 @@ export async function ensureStrategicFeeds() {
 
   for (const definition of PHASE_ONE_STRATEGIC_FEEDS) {
     try {
-      const existing = await findFeedByRssUrl(definition.rssUrl);
+      const existingByUrl = await findFeedByRssUrl(definition.rssUrl);
+      const existing = existingByUrl || await findFeedByName(definition.name);
       if (!existing) {
         const createdFeed = await createFeedRecord({
           name: definition.name,
@@ -484,6 +490,7 @@ export async function ensureStrategicFeeds() {
       const needsUpdate =
         existing.name !== definition.name ||
         existing.topic !== definition.topic ||
+        existing.rssUrl !== definition.rssUrl ||
         existing.sourceType !== definition.sourceType ||
         existing.isActive !== true;
 
@@ -501,6 +508,7 @@ export async function ensureStrategicFeeds() {
       const updatedFeed = await updateFeedRecord(existing.id, {
         name: definition.name,
         topic: definition.topic,
+        rssUrl: definition.rssUrl,
         sourceType: definition.sourceType,
         isActive: true,
       });

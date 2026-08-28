@@ -66,6 +66,16 @@ export async function findFeedByRssUrl(rssUrl) {
   return mapFeedRecord(feed);
 }
 
+export async function findFeedByName(name) {
+  const prisma = getDatabase();
+  const feed = await prisma.feed.findFirst({
+    where: {
+      name,
+    },
+  });
+  return mapFeedRecord(feed);
+}
+
 export async function createFeed(feed) {
   const prisma = getDatabase();
   const created = await prisma.feed.create({
