@@ -50008,6 +50008,29 @@ function syncSourceGroupTabs() {
   });
 }
 
+function syncSelectedFeedWithSourceGroup() {
+  if (!state.filters.feedId) {
+    return;
+  }
+
+  const sourceGroup = state.filters.sourceGroup || "all";
+  if (sourceGroup === "all") {
+    return;
+  }
+
+  const selectedFeed = resolveFeedByIdentity(state.filters.feedId);
+  if (!selectedFeed) {
+    state.filters.feedId = "";
+    state.filters.sourceOnly = false;
+    return;
+  }
+
+  if (getFeedGroupName(selectedFeed) !== sourceGroup) {
+    state.filters.feedId = "";
+    state.filters.sourceOnly = false;
+  }
+}
+
 function syncFeedFormMode() {
   const isEditing = Boolean(state.editingFeedId);
   const selectedSourceType = normalizeFeedSourceTypeValue(elements.feedSourceType?.value || "rss");
@@ -54696,6 +54719,7 @@ function shouldUseBackendArticleQuery() {
     !state.filters.dmvFeedId &&
     !state.filters.canadaDmvFeedPath &&
     !state.filters.canadaDmvAll &&
+    !(isSourceOnlyFeedViewActive() && state.filters.feedId) &&
     (
       hasPersonalDashboardSelections() ||
       state.filters.feedId ||
@@ -58373,11 +58397,18 @@ function renderArticles() {
     const articlePagination = pipelineResult.paginationResult;
     const renderModel = pipelineResult.renderModel;
     const renderDispatch = pipelineResult.renderDispatch;
-    const articlesToRender = Array.isArray(renderModel?.items) ? renderModel.items : [];
+    const renderedArticleSource = Array.isArray(articles) ? articles : [];
+    const hasStalePaginationMismatch =
+      renderedArticleSource.length === 0 &&
+      Number(articlePagination?.totalCount || 0) > 0;
+    const safeArticlePagination = hasStalePaginationMismatch ? getPaginatedItems([]) : articlePagination;
+    const articlesToRender = hasStalePaginationMismatch
+      ? []
+      : Array.isArray(renderModel?.items) ? renderModel.items : [];
     recordPipelineCount(pipelineDiagnostics, "afterPagination", Number(renderModel?.paginatedCount) || 0);
     recordPipelineCount(pipelineDiagnostics, "rendered", articlesToRender.length);
     markProductionLoadTiming("renderModelReady", {
-      totalCount: Number(articlePagination?.totalCount) || 0,
+      totalCount: Number(safeArticlePagination?.totalCount) || 0,
       renderedItemCount: articlesToRender.length,
       groupedCount: groupedArticlesCount,
       branch: renderDispatch?.renderMode || "",
@@ -58434,9 +58465,9 @@ function renderArticles() {
     const renderDiagnostics = {
       branchName: "feed-filter",
       total: articles.length,
-      page: articlePagination.currentPage,
-      pageSize: articlePagination.pageSize,
-      totalPages: articlePagination.totalPages,
+      page: safeArticlePagination.currentPage,
+      pageSize: safeArticlePagination.pageSize,
+      totalPages: safeArticlePagination.totalPages,
       afterFirstRender: deferredDiagnosticsReplay || deferredPaginationDecisionTraces
         ? () => {
             markCompletedProductionLoadTiming(productionLoadTimingRun.runId, "postRenderDiagnosticsStart", {
@@ -58493,13 +58524,13 @@ function renderArticles() {
       startFilterPerformanceDomRender();
       elements.articlesGrid.classList.remove("is-grouped-feed-view");
       elements.articlesGrid.classList.remove("has-personal-lanes");
-      elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
+      elements.resultsCount.textContent = `${safeArticlePagination.totalCount} results`;
       elements.articlesGrid.innerHTML = "";
 
-      if (!articlePagination.totalCount) {
+      if (!safeArticlePagination.totalCount) {
         elements.articlesGrid.innerHTML =
           `<div class="empty-state">No articles match the active filters.</div>`;
-        renderPaginationControls(articlePagination);
+        renderPaginationControls(safeArticlePagination);
         intelligenceTimeEnd("renderArticles:dom-update");
         finalizeRenderDiagnostics(renderDiagnostics);
         return;
@@ -58507,7 +58538,7 @@ function renderArticles() {
 
       logRenderingPageArticlesOnly(groupedArticlesCount, articlesToRender);
       patchSimpleArticleGrid(articlesToRender);
-      renderPaginationControls(articlePagination);
+      renderPaginationControls(safeArticlePagination);
       intelligenceTimeEnd("renderArticles:dom-update");
       finalizeRenderDiagnostics(renderDiagnostics);
       return;
@@ -58518,17 +58549,17 @@ function renderArticles() {
       startFilterPerformanceDomRender();
       elements.articlesGrid.classList.remove("is-grouped-feed-view");
       elements.articlesGrid.classList.remove("has-personal-lanes");
-      elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
+      elements.resultsCount.textContent = `${safeArticlePagination.totalCount} results`;
       elements.articlesGrid.innerHTML = "";
 
-      if (!articlePagination.totalCount) {
+      if (!safeArticlePagination.totalCount) {
         renderDmvEmptyState(
           isUsLinkOnlyEntry(selectedUsDmvEntry) || isCanadaLinkOnlyEntry(selectedCanadaEntry)
             ? "No RSS feed available for this DMV."
             : "No news available",
           selectedDmvOfficialUrl
         );
-        renderPaginationControls(articlePagination);
+        renderPaginationControls(safeArticlePagination);
         renderDiagnostics.branchName = "selected-dmv-empty";
         intelligenceTimeEnd("renderArticles:dom-update");
         finalizeRenderDiagnostics(renderDiagnostics);
@@ -58537,7 +58568,7 @@ function renderArticles() {
 
       logRenderingPageArticlesOnly(groupedArticlesCount, articlesToRender);
       patchSimpleArticleGrid(articlesToRender);
-      renderPaginationControls(articlePagination);
+      renderPaginationControls(safeArticlePagination);
       intelligenceTimeEnd("renderArticles:dom-update");
       renderDiagnostics.branchName = "selected-dmv";
       finalizeRenderDiagnostics(renderDiagnostics);
@@ -58561,13 +58592,13 @@ function renderArticles() {
       const visibleFeedIds = new Set(articlesToRender.map((article) => article.feedId).filter(Boolean));
       const visibleFeeds = dmvFeeds.filter((feed) => visibleFeedIds.has(feed.id));
 
-      elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
+      elements.resultsCount.textContent = `${safeArticlePagination.totalCount} results`;
       elements.articlesGrid.innerHTML = "";
 
-      if (!articlePagination.totalCount) {
+      if (!safeArticlePagination.totalCount) {
         elements.articlesGrid.innerHTML =
           `<div class="empty-state">No articles match the active filters.</div>`;
-        renderPaginationControls(articlePagination);
+        renderPaginationControls(safeArticlePagination);
         renderDiagnostics.branchName = "usa-grouped-empty";
         intelligenceTimeEnd("renderArticles:dom-update");
         finalizeRenderDiagnostics(renderDiagnostics);
@@ -58584,7 +58615,7 @@ function renderArticles() {
         fragment.appendChild(renderFeedGroup(feed.name || "Untitled feed", groupCards));
       });
       elements.articlesGrid.appendChild(fragment);
-      renderPaginationControls(articlePagination);
+      renderPaginationControls(safeArticlePagination);
       intelligenceTimeEnd("renderArticles:dom-update");
       renderDiagnostics.branchName = "usa-grouped";
       finalizeRenderDiagnostics(renderDiagnostics);
@@ -58611,13 +58642,13 @@ function renderArticles() {
         return feed ? visibleFeedIds.has(feed.id) : false;
       });
 
-      elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
+      elements.resultsCount.textContent = `${safeArticlePagination.totalCount} results`;
       elements.articlesGrid.innerHTML = "";
 
-      if (!articlePagination.totalCount) {
+      if (!safeArticlePagination.totalCount) {
         elements.articlesGrid.innerHTML =
           `<div class="empty-state">No imported news available for Canada DMV entries yet.</div>`;
-        renderPaginationControls(articlePagination);
+        renderPaginationControls(safeArticlePagination);
         renderDiagnostics.branchName = "canada-grouped-empty";
         intelligenceTimeEnd("renderArticles:dom-update");
         finalizeRenderDiagnostics(renderDiagnostics);
@@ -58649,7 +58680,7 @@ function renderArticles() {
         fragment.appendChild(renderFeedGroup(entryLabel, groupCards));
       });
       elements.articlesGrid.appendChild(fragment);
-      renderPaginationControls(articlePagination);
+      renderPaginationControls(safeArticlePagination);
       intelligenceTimeEnd("renderArticles:dom-update");
       renderDiagnostics.branchName = "canada-grouped";
       finalizeRenderDiagnostics(renderDiagnostics);
@@ -58658,12 +58689,12 @@ function renderArticles() {
 
     intelligenceTime("renderArticles:dom-update");
     startFilterPerformanceDomRender();
-    elements.resultsCount.textContent = `${articlePagination.totalCount} results`;
+    elements.resultsCount.textContent = `${safeArticlePagination.totalCount} results`;
     elements.articlesGrid.classList.remove("is-grouped-feed-view");
     elements.articlesGrid.classList.remove("has-personal-lanes");
     elements.articlesGrid.innerHTML = "";
 
-    if (!articlePagination.totalCount) {
+    if (!safeArticlePagination.totalCount) {
       const emptyStateMessage = state.filters.canadaDmvAll
         ? "Canada DMV entries are shown as official links unless RSS news is available."
         : selectedCanadaEntry
@@ -58679,7 +58710,7 @@ function renderArticles() {
               : "No articles match the active filters.";
       const officialUrl = !state.filters.canadaDmvAll ? selectedDmvOfficialUrl : "";
       renderDmvEmptyState(emptyStateMessage, officialUrl);
-      renderPaginationControls(articlePagination);
+      renderPaginationControls(safeArticlePagination);
       renderDiagnostics.branchName = "default-empty";
       intelligenceTimeEnd("renderArticles:dom-update");
       finalizeRenderDiagnostics(renderDiagnostics);
@@ -58688,7 +58719,7 @@ function renderArticles() {
 
     logRenderingPageArticlesOnly(groupedArticlesCount, articlesToRender);
     patchSimpleArticleGrid(articlesToRender);
-    renderPaginationControls(articlePagination);
+    renderPaginationControls(safeArticlePagination);
     intelligenceTimeEnd("renderArticles:dom-update");
     renderDiagnostics.branchName = state.filters.feedId ? "feed-filter" : "default";
     finalizeRenderDiagnostics(renderDiagnostics);
@@ -59961,6 +59992,7 @@ function bindEvents() {
       }
 
       state.filters.sourceGroup = button.dataset.sourceGroup || "all";
+      syncSelectedFeedWithSourceGroup();
       renderFeedList();
     });
   }
