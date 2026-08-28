@@ -152,6 +152,9 @@ function isLikelyGenericMetadataImage(imageUrl) {
     "favicon",
     "avatar",
     "banner",
+    "opengraph-image",
+    "govuk-opengraph-image",
+    "govuk-schema-placeholder",
     "placeholder",
     "siteimage",
     "social-share",
@@ -162,6 +165,17 @@ function isLikelyGenericMetadataImage(imageUrl) {
     "tracking",
     "pixel",
   ].some((token) => value.includes(token));
+}
+
+function collectMetaImageCandidates($, selector, pageUrl, source) {
+  return $(selector)
+    .map((_, element) => {
+      const content = $(element).attr("content") || "";
+      const url = resolveImageCandidate(pageUrl, content);
+      return url ? { url, source } : null;
+    })
+    .get()
+    .filter(Boolean);
 }
 
 function isRejectedGoogleNewsImage(imageUrl, pageUrl) {
@@ -819,9 +833,9 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
       }
 
       const $ = cheerio.load(activeHtml);
-      const ogImage = $('meta[property="og:image"]').attr("content");
-      const ogSecureImage = $('meta[property="og:image:secure_url"]').attr("content");
-      const twitterImage = $('meta[name="twitter:image"]').attr("content");
+      const ogImages = collectMetaImageCandidates($, 'meta[property="og:image"]', activeUrl, "og-image");
+      const ogSecureImages = collectMetaImageCandidates($, 'meta[property="og:image:secure_url"]', activeUrl, "og-image");
+      const twitterImages = collectMetaImageCandidates($, 'meta[name="twitter:image"]', activeUrl, "twitter-image");
       const schemaImageResult = extractSchemaImage($, activeUrl);
       const canonicalUrl = $('link[rel="canonical"]').attr("href");
       const articleImageResult = findMeaningfulImage($, activeUrl);
@@ -838,9 +852,9 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
       const htmlLang = $("html").attr("lang") || "";
       const rejectedReasons = [];
       const metadataCandidates = [
-        { url: resolveImageCandidate(activeUrl, ogImage || ""), source: "og-image" },
-        { url: resolveImageCandidate(activeUrl, ogSecureImage || ""), source: "og-image" },
-        { url: resolveImageCandidate(activeUrl, twitterImage || ""), source: "twitter-image" },
+        ...ogImages,
+        ...ogSecureImages,
+        ...twitterImages,
         { url: resolveImageCandidate(activeUrl, schemaImageResult.url || ""), source: "schema-image" },
       ].filter(
         (candidate) =>
@@ -849,10 +863,10 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
           !isLikelyGenericMetadataImage(candidate.url) &&
           !isRejectedGoogleNewsImage(candidate.url, link)
       );
-      if ((ogImage || ogSecureImage) && !metadataCandidates.some((candidate) => candidate.source === "og-image")) {
+      if ((ogImages.length || ogSecureImages.length) && !metadataCandidates.some((candidate) => candidate.source === "og-image")) {
         rejectedReasons.push("og_image_generic");
       }
-      if (twitterImage && !metadataCandidates.some((candidate) => candidate.source === "twitter-image")) {
+      if (twitterImages.length && !metadataCandidates.some((candidate) => candidate.source === "twitter-image")) {
         rejectedReasons.push("twitter_image_generic");
       }
       rejectedReasons.push(...schemaImageResult.rejectedReasons);
@@ -880,8 +894,8 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
         resolvedPublisherUrl: originalPublisherResolved ? scrapeTargetUrl : "",
         resolutionMethod,
         failureReason: resolutionFailureReason,
-        ogImageFound: Boolean(ogImage || ogSecureImage),
-        twitterImageFound: Boolean(twitterImage),
+        ogImageFound: Boolean(ogImages.length || ogSecureImages.length),
+        twitterImageFound: Boolean(twitterImages.length),
         schemaImageFound: Boolean(schemaImageResult.found),
         articleImageFound: Boolean(articleImageResult.found || fallbackArticleImage),
         googleNewsPlaceholderDetected,
