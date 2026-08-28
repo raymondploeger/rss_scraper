@@ -64,14 +64,14 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
   {
     name: "UKVI BRP and BRC Guidance",
     topic: "Identity Documents",
-    rssUrl: "https://www.gov.uk/government/publications/biometric-residence-permits-guidance",
+    rssUrl: "https://www.gov.uk/search/news-and-communications?keywords=biometric+residence+permit&organisations%5B%5D=uk-visas-and-immigration&parent=uk-visas-and-immigration",
     sourceType: "website",
     phase: "phase1",
   },
   {
     name: "UKVI Biometric Residence Permits",
     topic: "Identity Documents",
-    rssUrl: "https://www.gov.uk/biometric-residence-permits",
+    rssUrl: "https://www.gov.uk/search/news-and-communications?organisations%5B%5D=uk-visas-and-immigration&parent=uk-visas-and-immigration",
     sourceType: "website",
     phase: "phase1",
   },
