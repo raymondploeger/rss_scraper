@@ -1518,7 +1518,7 @@ const SUMMARY_METRICS = [
   { label: "Articles today", key: "articlesToday" },
   { label: "Latest articles", key: "totalArticles" },
 ];
-const DEFAULT_SOURCE_GROUPS = ["USA", "Canada", "Vendors", "Google Alerts", "Other"];
+const DEFAULT_SOURCE_GROUPS = ["USA", "Canada", "Vendors", "Government", "Google Alerts", "Bing Alerts", "Other"];
 const VENDOR_SOURCE_PATTERNS = Object.freeze([
   "regulaforensics.com/news",
   "veridos.com/en/about/press-media",
@@ -1546,6 +1546,28 @@ const VENDOR_SOURCE_PATTERNS = Object.freeze([
   "polyvantis.com/en/press",
   "linxens.com/en/news-events",
   "vttresearch.com/en/news-stories/news-and-stories",
+  "atlanticzeiser.com/en/news",
+  "authentix.com/feed",
+  "authentix.com",
+  "bundesdruckerei.de/en/newsroom/press-releases",
+  "cetis.si/sl/_rss/news",
+  "daon.com/resources",
+  "genkey.com/news",
+  "joh-enschede.nl/feed",
+  "securityfoiling.com/feed",
+  "sicpa.com/rss.xml",
+  "surys.com/feed",
+]);
+const GOVERNMENT_SOURCE_PATTERNS = Object.freeze([
+  "cbp.gov/newsroom",
+  "cbp.gov/travel/us-citizens/mobile-passport-control",
+  "gov.uk/search/news-and-communications",
+  "ind.nl/en/news",
+  "icao.int/news",
+  "icao.int/facilitation-programmes/assistance",
+  "eulisa.europa.eu/news-and-events",
+  "frontex.europa.eu/media-centre/news",
+  "migrationsverket.se/en/word-explanations/residence-permit-cards",
 ]);
 const TAG_FILTER_MIN_COUNT = 0;
 const ARTICLE_RENDER_PAGE_SIZE = 30;
@@ -43376,6 +43398,33 @@ function isGoogleAlertsFeed(feed) {
   );
 }
 
+function isBingAlertsFeed(feed) {
+  const name = String(feed?.name || "").toLowerCase();
+  const rssUrl = String(feed?.rssUrl || "").toLowerCase();
+
+  return (
+    name.includes("bing mirror") ||
+    name.includes("bing news") ||
+    rssUrl.includes("bing.com/news/search")
+  );
+}
+
+function isGovernmentSource(feed) {
+  const fingerprint = [
+    feed?.name,
+    feed?.rssUrl,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (!fingerprint || isDmvSource(feed) || isGoogleAlertsFeed(feed) || isBingAlertsFeed(feed)) {
+    return false;
+  }
+
+  return GOVERNMENT_SOURCE_PATTERNS.some((pattern) => fingerprint.includes(pattern));
+}
+
 function isVendorSource(feed) {
   const fingerprint = [
     feed?.name,
@@ -43385,7 +43434,7 @@ function isVendorSource(feed) {
     .join(" ")
     .toLowerCase();
 
-  if (!fingerprint || isDmvSource(feed) || isGoogleAlertsFeed(feed)) {
+  if (!fingerprint || isDmvSource(feed) || isGoogleAlertsFeed(feed) || isBingAlertsFeed(feed)) {
     return false;
   }
 
@@ -43434,8 +43483,16 @@ function getFeedGroupName(feed) {
     return "Vendors";
   }
 
+  if (isGovernmentSource(feed)) {
+    return "Government";
+  }
+
   if (isGoogleAlertsFeed(feed)) {
     return "Google Alerts";
+  }
+
+  if (isBingAlertsFeed(feed)) {
+    return "Bing Alerts";
   }
 
   return "Other";
