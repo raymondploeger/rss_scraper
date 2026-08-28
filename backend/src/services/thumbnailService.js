@@ -72,6 +72,16 @@ function isSicpaDrupalArticleImage(value) {
   }
 }
 
+function isGovUkPublishingAssetImage(value) {
+  try {
+    const parsed = new URL(String(value || ""));
+    const hostname = parsed.hostname.replace(/^www\./, "").toLowerCase();
+    return hostname === "assets.publishing.service.gov.uk" && parsed.pathname.includes("/media/");
+  } catch {
+    return false;
+  }
+}
+
 function decodeBase64Url(value) {
   const normalized = String(value || "")
     .replace(/-/g, "+")
@@ -128,6 +138,10 @@ export function isLikelyGenericMetadataImage(imageUrl) {
   const value = String(imageUrl || "").toLowerCase();
 
   if (isSicpaDrupalArticleImage(imageUrl)) {
+    return false;
+  }
+
+  if (isGovUkPublishingAssetImage(imageUrl)) {
     return false;
   }
 
