@@ -3348,44 +3348,85 @@ export async function syncFeed(feed) {
   return promise;
 }
 
-export async function syncAllFeeds() {
+function getRefreshMemorySnapshot() {
+  const usage = process.memoryUsage();
+  return {
+    rssMb: Math.round((Number(usage.rss || 0) / 1024 / 1024) * 10) / 10,
+    heapUsedMb: Math.round((Number(usage.heapUsed || 0) / 1024 / 1024) * 10) / 10,
+    heapTotalMb: Math.round((Number(usage.heapTotal || 0) / 1024 / 1024) * 10) / 10,
+  };
+}
+
+export async function syncAllFeeds(options = {}) {
   if (allFeedsSyncPromise) {
     console.log("[syncAllFeeds] Reusing in-flight full refresh");
     return allFeedsSyncPromise;
   }
 
   allFeedsSyncPromise = (async () => {
-    console.log("Starting refresh for all active feeds");
+    const requestedTrigger = String(options.trigger || "manual").trim().toLowerCase() || "manual";
+    const requestedConcurrency = Number(options.concurrencyOverride);
+    const requestedBatchDelayMs = Number(options.batchDelayMs);
+    const batchSize = Math.max(
+      1,
+      Number.isFinite(requestedConcurrency)
+        ? Math.floor(requestedConcurrency)
+        : env.pollConcurrency
+    );
+    const batchDelayMs = Math.max(
+      0,
+      Number.isFinite(requestedBatchDelayMs)
+        ? Math.floor(requestedBatchDelayMs)
+        : 250
+    );
+
+    console.log(
+      `[syncAllFeeds] starting trigger=${requestedTrigger} concurrency=${batchSize} batchDelayMs=${batchDelayMs} refreshAbortRssMb=${env.refreshAbortRssMb}`
+    );
     const feeds = await listFeedRecords({ activeOnly: true, order: "ASC" });
-    const batchSize = env.pollConcurrency;
     const results = [];
+    let abortedForMemory = false;
 
     for (let index = 0; index < feeds.length; index += batchSize) {
+      const memoryBeforeBatch = getRefreshMemorySnapshot();
+      if (env.refreshAbortRssMb > 0 && memoryBeforeBatch.rssMb >= env.refreshAbortRssMb) {
+        abortedForMemory = true;
+        console.warn(
+          `[syncAllFeeds] aborting before batch due to memory rssMb=${memoryBeforeBatch.rssMb} thresholdMb=${env.refreshAbortRssMb} processed=${results.length}/${feeds.length} trigger=${requestedTrigger}`
+        );
+        break;
+      }
+
       const batch = feeds.slice(index, index + batchSize);
       const batchNumber = Math.floor(index / batchSize) + 1;
       const totalBatches = Math.max(1, Math.ceil(feeds.length / batchSize));
       console.log(
-        `[syncAllFeeds] starting batch ${batchNumber}/${totalBatches} size=${batch.length} concurrency=${batchSize}`
+        `[syncAllFeeds] starting batch ${batchNumber}/${totalBatches} size=${batch.length} concurrency=${batchSize} trigger=${requestedTrigger} rssMb=${memoryBeforeBatch.rssMb} heapUsedMb=${memoryBeforeBatch.heapUsedMb}`
       );
       const batchResults = await Promise.all(batch.map((feed) => syncFeed(feed)));
       results.push(...batchResults);
+      const memoryAfterBatch = getRefreshMemorySnapshot();
       console.log(
-        `[syncAllFeeds] completed batch ${batchNumber}/${totalBatches} processed=${results.length}/${feeds.length}`
+        `[syncAllFeeds] completed batch ${batchNumber}/${totalBatches} processed=${results.length}/${feeds.length} trigger=${requestedTrigger} rssMb=${memoryAfterBatch.rssMb} heapUsedMb=${memoryAfterBatch.heapUsedMb}`
       );
       if (index + batchSize < feeds.length) {
-        await new Promise((resolve) => setTimeout(resolve, 250));
+        await new Promise((resolve) => setTimeout(resolve, batchDelayMs));
       }
     }
 
     broadcast("refresh:complete", {
       type: "refresh:complete",
       feedsProcessed: feeds.length,
-      results
+      results,
+      trigger: requestedTrigger,
+      abortedForMemory,
     });
 
     return {
       feedsProcessed: feeds.length,
-      results
+      results,
+      trigger: requestedTrigger,
+      abortedForMemory,
     };
   })().finally(() => {
     allFeedsSyncPromise = null;

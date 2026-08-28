@@ -16,7 +16,11 @@ export function startScheduler() {
     isRunning = true;
     try {
       console.log("Running scheduled feed refresh");
-      await syncAllFeeds();
+      await syncAllFeeds({
+        trigger: "scheduled",
+        concurrencyOverride: env.scheduledPollConcurrency,
+        batchDelayMs: env.scheduledBatchDelayMs,
+      });
       console.log("Scheduled feed refresh complete");
     } catch (error) {
       console.error("Scheduled feed refresh failed:", error?.stack || error);
