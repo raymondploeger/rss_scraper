@@ -2681,60 +2681,38 @@ async function extractCbpNewsItems(feed, $, pageUrl) {
 }
 
 async function extractGovUkNewsItems(feed, $, pageUrl) {
-  const discoveredCandidates = [];
+  const atomHref = $('link[rel="alternate"][type="application/atom+xml"]').first().attr("href") || "";
+  const atomUrl = resolveRelativeWebsiteLink(atomHref, pageUrl);
+  if (!atomUrl) {
+    return [];
+  }
+
+  const parsedFeed = await parser.parseURL(atomUrl);
+  const rawItems = Array.isArray(parsedFeed.items) ? parsedFeed.items : [];
   const seenLinks = new Set();
 
-  $("a[href*='/government/news/']")
-    .toArray()
-    .forEach((anchor) => {
-      const node = $(anchor);
-      const href = node.attr("href") || "";
-      const link = resolveRelativeWebsiteLink(href, pageUrl);
-      if (!matchesWebsiteSourceCandidatePolicy(feed, link)) {
-        return;
-      }
-
+  return rawItems
+    .map((item) => {
+      const link = resolveItemLink(item);
       const canonicalLink = canonicalizeUrl(link);
-      if (!canonicalLink || seenLinks.has(canonicalLink)) {
-        return;
+      if (!link || !canonicalLink || seenLinks.has(canonicalLink)) {
+        return null;
       }
-
-      const title =
-        sanitizeFeedText(node.text(), "") ||
-        sanitizeFeedText(node.attr("title"), "") ||
-        findNearbyWebsiteHeadingText($, node);
-      if (!title) {
-        return;
+      if (!matchesWebsiteSourceCandidatePolicy(feed, link)) {
+        return null;
       }
 
       seenLinks.add(canonicalLink);
-      discoveredCandidates.push({
-        title,
+      return {
+        title: sanitizeFeedText(item.title, ""),
         link,
-        excerpt: sanitizeFeedText(node.closest("article, li, div").text(), "").replace(title, "").trim(),
-        date: findNearbyWebsiteDate($, node),
-      });
-    });
-
-  const validatedItems = [];
-  for (const candidate of discoveredCandidates) {
-    const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch(() => null);
-    if (!validated?.accepted) {
-      continue;
-    }
-
-    validatedItems.push({
-      title: validated.title || candidate.title,
-      link: candidate.link,
-      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
-      image: validated.image || "",
-      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
-      author: "",
-      source: getSourceName(candidate.link),
-    });
-  }
-
-  return validatedItems;
+        isoDate: item.isoDate || item.pubDate || "",
+        contentSnippet: sanitizeFeedText(item.contentSnippet || item.summary || item.content || "", ""),
+        author: sanitizeFeedText(item.creator || item.author || "", ""),
+        source: "gov.uk",
+      };
+    })
+    .filter((item) => item && item.title);
 }
 
 function buildIndNewsCandidate($, block, pageUrl) {
