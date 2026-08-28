@@ -54889,6 +54889,11 @@ function buildPersonalDashboardBackendQueryParamsList() {
     return [];
   }
 
+  const resolvedFeed = state.filters.feedId ? resolveFeedByIdentity(state.filters.feedId) : null;
+  if (resolvedFeed?.id) {
+    return [applyBackendArticleQueryBaseParams()];
+  }
+
   const explicitSearch = String(state.filters.search || "").trim();
   if (explicitSearch) {
     return [applyBackendArticleQueryBaseParams()];
@@ -57752,8 +57757,13 @@ function resolveBackendPendingStage({ cachedQuery, queryKey, backendRequests } =
 function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendRequests, diagnostics } = {}) {
   const vendorsProfileActive = isVendorsProfileActive();
   const candidatePoolMap = new Map();
+  const activeFeedId = getActiveArticleFeedId();
   const cachedArticles = Array.isArray(cachedQuery?.articles) ? cachedQuery.articles : [];
-  const curatedVendorArticles = vendorsProfileActive ? getCuratedVendorWebsiteArticlesFromState() : [];
+  const curatedVendorArticles = vendorsProfileActive
+    ? getCuratedVendorWebsiteArticlesFromState().filter((article) => (
+      !activeFeedId || articleMatchesSelectedFeed(article, activeFeedId)
+    ))
+    : [];
 
   cachedArticles.forEach((article) => {
     const key = String(article?.id || article?.canonicalLink || article?.link || "").trim().toLowerCase();
@@ -57770,6 +57780,7 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
   });
 
   const candidatePool = Array.from(candidatePoolMap.values())
+    .filter((article) => !activeFeedId || articleMatchesSelectedFeed(article, activeFeedId))
     .sort((left, right) => new Date(right?.pubDate || 0) - new Date(left?.pubDate || 0));
   markProductionLoadTiming("backendNormalizationAdvancedFiltersStart", {
     inputCount: candidatePool.length,
