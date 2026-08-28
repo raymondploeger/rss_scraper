@@ -62,16 +62,9 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
 
   // Residence permits
   {
-    name: "UKVI BRP and BRC Guidance",
+    name: "GOV.UK News and Communications",
     topic: "Identity Documents",
-    rssUrl: "https://www.gov.uk/search/news-and-communications?keywords=biometric+residence+permit&organisations%5B%5D=uk-visas-and-immigration&parent=uk-visas-and-immigration",
-    sourceType: "website",
-    phase: "phase1",
-  },
-  {
-    name: "UKVI Biometric Residence Permits",
-    topic: "Identity Documents",
-    rssUrl: "https://www.gov.uk/search/news-and-communications?organisations%5B%5D=uk-visas-and-immigration&parent=uk-visas-and-immigration",
+    rssUrl: "https://www.gov.uk/search/news-and-communications",
     sourceType: "website",
     phase: "phase1",
   },
@@ -437,6 +430,14 @@ const RETIRED_STRATEGIC_FEEDS = [
     name: "Demax Holograms News",
     rssUrl: "https://demax-holograms.com/news/",
   },
+  {
+    name: "UKVI BRP and BRC Guidance",
+    rssUrl: "https://www.gov.uk/search/news-and-communications?keywords=biometric+residence+permit&organisations%5B%5D=uk-visas-and-immigration&parent=uk-visas-and-immigration",
+  },
+  {
+    name: "UKVI Biometric Residence Permits",
+    rssUrl: "https://www.gov.uk/search/news-and-communications?organisations%5B%5D=uk-visas-and-immigration&parent=uk-visas-and-immigration",
+  },
 ];
 
 export async function ensureStrategicFeeds() {
@@ -449,7 +450,10 @@ export async function ensureStrategicFeeds() {
 
   for (const definition of RETIRED_STRATEGIC_FEEDS) {
     try {
-      const existing = await findFeedByRssUrl(definition.rssUrl);
+      const existingByUrl = definition.rssUrl
+        ? await findFeedByRssUrl(definition.rssUrl)
+        : null;
+      const existing = existingByUrl || await findFeedByName(definition.name);
       if (!existing || existing.isActive === false) {
         continue;
       }

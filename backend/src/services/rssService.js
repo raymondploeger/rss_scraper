@@ -62,8 +62,7 @@ const CRANE_CURRENCY_MAX_ARCHIVE_PAGES = 8;
 const CRANE_CURRENCY_MAX_CANDIDATES = 80;
 const IND_NEWS_URL = "https://ind.nl/en/news";
 const CBP_MEDIA_RELEASES_URL = "https://www.cbp.gov/newsroom/media-releases/all";
-const GOV_UK_BRP_NEWS_URL = "https://www.gov.uk/search/news-and-communications?keywords=biometric+residence+permit&organisations%5B%5D=uk-visas-and-immigration&parent=uk-visas-and-immigration";
-const GOV_UK_UKVI_NEWS_URL = "https://www.gov.uk/search/news-and-communications?organisations%5B%5D=uk-visas-and-immigration&parent=uk-visas-and-immigration";
+const GOV_UK_NEWS_URL = "https://www.gov.uk/search/news-and-communications";
 const LANDQART_NEWS_URL = "https://www.landqart.com/en/stories/news";
 const POLYVANTIS_PRESS_URL = "https://www.polyvantis.com/en/press";
 const LINXENS_NEWS_URL = "https://www.linxens.com/en/news-events";
@@ -228,9 +227,13 @@ function isCbpNewsFeed(feed) {
 
 function isGovUkNewsFeed(feed) {
   return matchesWebsiteFeedSignature(feed, {
-    exactUrls: [GOV_UK_BRP_NEWS_URL, GOV_UK_UKVI_NEWS_URL],
+    exactUrls: [GOV_UK_NEWS_URL],
     urlFragments: ["gov.uk/search/news-and-communications"],
-    exactNames: ["UKVI BRP and BRC Guidance", "UKVI Biometric Residence Permits"],
+    exactNames: [
+      "GOV.UK News and Communications",
+      "UKVI BRP and BRC Guidance",
+      "UKVI Biometric Residence Permits",
+    ],
   });
 }
 
