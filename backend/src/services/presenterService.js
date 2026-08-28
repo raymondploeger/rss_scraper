@@ -24,10 +24,24 @@ function resolveCanonicalLink(canonicalLink, link) {
   }
 }
 
+function isGovUkPublishingAssetImage(value) {
+  try {
+    const parsed = new URL(String(value || ""));
+    const hostname = parsed.hostname.replace(/^www\./, "").toLowerCase();
+    return hostname === "assets.publishing.service.gov.uk" && parsed.pathname.includes("/media/");
+  } catch {
+    return false;
+  }
+}
+
 function isPresentableArticleThumbnail(value) {
   const normalized = String(value || "").trim();
   if (!normalized || normalized === env.placeholderImage) {
     return false;
+  }
+
+  if (isGovUkPublishingAssetImage(normalized)) {
+    return true;
   }
 
   const lower = normalized.toLowerCase();
