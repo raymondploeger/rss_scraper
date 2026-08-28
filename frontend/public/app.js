@@ -1567,6 +1567,7 @@ const VENDOR_SOURCE_PATTERNS = Object.freeze([
   "authentix.com",
   "bundesdruckerei.de/en/newsroom/press-releases",
   "cetis.si/sl/_rss/news",
+  "cetis.si/en/_rss/news",
   "daon.com/resources",
   "genkey.com/news",
   "joh-enschede.nl/feed",
