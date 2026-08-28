@@ -6890,22 +6890,16 @@ function updateRefreshStatus(options = {}) {
   }
 
   const pendingCount = Number(options.pendingCount ?? runtime.pendingBackgroundNewArticles ?? 0);
-  const baseLabel = AUTO_REFRESH_MODE === "off"
-    ? "Manual refresh mode"
-    : "Background refresh every 60 minutes";
 
   elements.connectionStatus.innerHTML = "";
-  const baseText = document.createTextNode(baseLabel);
-  elements.connectionStatus.appendChild(baseText);
 
   if (pendingCount > 0) {
-    const spacer = document.createTextNode(" | ");
     const refreshButton = document.createElement("button");
     refreshButton.type = "button";
     refreshButton.className = "status-inline-refresh";
     refreshButton.dataset.applyRefresh = "true";
     refreshButton.textContent = "New articles available (Refresh)";
-    elements.connectionStatus.append(spacer, refreshButton);
+    elements.connectionStatus.appendChild(refreshButton);
   }
 }
 
@@ -26660,7 +26654,7 @@ function renderPersonalDashboard() {
       const startProfileAction = editingProfile
         ? ""
         : `
-          <button class="ghost-button personal-dashboard-summary-edit" type="button" data-edit-personal-profile>
+          <button class="ghost-button personal-dashboard-summary-edit is-primary" type="button" data-edit-personal-profile>
             Start Profile
           </button>
         `;
