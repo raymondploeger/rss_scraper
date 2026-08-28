@@ -1521,6 +1521,7 @@ const SUMMARY_METRICS = [
 const DEFAULT_SOURCE_GROUPS = ["USA", "Canada", "Vendors", "Government", "Google Alerts", "Google RSS", "Bing Alerts", "Other"];
 const VENDOR_SOURCE_PATTERNS = Object.freeze([
   "regulaforensics.com/news",
+  "regulaforensics.com/blog/feed",
   "veridos.com/en/about/press-media",
   "ingroupe.com/newsroom",
   "bundesdruckerei.de/en/newsroom/press-releases",
@@ -1532,7 +1533,9 @@ const VENDOR_SOURCE_PATTERNS = Object.freeze([
   "louisenthal.com/highlights/news/press-releases",
   "koenig-bauer.com/en/newsroom",
   "idemia.com/pressroom",
+  "idemia.com/feed",
   "cpl.thalesgroup.com/about-us/newsroom",
+  "thalesgroup.com/rss.xml",
   "pwpw.pl/en/rss",
   "atlanticzeiser.com/en/news",
   "muehlbauer.de/company/company/press",

@@ -431,6 +431,10 @@ const RETIRED_STRATEGIC_FEEDS = [
     rssUrl: "https://demax-holograms.com/news/",
   },
   {
+    name: "Thales",
+    rssUrl: "https://www.thalesgroup.com/rss.xml",
+  },
+  {
     name: "UKVI BRP and BRC Guidance",
     rssUrl: "https://www.gov.uk/search/news-and-communications?keywords=biometric+residence+permit&organisations%5B%5D=uk-visas-and-immigration&parent=uk-visas-and-immigration",
   },
