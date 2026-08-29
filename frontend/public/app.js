@@ -27103,12 +27103,15 @@ function renderArticleEmptyStateHtml(defaultMessage = "No articles match the act
   let message = defaultMessage;
 
   if (selectedFeed) {
-    if (!selectedFeedStoredArticleCount) {
+    if (queryContext.hasProfile && profileScope && !profileScope.compatible) {
+      const articleCountLabel = selectedFeedStoredArticleCount
+        ? ` has ${selectedFeedStoredArticleCount} imported article${selectedFeedStoredArticleCount === 1 ? "" : "s"}, but`
+        : " is selected, but";
+      message = `${selectedFeedLabel}${articleCountLabel} the active profile does not include this source.`;
+      details.push("Clear the profile or choose a matching profile/source combination.");
+    } else if (!selectedFeedStoredArticleCount) {
       message = `${selectedFeedLabel} has no articles available in the current loaded set.`;
       details.push("Open this source without profile filters or refresh sources if this looks wrong.");
-    } else if (queryContext.hasProfile && profileScope && !profileScope.compatible) {
-      message = `${selectedFeedLabel} has ${selectedFeedStoredArticleCount} imported article${selectedFeedStoredArticleCount === 1 ? "" : "s"}, but the active profile does not include this source.`;
-      details.push("Clear the profile or choose a matching profile/source combination.");
     } else if (queryContext.hasSearch) {
       message = `${selectedFeedLabel} has ${selectedFeedStoredArticleCount} imported article${selectedFeedStoredArticleCount === 1 ? "" : "s"}, but none match the current search.`;
       details.push("Clear the search term to see the source feed again.");
