@@ -7746,10 +7746,13 @@ function summarizeCandidateProvider(candidateProvider) {
 function buildStrategyExecutionPlan(candidateStrategy, candidateProvider, normalizedFilterState, candidatePoolContext, options = {}) {
   const activeFeedId = options.activeFeedId || normalizedFilterState?.feed?.id || "";
   const useBackendQuery = Boolean(options.useBackendQuery);
+  const queryContext = getActiveArticleQueryContext();
   const hasSelectedFeedFullPoolAttempt = Boolean(
     activeFeedId &&
       isSelectedFeedFullPoolEnabled() &&
-      !normalizedFilterState?.filters?.date
+      !normalizedFilterState?.filters?.date &&
+      !queryContext.hasProfile &&
+      !queryContext.hasAdvancedArticleFilter
   );
   let dispatchMode = "global_memory";
   let executionReason = "global memory candidate source";
@@ -26940,14 +26943,40 @@ function setIdentityDocumentAuthorityStrictness(strictness) {
   scheduleRenderArticles("identity-document-authority-strictness", { mode: "frame" });
 }
 
-function hasPersonalDashboardSelections() {
-  return !isSourceOnlyFeedViewActive() &&
-    Array.isArray(state.personalDashboard.interests) &&
-    state.personalDashboard.interests.length > 0;
-}
-
 function isSourceOnlyFeedViewActive() {
   return Boolean(state.filters?.sourceOnly && state.filters?.feedId);
+}
+
+function getActiveArticleQueryContext() {
+  const profileInterests = normalizePersonalDashboardInterests(state.personalDashboard?.interests || []);
+  const feedIdentity = String(state.filters?.feedId || "").trim();
+  const sourceGroup = String(state.filters?.sourceGroup || "all").trim() || "all";
+  const search = String(state.filters?.search || "").trim();
+  const topic = String(state.filters?.topic || "").trim();
+  const tag = String(state.filters?.tag || "").trim();
+  const signalCategory = String(state.filters?.signalCategory || "").trim();
+  const date = String(state.filters?.date || "").trim();
+  return {
+    profileInterests,
+    hasProfile: profileInterests.length > 0,
+    feedIdentity,
+    hasSelectedFeed: Boolean(feedIdentity),
+    sourceOnly: isSourceOnlyFeedViewActive(),
+    sourceGroup,
+    hasSourceGroup: sourceGroup !== "all",
+    search,
+    hasSearch: Boolean(search),
+    topic,
+    tag,
+    signalCategory,
+    date,
+    favoritesOnly: Boolean(state.filters?.favoritesOnly),
+    hasAdvancedArticleFilter: Boolean(search || topic || tag || signalCategory || date),
+  };
+}
+
+function hasPersonalDashboardSelections() {
+  return getActiveArticleQueryContext().hasProfile;
 }
 
 function hasActiveAdvancedSearchFilters() {
@@ -54711,15 +54740,21 @@ function renderSkeletons() {
 }
 
 function shouldUseBackendArticleQuery() {
+  const queryContext = getActiveArticleQueryContext();
+  const plainSourceOnlyFeedView = queryContext.sourceOnly &&
+    queryContext.hasSelectedFeed &&
+    !queryContext.hasProfile &&
+    !queryContext.hasAdvancedArticleFilter;
+
   return Boolean(
     !state.filters.favoritesOnly &&
     !state.filters.articleIds?.length &&
     !state.filters.dmvFeedId &&
     !state.filters.canadaDmvFeedPath &&
     !state.filters.canadaDmvAll &&
-    !(isSourceOnlyFeedViewActive() && state.filters.feedId) &&
+    !plainSourceOnlyFeedView &&
     (
-      hasPersonalDashboardSelections() ||
+      queryContext.hasProfile ||
       state.filters.feedId ||
       state.filters.topic ||
       state.filters.tag ||
@@ -55606,13 +55641,14 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
 
 function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
   const inputArticles = Array.isArray(articles) ? articles : [];
-  if (isSourceOnlyFeedViewActive()) {
+  const queryContext = getActiveArticleQueryContext();
+  if (queryContext.sourceOnly && !queryContext.hasProfile) {
     inputArticles.forEach((article) => {
       recordFilterDecisionStage(diagnostics, article, {
         stage: "personal_dashboard",
         result: "passed",
-        reason: "source_only_feed_view_bypassed_personal_dashboard",
-        notes: ["Source list View articles shows the selected source without applying the saved profile"],
+        reason: "source_only_feed_view_without_profile",
+        notes: ["Source list View articles has no active profile to apply"],
         metadata: {
           sourceOnlyFeedView: true,
           selectedFeed: state.filters.feedId || "",
@@ -55625,7 +55661,7 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
         "personal_dashboard",
         inputArticles.length,
         inputArticles.length,
-        ["Source-only feed view bypassed Personal Dashboard profile filtering"]
+        ["Source-only feed view had no active Personal Dashboard profile"]
       ),
     };
   }
@@ -56063,14 +56099,15 @@ function applyAdvancedFiltersStage({ articles, advancedFilterOptions, diagnostic
 
 function applyIdentityProfessionalRelevanceGuardStage({ articles, branch, diagnostics } = {}) {
   const inputArticles = Array.isArray(articles) ? articles : [];
-  if (isSourceOnlyFeedViewActive()) {
+  const queryContext = getActiveArticleQueryContext();
+  if (queryContext.sourceOnly && !queryContext.hasProfile) {
     return {
       articles: inputArticles,
       stage: createFilterPipelineStageResult(
         "identity_professional_relevance_guard",
         inputArticles.length,
         inputArticles.length,
-        ["Source-only feed view bypassed profile professional relevance guards"]
+        ["Source-only feed view had no active profile relevance guard"]
       ),
     };
   }
@@ -56155,14 +56192,15 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
 
 function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, diagnostics } = {}) {
   const inputArticles = Array.isArray(articles) ? articles : [];
-  if (isSourceOnlyFeedViewActive()) {
+  const queryContext = getActiveArticleQueryContext();
+  if (queryContext.sourceOnly && !queryContext.hasProfile) {
     return {
       articles: inputArticles,
       stage: createFilterPipelineStageResult(
         "digital_identity_professional_guard",
         inputArticles.length,
         inputArticles.length,
-        ["Source-only feed view bypassed Digital Identity profile professional guards"]
+        ["Source-only feed view had no active Digital Identity profile guard"]
       ),
     };
   }
