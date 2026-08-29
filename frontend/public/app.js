@@ -6,6 +6,7 @@ const ALERT_DEDUPE_STORAGE_KEY = "recentAlertKeys";
 const ALERT_ARTICLE_FILTER_STORAGE_KEY = "activeAlertArticleFilter";
 const ACTIVITY_LOG_STORAGE_KEY = "dashboardActivityLog";
 const FAVORITE_ARTICLES_STORAGE_KEY = "favoriteArticles";
+const SOURCE_SELECTION_STORAGE_KEY = "dashboardSourceSelection";
 const ALERT_DEDUPE_WINDOW_MS = 10 * 60 * 1000;
 const ACTIVITY_LOG_TTL_MS = 24 * 60 * 60 * 1000;
 const POLLING_INTERVAL_MS = 60 * 60 * 1000;
@@ -6649,6 +6650,7 @@ const runtime = {
     todayArticleIds: [],
     totalCount: 0,
   },
+  sourceSelectionPersistenceReady: false,
 };
 
 const elements = {
@@ -6775,6 +6777,7 @@ function flushScheduledRender() {
 
 function scheduleRenderArticles(reason = "interaction", options = {}) {
   const mode = options.mode === "timeout" ? "timeout" : "frame";
+  saveSourceSelectionPreferences();
   runtime.scheduledRenderReason = reason;
   runtime.scheduledRenderRequestedAt = getPerformanceNow();
 
@@ -26084,6 +26087,53 @@ function savePersonalDashboardCustomProfiles() {
     PERSONAL_DASHBOARD_CUSTOM_PROFILES_STORAGE_KEY,
     JSON.stringify(state.personalDashboard.customProfiles)
   );
+}
+
+function loadSourceSelectionPreferences() {
+  let stored = null;
+  try {
+    stored = JSON.parse(window.localStorage.getItem(SOURCE_SELECTION_STORAGE_KEY) || "null");
+  } catch {
+    stored = null;
+  }
+
+  if (!stored || typeof stored !== "object") {
+    return;
+  }
+
+  const feedId = String(stored.feedId || "").trim();
+  const sourceGroup = String(stored.sourceGroup || "all").trim() || "all";
+  state.filters.feedId = feedId;
+  state.filters.sourceOnly = Boolean(feedId && stored.sourceOnly !== false);
+  state.filters.sourceGroup = sourceGroup;
+}
+
+function saveSourceSelectionPreferences() {
+  if (!runtime.sourceSelectionPersistenceReady) {
+    return;
+  }
+
+  const feedId = String(state.filters.feedId || "").trim();
+  const sourceGroup = String(state.filters.sourceGroup || "all").trim() || "all";
+  const sourceOnly = Boolean(feedId && state.filters.sourceOnly);
+
+  try {
+    if (!feedId && sourceGroup === "all") {
+      window.localStorage.removeItem(SOURCE_SELECTION_STORAGE_KEY);
+      return;
+    }
+
+    window.localStorage.setItem(
+      SOURCE_SELECTION_STORAGE_KEY,
+      JSON.stringify({
+        feedId,
+        sourceGroup,
+        sourceOnly,
+      })
+    );
+  } catch {
+    // Local storage can be unavailable in strict browser modes.
+  }
 }
 
 function clearPersonalDashboardPreferences() {
@@ -50522,6 +50572,7 @@ function renderFeedItem(feed) {
 function renderFeedList() {
   syncSourceGroupTabs();
   syncSourcePanelContextActions();
+  saveSourceSelectionPreferences();
   const visibleFeeds = getVisibleFeeds();
   const renderedFeeds = visibleFeeds.slice(0, MAX_VISIBLE_SOURCES_IN_LIST);
   const activeGroup = state.filters.sourceGroup || "all";
@@ -59849,6 +59900,7 @@ function bindEvents() {
       tag: "",
       signalCategory: "",
       feedId: "",
+      sourceOnly: false,
       dmvFeedId: "",
       canadaDmvFeedPath: "",
       canadaDmvAll: false,
@@ -60298,11 +60350,14 @@ async function init() {
   state.feedPanelCollapsed = isFeedPanelCollapsed();
   window.localStorage.setItem(FEED_PANEL_COLLAPSED_STORAGE_KEY, "true");
   resetDashboardState();
+  loadSourceSelectionPreferences();
+  runtime.sourceSelectionPersistenceReady = true;
   syncFeedFormMode();
   bindEvents();
   renderSkeletons();
   syncNoiseKeywordVisibility();
   await loadSnapshot();
+  saveSourceSelectionPreferences();
   syncNoiseKeywordVisibility();
   syncFeedPanelVisibility();
   initRealtime();
