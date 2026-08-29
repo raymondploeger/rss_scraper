@@ -27069,7 +27069,19 @@ function getSelectedFeedStoredArticleCount(feedId = state.filters?.feedId) {
     return 0;
   }
 
+  const fullPoolCache = runtime.selectedFeedFullPoolCache.get(getSelectedFeedFullPoolKey(feedIdentity));
+  if (fullPoolCache && Number.isFinite(Number(fullPoolCache.totalCount))) {
+    return Number(fullPoolCache.totalCount) || 0;
+  }
+
   const resolvedFeed = resolveFeedByIdentity(feedIdentity);
+  if (resolvedFeed?.id) {
+    const resolvedFullPoolCache = runtime.selectedFeedFullPoolCache.get(getSelectedFeedFullPoolKey(resolvedFeed.id));
+    if (resolvedFullPoolCache && Number.isFinite(Number(resolvedFullPoolCache.totalCount))) {
+      return Number(resolvedFullPoolCache.totalCount) || 0;
+    }
+  }
+
   if (resolvedFeed?.id && runtime.articlesByFeedId.has(resolvedFeed.id)) {
     return runtime.articlesByFeedId.get(resolvedFeed.id).length;
   }
@@ -27092,8 +27104,8 @@ function renderArticleEmptyStateHtml(defaultMessage = "No articles match the act
 
   if (selectedFeed) {
     if (!selectedFeedStoredArticleCount) {
-      message = `${selectedFeedLabel} has no imported articles yet.`;
-      details.push("Refresh sources after deployment if this source was just changed.");
+      message = `${selectedFeedLabel} has no articles available in the current loaded set.`;
+      details.push("Open this source without profile filters or refresh sources if this looks wrong.");
     } else if (queryContext.hasProfile && profileScope && !profileScope.compatible) {
       message = `${selectedFeedLabel} has ${selectedFeedStoredArticleCount} imported article${selectedFeedStoredArticleCount === 1 ? "" : "s"}, but the active profile does not include this source.`;
       details.push("Clear the profile or choose a matching profile/source combination.");
