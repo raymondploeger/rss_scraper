@@ -26979,6 +26979,93 @@ function hasPersonalDashboardSelections() {
   return getActiveArticleQueryContext().hasProfile;
 }
 
+function getSelectedFeedProfileScope(selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)) {
+  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  const feed = resolveFeedByIdentity(state.filters?.feedId);
+  if (!normalizedInterests.length || !feed) {
+    return {
+      compatible: false,
+      reason: !normalizedInterests.length ? "no_profile" : "no_selected_feed",
+    };
+  }
+
+  const feedGroupName = getFeedGroupName(feed);
+  const feedTopic = String(feed.topic || "").trim().toLowerCase();
+  const feedFingerprint = [
+    feed.name,
+    feed.topic,
+    feed.rssUrl,
+    feed.officialUrl,
+    feed.siteUrl,
+    feed.homepage,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
+  const selectedSharedSecurityInterests = getSelectedSharedSecuritySubinterests(normalizedInterests);
+  const selectedIdentityInterests = getSelectedIdentityDashboardInterests(normalizedInterests);
+  const templateId = getMatchingPersonalDashboardTemplateId(normalizedInterests);
+  const hasFeedTerm = (term) => textMatchesKeyword(feedFingerprint, term);
+  const hasAnyFeedTerm = (terms) => terms.some(hasFeedTerm);
+
+  if (templateId === "vendors" && feedGroupName === "Vendors") {
+    return { compatible: true, reason: "vendors_profile_source_group" };
+  }
+
+  if (selectedMainDomains.includes("identity_documents")) {
+    if (feedTopic === "identity documents" || feedTopic.includes("identity document")) {
+      return { compatible: true, reason: "identity_documents_feed_topic" };
+    }
+    if (
+      feedGroupName === "Government" &&
+      hasAnyFeedTerm(["gov.uk", "ind.nl", "cbp.gov", "icao"])
+    ) {
+      return { compatible: true, reason: "identity_documents_government_source" };
+    }
+    if (
+      selectedIdentityInterests.includes("icao") &&
+      hasAnyFeedTerm(["icao", "doc 9303", "trip"])
+    ) {
+      return { compatible: true, reason: "icao_profile_source" };
+    }
+  }
+
+  if (
+    selectedMainDomains.includes("banknotes") &&
+    (
+      feedTopic === "banknotes" ||
+      hasAnyFeedTerm(["banknotenews", "banknote news", "banknote", "currency"])
+    )
+  ) {
+    return { compatible: true, reason: "banknotes_source" };
+  }
+
+  if (
+    selectedMainDomains.includes("digital_identity_biometrics") &&
+    (
+      feedTopic.includes("digital identity") ||
+      feedTopic.includes("biometric") ||
+      hasAnyFeedTerm(["biometric", "digital identity", "identity verification", "authentication"])
+    )
+  ) {
+    return { compatible: true, reason: "digital_identity_source" };
+  }
+
+  if (
+    selectedSharedSecurityInterests.length &&
+    (
+      feedTopic.includes("security") ||
+      feedTopic.includes("printing") ||
+      hasAnyFeedTerm(["security printing", "security document", "hologram", "ovd", "secure document"])
+    )
+  ) {
+    return { compatible: true, reason: "shared_security_source" };
+  }
+
+  return { compatible: false, reason: "profile_source_mismatch" };
+}
+
 function hasActiveAdvancedSearchFilters() {
   const filters = state.filters || {};
   const keywordFilters = state.keywordFilters || {};
@@ -42134,6 +42221,15 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
   );
   if (!selectedInterests.length) {
     return finishPersonalDashboardTiming(true, "no_selected_interests");
+  }
+
+  if (state.filters?.feedId) {
+    const selectedFeedProfileScope = measurePersonalDashboardSegment("selectedFeedProfileScope", () =>
+      getSelectedFeedProfileScope(selectedInterests)
+    );
+    if (selectedFeedProfileScope.compatible) {
+      return finishPersonalDashboardTiming(true, `selected_feed_profile_scope:${selectedFeedProfileScope.reason}`);
+    }
   }
 
   const vendorsProfileAssessment = measurePersonalDashboardSegment("vendorsProfileProfessionalGuard", () =>
