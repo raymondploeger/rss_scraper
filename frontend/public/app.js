@@ -27063,6 +27063,59 @@ function getSelectedFeedProfileScope(selectedInterests = normalizePersonalDashbo
   return { compatible: false, reason: "profile_source_mismatch" };
 }
 
+function getSelectedFeedStoredArticleCount(feedId = state.filters?.feedId) {
+  const feedIdentity = String(feedId || "").trim();
+  if (!feedIdentity) {
+    return 0;
+  }
+
+  const resolvedFeed = resolveFeedByIdentity(feedIdentity);
+  if (resolvedFeed?.id && runtime.articlesByFeedId.has(resolvedFeed.id)) {
+    return runtime.articlesByFeedId.get(resolvedFeed.id).length;
+  }
+
+  return (Array.isArray(state.articles) ? state.articles : [])
+    .filter((article) => articleMatchesSelectedFeed(article, feedIdentity))
+    .length;
+}
+
+function renderArticleEmptyStateHtml(defaultMessage = "No articles match the active filters.") {
+  const queryContext = getActiveArticleQueryContext();
+  const selectedFeed = queryContext.hasSelectedFeed ? resolveFeedByIdentity(queryContext.feedIdentity) : null;
+  const selectedFeedLabel = selectedFeed?.name || getSelectedFeedLabel() || "";
+  const selectedFeedStoredArticleCount = selectedFeed ? getSelectedFeedStoredArticleCount(queryContext.feedIdentity) : 0;
+  const profileScope = selectedFeed && queryContext.hasProfile
+    ? getSelectedFeedProfileScope(queryContext.profileInterests)
+    : null;
+  const details = [];
+  let message = defaultMessage;
+
+  if (selectedFeed) {
+    if (!selectedFeedStoredArticleCount) {
+      message = `${selectedFeedLabel} has no imported articles yet.`;
+      details.push("Refresh sources after deployment if this source was just changed.");
+    } else if (queryContext.hasProfile && profileScope && !profileScope.compatible) {
+      message = `${selectedFeedLabel} has ${selectedFeedStoredArticleCount} imported article${selectedFeedStoredArticleCount === 1 ? "" : "s"}, but the active profile does not include this source.`;
+      details.push("Clear the profile or choose a matching profile/source combination.");
+    } else if (queryContext.hasSearch) {
+      message = `${selectedFeedLabel} has ${selectedFeedStoredArticleCount} imported article${selectedFeedStoredArticleCount === 1 ? "" : "s"}, but none match the current search.`;
+      details.push("Clear the search term to see the source feed again.");
+    } else if (queryContext.hasProfile || queryContext.hasSourceGroup || queryContext.hasAdvancedArticleFilter) {
+      message = `${selectedFeedLabel} has ${selectedFeedStoredArticleCount} imported article${selectedFeedStoredArticleCount === 1 ? "" : "s"}, but the active filters remove them.`;
+      details.push("Clear active filters one by one to find the blocking filter.");
+    }
+  } else if (queryContext.hasSearch) {
+    message = "No articles match the current search.";
+  } else if (queryContext.hasProfile || queryContext.hasSourceGroup || queryContext.hasAdvancedArticleFilter) {
+    message = "No articles match the active profile and filters.";
+  }
+
+  const detailHtml = details.length
+    ? `<p>${details.map(escapeHtml).join(" ")}</p>`
+    : "";
+  return `<div class="empty-state"><strong>${escapeHtml(message)}</strong>${detailHtml}</div>`;
+}
+
 function hasActiveAdvancedSearchFilters() {
   const filters = state.filters || {};
   const keywordFilters = state.keywordFilters || {};
@@ -58363,7 +58416,7 @@ function renderArticlesFallback(error) {
     elements.articlesGrid.innerHTML = "";
 
     if (!articlesToRender.length) {
-      elements.articlesGrid.innerHTML = `<div class="empty-state">No articles match the active filters.</div>`;
+      elements.articlesGrid.innerHTML = renderArticleEmptyStateHtml();
     } else {
       const fragment = document.createDocumentFragment();
       articlesToRender.forEach((article) => {
@@ -58657,8 +58710,7 @@ function renderArticles() {
       elements.articlesGrid.innerHTML = "";
 
       if (!safeArticlePagination.totalCount) {
-        elements.articlesGrid.innerHTML =
-          `<div class="empty-state">No articles match the active filters.</div>`;
+        elements.articlesGrid.innerHTML = renderArticleEmptyStateHtml();
         renderPaginationControls(safeArticlePagination);
         intelligenceTimeEnd("renderArticles:dom-update");
         finalizeRenderDiagnostics(renderDiagnostics);
@@ -58725,8 +58777,7 @@ function renderArticles() {
       elements.articlesGrid.innerHTML = "";
 
       if (!safeArticlePagination.totalCount) {
-        elements.articlesGrid.innerHTML =
-          `<div class="empty-state">No articles match the active filters.</div>`;
+        elements.articlesGrid.innerHTML = renderArticleEmptyStateHtml();
         renderPaginationControls(safeArticlePagination);
         renderDiagnostics.branchName = "usa-grouped-empty";
         intelligenceTimeEnd("renderArticles:dom-update");
@@ -58836,9 +58887,13 @@ function renderArticles() {
               : "No imported news available for this USA DMV entry yet."
             : selectedUsDmvFeed
               ? "No imported news available for this USA DMV entry yet."
-              : "No articles match the active filters.";
+            : "No articles match the active filters.";
       const officialUrl = !state.filters.canadaDmvAll ? selectedDmvOfficialUrl : "";
-      renderDmvEmptyState(emptyStateMessage, officialUrl);
+      if (officialUrl || selectedUsDmvEntry || selectedUsDmvFeed || selectedCanadaEntry || state.filters.canadaDmvAll) {
+        renderDmvEmptyState(emptyStateMessage, officialUrl);
+      } else {
+        elements.articlesGrid.innerHTML = renderArticleEmptyStateHtml(emptyStateMessage);
+      }
       renderPaginationControls(safeArticlePagination);
       renderDiagnostics.branchName = "default-empty";
       intelligenceTimeEnd("renderArticles:dom-update");

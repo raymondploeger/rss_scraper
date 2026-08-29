@@ -2824,6 +2824,97 @@ async function extractIndNewsItems(feed, $, pageUrl) {
   return validatedItems;
 }
 
+function parseIcaoListingDate(value) {
+  const match = String(value || "").trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (!match) {
+    return parseWebsiteDateFromText(value);
+  }
+
+  const [, day, month, yearValue] = match;
+  const year = yearValue.length === 2 ? `20${yearValue}` : yearValue;
+  return parseWebsiteDate(`${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`);
+}
+
+function buildIcaoNewsCandidate(feed, $, block, pageUrl) {
+  const node = $(block);
+  const anchor = node.find(".card-title a[href^='/news/'], .card-title a[href*='/news/']").first();
+  const href = anchor.attr("href") || "";
+  const link = resolveRelativeWebsiteLink(href, pageUrl);
+  if (!link || !matchesWebsiteSourceCandidatePolicy(feed, link)) {
+    return null;
+  }
+
+  const title = sanitizeFeedText(anchor.text(), "");
+  if (!title || title.toLowerCase() === "icao newsroom") {
+    return null;
+  }
+
+  const imageNode = node.find(".card-img img").first();
+  const image =
+    pickImageFromSrcset(imageNode.attr("srcset") || imageNode.attr("data-srcset") || "") ||
+    imageNode.attr("src") ||
+    "";
+
+  return {
+    title,
+    link,
+    excerpt: sanitizeFeedText(node.find(".card-contents").text(), "").replace(title, "").trim(),
+    date: parseIcaoListingDate(node.find(".card-date").first().text()) || null,
+    image: resolveFeedImageCandidate(link, image),
+  };
+}
+
+async function extractIcaoNewsItems(feed, $, pageUrl) {
+  const candidates = [];
+  const seenLinks = new Set();
+
+  $(".card-item.views-row, .views-row")
+    .toArray()
+    .forEach((block) => {
+      const candidate = buildIcaoNewsCandidate(feed, $, block, pageUrl);
+      const canonicalLink = canonicalizeUrl(candidate?.link || "");
+      if (!candidate || !canonicalLink || seenLinks.has(canonicalLink)) {
+        return;
+      }
+
+      seenLinks.add(canonicalLink);
+      candidates.push(candidate);
+    });
+
+  const validatedItems = [];
+  for (const candidate of candidates.slice(0, 24)) {
+    const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch((error) => {
+      console.warn(`Website article validation failed for ${candidate.link}:`, error?.message || error);
+      return null;
+    });
+    if (!validated?.accepted) {
+      continue;
+    }
+
+    const item = {
+      title: validated.title || candidate.title,
+      link: candidate.link,
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : ""),
+      image: validated.image || candidate.image || "",
+      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+      author: "",
+      source: getSourceName(candidate.link),
+    };
+
+    if (!articleMatchesSourceRelevanceRule(feed, item)) {
+      continue;
+    }
+
+    validatedItems.push(item);
+  }
+
+  return validatedItems;
+}
+
+function extractIcaoTripItems() {
+  return [];
+}
+
 async function extractWebsiteItems(feed) {
   console.log(`Parsing website source ${feed.id} (${feed.rssUrl})`);
   const response = await fetchWebsiteHtml(feed.rssUrl);
@@ -2858,6 +2949,20 @@ async function extractWebsiteItems(feed) {
   if (isIndNewsFeed(feed)) {
     console.log(`Using dedicated website extractor: ind for source ${feed.id}`);
     const items = await extractIndNewsItems(feed, $, fetchedUrl);
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isIcaoNewsFeed(feed)) {
+    console.log(`Using dedicated website extractor: icao-news for source ${feed.id}`);
+    const items = await extractIcaoNewsItems(feed, $, fetchedUrl);
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isIcaoTripFeed(feed)) {
+    console.log(`Using dedicated website extractor: icao-trip for source ${feed.id}`);
+    const items = extractIcaoTripItems(feed, $, fetchedUrl);
     console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
     return items;
   }
