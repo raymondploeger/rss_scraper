@@ -277,11 +277,29 @@ function isKinegramInsightsFeed(feed) {
   });
 }
 
+function isIcaoNewsFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: ["https://www.icao.int/news"],
+    urlFragments: ["icao.int/news"],
+    exactNames: ["ICAO Newsroom"],
+  });
+}
+
+function isIcaoTripFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: ["https://www.icao.int/facilitation-programmes/assistance"],
+    urlFragments: ["icao.int/facilitation-programmes/assistance"],
+    exactNames: ["ICAO TRIP"],
+  });
+}
+
 function shouldReplaceArticlesOnSync(feed) {
   return (
     isIndNewsFeed(feed) ||
     isCbpNewsFeed(feed) ||
     isGovUkNewsFeed(feed) ||
+    isIcaoNewsFeed(feed) ||
+    isIcaoTripFeed(feed) ||
     isLandqartNewsFeed(feed) ||
     isPolyvantisPressFeed(feed) ||
     isLinxensNewsFeed(feed) ||
