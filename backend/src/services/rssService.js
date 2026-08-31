@@ -74,6 +74,8 @@ const LINXENS_NEWS_URL = "https://www.linxens.com/en/news-events";
 const VTT_NEWS_URL = "https://www.vttresearch.com/en/news-stories/news-and-stories";
 const KINEGRAM_INSIGHTS_URL = "https://www.kinegram.com/events-insights/insights";
 const KOENIG_BAUER_PRESS_RELEASES_URL = "https://www.koenig-bauer.com/en/newsroom/press-releases";
+const KOENIG_BAUER_MAX_ARCHIVE_PAGES = 4;
+const KOENIG_BAUER_MAX_CANDIDATES = 28;
 const LINXENS_NEWS_AJAX_URL = "https://www.linxens.com/en/ajax/news-events";
 
 const VENDOR_FEED_LOG_CONFIG = [
@@ -2674,60 +2676,94 @@ async function extractKoenigBauerPressReleaseItems(feed, $, pageUrl) {
   const discoveredCandidates = [];
   const seenLinks = new Set();
 
-  $(".news-list-view .news-item, .full-listing .news-item, .news-item")
-    .toArray()
-    .forEach((block) => {
-      const node = $(block);
-      let anchor = node.find("a.stretched-link[href*='/en/newsroom/press-releases/article/']").first();
-      if (!anchor.length) {
-        anchor = node.find("h1 a[href], h2 a[href], h3 a[href], h4 a[href]").first();
-      }
-      const href = anchor.attr("href") || "";
-      const link = resolveRelativeWebsiteLink(href, pageUrl);
-      if (!matchesWebsiteSourceCandidatePolicy(feed, link)) {
-        return;
-      }
+  const collectCandidatesFromPage = (page$, currentPageUrl) => {
+    let pageCandidateCount = 0;
 
-      const canonicalLink = canonicalizeUrl(link);
-      if (!canonicalLink || seenLinks.has(canonicalLink)) {
-        return;
-      }
+    page$(".news-list-view .news-item, .full-listing .news-item, .news-item")
+      .toArray()
+      .forEach((block) => {
+        const node = page$(block);
+        let anchor = node.find("a.stretched-link[href*='/en/newsroom/press-releases/article/']").first();
+        if (!anchor.length) {
+          anchor = node.find("h1 a[href], h2 a[href], h3 a[href], h4 a[href]").first();
+        }
+        const href = anchor.attr("href") || "";
+        const link = resolveRelativeWebsiteLink(href, currentPageUrl);
+        if (!matchesWebsiteSourceCandidatePolicy(feed, link)) {
+          return;
+        }
 
-      const title =
-        sanitizeFeedText(anchor.attr("title"), "") ||
-        sanitizeFeedText(anchor.text(), "") ||
-        sanitizeFeedText(node.find("[itemprop='headline'], h1, h2, h3, h4").first().text(), "");
-      if (!title) {
-        return;
-      }
+        const canonicalLink = canonicalizeUrl(link);
+        if (!canonicalLink || seenLinks.has(canonicalLink)) {
+          return;
+        }
 
-      const imageNode = node.find("img").first();
-      const image =
-        pickImageFromSrcset(imageNode.attr("srcset") || imageNode.attr("data-srcset") || "") ||
-        imageNode.attr("src") ||
-        imageNode.attr("data-src") ||
-        "";
+        const title =
+          sanitizeFeedText(anchor.attr("title"), "") ||
+          sanitizeFeedText(anchor.text(), "") ||
+          sanitizeFeedText(node.find("[itemprop='headline'], h1, h2, h3, h4").first().text(), "");
+        if (!title) {
+          return;
+        }
 
-      seenLinks.add(canonicalLink);
-      discoveredCandidates.push({
-        title,
-        link,
-        excerpt: sanitizeFeedText(node.find(".spotlight__text p, .text p, [itemprop='description'] p, p").first().text(), ""),
-        date:
-          parseWebsiteDate(node.find("time").first().attr("datetime") || "") ||
-          parseWebsiteDateFromText(node.find("time").first().text()),
-        image: resolveFeedImageCandidate(link, image),
+        const imageNode = node.find("img").first();
+        const image =
+          pickImageFromSrcset(imageNode.attr("srcset") || imageNode.attr("data-srcset") || "") ||
+          imageNode.attr("src") ||
+          imageNode.attr("data-src") ||
+          "";
+
+        seenLinks.add(canonicalLink);
+        pageCandidateCount += 1;
+        discoveredCandidates.push({
+          title,
+          link,
+          excerpt: sanitizeFeedText(
+            node.find(".spotlight__text p, .text p, [itemprop='description'] p, p").first().text(),
+            ""
+          ),
+          date:
+            parseWebsiteDate(node.find("time").first().attr("datetime") || "") ||
+            parseWebsiteDateFromText(node.find("time").first().text()),
+          image: resolveFeedImageCandidate(link, image),
+        });
       });
+
+    return pageCandidateCount;
+  };
+
+  const pagesScanned = [{ page: 1, url: pageUrl, candidates: collectCandidatesFromPage($, pageUrl) }];
+  for (let page = 2; page <= KOENIG_BAUER_MAX_ARCHIVE_PAGES; page += 1) {
+    if (discoveredCandidates.length >= KOENIG_BAUER_MAX_CANDIDATES) {
+      break;
+    }
+
+    const archiveUrl = `${KOENIG_BAUER_PRESS_RELEASES_URL}/page-${page}`;
+    const pageResponse = await fetchWebsiteHtml(archiveUrl).catch((error) => {
+      console.warn(`[KOENIG_BAUER] failed to inspect ${archiveUrl}:`, error?.message || error);
+      return null;
     });
+    if (!pageResponse) {
+      break;
+    }
+
+    const archivePageUrl = pageResponse.request?.res?.responseUrl || archiveUrl;
+    const page$ = cheerio.load(String(pageResponse.data || ""));
+    const pageCandidates = collectCandidatesFromPage(page$, archivePageUrl);
+    pagesScanned.push({ page, url: archivePageUrl, candidates: pageCandidates });
+    if (!pageCandidates) {
+      break;
+    }
+  }
 
   const validatedItems = [];
-  for (const candidate of discoveredCandidates) {
+  for (const candidate of discoveredCandidates.slice(0, KOENIG_BAUER_MAX_CANDIDATES)) {
     const item = {
       title: candidate.title,
       link: candidate.link,
       contentSnippet: candidate.excerpt || "",
     };
-    if (!articleMatchesSourceRelevanceRule(feed, item)) {
+    if (!shouldBypassDedicatedVendorSourceRelevance(feed) && !articleMatchesSourceRelevanceRule(feed, item)) {
       continue;
     }
 
@@ -2758,6 +2794,7 @@ async function extractKoenigBauerPressReleaseItems(feed, $, pageUrl) {
   logTrackedVendorWebsiteFeedState(feed, "extract-koenig-bauer-complete", {
     discoveredCount: discoveredCandidates.length,
     validatedCount: validatedItems.length,
+    pagesScanned: pagesScanned.length,
     pageUrl,
   });
 
