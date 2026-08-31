@@ -73,6 +73,7 @@ const POLYVANTIS_PRESS_URL = "https://www.polyvantis.com/en/press";
 const LINXENS_NEWS_URL = "https://www.linxens.com/en/news-events";
 const VTT_NEWS_URL = "https://www.vttresearch.com/en/news-stories/news-and-stories";
 const KINEGRAM_INSIGHTS_URL = "https://www.kinegram.com/events-insights/insights";
+const KOENIG_BAUER_PRESS_RELEASES_URL = "https://www.koenig-bauer.com/en/newsroom/press-releases";
 const LINXENS_NEWS_AJAX_URL = "https://www.linxens.com/en/ajax/news-events";
 
 const VENDOR_FEED_LOG_CONFIG = [
@@ -277,6 +278,17 @@ function isKinegramInsightsFeed(feed) {
   });
 }
 
+function isKoenigBauerPressReleasesFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: [KOENIG_BAUER_PRESS_RELEASES_URL],
+    urlFragments: [
+      "koenig-bauer.com/en/newsroom",
+      "koenig-bauer.com/en/newsroom/press-releases",
+    ],
+    exactNames: ["Koenig & Bauer Newsroom"],
+  });
+}
+
 function isIcaoNewsFeed(feed) {
   return matchesWebsiteFeedSignature(feed, {
     exactUrls: ["https://www.icao.int/news"],
@@ -304,7 +316,8 @@ function shouldReplaceArticlesOnSync(feed) {
     isPolyvantisPressFeed(feed) ||
     isLinxensNewsFeed(feed) ||
     isVttNewsFeed(feed) ||
-    isKinegramInsightsFeed(feed)
+    isKinegramInsightsFeed(feed) ||
+    isKoenigBauerPressReleasesFeed(feed)
   );
 }
 
@@ -314,7 +327,8 @@ function isTrackedVendorWebsiteFeed(feed) {
     isPolyvantisPressFeed(feed) ||
     isLinxensNewsFeed(feed) ||
     isVttNewsFeed(feed) ||
-    isKinegramInsightsFeed(feed)
+    isKinegramInsightsFeed(feed) ||
+    isKoenigBauerPressReleasesFeed(feed)
   );
 }
 
@@ -331,7 +345,8 @@ function logTrackedVendorWebsiteFeedState(feed, stage, extra = {}) {
   console.log(
     `[vendor-debug] stage=${stage} feedId=${feed.id} name=${JSON.stringify(feed.name || "")} rssUrl=${feed.rssUrl || ""} ` +
       `sourceType=${feed.sourceType || ""} isLandqart=${isLandqartNewsFeed(feed)} isPolyvantis=${isPolyvantisPressFeed(feed)} ` +
-      `isLinxens=${isLinxensNewsFeed(feed)} isVtt=${isVttNewsFeed(feed)} isKinegram=${isKinegramInsightsFeed(feed)} shouldReplace=${shouldReplaceArticlesOnSync(feed)} ` +
+      `isLinxens=${isLinxensNewsFeed(feed)} isVtt=${isVttNewsFeed(feed)} isKinegram=${isKinegramInsightsFeed(feed)} ` +
+      `isKoenigBauer=${isKoenigBauerPressReleasesFeed(feed)} shouldReplace=${shouldReplaceArticlesOnSync(feed)} ` +
       `${Object.entries(extra)
         .map(([key, value]) => `${key}=${typeof value === "string" ? JSON.stringify(value) : String(value)}`)
         .join(" ")}`
@@ -349,6 +364,7 @@ function getTrackedVendorWebsiteFeedDebugSnapshot(feed) {
     isLinxens: isLinxensNewsFeed(feed),
     isVtt: isVttNewsFeed(feed),
     isKinegram: isKinegramInsightsFeed(feed),
+    isKoenigBauer: isKoenigBauerPressReleasesFeed(feed),
     shouldReplace: shouldReplaceArticlesOnSync(feed),
   };
 }
@@ -497,6 +513,10 @@ function matchesWebsiteSourceCandidatePolicy(feed, link) {
 
   if (isKinegramInsightsFeed(feed)) {
     return lowerLink.includes("/events-insights/details/");
+  }
+
+  if (isKoenigBauerPressReleasesFeed(feed)) {
+    return lowerLink.includes("/en/newsroom/press-releases/article/");
   }
 
   return true;
@@ -2650,6 +2670,100 @@ async function extractKinegramInsightsItems(feed, $, pageUrl) {
   return validatedItems;
 }
 
+async function extractKoenigBauerPressReleaseItems(feed, $, pageUrl) {
+  const discoveredCandidates = [];
+  const seenLinks = new Set();
+
+  $(".news-list-view .news-item, .full-listing .news-item, .news-item")
+    .toArray()
+    .forEach((block) => {
+      const node = $(block);
+      let anchor = node.find("a.stretched-link[href*='/en/newsroom/press-releases/article/']").first();
+      if (!anchor.length) {
+        anchor = node.find("h1 a[href], h2 a[href], h3 a[href], h4 a[href]").first();
+      }
+      const href = anchor.attr("href") || "";
+      const link = resolveRelativeWebsiteLink(href, pageUrl);
+      if (!matchesWebsiteSourceCandidatePolicy(feed, link)) {
+        return;
+      }
+
+      const canonicalLink = canonicalizeUrl(link);
+      if (!canonicalLink || seenLinks.has(canonicalLink)) {
+        return;
+      }
+
+      const title =
+        sanitizeFeedText(anchor.attr("title"), "") ||
+        sanitizeFeedText(anchor.text(), "") ||
+        sanitizeFeedText(node.find("[itemprop='headline'], h1, h2, h3, h4").first().text(), "");
+      if (!title) {
+        return;
+      }
+
+      const imageNode = node.find("img").first();
+      const image =
+        pickImageFromSrcset(imageNode.attr("srcset") || imageNode.attr("data-srcset") || "") ||
+        imageNode.attr("src") ||
+        imageNode.attr("data-src") ||
+        "";
+
+      seenLinks.add(canonicalLink);
+      discoveredCandidates.push({
+        title,
+        link,
+        excerpt: sanitizeFeedText(node.find(".spotlight__text p, .text p, [itemprop='description'] p, p").first().text(), ""),
+        date:
+          parseWebsiteDate(node.find("time").first().attr("datetime") || "") ||
+          parseWebsiteDateFromText(node.find("time").first().text()),
+        image: resolveFeedImageCandidate(link, image),
+      });
+    });
+
+  const validatedItems = [];
+  for (const candidate of discoveredCandidates) {
+    const item = {
+      title: candidate.title,
+      link: candidate.link,
+      contentSnippet: candidate.excerpt || "",
+    };
+    if (!articleMatchesSourceRelevanceRule(feed, item)) {
+      continue;
+    }
+
+    const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch((error) => {
+      console.warn(`Website article validation failed for ${candidate.link}:`, error?.message || error);
+      return null;
+    });
+    if (!validated?.accepted) {
+      continue;
+    }
+
+    const contentSnippet =
+      String(validated.contentSnippet || "").length >= String(candidate.excerpt || "").length
+        ? validated.contentSnippet
+        : candidate.excerpt;
+
+    validatedItems.push({
+      title: validated.title || candidate.title,
+      link: candidate.link,
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
+      image: validated.image || candidate.image || "",
+      contentSnippet: contentSnippet || "",
+      author: "",
+      source: getSourceName(candidate.link),
+    });
+  }
+
+  logTrackedVendorWebsiteFeedState(feed, "extract-koenig-bauer-complete", {
+    discoveredCount: discoveredCandidates.length,
+    validatedCount: validatedItems.length,
+    pageUrl,
+  });
+
+  return validatedItems;
+}
+
 async function extractCbpNewsItems(feed, $, pageUrl) {
   const discoveredCandidates = [];
   const seenLinks = new Set();
@@ -3012,6 +3126,13 @@ async function extractWebsiteItems(feed) {
   if (isKinegramInsightsFeed(feed)) {
     console.log(`Using dedicated website extractor: kinegram for source ${feed.id}`);
     const items = await extractKinegramInsightsItems(feed, $, fetchedUrl);
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isKoenigBauerPressReleasesFeed(feed)) {
+    console.log(`Using dedicated website extractor: koenig-bauer for source ${feed.id}`);
+    const items = await extractKoenigBauerPressReleaseItems(feed, $, fetchedUrl);
     console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
     return items;
   }
@@ -3827,9 +3948,11 @@ export async function inspectTrackedVendorWebsiteFeed(feed) {
       : snapshot.isPolyvantis
         ? "polyvantis"
         : snapshot.isLinxens
-          ? "linxens"
-          : snapshot.isVtt
-            ? "vtt"
+        ? "linxens"
+        : snapshot.isVtt
+          ? "vtt"
+          : snapshot.isKoenigBauer
+            ? "koenig-bauer"
             : "generic",
     extractedCount: items.length,
     sampleItems: items.slice(0, 5).map((item) => ({

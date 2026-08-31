@@ -229,7 +229,7 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
   {
     name: "Koenig & Bauer Newsroom",
     topic: "Shared Security Printing",
-    rssUrl: "https://www.koenig-bauer.com/en/newsroom",
+    rssUrl: "https://www.koenig-bauer.com/en/newsroom/press-releases",
     sourceType: "website",
     phase: "phase2-vendor-sources",
   },
