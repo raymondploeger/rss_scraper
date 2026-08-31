@@ -895,7 +895,7 @@ export const SOURCE_RELEVANCE_RULES = [
   },
   {
     name: "Daon Resources",
-    sourceKeys: ["daon resources", "daon.com/resources"],
+    sourceKeys: ["daon resources", "daon.com/feed", "daon.com/resources"],
     rejectExactPaths: [
       "/resources",
     ],

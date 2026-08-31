@@ -285,8 +285,8 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
   {
     name: "Daon Resources",
     topic: "Digital Identity & Biometrics",
-    rssUrl: "https://www.daon.com/resources/",
-    sourceType: "website",
+    rssUrl: "https://www.daon.com/feed/",
+    sourceType: "rss",
     phase: "phase2-vendor-sources",
   },
   {
