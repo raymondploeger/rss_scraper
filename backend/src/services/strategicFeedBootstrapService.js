@@ -326,13 +326,6 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase1",
   },
   {
-    name: "SURYS Newsroom",
-    topic: "Shared Security Printing",
-    rssUrl: "https://surys.com/surys-blog/",
-    sourceType: "website",
-    phase: "phase1",
-  },
-  {
     name: "IQ Structures Newsroom",
     topic: "Shared Security Printing",
     rssUrl: "https://www.iqstructures.com/en/blog",
@@ -427,6 +420,10 @@ const RETIRED_STRATEGIC_FEEDS = [
     rssUrl: "https://surys.com/feed/",
   },
   {
+    name: "SURYS Newsroom",
+    rssUrl: "https://surys.com/surys-blog/",
+  },
+  {
     name: "Demax Holograms News",
     rssUrl: "https://demax-holograms.com/news/",
   },
@@ -464,6 +461,8 @@ export async function ensureStrategicFeeds() {
 
       await updateFeedRecord(existing.id, {
         isActive: false,
+        lastStatus: "idle",
+        lastError: null,
       });
       retired += 1;
     } catch (error) {

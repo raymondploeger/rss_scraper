@@ -43994,6 +43994,13 @@ function getFeedStatusPresentation(feed) {
     };
   }
 
+  if (feed?.isActive === false) {
+    return {
+      text: "inactive",
+      tone: "is-idle",
+    };
+  }
+
   const tone =
     feed.lastStatus === "error"
       ? "is-error"
@@ -44008,7 +44015,7 @@ function getFeedStatusPresentation(feed) {
 }
 
 function isFeedError(feed) {
-  return feed?.lastStatus === "error" && !isLinkOnlyDmvSource(feed);
+  return feed?.isActive !== false && feed?.lastStatus === "error" && !isLinkOnlyDmvSource(feed);
 }
 
 function syncFeedErrorNotifications() {

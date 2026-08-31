@@ -80,14 +80,14 @@
       "id": "surys-rss-candidate",
       "name": "SURYS RSS",
       "topic": "Shared Security Printing",
-      "status": "candidate",
+      "status": "retired",
       "isActive": false,
       "sourceType": "rss",
       "acquisitionMethod": "rss",
-      "rssAvailable": true,
+      "rssAvailable": false,
       "currentSourceUrl": "https://surys.com/follow-surys/",
       "rssUrl": "https://surys.com/feed/",
-      "notes": "Returned to candidate status after validation showed the feed is valid but currently publishes zero items."
+      "notes": "Retired after surys.com began redirecting to IN Groupe secure-components URLs and /feed/ returned 404 via the redirect target."
     }
   ],
   "scraperCandidates": [
@@ -95,13 +95,14 @@
       "id": "surys-scraper-candidate",
       "name": "SURYS",
       "topic": "Shared Security Printing",
-      "status": "active",
-      "isActive": true,
+      "status": "retired",
+      "isActive": false,
       "sourceType": "website",
       "acquisitionMethod": "scraper",
       "rssAvailable": false,
       "sourceUrl": "https://surys.com/surys-blog/",
-      "extractionStrategy": "surys_blog_listing"
+      "extractionStrategy": "surys_blog_listing",
+      "notes": "Retired after https requests started failing with ECONNRESET and http redirects to ingroupe.com/solutions/secure-components/surys-blog returned 404."
     },
     {
       "id": "sicpa-scraper-candidate",
