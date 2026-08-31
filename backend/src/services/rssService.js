@@ -719,7 +719,11 @@ function isMeaningfulImageCandidate(candidate) {
     return false;
   }
 
-  if (["logo", "icon", "avatar", "pixel", "tracking"].some((token) => normalized.includes(token))) {
+  if (normalized.includes("s.w.org/images/core/emoji")) {
+    return false;
+  }
+
+  if (["logo", "icon", "avatar", "org-member-transparent", "pixel", "tracking"].some((token) => normalized.includes(token))) {
     return false;
   }
 

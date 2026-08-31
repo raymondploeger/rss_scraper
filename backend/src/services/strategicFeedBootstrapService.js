@@ -262,6 +262,13 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase2-vendor-sources",
   },
   {
+    name: "Authentix RSS",
+    topic: "Shared Security Printing",
+    rssUrl: "https://authentix.com/resources/feed/",
+    sourceType: "rss",
+    phase: "phase2-vendor-sources",
+  },
+  {
     name: "Mühlbauer Press",
     topic: "Identity Documents",
     rssUrl: "https://www.muehlbauer.de/company/company/press/",
@@ -402,10 +409,6 @@ const RETIRED_STRATEGIC_FEEDS = [
   {
     name: "Cetis RSS",
     rssUrl: "http://www.cetis.si/?mod=aktualno&action=rss&lang=en",
-  },
-  {
-    name: "Authentix RSS",
-    rssUrl: "https://authentix.com/feed/",
   },
   {
     name: "Security Foiling RSS",

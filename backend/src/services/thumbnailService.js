@@ -28,6 +28,28 @@ function resolveImageCandidate(pageUrl, candidate) {
   return resolveUrl(pageUrl, value);
 }
 
+function hasLikelyImageResourceSignal(imageUrl) {
+  const value = String(imageUrl || "").toLowerCase();
+  const imageFilePattern = /\.(?:jpg|jpeg|png|gif|webp|avif|svg)(?:$|[?#])/i;
+  if (imageFilePattern.test(value)) {
+    return true;
+  }
+
+  try {
+    const pathname = new URL(imageUrl).pathname.toLowerCase();
+    return [
+      "/binaries/content/gallery/",
+      "/images/",
+      "/media/",
+      "/uploads/",
+      "/files/styles/",
+      "/wp-content/uploads/",
+    ].some((segment) => pathname.includes(segment));
+  } catch {
+    return false;
+  }
+}
+
 function getDomainForDiagnostics(value) {
   try {
     return new URL(String(value || "")).hostname.replace(/^www\./, "");
@@ -137,6 +159,10 @@ function tokenizeForMatch(value) {
 export function isLikelyGenericMetadataImage(imageUrl) {
   const value = String(imageUrl || "").toLowerCase();
 
+  if (value.includes("s.w.org/images/core/emoji")) {
+    return true;
+  }
+
   if (isSicpaDrupalArticleImage(imageUrl)) {
     return false;
   }
@@ -175,6 +201,7 @@ export function isLikelyGenericMetadataImage(imageUrl) {
     "share-image",
     "og-image",
     "media-image",
+    "org-member-transparent",
     "sprite",
     "tracking",
     "pixel",
@@ -308,6 +335,10 @@ function isClearlyArticleSpecificImage(imageUrl, pageUrl, title) {
   }
 
   if (isLikelyGenericMetadataImage(normalizedImageUrl)) {
+    return false;
+  }
+
+  if (!hasLikelyImageResourceSignal(normalizedImageUrl)) {
     return false;
   }
 

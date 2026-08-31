@@ -41,14 +41,14 @@
       "id": "authentix-rss-candidate",
       "name": "Authentix RSS",
       "topic": "Shared Security Printing",
-      "status": "candidate",
-      "isActive": false,
+      "status": "active",
+      "isActive": true,
       "sourceType": "rss",
       "acquisitionMethod": "rss",
       "rssAvailable": true,
-      "currentSourceUrl": "http://authentix.com/industries/currency/",
-      "rssUrl": "https://authentix.com/feed/",
-      "notes": "Returned to candidate status after validation showed the feed is valid but currently publishes zero items."
+      "currentSourceUrl": "https://authentix.com/resources/",
+      "rssUrl": "https://authentix.com/resources/feed/",
+      "notes": "Activated after the resources RSS feed was confirmed to publish current Authentix resource articles with media thumbnails."
     },
     {
       "id": "security-foiling-rss-candidate",
