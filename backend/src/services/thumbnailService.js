@@ -163,6 +163,15 @@ export function isLikelyGenericMetadataImage(imageUrl) {
     return true;
   }
 
+  if (
+    value.includes("/profiles/cbpd8_gov/themes/custom/cbpd8_gov_theme/") ||
+    value.includes("/themes/custom/cbpd8_gov_theme/") ||
+    value.includes("/sites/default/files/cbp-seal-vertical-blue_twitter-card") ||
+    /\/sites\/default\/files\/(?:styles\/[^/]+\/public\/)?[^/?#]*_card_[^/?#]*\.(?:jpe?g|png|webp)(?:$|[?#.])/i.test(value)
+  ) {
+    return true;
+  }
+
   if (isSicpaDrupalArticleImage(imageUrl)) {
     return false;
   }
@@ -800,7 +809,12 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
       const googleNewsPlaceholderDetected = isGoogleNewsPlaceholderImage(existingThumbnail);
       const fallbackGoogleNewsThumbnail =
         googleNewsPlaceholderDetected && existingThumbnail !== env.placeholderImage ? existingThumbnail : "";
-      if (existingThumbnail && existingThumbnail !== env.placeholderImage && !googleNewsPlaceholderDetected) {
+      if (
+        existingThumbnail &&
+        existingThumbnail !== env.placeholderImage &&
+        !googleNewsPlaceholderDetected &&
+        !isLikelyGenericMetadataImage(existingThumbnail)
+      ) {
         const diagnostic = {
           domain: getDomainForDiagnostics(link),
           link,
@@ -1098,7 +1112,7 @@ export async function enrichArticle(articleId) {
     !isGoogleNewsPlaceholderImage(article.thumbnail) &&
     !isLikelyGenericMetadataImage(article.thumbnail)
       ? article.thumbnail
-      : enriched.thumbnail || article.thumbnail;
+      : enriched.thumbnail || env.placeholderImage;
 
   const updatedArticle = await updateArticle(articleId, {
     thumbnail: nextThumbnail,

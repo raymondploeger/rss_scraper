@@ -723,6 +723,15 @@ function isMeaningfulImageCandidate(candidate) {
     return false;
   }
 
+  if (
+    normalized.includes("/profiles/cbpd8_gov/themes/custom/cbpd8_gov_theme/") ||
+    normalized.includes("/themes/custom/cbpd8_gov_theme/") ||
+    normalized.includes("/sites/default/files/cbp-seal-vertical-blue_twitter-card") ||
+    /\/sites\/default\/files\/(?:styles\/[^/]+\/public\/)?[^/?#]*_card_[^/?#]*\.(?:jpe?g|png|webp)(?:$|[?#.])/i.test(normalized)
+  ) {
+    return false;
+  }
+
   if (["logo", "icon", "avatar", "org-member-transparent", "pixel", "tracking"].some((token) => normalized.includes(token))) {
     return false;
   }
