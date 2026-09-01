@@ -1497,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "ux-summary-lower-favorites-inline-206";
+const APP_BUILD = "source-profile-affinity-208";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1926,6 +1926,89 @@ const SPECIALIST_SOURCE_INTERESTS = {
   digital_identity_biometrics: ["biometric update", "digital identity", "authentication", "identity verification"],
   security_printing: ["security printing", "security printer", "secure documents", "holography"],
 };
+const SOURCE_PROFILE_AFFINITY_RULES = Object.freeze([
+  Object.freeze({
+    id: "border_control_government_sources",
+    sourceTerms: Object.freeze([
+      "frontex",
+      "frontex.europa.eu",
+      "cbp newsroom",
+      "cbp.gov/newsroom",
+      "cbp mobile passport control",
+      "cbp.gov/travel/us-citizens/mobile-passport-control",
+      "eulisa",
+      "eu-lisa",
+      "entry exit system",
+      "automated border control",
+    ]),
+    mainDomains: Object.freeze(["identity_documents"]),
+    interests: Object.freeze([
+      "border_control",
+      "icao",
+      "passports",
+      "id_cards",
+      "visas",
+      "residence_permits",
+      "drivers_licenses",
+    ]),
+  }),
+  Object.freeze({
+    id: "identity_document_government_sources",
+    sourceTerms: Object.freeze([
+      "gov.uk/search/news-and-communications",
+      "gov.uk",
+      "ind.nl/en/news",
+      "ind.nl",
+      "migrationsverket",
+      "residence permit cards",
+    ]),
+    mainDomains: Object.freeze(["identity_documents"]),
+    interests: Object.freeze([
+      "passports",
+      "id_cards",
+      "visas",
+      "residence_permits",
+      "drivers_licenses",
+      "border_control",
+    ]),
+  }),
+  Object.freeze({
+    id: "icao_identity_document_sources",
+    sourceTerms: Object.freeze([
+      "icao newsroom",
+      "icao trip",
+      "icao.int",
+      "doc 9303",
+      "traveller identification programme",
+    ]),
+    mainDomains: Object.freeze(["identity_documents"]),
+    interests: Object.freeze(["icao", "border_control", "passports", "id_cards", "visas"]),
+  }),
+  Object.freeze({
+    id: "banknote_specialist_sources",
+    sourceTerms: Object.freeze([
+      "banknotenews",
+      "banknotenews.com",
+      "banknote news",
+      "news.notafilia.pl",
+      "notafilia",
+      "mriguide",
+      "mriguide.com",
+      "currency-news.com",
+      "currency news",
+    ]),
+    mainDomains: Object.freeze(["banknotes"]),
+    interests: Object.freeze([
+      "banknotes",
+      "central_bank",
+      "redesign",
+      "rollout",
+      "withdrawal",
+      "counterfeit",
+      "polymer",
+    ]),
+  }),
+]);
 const ID_DOCUMENT_SOURCE_AUTHORITY = {
   veryHigh: [
     "icao",
@@ -5128,6 +5211,88 @@ function getCuratedVendorWebsiteArticlesFromState() {
 function getOfficialVendorSourceFeedsFromState() {
   const feeds = Array.isArray(state.feeds) ? state.feeds : [];
   return feeds.filter((feed) => isOfficialVendorSourceFeed(feed));
+}
+
+function buildFeedSourceAffinityFingerprint(feed) {
+  return [
+    feed?.name,
+    feed?.topic,
+    feed?.rssUrl,
+    feed?.officialUrl,
+    feed?.siteUrl,
+    feed?.homepage,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function getSourceProfileAffinityMatchesForFingerprint(fingerprint) {
+  const normalizedFingerprint = String(fingerprint || "").toLowerCase();
+  if (!normalizedFingerprint) {
+    return [];
+  }
+  return SOURCE_PROFILE_AFFINITY_RULES.filter((rule) =>
+    Array.isArray(rule.sourceTerms) && rule.sourceTerms.some((term) => textMatchesKeyword(normalizedFingerprint, term))
+  );
+}
+
+function getFeedSourceProfileAffinityMatches(feed) {
+  return getSourceProfileAffinityMatchesForFingerprint(buildFeedSourceAffinityFingerprint(feed));
+}
+
+function getArticleSourceProfileAffinityMatches(article) {
+  return getCachedArticleValue(article, "sourceProfileAffinityMatches", () => {
+    const feed = resolveFeedByIdentity(article?.feedId);
+    const fingerprint = [
+      buildFeedSourceAffinityFingerprint(feed),
+      article?.source,
+      article?.sourceName,
+      article?.feedTitle,
+      article?.feedName,
+      article?.link,
+      article?.canonicalLink,
+      article?.feedUrl,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return getSourceProfileAffinityMatchesForFingerprint(fingerprint);
+  });
+}
+
+function getMatchingSourceProfileAffinityRule(matches, selectedInterests) {
+  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  if (!normalizedInterests.length || !Array.isArray(matches) || !matches.length) {
+    return null;
+  }
+  const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
+  return matches.find((rule) => {
+    const ruleDomains = Array.isArray(rule.mainDomains) ? rule.mainDomains : [];
+    const ruleInterests = Array.isArray(rule.interests) ? rule.interests : [];
+    return (
+      ruleDomains.some((domainId) => selectedMainDomains.includes(domainId)) ||
+      ruleInterests.some((interestId) => normalizedInterests.includes(interestId))
+    );
+  }) || null;
+}
+
+function getSelectedFeedSourceProfileAffinityRule(selectedInterests, feed = resolveFeedByIdentity(state.filters?.feedId)) {
+  return getMatchingSourceProfileAffinityRule(getFeedSourceProfileAffinityMatches(feed), selectedInterests);
+}
+
+function getSourceProfileAffinityFeedsForSelectedInterests(selectedInterests) {
+  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  if (!normalizedInterests.length) {
+    return [];
+  }
+  const feeds = Array.isArray(state.feeds) ? state.feeds : [];
+  return feeds.filter((feed) => {
+    if (!feed?.id || feed?.isActive === false || isGoogleAlertsFeed(feed) || isGoogleRssFeed(feed) || isBingAlertsFeed(feed)) {
+      return false;
+    }
+    return Boolean(getSelectedFeedSourceProfileAffinityRule(normalizedInterests, feed));
+  });
 }
 
 const VENDORS_PROFILE_PRODUCER_CONTEXT_TERMS = Object.freeze([
@@ -27168,6 +27333,11 @@ function getSelectedFeedProfileScope(selectedInterests = normalizePersonalDashbo
     return { compatible: true, reason: "vendors_profile_source_group" };
   }
 
+  const sourceProfileAffinityRule = getSelectedFeedSourceProfileAffinityRule(normalizedInterests, feed);
+  if (sourceProfileAffinityRule) {
+    return { compatible: true, reason: `source_profile_affinity:${sourceProfileAffinityRule.id}` };
+  }
+
   if (selectedMainDomains.includes("identity_documents")) {
     if (feedTopic === "identity documents" || feedTopic.includes("identity document")) {
       return { compatible: true, reason: "identity_documents_feed_topic" };
@@ -42462,6 +42632,13 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
     }
   }
 
+  const sourceProfileAffinityRule = measurePersonalDashboardSegment("sourceProfileAffinity", () =>
+    getMatchingSourceProfileAffinityRule(getArticleSourceProfileAffinityMatches(article), selectedInterests)
+  );
+  if (sourceProfileAffinityRule) {
+    return finishPersonalDashboardTiming(true, `source_profile_affinity:${sourceProfileAffinityRule.id}`);
+  }
+
   const vendorsProfileAssessment = measurePersonalDashboardSegment("vendorsProfileProfessionalGuard", () =>
     getVendorsProfileProfessionalGuard(article, selectedInterests)
   );
@@ -55351,6 +55528,18 @@ function buildPersonalDashboardBackendQueryParamsList() {
       });
     });
   }
+
+  getSourceProfileAffinityFeedsForSelectedInterests(state.personalDashboard.interests).forEach((feed) => {
+    if (!feed?.id) {
+      return;
+    }
+    addParams((params) => {
+      params.delete("search");
+      params.delete("topic");
+      params.set("limit", String(MAX_ARTICLES_IN_MEMORY));
+      params.set("feedId", String(feed.id));
+    });
+  });
 
   return requestParamsList;
 }
