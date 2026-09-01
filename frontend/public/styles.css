@@ -2647,55 +2647,6 @@ h3 {
   color: var(--text);
 }
 
-.article-signal-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: auto;
-  padding: 5px 9px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--bg-soft);
-  color: var(--accent);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-}
-
-.article-personal-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 4px 8px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  color: color-mix(in srgb, var(--accent) 75%, var(--text));
-  font-size: 0.69rem;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-}
-
-.article-personal-badge--high {
-  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  color: color-mix(in srgb, var(--accent) 88%, var(--text));
-}
-
-.article-personal-badge--relevant {
-  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  color: color-mix(in srgb, var(--accent) 78%, var(--text));
-}
-
-.article-personal-badge--related {
-  border-color: color-mix(in srgb, var(--muted) 22%, var(--line));
-  background: color-mix(in srgb, var(--muted) 12%, transparent);
-  color: var(--muted);
-}
-
 .article-duplicate-badge {
   display: inline-flex;
   align-items: center;

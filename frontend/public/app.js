@@ -1497,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "profile-source-context-212";
+const APP_BUILD = "profile-source-context-213";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -55122,8 +55122,6 @@ function toggleGroupedArticleSourceList(article) {
 }
 
 function getArticleRenderSignature(article) {
-  const personalBoost = hasPersonalDashboardSelections() ? computePersonalBoost(article) : { level: "", score: 0 };
-  const primarySignalCategory = getPrimaryArticleSignalCategory(article);
   return [
     getGroupedArticleStateKey(article),
     article?.title || "",
@@ -55131,9 +55129,6 @@ function getArticleRenderSignature(article) {
     article?.topic || "",
     article?.pubDate || "",
     article?.sourceCount || 0,
-    primarySignalCategory || "",
-    personalBoost.level || "",
-    personalBoost.score || 0,
   ].join("|");
 }
 
@@ -55203,7 +55198,6 @@ function renderArticleCard(article) {
   const body = node.querySelector(".article-body");
   const meta = node.querySelector(".article-meta");
   const finalImageSrc = getArticleImageSrc(article);
-  const primarySignalCategory = getPrimaryArticleSignalCategory(article);
   const groupedSources = getGroupedArticleSources(article);
   const articleStateKey = getGroupedArticleStateKey(article);
   const isGroupedSourcesExpanded = runtime.expandedGroupedSourceKeys.has(articleStateKey);
@@ -55249,28 +55243,6 @@ function renderArticleCard(article) {
   title.textContent = article.title || "Untitled article";
   feed.textContent = getFeedName(article.feedId);
   feed.title = feed.textContent;
-
-  if (meta && primarySignalCategory) {
-    const signalBadge = document.createElement("span");
-    signalBadge.className = "article-signal-badge";
-    signalBadge.textContent = getPrimaryArticleSignalLabel(primarySignalCategory);
-    meta.appendChild(signalBadge);
-  }
-
-  if (meta && hasPersonalDashboardSelections()) {
-    const personalBoost = computePersonalBoost(article);
-    if (personalBoost.level) {
-      const personalBadge = document.createElement("span");
-      personalBadge.className = `article-personal-badge article-personal-badge--${personalBoost.level}`;
-      personalBadge.textContent =
-        personalBoost.level === "high"
-          ? "High relevance"
-          : personalBoost.level === "relevant"
-            ? "Relevant"
-            : "Related";
-      meta.appendChild(personalBadge);
-    }
-  }
 
   if (meta && Number(article?.sourceCount || 0) > 1) {
     const duplicateBadge = groupedSources.length ? document.createElement("button") : document.createElement("span");
