@@ -236,6 +236,14 @@ function isCbpNewsFeed(feed) {
   });
 }
 
+function isEuLisaNewsFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: ["https://www.eulisa.europa.eu/news-and-events"],
+    urlFragments: ["eulisa.europa.eu/news-and-events"],
+    exactNames: ["eu-LISA Updates"],
+  });
+}
+
 function isGovUkNewsFeed(feed) {
   return matchesWebsiteFeedSignature(feed, {
     exactUrls: [GOV_UK_NEWS_URL],
@@ -322,6 +330,7 @@ function shouldReplaceArticlesOnSync(feed) {
   return (
     isIndNewsFeed(feed) ||
     isCbpNewsFeed(feed) ||
+    isEuLisaNewsFeed(feed) ||
     isGovUkNewsFeed(feed) ||
     isIcaoNewsFeed(feed) ||
     isIcaoTripFeed(feed) ||
@@ -3048,6 +3057,95 @@ async function extractGovUkNewsItems(feed, $, pageUrl) {
     .filter((item) => item && item.title);
 }
 
+function isEuLisaNewsEventArticleUrl(link) {
+  try {
+    const parsed = new URL(String(link || ""));
+    const hostname = parsed.hostname.replace(/^www\./, "").toLowerCase();
+    const pathname = parsed.pathname.toLowerCase().replace(/\/+$/, "");
+    if (hostname !== "eulisa.europa.eu") {
+      return false;
+    }
+    return (
+      pathname.startsWith("/news-and-events/newsroom/") ||
+      pathname.startsWith("/newsroom/") ||
+      pathname.startsWith("/news-and-events/events/") ||
+      pathname.startsWith("/news-and-events/news/")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function buildEuLisaNewsCandidate($, block, pageUrl) {
+  const node = $(block);
+  const anchor = node.is("a[href]") ? node : node.find("a[href]").first();
+  const href = anchor.attr("href") || "";
+  const link = resolveRelativeWebsiteLink(href, pageUrl);
+  if (!link || !isEuLisaNewsEventArticleUrl(link)) {
+    return null;
+  }
+
+  const title =
+    sanitizeFeedText(anchor.text(), "") ||
+    sanitizeFeedText(node.find("h1, h2, h3, h4").first().text(), "");
+  if (!title || isBlockedWebsiteNavTitle(title)) {
+    return null;
+  }
+
+  return {
+    title,
+    link,
+    excerpt: sanitizeFeedText(node.closest("article, li, div").text(), "").replace(title, "").trim(),
+    date:
+      parseWebsiteDate(node.find("time").first().attr("datetime") || "") ||
+      parseWebsiteDateFromText(node.text()) ||
+      null,
+  };
+}
+
+async function extractEuLisaNewsItems(feed, $, pageUrl) {
+  const candidates = [];
+  const seenLinks = new Set();
+
+  $("main a[href], [role='main'] a[href], article a[href], .view-content a[href], a[href]")
+    .toArray()
+    .forEach((anchor) => {
+      const candidate = buildEuLisaNewsCandidate($, anchor, pageUrl);
+      const canonicalLink = canonicalizeUrl(candidate?.link || "");
+      if (!candidate || !canonicalLink || seenLinks.has(canonicalLink)) {
+        return;
+      }
+      seenLinks.add(canonicalLink);
+      candidates.push(candidate);
+    });
+
+  const validatedItems = [];
+  for (const candidate of candidates.slice(0, 30)) {
+    const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch((error) => {
+      console.warn(`Website article validation failed for ${candidate.link}:`, error?.message || error);
+      return null;
+    });
+    if (!validated?.accepted) {
+      if (validated?.reason) {
+        console.log(`Rejected eu-LISA candidate ${candidate.link}: ${validated.reason}`);
+      }
+      continue;
+    }
+
+    validatedItems.push({
+      title: validated.title || candidate.title,
+      link: candidate.link,
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
+      image: validated.image || "",
+      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+      author: "",
+      source: getSourceName(candidate.link),
+    });
+  }
+
+  return validatedItems;
+}
+
 function buildIndNewsCandidate($, block, pageUrl) {
   const node = $(block);
   const anchor = node.find("a.article__link, .article__body a").first();
@@ -3276,6 +3374,13 @@ async function extractWebsiteItems(feed) {
   if (isCbpNewsFeed(feed)) {
     console.log(`Using dedicated website extractor: cbp for source ${feed.id}`);
     const items = await extractCbpNewsItems(feed, $, fetchedUrl);
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isEuLisaNewsFeed(feed)) {
+    console.log(`Using dedicated website extractor: eulisa for source ${feed.id}`);
+    const items = await extractEuLisaNewsItems(feed, $, fetchedUrl);
     console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
     return items;
   }
@@ -4128,7 +4233,8 @@ export async function processArticleBacklog(limit = 20) {
 
 export async function inspectTrackedVendorWebsiteFeed(feed) {
   const snapshot = getTrackedVendorWebsiteFeedDebugSnapshot(feed);
-  if (!isTrackedVendorWebsiteFeed(feed)) {
+  const matchedEuLisaFeed = isEuLisaNewsFeed(feed);
+  if (!isTrackedVendorWebsiteFeed(feed) && !matchedEuLisaFeed) {
     return {
       ...snapshot,
       matchedTrackedVendorFeed: false,
@@ -4142,6 +4248,7 @@ export async function inspectTrackedVendorWebsiteFeed(feed) {
   return {
     ...snapshot,
     matchedTrackedVendorFeed: true,
+    matchedEuLisaFeed,
     extractor: snapshot.isLandqart
       ? "landqart"
       : snapshot.isPolyvantis
@@ -4154,6 +4261,8 @@ export async function inspectTrackedVendorWebsiteFeed(feed) {
             ? "koenig-bauer"
             : snapshot.isAtlanticZeiser
               ? "atlantic-zeiser"
+              : matchedEuLisaFeed
+                ? "eulisa"
             : "generic",
     extractedCount: items.length,
     sampleItems: items.slice(0, 5).map((item) => ({
