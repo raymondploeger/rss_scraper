@@ -57917,18 +57917,6 @@ function executeSelectedFeedProvider(candidateProvider, normalizedFilterState, c
   const mode = options.mode || "fallback";
 
   if (mode === "full_pool") {
-    if (isSourceOnlyFeedViewActive()) {
-      addFilterPipelineNote(
-        diagnostics,
-        "source-only selected feed view bypassed async full-pool loading and uses immediate legacy fallback"
-      );
-      updateCandidateStrategyExecution(diagnostics, {
-        actualExecution: "legacy_fallback",
-        expectedCompleteness: "partial",
-      });
-      return null;
-    }
-
     const fullPoolKey = getSelectedFeedFullPoolKey(activeFeedId);
     const cachedFullPool = runtime.selectedFeedFullPoolCache.get(fullPoolKey);
     const plannedRequest = Object.fromEntries(getSelectedFeedFullPoolQueryParams(activeFeedId).entries());
