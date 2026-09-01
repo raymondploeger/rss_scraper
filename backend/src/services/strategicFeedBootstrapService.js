@@ -122,8 +122,8 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
   {
     name: "Frontex Newsroom",
     topic: "Identity Documents",
-    rssUrl: "https://www.frontex.europa.eu/media-centre/news/",
-    sourceType: "website",
+    rssUrl: "https://www.frontex.europa.eu/media-centre/news/news-release/feed",
+    sourceType: "rss",
     phase: "phase1",
   },
   {
