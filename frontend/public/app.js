@@ -1497,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "source-profile-affinity-208";
+const APP_BUILD = "border-govuk-profile-filter-209";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -5279,6 +5279,96 @@ function getMatchingSourceProfileAffinityRule(matches, selectedInterests) {
 
 function getSelectedFeedSourceProfileAffinityRule(selectedInterests, feed = resolveFeedByIdentity(state.filters?.feedId)) {
   return getMatchingSourceProfileAffinityRule(getFeedSourceProfileAffinityMatches(feed), selectedInterests);
+}
+
+function isGovUkArticle(article) {
+  const feed = resolveFeedByIdentity(article?.feedId);
+  const fingerprint = [
+    buildFeedSourceAffinityFingerprint(feed),
+    article?.source,
+    article?.sourceName,
+    article?.feedTitle,
+    article?.feedName,
+    article?.link,
+    article?.canonicalLink,
+    article?.feedUrl,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return textMatchesKeyword(fingerprint, "gov.uk");
+}
+
+function isBorderControlProfileSelection(selectedInterests) {
+  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  return (
+    getMatchingPersonalDashboardTemplateId(normalizedInterests) === "border_control" &&
+    normalizedInterests.includes("border_control")
+  );
+}
+
+const GOV_UK_BORDER_CONTROL_PROFILE_KEEP_TERMS = Object.freeze([
+  "border control",
+  "border force",
+  "border security",
+  "border checks",
+  "border crossing",
+  "border management",
+  "passport control",
+  "passport",
+  "biometric passport",
+  "travel document",
+  "identity document",
+  "document verification",
+  "document inspection",
+  "immigration",
+  "immigration control",
+  "home office",
+  "visa",
+  "ukvi",
+  "residence permit",
+  "biometric residence permit",
+  "brp",
+  "entry clearance",
+  "evisa",
+  "e-visa",
+  "electronic travel authorisation",
+  "eta",
+  "entry exit system",
+  "entry/exit system",
+  "ees",
+  "etias",
+  "egate",
+  "egates",
+  "facial recognition",
+  "biometric",
+  "asylum",
+  "detention",
+  "deportation",
+  "removed from the uk",
+]);
+
+function getGovUkBorderControlProfileAssessment(article) {
+  return getCachedArticleValue(article, "govUkBorderControlProfileAssessment", () => {
+    const context = getPersonalBoostContext(article, "getGovUkBorderControlProfileAssessment", { interest: "border_control" });
+    const haystack = [
+      context.titleText,
+      context.tagText,
+      context.metadataText,
+      context.bodyText,
+      context.sourceText,
+      context.domainText,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const matchedKeepTerms = GOV_UK_BORDER_CONTROL_PROFILE_KEEP_TERMS.filter((term) =>
+      textMatchesKeyword(haystack, term)
+    );
+    return {
+      passed: matchedKeepTerms.length > 0,
+      matchedKeepTerms,
+    };
+  });
 }
 
 function getSourceProfileAffinityFeedsForSelectedInterests(selectedInterests) {
@@ -42636,6 +42726,14 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
     getMatchingSourceProfileAffinityRule(getArticleSourceProfileAffinityMatches(article), selectedInterests)
   );
   if (sourceProfileAffinityRule) {
+    if (!state.filters?.feedId && isBorderControlProfileSelection(selectedInterests) && isGovUkArticle(article)) {
+      const govUkBorderControlAssessment = measurePersonalDashboardSegment("govUkBorderControlProfileAssessment", () =>
+        getGovUkBorderControlProfileAssessment(article)
+      );
+      if (!govUkBorderControlAssessment.passed) {
+        return finishPersonalDashboardTiming(false, "govuk_border_control_profile_context_missing");
+      }
+    }
     return finishPersonalDashboardTiming(true, `source_profile_affinity:${sourceProfileAffinityRule.id}`);
   }
 
