@@ -1497,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "border-govuk-profile-filter-209";
+const APP_BUILD = "profile-source-context-212";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -5282,6 +5282,10 @@ function getSelectedFeedSourceProfileAffinityRule(selectedInterests, feed = reso
 }
 
 function isGovUkArticle(article) {
+  return articleMatchesSourceFingerprint(article, ["gov.uk"]);
+}
+
+function articleMatchesSourceFingerprint(article, sourceTerms = []) {
   const feed = resolveFeedByIdentity(article?.feedId);
   const fingerprint = [
     buildFeedSourceAffinityFingerprint(feed),
@@ -5296,7 +5300,7 @@ function isGovUkArticle(article) {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
-  return textMatchesKeyword(fingerprint, "gov.uk");
+  return normalizeKeywordList(sourceTerms).some((term) => textMatchesKeyword(fingerprint, term));
 }
 
 function isBorderControlProfileSelection(selectedInterests) {
@@ -5307,13 +5311,38 @@ function isBorderControlProfileSelection(selectedInterests) {
   );
 }
 
-const GOV_UK_BORDER_CONTROL_PROFILE_KEEP_TERMS = Object.freeze([
+const BROAD_IDENTITY_PROFILE_CONTEXT_SOURCE_TERMS = Object.freeze([
+  "gov.uk",
+  "cbp.gov",
+  "eulisa",
+  "eu-lisa",
+  "eulisa.europa.eu",
+  "ind.nl",
+  "migrationsverket",
+  "migrationsverket.se",
+]);
+
+const BORDER_CONTROL_PROFILE_CONTEXT_KEEP_TERMS = Object.freeze([
   "border control",
   "border force",
+  "border patrol",
   "border security",
   "border checks",
   "border crossing",
+  "border crossings",
   "border management",
+  "customs",
+  "customs and border protection",
+  "preclearance",
+  "passenger processing",
+  "enhanced passenger processing",
+  "trusted traveler",
+  "trusted traveller",
+  "global entry",
+  "nexus",
+  "free and secure trade",
+  "fast",
+  "mobile passport control",
   "passport control",
   "passport",
   "biometric passport",
@@ -5323,8 +5352,16 @@ const GOV_UK_BORDER_CONTROL_PROFILE_KEEP_TERMS = Object.freeze([
   "document inspection",
   "immigration",
   "immigration control",
+  "asylum",
+  "irregular border",
+  "irregular migration",
+  "smuggling",
+  "human trafficking",
+  "deportation",
+  "detention",
   "home office",
   "visa",
+  "vis",
   "ukvi",
   "residence permit",
   "biometric residence permit",
@@ -5341,30 +5378,102 @@ const GOV_UK_BORDER_CONTROL_PROFILE_KEEP_TERMS = Object.freeze([
   "egate",
   "egates",
   "facial recognition",
+  "fingerprint",
+  "fingerprints",
   "biometric",
-  "asylum",
-  "detention",
-  "deportation",
+  "eurodac",
+  "sis",
+  "ecris-tcn",
+  "interoperability",
+  "cross-border crime",
   "removed from the uk",
 ]);
 
-function getGovUkBorderControlProfileAssessment(article) {
-  return getCachedArticleValue(article, "govUkBorderControlProfileAssessment", () => {
-    const context = getPersonalBoostContext(article, "getGovUkBorderControlProfileAssessment", { interest: "border_control" });
-    const haystack = [
-      context.titleText,
-      context.tagText,
-      context.metadataText,
-      context.bodyText,
-      context.sourceText,
-      context.domainText,
-    ]
-      .filter(Boolean)
-      .join(" ");
-    const matchedKeepTerms = GOV_UK_BORDER_CONTROL_PROFILE_KEEP_TERMS.filter((term) =>
-      textMatchesKeyword(haystack, term)
-    );
+const IDENTITY_DOCUMENT_AUTHORITY_PROFILE_CONTEXT_KEEP_TERMS = Object.freeze([
+  "passport",
+  "biometric passport",
+  "e-passport",
+  "epassport",
+  "travel document",
+  "identity document",
+  "identity card",
+  "id card",
+  "national id",
+  "driver license",
+  "driving licence",
+  "driver licence",
+  "visa",
+  "vis",
+  "residence permit",
+  "biometric residence permit",
+  "brp",
+  "evisa",
+  "e-visa",
+  "entry clearance",
+  "immigration",
+  "naturalisation",
+  "naturalization",
+  "document verification",
+  "document inspection",
+  "doc 9303",
+  "icao",
+  "digital travel credential",
+  "dtc",
+  "public key directory",
+  "pkd",
+  "asylum",
+  "temporary protection",
+  "family reunification",
+  "eurodac",
+  "ees",
+  "etias",
+  "interoperability",
+]);
+
+function isBroadIdentityProfileContextSourceArticle(article) {
+  return articleMatchesSourceFingerprint(article, BROAD_IDENTITY_PROFILE_CONTEXT_SOURCE_TERMS);
+}
+
+function getSelectedIdentityProfileContextKeepTerms(selectedInterests) {
+  if (isBorderControlProfileSelection(selectedInterests)) {
+    return BORDER_CONTROL_PROFILE_CONTEXT_KEEP_TERMS;
+  }
+  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  const selectedIdentityInterests = getSelectedIdentityDashboardInterests(normalizedInterests);
+  if (selectedIdentityInterests.some((interestId) =>
+    ["passports", "id_cards", "visas", "residence_permits", "drivers_licenses", "icao"].includes(interestId)
+  )) {
+    return IDENTITY_DOCUMENT_AUTHORITY_PROFILE_CONTEXT_KEEP_TERMS;
+  }
+  return [];
+}
+
+function buildArticleProfileContextHaystack(article) {
+  const context = getPersonalBoostContext(article, "buildArticleProfileContextHaystack", { interest: "identity_documents" });
+  return [
+    context.titleText,
+    context.tagText,
+    article?.summaryShort,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function getBroadIdentitySourceProfileContextAssessment(article, selectedInterests) {
+  return getCachedArticleValue(article, `broadIdentitySourceProfileContext:${normalizePersonalDashboardInterests(selectedInterests).join("|")}`, () => {
+    const keepTerms = getSelectedIdentityProfileContextKeepTerms(selectedInterests);
+    if (!keepTerms.length || !isBroadIdentityProfileContextSourceArticle(article)) {
+      return {
+        applies: false,
+        passed: true,
+        matchedKeepTerms: [],
+      };
+    }
+    const haystack = buildArticleProfileContextHaystack(article);
+    const matchedKeepTerms = keepTerms.filter((term) => textMatchesKeyword(haystack, term));
     return {
+      applies: true,
       passed: matchedKeepTerms.length > 0,
       matchedKeepTerms,
     };
@@ -42726,12 +42835,12 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
     getMatchingSourceProfileAffinityRule(getArticleSourceProfileAffinityMatches(article), selectedInterests)
   );
   if (sourceProfileAffinityRule) {
-    if (!state.filters?.feedId && isBorderControlProfileSelection(selectedInterests) && isGovUkArticle(article)) {
-      const govUkBorderControlAssessment = measurePersonalDashboardSegment("govUkBorderControlProfileAssessment", () =>
-        getGovUkBorderControlProfileAssessment(article)
+    if (!state.filters?.feedId) {
+      const broadIdentitySourceProfileContextAssessment = measurePersonalDashboardSegment("broadIdentitySourceProfileContext", () =>
+        getBroadIdentitySourceProfileContextAssessment(article, selectedInterests)
       );
-      if (!govUkBorderControlAssessment.passed) {
-        return finishPersonalDashboardTiming(false, "govuk_border_control_profile_context_missing");
+      if (broadIdentitySourceProfileContextAssessment.applies && !broadIdentitySourceProfileContextAssessment.passed) {
+        return finishPersonalDashboardTiming(false, "broad_identity_source_profile_context_missing");
       }
     }
     return finishPersonalDashboardTiming(true, `source_profile_affinity:${sourceProfileAffinityRule.id}`);
