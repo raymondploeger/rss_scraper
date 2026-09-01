@@ -1497,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "profile-source-context-213";
+const APP_BUILD = "profile-source-context-214";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1932,6 +1932,9 @@ const SOURCE_PROFILE_AFFINITY_RULES = Object.freeze([
     sourceTerms: Object.freeze([
       "frontex",
       "frontex.europa.eu",
+      "frontex news",
+      "frontex newsroom",
+      "frontex.europa.eu/media-centre/news",
       "cbp newsroom",
       "cbp.gov/newsroom",
       "cbp mobile passport control",
@@ -1939,6 +1942,9 @@ const SOURCE_PROFILE_AFFINITY_RULES = Object.freeze([
       "eulisa",
       "eu-lisa",
       "entry exit system",
+      "entry/exit system",
+      "ees",
+      "etias",
       "automated border control",
     ]),
     mainDomains: Object.freeze(["identity_documents"]),
@@ -1957,6 +1963,8 @@ const SOURCE_PROFILE_AFFINITY_RULES = Object.freeze([
     sourceTerms: Object.freeze([
       "gov.uk/search/news-and-communications",
       "gov.uk",
+      "frontex",
+      "frontex.europa.eu",
       "ind.nl/en/news",
       "ind.nl",
       "migrationsverket",
@@ -5314,12 +5322,17 @@ function isBorderControlProfileSelection(selectedInterests) {
 const BROAD_IDENTITY_PROFILE_CONTEXT_SOURCE_TERMS = Object.freeze([
   "gov.uk",
   "cbp.gov",
+  "frontex",
+  "frontex.europa.eu",
   "eulisa",
   "eu-lisa",
   "eulisa.europa.eu",
   "ind.nl",
   "migrationsverket",
   "migrationsverket.se",
+  "icao.int",
+  "icao newsroom",
+  "icao trip",
 ]);
 
 const BORDER_CONTROL_PROFILE_CONTEXT_KEEP_TERMS = Object.freeze([
@@ -5333,6 +5346,13 @@ const BORDER_CONTROL_PROFILE_CONTEXT_KEEP_TERMS = Object.freeze([
   "border management",
   "customs",
   "customs and border protection",
+  "frontex",
+  "european border and coast guard",
+  "coast guard",
+  "external borders",
+  "border surveillance",
+  "situational awareness",
+  "risk analysis",
   "preclearance",
   "passenger processing",
   "enhanced passenger processing",
@@ -5386,11 +5406,17 @@ const BORDER_CONTROL_PROFILE_CONTEXT_KEEP_TERMS = Object.freeze([
   "ecris-tcn",
   "interoperability",
   "cross-border crime",
+  "return operation",
+  "return operations",
+  "standing corps",
+  "joint operation",
+  "joint operations",
   "removed from the uk",
 ]);
 
 const IDENTITY_DOCUMENT_AUTHORITY_PROFILE_CONTEXT_KEEP_TERMS = Object.freeze([
   "passport",
+  "passports",
   "biometric passport",
   "e-passport",
   "epassport",
@@ -5421,6 +5447,14 @@ const IDENTITY_DOCUMENT_AUTHORITY_PROFILE_CONTEXT_KEEP_TERMS = Object.freeze([
   "dtc",
   "public key directory",
   "pkd",
+  "frontex",
+  "border management",
+  "border checks",
+  "border control",
+  "entry exit system",
+  "entry/exit system",
+  "ees",
+  "etias",
   "asylum",
   "temporary protection",
   "family reunification",
@@ -5478,6 +5512,92 @@ function getBroadIdentitySourceProfileContextAssessment(article, selectedInteres
       matchedKeepTerms,
     };
   });
+}
+
+function getProfileSourceFilteringAssessment(article, selectedInterests) {
+  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
+  if (!normalizedInterests.length) {
+    return {
+      mode: "no_profile",
+      applies: false,
+      passed: true,
+      reason: "no_selected_interests",
+    };
+  }
+
+  const queryContext = getActiveArticleQueryContext();
+  const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
+  const selectedFeedScope = queryContext.hasSelectedFeed
+    ? getSelectedFeedProfileScope(normalizedInterests)
+    : null;
+  const sourceProfileAffinityRule = getMatchingSourceProfileAffinityRule(
+    getArticleSourceProfileAffinityMatches(article),
+    normalizedInterests
+  );
+
+  if (queryContext.sourceOnly && selectedFeedScope?.compatible) {
+    return {
+      mode: "source_only",
+      applies: true,
+      passed: true,
+      reason: `source_only:${selectedFeedScope.reason}`,
+      sourceProfileAffinityRule,
+    };
+  }
+
+  if (queryContext.hasSelectedFeed && selectedFeedScope?.compatible) {
+    return {
+      mode: "selected_source",
+      applies: true,
+      passed: true,
+      reason: `selected_source:${selectedFeedScope.reason}`,
+      sourceProfileAffinityRule,
+    };
+  }
+
+  if (getMatchingPersonalDashboardTemplateId(normalizedInterests) === "vendors") {
+    return {
+      mode: queryContext.hasSourceGroup ? "vendors_profile_group" : "vendors_profile",
+      applies: false,
+      passed: true,
+      reason: queryContext.hasSourceGroup ? "vendors_profile_group_guard_fallback" : "vendors_profile_guard_fallback",
+    };
+  }
+
+  if (sourceProfileAffinityRule) {
+    const broadIdentitySourceProfileContextAssessment = getBroadIdentitySourceProfileContextAssessment(article, normalizedInterests);
+    if (
+      !queryContext.hasSelectedFeed &&
+      selectedMainDomains.includes("identity_documents") &&
+      broadIdentitySourceProfileContextAssessment.applies
+    ) {
+      return {
+        mode: "profile_context",
+        applies: true,
+        passed: broadIdentitySourceProfileContextAssessment.passed,
+        reason: broadIdentitySourceProfileContextAssessment.passed
+          ? `profile_context:${sourceProfileAffinityRule.id}`
+          : "broad_identity_source_profile_context_missing",
+        sourceProfileAffinityRule,
+        contextAssessment: broadIdentitySourceProfileContextAssessment,
+      };
+    }
+
+    return {
+      mode: "trusted_specialist",
+      applies: true,
+      passed: true,
+      reason: `trusted_specialist:${sourceProfileAffinityRule.id}`,
+      sourceProfileAffinityRule,
+    };
+  }
+
+  return {
+    mode: queryContext.hasSourceGroup ? "strict_profile_group" : "strict_profile",
+    applies: false,
+    passed: true,
+    reason: queryContext.hasSourceGroup ? "strict_profile_group_fallback" : "strict_profile_fallback",
+  };
 }
 
 function getSourceProfileAffinityFeedsForSelectedInterests(selectedInterests) {
@@ -42822,28 +42942,14 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
     return finishPersonalDashboardTiming(true, "no_selected_interests");
   }
 
-  if (state.filters?.feedId) {
-    const selectedFeedProfileScope = measurePersonalDashboardSegment("selectedFeedProfileScope", () =>
-      getSelectedFeedProfileScope(selectedInterests)
-    );
-    if (selectedFeedProfileScope.compatible) {
-      return finishPersonalDashboardTiming(true, `selected_feed_profile_scope:${selectedFeedProfileScope.reason}`);
-    }
-  }
-
-  const sourceProfileAffinityRule = measurePersonalDashboardSegment("sourceProfileAffinity", () =>
-    getMatchingSourceProfileAffinityRule(getArticleSourceProfileAffinityMatches(article), selectedInterests)
+  const profileSourceFilteringAssessment = measurePersonalDashboardSegment("profileSourceFilteringMode", () =>
+    getProfileSourceFilteringAssessment(article, selectedInterests)
   );
-  if (sourceProfileAffinityRule) {
-    if (!state.filters?.feedId) {
-      const broadIdentitySourceProfileContextAssessment = measurePersonalDashboardSegment("broadIdentitySourceProfileContext", () =>
-        getBroadIdentitySourceProfileContextAssessment(article, selectedInterests)
-      );
-      if (broadIdentitySourceProfileContextAssessment.applies && !broadIdentitySourceProfileContextAssessment.passed) {
-        return finishPersonalDashboardTiming(false, "broad_identity_source_profile_context_missing");
-      }
-    }
-    return finishPersonalDashboardTiming(true, `source_profile_affinity:${sourceProfileAffinityRule.id}`);
+  if (profileSourceFilteringAssessment.applies) {
+    return finishPersonalDashboardTiming(
+      profileSourceFilteringAssessment.passed,
+      profileSourceFilteringAssessment.reason || profileSourceFilteringAssessment.mode
+    );
   }
 
   const vendorsProfileAssessment = measurePersonalDashboardSegment("vendorsProfileProfessionalGuard", () =>
