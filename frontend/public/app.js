@@ -5005,6 +5005,69 @@ const CURATED_VENDOR_WEBSITE_DOMAINS = Object.freeze([
   "vttresearch.com",
 ]);
 
+const OFFICIAL_VENDOR_SOURCE_FEED_NAMES = Object.freeze([
+  "Atlantic Zeiser News",
+  "Authentix RSS",
+  "Bundesdruckerei Press Releases",
+  "Cetis RSS",
+  "Crane Currency News & Insights",
+  "Daon Resources",
+  "Demax Holograms News",
+  "G+D Press Releases",
+  "GenKey News",
+  "HID Press Releases",
+  "IDEMIA Pressroom",
+  "IN Groupe Newsroom",
+  "IQ Structures Newsroom",
+  "Koenig & Bauer Newsroom",
+  "KURZ Press Releases",
+  "Landqart News",
+  "Linxens News & Events",
+  "Louisenthal Press Releases",
+  "MaskTech Press",
+  "Mühlbauer Press",
+  "OVD Kinegram Insights",
+  "POLYVANTIS Press",
+  "PWPW RSS",
+  "Regula News",
+  "SICPA Newsroom",
+  "Thales Digital Identity Newsroom",
+  "Veridos Press & Media",
+  "VTT News and Stories",
+]);
+
+const OFFICIAL_VENDOR_SOURCE_DOMAINS = Object.freeze([
+  "atlanticzeiser.com",
+  "authentix.com",
+  "bundesdruckerei.de",
+  "cetis.si",
+  "cranecurrency.com",
+  "daon.com",
+  "demax-holograms.com",
+  "dmaxholograms.com",
+  "gi-de.com",
+  "genkey.com",
+  "hidglobal.com",
+  "idemia.com",
+  "ingroupe.com",
+  "iqstructures.com",
+  "koenig-bauer.com",
+  "kurz-world.com",
+  "landqart.com",
+  "linxens.com",
+  "louisenthal.com",
+  "masktech.com",
+  "muehlbauer.de",
+  "kinegram.com",
+  "polyvantis.com",
+  "pwpw.pl",
+  "regulaforensics.com",
+  "sicpa.com",
+  "cpl.thalesgroup.com",
+  "veridos.com",
+  "vttresearch.com",
+]);
+
 function isCuratedVendorWebsiteArticle(article) {
   const feedName = String(getFeedName(article?.feedId) || "").trim();
   if (CURATED_VENDOR_WEBSITE_FEED_NAMES.includes(feedName)) {
@@ -5020,14 +5083,51 @@ function isCuratedVendorWebsiteArticle(article) {
   return CURATED_VENDOR_WEBSITE_DOMAINS.some((domain) => fingerprint.includes(domain));
 }
 
+function isOfficialVendorSourceFeed(feed) {
+  if (!feed || feed.isActive === false) {
+    return false;
+  }
+
+  const feedName = String(feed.name || "").trim();
+  if (OFFICIAL_VENDOR_SOURCE_FEED_NAMES.includes(feedName)) {
+    return true;
+  }
+
+  const fingerprint = [
+    feed.name,
+    feed.rssUrl,
+    feed.url,
+    feed.officialUrl,
+    feed.siteUrl,
+    feed.homepage,
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  return OFFICIAL_VENDOR_SOURCE_DOMAINS.some((domain) => fingerprint.includes(domain));
+}
+
+function isOfficialVendorSourceArticle(article) {
+  const feed = resolveFeedByIdentity(article?.feedId);
+  if (isOfficialVendorSourceFeed(feed)) {
+    return true;
+  }
+
+  const fingerprint = [
+    article?.source,
+    article?.link,
+    article?.canonicalLink,
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  return OFFICIAL_VENDOR_SOURCE_DOMAINS.some((domain) => fingerprint.includes(domain));
+}
+
 function getCuratedVendorWebsiteArticlesFromState() {
   const articles = Array.isArray(state.articles) ? state.articles : [];
   return articles.filter((article) => isCuratedVendorWebsiteArticle(article));
 }
 
-function getCuratedVendorWebsiteFeedsFromState() {
+function getOfficialVendorSourceFeedsFromState() {
   const feeds = Array.isArray(state.feeds) ? state.feeds : [];
-  return feeds.filter((feed) => CURATED_VENDOR_WEBSITE_FEED_NAMES.includes(String(feed?.name || "").trim()));
+  return feeds.filter((feed) => isOfficialVendorSourceFeed(feed));
 }
 
 const VENDORS_PROFILE_PRODUCER_CONTEXT_TERMS = Object.freeze([
@@ -5548,22 +5648,26 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
     const lowValueNoiseMatched = matchedLowValueSourceTerms.length > 0 ||
       matchedLowValueContentTerms.length > 0 ||
       matchedTutorialSetupTerms.length > 0;
+    const officialVendorSourceArticle = isOfficialVendorSourceArticle(article);
     const curatedVendorWebsiteArticle = isCuratedVendorWebsiteArticle(article);
     const curatedVendorWebsitePass = curatedVendorWebsiteArticle &&
       matchedHardNoiseTerms.length === 0 &&
       !lowValueNoiseMatched;
-    const passed = (
-      curatedVendorWebsitePass ||
-      ((explicitVendorArticle || officialProducerSourceArticle || producerContextArticle)
-        && (vendorNamedStory || officialProducerOutputStory || producerEventStory))
-      || vendorDeploymentRescue
-    )
+    const officialVendorSourcePass = officialVendorSourceArticle;
+    const passed = officialVendorSourcePass || (
+      (
+        curatedVendorWebsitePass ||
+        ((explicitVendorArticle || officialProducerSourceArticle || producerContextArticle)
+          && (vendorNamedStory || officialProducerOutputStory || producerEventStory))
+        || vendorDeploymentRescue
+      )
       && (curatedVendorWebsitePass || vendorCentralStory)
       && matchedHardNoiseTerms.length === 0
       && !lowValueNoiseMatched
       && !(matchedNoiseTerms.length > 0 && matchedVendorTerms.length === 0)
       && !professionalSourceOnly
-      && professionalSourceVendorEvent;
+      && professionalSourceVendorEvent
+    );
 
     return {
       applies: true,
@@ -5605,6 +5709,8 @@ function getVendorsProfileProfessionalGuard(article, selectedInterests = state.p
       producerEventStory,
       vendorDeploymentRescue,
       vendorCentralStory,
+      officialVendorSourceArticle,
+      officialVendorSourcePass,
       curatedVendorWebsiteArticle,
       curatedVendorWebsitePass,
       professionalSourceOnly,
@@ -55233,13 +55339,14 @@ function buildPersonalDashboardBackendQueryParamsList() {
   });
 
   if (plan.domain === "vendors") {
-    getCuratedVendorWebsiteFeedsFromState().forEach((feed) => {
+    getOfficialVendorSourceFeedsFromState().forEach((feed) => {
       if (!feed?.id) {
         return;
       }
       addParams((params) => {
         params.delete("search");
         params.delete("topic");
+        params.set("limit", String(MAX_ARTICLES_IN_MEMORY));
         params.set("feedId", String(feed.id));
       });
     });

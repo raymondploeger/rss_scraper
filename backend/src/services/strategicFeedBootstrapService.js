@@ -283,6 +283,13 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase2-vendor-sources",
   },
   {
+    name: "Cetis RSS",
+    topic: "Shared Security Printing",
+    rssUrl: "https://www.cetis.si/en/_rss/news",
+    sourceType: "rss",
+    phase: "phase2-vendor-sources",
+  },
+  {
     name: "Demax Holograms News",
     topic: "Shared Security Printing",
     rssUrl: "https://demax-holograms.com/news/",

@@ -28,14 +28,14 @@
       "id": "cetis-rss-candidate",
       "name": "Cetis RSS",
       "topic": "Shared Security Printing",
-      "status": "candidate",
-      "isActive": false,
+      "status": "active",
+      "isActive": true,
       "sourceType": "rss",
       "acquisitionMethod": "rss",
       "rssAvailable": true,
-      "currentSourceUrl": "http://www.cetis.si/?mod=aktualno&action=category&ID=3",
-      "rssUrl": "http://www.cetis.si/?mod=aktualno&action=rss&lang=en",
-      "notes": "Returned to candidate status after the old RSS URL was found to redirect to HTML instead of a feed."
+      "currentSourceUrl": "https://www.cetis.si/en/news",
+      "rssUrl": "https://www.cetis.si/en/_rss/news",
+      "notes": "Activated after the English Cetis RSS endpoint was confirmed to publish current news items with images."
     },
     {
       "id": "authentix-rss-candidate",
