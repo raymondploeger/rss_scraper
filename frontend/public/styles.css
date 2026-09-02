@@ -2519,10 +2519,10 @@ h3 {
   min-width: 72px;
   min-height: 34px;
   padding: 0 12px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--brand-red);
   border-radius: 999px;
-  background: var(--bg-elevated);
-  color: var(--text);
+  background: var(--brand-red);
+  color: #ffffff;
   font: inherit;
   font-size: 0.78rem;
   font-weight: 700;
@@ -2530,13 +2530,18 @@ h3 {
 }
 
 .article-favorite-button[data-saved="true"] {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: #842031;
+  border-color: #842031;
   color: #fff;
 }
 
+.article-favorite-button:hover {
+  border-color: #842031;
+  background: #842031;
+}
+
 .article-favorite-button:focus-visible {
-  outline: 2px solid rgba(25, 44, 112, 0.32);
+  outline: 2px solid rgba(156, 37, 57, 0.28);
   outline-offset: 2px;
 }
 
@@ -2563,6 +2568,9 @@ h3 {
 }
 
 .article-share-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   min-height: 30px;
   padding: 0 9px;
   border: 1px solid var(--line);
@@ -2573,6 +2581,32 @@ h3 {
   font: inherit;
   font-size: 0.72rem;
   font-weight: 800;
+}
+
+.article-share-button::before {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 0.62rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.article-share-button[data-share-channel="mail"]::before {
+  content: "@";
+}
+
+.article-share-button[data-share-channel="whatsapp"]::before {
+  content: "WA";
+}
+
+.article-share-button[data-share-channel="linkedin"]::before {
+  content: "in";
+  font-family: Arial, sans-serif;
 }
 
 .article-share-button:hover {
