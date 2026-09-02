@@ -1061,6 +1061,19 @@ h3 {
   justify-content: flex-end;
 }
 
+.favorites-share-all,
+.saved-article-share-actions,
+.article-share-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.favorites-share-all[hidden] {
+  display: none !important;
+}
+
 #profile-builder-panel {
   order: 1;
 }
@@ -1131,6 +1144,13 @@ h3 {
   min-width: 34px;
   height: 34px;
   padding: 0;
+}
+
+.saved-article-controls {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+  align-self: start;
 }
 
 .add-source-content {
@@ -2531,8 +2551,43 @@ h3 {
 
 .article-card-actions {
   display: flex;
+  align-items: center;
+  gap: 10px;
   justify-content: flex-end;
   padding: 0 22px 18px;
+  flex-wrap: wrap;
+}
+
+.article-share-actions {
+  margin-right: auto;
+}
+
+.article-share-button {
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.article-share-button:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.article-share-button:focus-visible {
+  outline: 2px solid rgba(25, 44, 112, 0.24);
+  outline-offset: 2px;
+}
+
+:root[data-theme="dark"] .article-share-button {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(143, 164, 191, 0.28);
 }
 
 .article-media {

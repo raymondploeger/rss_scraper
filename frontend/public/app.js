@@ -1497,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "profile-source-context-215";
+const APP_BUILD = "share-actions-216";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -7282,6 +7282,7 @@ const elements = {
   personalDashboardClear: document.getElementById("personal-dashboard-clear"),
   favoritesCount: document.getElementById("favorites-count"),
   favoritesCollapseToggle: document.getElementById("favorites-collapse-toggle"),
+  favoritesShareAll: document.getElementById("favorites-share-all"),
   favoritesClearAll: document.getElementById("favorites-clear-all"),
   favoritesToggle: document.getElementById("favorites-toggle"),
   favoritesPanelContent: document.getElementById("favorites-panel-content"),
@@ -26312,6 +26313,130 @@ function toggleFavoriteArticle(article) {
   return true;
 }
 
+function getArticleShareUrl(article) {
+  return String(getPreferredArticleOpenUrl(article) || window.location.href || "").trim();
+}
+
+function getArticleShareTitle(article) {
+  return String(article?.title || "Security Industry Information article").trim();
+}
+
+function buildArticleSharePayload(article) {
+  const title = getArticleShareTitle(article);
+  const url = getArticleShareUrl(article);
+  const meta = [
+    article?.source || "",
+    article?.feedName || getFeedName(article?.feedId) || "",
+    formatDate(article?.pubDate || article?.savedAt || ""),
+  ].filter(Boolean).join(" • ");
+  const text = [title, meta, url].filter(Boolean).join("\n");
+  return {
+    title,
+    text,
+    url,
+    subject: title,
+  };
+}
+
+function buildFavoritesSharePayload() {
+  const records = getFavoriteArticleRecords();
+  const lines = records.flatMap((record, index) => {
+    const title = record.title || "Untitled article";
+    const url = getArticleShareUrl(record);
+    const meta = [
+      record.source || "",
+      record.feedName || "",
+      formatDate(record.pubDate || record.savedAt || ""),
+    ].filter(Boolean).join(" • ");
+    return [
+      `${index + 1}. ${title}`,
+      meta,
+      url,
+      "",
+    ].filter((line, lineIndex) => lineIndex === 3 || Boolean(line));
+  });
+  const text = [
+    "Security Industry Information favorites",
+    "",
+    ...lines,
+  ].join("\n").trim();
+  return {
+    title: "Security Industry Information favorites",
+    subject: `Security Industry Information favorites (${records.length})`,
+    text,
+    url: window.location.href,
+  };
+}
+
+function getShareTargetUrl(channel, payload) {
+  const normalizedChannel = String(channel || "").trim().toLowerCase();
+  const title = String(payload?.title || "").trim();
+  const subject = String(payload?.subject || title || "Security Industry Information").trim();
+  const text = String(payload?.text || title || "").trim();
+  const url = String(payload?.url || window.location.href || "").trim();
+  if (normalizedChannel === "mail") {
+    return `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`;
+  }
+  if (normalizedChannel === "whatsapp") {
+    return `https://wa.me/?text=${encodeURIComponent(text)}`;
+  }
+  if (normalizedChannel === "linkedin") {
+    return `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`;
+  }
+  return "";
+}
+
+function openShareTarget(channel, payload) {
+  const targetUrl = getShareTargetUrl(channel, payload);
+  if (!targetUrl) {
+    return false;
+  }
+  if (String(channel || "").toLowerCase() === "mail") {
+    window.location.href = targetUrl;
+    return true;
+  }
+  window.open(targetUrl, "_blank", "noopener,noreferrer");
+  return true;
+}
+
+function setArticleShareButtonState(container, article) {
+  if (!container) {
+    return;
+  }
+  const articleId = getFavoriteArticleIdentity(article);
+  container.querySelectorAll("[data-share-channel]").forEach((button) => {
+    if (!(button instanceof HTMLElement)) {
+      return;
+    }
+    button.dataset.shareArticleId = articleId;
+    button.title = `Share via ${button.textContent || "channel"}`;
+    button.setAttribute("aria-label", `${button.title}: ${getArticleShareTitle(article)}`);
+  });
+}
+
+function handleArticleShareButton(button) {
+  if (!(button instanceof HTMLElement)) {
+    return false;
+  }
+  const articleId = button.dataset.shareArticleId || "";
+  const article =
+    state.articles.find((candidate) => getFavoriteArticleIdentity(candidate) === articleId) ||
+    runtime.renderedFavoriteArticleLookup.get(articleId) ||
+    state.favoriteArticles.find((record) => record.id === articleId) ||
+    null;
+  if (!article) {
+    return false;
+  }
+  return openShareTarget(button.dataset.shareChannel, buildArticleSharePayload(article));
+}
+
+function handleFavoritesShareAllButton(button) {
+  if (!(button instanceof HTMLElement) || !getFavoriteArticlesCount()) {
+    return false;
+  }
+  return openShareTarget(button.dataset.shareChannel, buildFavoritesSharePayload());
+}
+
 function handleFavoriteArticleButton(button) {
   if (!(button instanceof HTMLElement)) {
     return false;
@@ -26389,6 +26514,7 @@ function renderFavoritesPanel() {
     !elements.favoritesToggle ||
     !elements.favoritesEmptyState ||
     !elements.favoritesCollapseToggle ||
+    !elements.favoritesShareAll ||
     !elements.favoritesClearAll
   ) {
     return;
@@ -26398,6 +26524,7 @@ function renderFavoritesPanel() {
   elements.favoritesToggle.textContent = state.filters.favoritesOnly ? "Show all" : "Show saved";
   elements.favoritesToggle.setAttribute("aria-pressed", String(Boolean(state.filters.favoritesOnly)));
   elements.favoritesCollapseToggle.hidden = records.length === 0;
+  elements.favoritesShareAll.hidden = records.length === 0;
   elements.favoritesClearAll.hidden = records.length === 0;
   elements.favoritesList.innerHTML = "";
   elements.favoritesEmptyState.hidden = records.length > 0;
@@ -26431,6 +26558,24 @@ function renderFavoritesPanel() {
       .filter(Boolean)
       .join(" • ");
 
+    const controls = document.createElement("div");
+    controls.className = "saved-article-controls";
+
+    const shareActions = document.createElement("div");
+    shareActions.className = "saved-article-share-actions";
+    shareActions.setAttribute("aria-label", `Share ${record.title || "saved article"}`);
+    ["mail", "whatsapp", "linkedin"].forEach((channel) => {
+      const shareButton = document.createElement("button");
+      shareButton.type = "button";
+      shareButton.className = "article-share-button saved-article-share-button";
+      shareButton.dataset.shareChannel = channel;
+      shareButton.dataset.shareArticleId = record.id;
+      shareButton.textContent = channel === "mail" ? "Mail" : channel === "whatsapp" ? "WhatsApp" : "LinkedIn";
+      shareButton.title = `Share via ${shareButton.textContent}`;
+      shareButton.setAttribute("aria-label", `${shareButton.title}: ${record.title || "saved article"}`);
+      shareActions.appendChild(shareButton);
+    });
+
     const removeButton = document.createElement("button");
     removeButton.type = "button";
     removeButton.className = "ghost-button saved-article-remove";
@@ -26440,7 +26585,8 @@ function renderFavoritesPanel() {
     removeButton.setAttribute("aria-label", `Remove saved article ${record.title || ""}`.trim());
 
     copy.append(link, meta);
-    row.append(copy, removeButton);
+    controls.append(shareActions, removeButton);
+    row.append(copy, controls);
     fragment.appendChild(row);
   });
   elements.favoritesList.appendChild(fragment);
@@ -26482,6 +26628,7 @@ function renderSavedArticleCard(article) {
   const node = elements.articleCardTemplate.content.cloneNode(true);
   const card = node.querySelector(".article-card");
   const favoriteButton = node.querySelector(".article-favorite-button");
+  const shareActions = node.querySelector(".article-share-actions");
   const link = node.querySelector(".article-link");
   const image = node.querySelector(".article-image");
   const topic = node.querySelector(".article-topic");
@@ -26506,6 +26653,7 @@ function renderSavedArticleCard(article) {
       runtime.renderedFavoriteArticleLookup.set(favoriteIdentity, article);
     }
   }
+  setArticleShareButtonState(shareActions, article);
 
   if (link) {
     link.href = getPreferredArticleOpenUrl(article);
@@ -55297,6 +55445,7 @@ function renderArticleCard(article) {
   const node = elements.articleCardTemplate.content.cloneNode(true);
   const card = node.querySelector(".article-card");
   const favoriteButton = node.querySelector(".article-favorite-button");
+  const shareActions = node.querySelector(".article-share-actions");
   const link = node.querySelector(".article-link");
   const image = node.querySelector(".article-image");
   const topic = node.querySelector(".article-topic");
@@ -55328,6 +55477,7 @@ function renderArticleCard(article) {
       runtime.renderedFavoriteArticleLookup.set(favoriteIdentity, article);
     }
   }
+  setArticleShareButtonState(shareActions, article);
 
   if (card && isGroupedSourcesExpanded && groupedSources.length) {
     card.classList.add("article-card--sources-expanded");
@@ -59884,6 +60034,16 @@ function bindEvents() {
 
   if (elements.articlesGrid) {
     elements.articlesGrid.addEventListener("click", (event) => {
+      const shareButton = event.target instanceof Element
+        ? event.target.closest("[data-share-channel][data-share-article-id]")
+        : null;
+      if (shareButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleArticleShareButton(shareButton);
+        return;
+      }
+
       const favoriteButton = event.target instanceof Element
         ? event.target.closest("[data-favorite-id]")
         : null;
@@ -60254,8 +60414,32 @@ function bindEvents() {
     });
   }
 
+  if (elements.favoritesShareAll) {
+    elements.favoritesShareAll.addEventListener("click", (event) => {
+      const shareButton = event.target instanceof Element
+        ? event.target.closest("[data-share-channel][data-share-favorites-all]")
+        : null;
+      if (!shareButton) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      handleFavoritesShareAllButton(shareButton);
+    });
+  }
+
   if (elements.favoritesList) {
     elements.favoritesList.addEventListener("click", (event) => {
+      const shareButton = event.target instanceof Element
+        ? event.target.closest("[data-share-channel][data-share-article-id]")
+        : null;
+      if (shareButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleArticleShareButton(shareButton);
+        return;
+      }
+
       const removeButton = event.target instanceof Element
         ? event.target.closest("[data-favorite-remove-id]")
         : null;

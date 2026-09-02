@@ -57,6 +57,11 @@
                 >
                   Show list
                 </button>
+                <div id="favorites-share-all" class="favorites-share-all" hidden aria-label="Share all favorites">
+                  <button class="article-share-button" type="button" data-share-channel="mail" data-share-favorites-all="true">Mail</button>
+                  <button class="article-share-button" type="button" data-share-channel="whatsapp" data-share-favorites-all="true">WhatsApp</button>
+                  <button class="article-share-button" type="button" data-share-channel="linkedin" data-share-favorites-all="true">LinkedIn</button>
+                </div>
                 <button id="favorites-clear-all" class="ghost-button" type="button" hidden>Clear all</button>
                 <button id="favorites-toggle" class="ghost-button" type="button" aria-pressed="false">Show saved</button>
               </div>
@@ -447,11 +452,16 @@
           </div>
         </a>
         <div class="article-card-actions">
+          <div class="article-share-actions" aria-label="Share article">
+            <button class="article-share-button" type="button" data-share-channel="mail">Mail</button>
+            <button class="article-share-button" type="button" data-share-channel="whatsapp">WhatsApp</button>
+            <button class="article-share-button" type="button" data-share-channel="linkedin">LinkedIn</button>
+          </div>
           <button class="article-favorite-button" type="button" aria-pressed="false" title="Save article">Save</button>
         </div>
       </article>
     </template>
 
-    <script type="module" src="/app.js?v=20260902-profile-source-context-215"></script>
+    <script type="module" src="/app.js?v=20260902-share-actions-216"></script>
   </body>
 </html>
