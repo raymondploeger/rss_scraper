@@ -1149,11 +1149,25 @@ h3 {
   line-height: 1.35;
 }
 
-.saved-article-remove {
+.ghost-button.saved-article-remove {
+  display: inline-grid;
+  place-items: center;
   align-self: start;
-  min-width: 34px;
-  height: 34px;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
   padding: 0;
+  border-color: var(--brand-red);
+  background: var(--brand-red);
+  color: #ffffff;
+  font-size: 1.1rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.ghost-button.saved-article-remove:hover {
+  border-color: #842031;
+  background: #842031;
 }
 
 .saved-article-controls {
@@ -1169,11 +1183,17 @@ h3 {
 }
 
 .saved-article-share-button {
+  display: inline-grid;
+  place-items: center;
   padding: 0;
   width: 30px;
   min-width: 30px;
+  height: 30px;
   overflow: hidden;
   color: transparent;
+  font-size: 0;
+  gap: 0;
+  line-height: 1;
 }
 
 .saved-article-share-button::before,
@@ -1182,11 +1202,17 @@ h3 {
 }
 
 .favorites-share-all .article-share-button {
+  display: inline-grid;
+  place-items: center;
   padding: 0;
   width: 32px;
   min-width: 32px;
+  height: 32px;
   overflow: hidden;
   color: transparent;
+  font-size: 0;
+  gap: 0;
+  line-height: 1;
 }
 
 .add-source-content {
@@ -2622,6 +2648,7 @@ h3 {
 .article-share-button::before {
   display: inline-grid;
   place-items: center;
+  width: 18px;
   min-width: 18px;
   height: 18px;
   border-radius: 999px;
@@ -2630,6 +2657,7 @@ h3 {
   font-size: 0.62rem;
   font-weight: 900;
   line-height: 1;
+  text-align: center;
 }
 
 .article-share-button[data-share-channel="mail"]::before {
