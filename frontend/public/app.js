@@ -1497,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "profile-source-context-214";
+const APP_BUILD = "profile-source-context-215";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -7763,12 +7763,15 @@ function getFilterPipelineHeavyDiagnosticsLimit() {
 function isSelectedFeedFullPoolEnabled() {
   try {
     const query = new URLSearchParams(window.location.search || "");
+    if (query.get("enableSelectedFeedFullPool") === "0") {
+      return false;
+    }
     if (query.get("enableSelectedFeedFullPool") === "1") {
       return true;
     }
-    return window.localStorage?.getItem("enableSelectedFeedFullPool") === "1";
+    return window.localStorage?.getItem("enableSelectedFeedFullPool") !== "0";
   } catch {
-    return false;
+    return true;
   }
 }
 
