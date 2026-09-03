@@ -1497,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "vendor-source-id-secure-document-217";
+const APP_BUILD = "source-profile-filtered-218";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -5415,6 +5415,56 @@ const BORDER_CONTROL_PROFILE_CONTEXT_KEEP_TERMS = Object.freeze([
   "removed from the uk",
 ]);
 
+const SELECTED_SOURCE_BORDER_CONTROL_STRONG_TERMS = Object.freeze([
+  "border control",
+  "travel documents",
+  "border",
+  "frontier",
+  "immigration",
+  "preclearance",
+  "entry/exit",
+  "entry-exit",
+  "entry exit",
+  "eta",
+  "etias",
+  "ees",
+  "egate",
+  "egates",
+  "airport",
+  "cross-border",
+  "traveller",
+  "traveler",
+  "ceuta",
+  "asylum",
+  "visa",
+  "visas",
+  "frontex",
+  "eu-lisa",
+  "eulisa",
+]);
+
+function getSelectedSourceBorderControlFilteringAssessment(article, sourceProfileAffinityRule = null) {
+  const tags = getArticleTags(article).map((tag) => String(tag || "").trim().toLowerCase());
+  const haystack = getArticleSearchText(article);
+  const tagMatched = tags.some((tag) => (
+    tag === "border control" ||
+    tag === "travel documents"
+  ));
+  const termMatched = SELECTED_SOURCE_BORDER_CONTROL_STRONG_TERMS.some((term) =>
+    textMatchesKeyword(haystack, term)
+  );
+
+  return {
+    mode: "selected_source_border_control",
+    applies: true,
+    passed: tagMatched || termMatched,
+    reason: tagMatched || termMatched
+      ? "selected_source_border_control_context"
+      : "selected_source_border_control_context_missing",
+    sourceProfileAffinityRule,
+  };
+}
+
 const IDENTITY_DOCUMENT_AUTHORITY_PROFILE_CONTEXT_KEEP_TERMS = Object.freeze([
   "passport",
   "passports",
@@ -5547,6 +5597,10 @@ function getProfileSourceFilteringAssessment(article, selectedInterests) {
   }
 
   if (queryContext.hasSelectedFeed && selectedFeedScope?.compatible) {
+    if (isBorderControlProfileSelection(normalizedInterests)) {
+      return getSelectedSourceBorderControlFilteringAssessment(article, sourceProfileAffinityRule);
+    }
+
     return {
       mode: "selected_source",
       applies: true,
@@ -44098,7 +44152,7 @@ function getCachedGroupedFeedResult(feedIdentity) {
   const selectedFeedIsProfileScope = shouldUseSelectedFeedAsProfileScope();
   const filteredCandidates = candidateArticles.filter((article) => articleMatchesFilters(article, {
     ignoreFeedId: true,
-    ignorePersonalDashboard: selectedFeedIsProfileScope,
+    ignorePersonalDashboard: false,
   }));
   const filteredMatches = hasPersonalDashboardSelections()
     ? sortArticlesForCurrentDashboardMode(filteredCandidates)
@@ -58804,14 +58858,14 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
   const advancedFilteredBackendArticles = candidatePool
     .filter((article) => articleMatchesFilters(article, {
       ignoreFeedId: true,
-      ignorePersonalDashboard: selectedFeedIsProfileScope,
+      ignorePersonalDashboard: false,
       timingContext: "backend_normalization",
     }));
   markProductionLoadTiming("backendNormalizationAdvancedFiltersComplete", {
     inputCount: candidatePool.length,
     outputCount: advancedFilteredBackendArticles.length,
   });
-  const identityDocumentBundleQualityGateStage = vendorsProfileActive || selectedFeedIsProfileScope
+  const identityDocumentBundleQualityGateStage = vendorsProfileActive
     ? {
         active: false,
         articles: advancedFilteredBackendArticles,
@@ -58823,7 +58877,7 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
     addFilterPipelineNote(diagnostics, "Vendors profile bypassed Identity Document backend normalization guard; Vendors professional guard remains authoritative");
   }
   if (diagnostics?.enabled && selectedFeedIsProfileScope) {
-    addFilterPipelineNote(diagnostics, "Compatible selected source bypassed broad profile backend normalization guards");
+    addFilterPipelineNote(diagnostics, "Compatible selected source supplied the candidate pool; active profile filters still apply");
   }
   if (diagnostics?.enabled && identityDocumentBundleQualityGateStage.active) {
     addFilterPipelineNote(diagnostics, "Identity Document bundle quality gate applied to backend-query production output");
@@ -58834,7 +58888,7 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
   markProductionLoadTiming("backendNormalizationIdentityGuardStart", {
     inputCount: personalDashboardFilteredBackendArticles.length,
   });
-  const filteredBackendArticles = vendorsProfileActive || selectedFeedIsProfileScope
+  const filteredBackendArticles = vendorsProfileActive
     ? personalDashboardFilteredBackendArticles
     : personalDashboardFilteredBackendArticles
       .filter((article) => articlePassesLegacyIdentityProfessionalRelevance(article, { branch: "backend-query" }));
@@ -58846,16 +58900,12 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
     addFilterPipelineNote(diagnostics, "Vendors profile bypassed legacy Identity Documents backend relevance guard");
   }
   if (diagnostics?.enabled && selectedFeedIsProfileScope) {
-    addFilterPipelineNote(diagnostics, "Compatible selected source bypassed legacy Identity Documents backend relevance guard");
+    addFilterPipelineNote(diagnostics, "Compatible selected source retained Identity Documents backend relevance guard");
   }
   markProductionLoadTiming("backendNormalizationDigitalGuardStart", {
     inputCount: filteredBackendArticles.length,
   });
-  const digitalIdentityProfessionalGuardStage = selectedFeedIsProfileScope
-    ? {
-        articles: filteredBackendArticles,
-      }
-    : applyDigitalIdentityProfessionalGuardStage({
+  const digitalIdentityProfessionalGuardStage = applyDigitalIdentityProfessionalGuardStage({
         articles: filteredBackendArticles,
         branch: "backend-query",
         diagnostics,
