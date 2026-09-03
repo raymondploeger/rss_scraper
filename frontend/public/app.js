@@ -1497,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "share-actions-216";
+const APP_BUILD = "vendor-source-id-secure-document-217";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1558,6 +1558,7 @@ const VENDOR_SOURCE_PATTERNS = Object.freeze([
   "news.notafilia.pl",
   "notafilia",
   "securitydocumentworld.com",
+  "securedocumentnews.com",
   "landqart.com/en/stories/news",
   "polyvantis.com/en/press",
   "linxens.com/en/news-events",
