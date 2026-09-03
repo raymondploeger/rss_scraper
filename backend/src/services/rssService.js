@@ -79,6 +79,8 @@ const KOENIG_BAUER_MAX_CANDIDATES = 28;
 const ATLANTIC_ZEISER_NEWS_URL = "https://www.atlanticzeiser.com/en/news";
 const ATLANTIC_ZEISER_MAX_ARCHIVE_PAGES = 3;
 const ATLANTIC_ZEISER_MAX_CANDIDATES = 24;
+const ID_SECURE_DOCUMENT_NEWS_URL = "https://securedocumentnews.com/news/";
+const ID_SECURE_DOCUMENT_NEWS_MAX_CANDIDATES = 24;
 const LINXENS_NEWS_AJAX_URL = "https://www.linxens.com/en/ajax/news-events";
 
 const VENDOR_FEED_LOG_CONFIG = [
@@ -310,6 +312,14 @@ function isAtlanticZeiserNewsFeed(feed) {
   });
 }
 
+function isIdSecureDocumentNewsFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: [ID_SECURE_DOCUMENT_NEWS_URL, "https://securedocumentnews.com/news"],
+    urlFragments: ["securedocumentnews.com/news"],
+    exactNames: ["ID & Secure Document News"],
+  });
+}
+
 function isIcaoNewsFeed(feed) {
   return matchesWebsiteFeedSignature(feed, {
     exactUrls: ["https://www.icao.int/news"],
@@ -340,7 +350,8 @@ function shouldReplaceArticlesOnSync(feed) {
     isVttNewsFeed(feed) ||
     isKinegramInsightsFeed(feed) ||
     isKoenigBauerPressReleasesFeed(feed) ||
-    isAtlanticZeiserNewsFeed(feed)
+    isAtlanticZeiserNewsFeed(feed) ||
+    isIdSecureDocumentNewsFeed(feed)
   );
 }
 
@@ -548,7 +559,23 @@ function matchesWebsiteSourceCandidatePolicy(feed, link) {
     return lowerLink.includes("/en/news/") && lowerLink !== ATLANTIC_ZEISER_NEWS_URL;
   }
 
+  if (isIdSecureDocumentNewsFeed(feed)) {
+    return isIdSecureDocumentNewsArticleUrl(link);
+  }
+
   return true;
+}
+
+function isIdSecureDocumentNewsArticleUrl(link) {
+  try {
+    const url = new URL(link);
+    return (
+      url.hostname.replace(/^www\./, "") === "securedocumentnews.com" &&
+      /^\/news\/20\d{2}\/[a-z]{3}\/\d{2}\/[^/]+\/?$/i.test(url.pathname)
+    );
+  } catch {
+    return false;
+  }
 }
 
 function resolveRelativeWebsiteLink(href, pageUrl) {
@@ -2965,6 +2992,90 @@ async function extractAtlanticZeiserNewsItems(feed, $, pageUrl) {
   return validatedItems;
 }
 
+async function extractIdSecureDocumentNewsItems(feed, $, pageUrl) {
+  const discoveredCandidates = [];
+  const seenLinks = new Set();
+
+  $("article")
+    .toArray()
+    .forEach((block) => {
+      const node = $(block);
+      const anchor = node.find("a[href]").filter((_, element) => {
+        const link = resolveRelativeWebsiteLink($(element).attr("href") || "", pageUrl);
+        return isIdSecureDocumentNewsArticleUrl(link);
+      }).first();
+      const link = resolveRelativeWebsiteLink(anchor.attr("href") || "", pageUrl);
+      if (!matchesWebsiteSourceCandidatePolicy(feed, link)) {
+        return;
+      }
+
+      const canonicalLink = canonicalizeUrl(link);
+      if (!canonicalLink || seenLinks.has(canonicalLink)) {
+        return;
+      }
+
+      const title =
+        sanitizeFeedText(anchor.text(), "") ||
+        sanitizeFeedText(node.find("h1, h2, h3").first().text(), "");
+      if (!title) {
+        return;
+      }
+
+      const imageNode = node.find("img").first();
+      const image =
+        pickImageFromSrcset(imageNode.attr("srcset") || imageNode.attr("data-srcset") || "") ||
+        imageNode.attr("src") ||
+        imageNode.attr("data-src") ||
+        "";
+
+      seenLinks.add(canonicalLink);
+      discoveredCandidates.push({
+        title,
+        link,
+        excerpt: sanitizeFeedText(node.find("p").first().text(), ""),
+        date:
+          parseWebsiteDate(node.find("time").first().attr("datetime") || "") ||
+          parseWebsiteDateFromText(node.find("time").first().text()),
+        image: resolveFeedImageCandidate(link, image),
+      });
+    });
+
+  const validatedItems = [];
+  for (const candidate of discoveredCandidates.slice(0, ID_SECURE_DOCUMENT_NEWS_MAX_CANDIDATES)) {
+    const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch((error) => {
+      console.warn(`Website article validation failed for ${candidate.link}:`, error?.message || error);
+      return null;
+    });
+    if (!validated?.accepted) {
+      continue;
+    }
+
+    const validatedImage = isLikelyGenericMetadataImage(validated.image) ? "" : validated.image;
+    const contentSnippet =
+      String(validated.contentSnippet || "").length >= String(candidate.excerpt || "").length
+        ? validated.contentSnippet
+        : candidate.excerpt;
+
+    validatedItems.push({
+      title: validated.title || candidate.title,
+      link: candidate.link,
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
+      image: candidate.image || validatedImage || "",
+      contentSnippet: contentSnippet || "",
+      author: "",
+      source: getSourceName(candidate.link),
+    });
+  }
+
+  logTrackedVendorWebsiteFeedState(feed, "extract-id-secure-document-news-complete", {
+    discoveredCount: discoveredCandidates.length,
+    validatedCount: validatedItems.length,
+    pageUrl,
+  });
+
+  return validatedItems;
+}
+
 async function extractCbpNewsItems(feed, $, pageUrl) {
   const discoveredCandidates = [];
   const seenLinks = new Set();
@@ -3437,6 +3548,13 @@ async function extractWebsiteItems(feed) {
   if (isAtlanticZeiserNewsFeed(feed)) {
     console.log(`Using dedicated website extractor: atlantic-zeiser for source ${feed.id}`);
     const items = await extractAtlanticZeiserNewsItems(feed, $, fetchedUrl);
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isIdSecureDocumentNewsFeed(feed)) {
+    console.log(`Using dedicated website extractor: id-secure-document-news for source ${feed.id}`);
+    const items = await extractIdSecureDocumentNewsItems(feed, $, fetchedUrl);
     console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
     return items;
   }
