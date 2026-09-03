@@ -231,11 +231,27 @@ function isIndNewsFeed(feed) {
   });
 }
 
+function isSwedishMigrationResidencePermitCardsFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: ["https://www.migrationsverket.se/en/word-explanations/residence-permit-cards.html"],
+    urlFragments: ["migrationsverket.se/en/word-explanations/residence-permit-cards"],
+    exactNames: ["Swedish Migration Agency Residence Permit Cards"],
+  });
+}
+
 function isCbpNewsFeed(feed) {
   return matchesWebsiteFeedSignature(feed, {
     exactUrls: [CBP_MEDIA_RELEASES_URL],
     urlFragments: ["cbp.gov/newsroom/media-releases/all"],
     exactNames: ["CBP Newsroom"],
+  });
+}
+
+function isCbpMobilePassportControlFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: ["https://www.cbp.gov/travel/us-citizens/mobile-passport-control?t=i"],
+    urlFragments: ["cbp.gov/travel/us-citizens/mobile-passport-control"],
+    exactNames: ["CBP Mobile Passport Control"],
   });
 }
 
@@ -340,7 +356,9 @@ function isIcaoTripFeed(feed) {
 function shouldReplaceArticlesOnSync(feed) {
   return (
     isIndNewsFeed(feed) ||
+    isSwedishMigrationResidencePermitCardsFeed(feed) ||
     isCbpNewsFeed(feed) ||
+    isCbpMobilePassportControlFeed(feed) ||
     isEuLisaNewsFeed(feed) ||
     isGovUkNewsFeed(feed) ||
     isIcaoNewsFeed(feed) ||
@@ -510,6 +528,14 @@ async function fetchWebsitePublishedDateForLink(link) {
 
 function matchesWebsiteSourceCandidatePolicy(feed, link) {
   const lowerLink = String(link || "").toLowerCase();
+
+  if (isCbpMobilePassportControlFeed(feed)) {
+    return false;
+  }
+
+  if (isSwedishMigrationResidencePermitCardsFeed(feed)) {
+    return false;
+  }
 
   if (isCbpNewsFeed(feed)) {
     return (
@@ -3469,6 +3495,12 @@ async function extractWebsiteItems(feed) {
     return items;
   }
 
+  if (isSwedishMigrationResidencePermitCardsFeed(feed)) {
+    console.log(`Using dedicated website extractor: swedish-migration-residence-permit-cards for source ${feed.id}`);
+    console.log(`Extracted 0 candidate website items for source ${feed.id}`);
+    return [];
+  }
+
   if (isIcaoNewsFeed(feed)) {
     console.log(`Using dedicated website extractor: icao-news for source ${feed.id}`);
     const items = await extractIcaoNewsItems(feed, $, fetchedUrl);
@@ -3488,6 +3520,12 @@ async function extractWebsiteItems(feed) {
     const items = await extractCbpNewsItems(feed, $, fetchedUrl);
     console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
     return items;
+  }
+
+  if (isCbpMobilePassportControlFeed(feed)) {
+    console.log(`Using dedicated website extractor: cbp-mobile-passport-control for source ${feed.id}`);
+    console.log(`Extracted 0 candidate website items for source ${feed.id}`);
+    return [];
   }
 
   if (isEuLisaNewsFeed(feed)) {

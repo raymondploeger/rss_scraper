@@ -1497,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "source-profile-filtered-218";
+const APP_BUILD = "profile-context-per-interest-220";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -5525,6 +5525,13 @@ function getSelectedIdentityProfileContextKeepTerms(selectedInterests) {
   }
   const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
   const selectedIdentityInterests = getSelectedIdentityDashboardInterests(normalizedInterests);
+  if (selectedIdentityInterests.length === 1) {
+    const selectedInterestId = selectedIdentityInterests[0];
+    return Array.from(new Set([
+      ...(IDENTITY_PROFILE_STRONG_CONTEXT_TERMS[selectedInterestId] || []),
+      ...(IDENTITY_DOCUMENT_BACKEND_SEARCH_PRIORITY_BY_INTEREST[selectedInterestId] || []),
+    ]));
+  }
   if (selectedIdentityInterests.some((interestId) =>
     ["passports", "id_cards", "visas", "residence_permits", "drivers_licenses", "icao"].includes(interestId)
   )) {
@@ -32350,6 +32357,12 @@ function computePersonalInterestBoostMeasured(article, interestId, options = {})
       );
       const selectedIdentityInterests = measureBoostSegment("selectedIdentitySubinterests", () => getSelectedIdentityDocumentSubinterests());
       const selectedSubinterest = getEffectiveIdentitySubinterestForScoring(selectedIdentityInterests);
+      const activeQueryContext = getActiveArticleQueryContext();
+      const singleProfileBroadSourceContext = selectedSubinterest && !activeQueryContext.hasSelectedFeed && isBroadIdentityProfileContextSourceArticle(article)
+        ? measureBoostSegment("singleProfileBroadSourceContext", () =>
+          getBroadIdentitySourceProfileContextAssessment(article, [selectedSubinterest])
+        )
+        : { applies: false, passed: true, matchedKeepTerms: [] };
       const borderControlTemplateSelection =
         getMatchingPersonalDashboardTemplateId(state.personalDashboard.interests) === "border_control" &&
         selectedIdentityInterests.includes("border_control");
@@ -32438,6 +32451,13 @@ function computePersonalInterestBoostMeasured(article, interestId, options = {})
 
       if (selectedSubinterest && subinterestScore.bestSelectedScore < 8 && selectedSubinterest !== "drivers_licenses") {
         score -= 400;
+      }
+      if (
+        singleProfileBroadSourceContext.applies &&
+        !singleProfileBroadSourceContext.passed &&
+        selectedSubinterest !== "border_control"
+      ) {
+        score -= 900;
       }
       if (subinterestScore.mismatchPenalty > HARD_SUBINTEREST_MISMATCH_THRESHOLD && !selectedSubinterestHasStrongEvidence) {
         score -= 500;
@@ -42741,6 +42761,10 @@ function calculatePersonalDomainScoreMeasured(article, selectedInterests = norma
         const identitySubinterest = getIdentityDocumentSubinterestScore(article, normalizedInterests);
         const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(normalizedInterests);
         const selectedSubinterest = getEffectiveIdentitySubinterestForScoring(selectedIdentityInterests, normalizedInterests);
+        const activeQueryContext = getActiveArticleQueryContext();
+        const singleProfileBroadSourceContext = selectedSubinterest && !activeQueryContext.hasSelectedFeed && isBroadIdentityProfileContextSourceArticle(article)
+          ? getBroadIdentitySourceProfileContextAssessment(article, [selectedSubinterest])
+          : { applies: false, passed: true, matchedKeepTerms: [] };
         const borderControlTemplateSelection =
           getMatchingPersonalDashboardTemplateId(normalizedInterests) === "border_control" &&
           selectedIdentityInterests.includes("border_control");
@@ -42856,6 +42880,13 @@ function calculatePersonalDomainScoreMeasured(article, selectedInterests = norma
         }
         if (selectedSubinterest && identitySubinterest.bestSelectedScore < 8 && selectedSubinterest !== "drivers_licenses") {
           score -= 400;
+        }
+        if (
+          singleProfileBroadSourceContext.applies &&
+          !singleProfileBroadSourceContext.passed &&
+          selectedSubinterest !== "border_control"
+        ) {
+          score -= 900;
         }
         if (identitySubinterest.mismatchPenalty > HARD_SUBINTEREST_MISMATCH_THRESHOLD && !selectedSubinterestHasStrongEvidence) {
           score -= 500;
