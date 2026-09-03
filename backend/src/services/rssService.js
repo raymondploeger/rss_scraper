@@ -14,6 +14,7 @@ import { createPollLog } from "../database/pollLogRepository.js";
 import { listFeeds as listFeedRecords, updateFeed as updateFeedRecord } from "../database/feedRepository.js";
 import { broadcast } from "./realtimeService.js";
 import { articleMatchesSourceRelevanceRule, getSourceRelevanceAssessment } from "./sourceRelevanceService.js";
+import { classifyArticleForIngest } from "./articleClassificationService.js";
 import {
   enrichArticle,
   isGoogleNewsPlaceholderImage,
@@ -3780,7 +3781,17 @@ function normalizeItem(feed, item) {
   const sourceMeta = extractItemSourceMetadata(item);
   const source = sanitizeFeedText(sourceMeta.name || item.creator || item.author || getSourceName(link), "Unknown");
   const tags = normalizeArticleTags(item);
-  const keywords = Array.from(new Set([...tags, ...inferKeywords([title, contentSnippet, feed.topic], 6)]));
+  const inferredKeywords = inferKeywords([title, contentSnippet, feed.topic], 6);
+  const classification = classifyArticleForIngest({
+    title,
+    contentSnippet,
+    topic: feed.topic,
+    source,
+    feedName: feed.name,
+    link,
+    keywords: [...tags, ...inferredKeywords],
+  });
+  const keywords = Array.from(new Set([...tags, ...classification.semanticTags, ...inferredKeywords]));
   const isNotafiliaArticle = isNotafiliaUrl(link) || isNotafiliaUrl(canonicalLink);
   const sourceUrlCandidate =
     isGoogleNewsLink(link) && sourceMeta.url && getHostname(sourceMeta.url) !== "news.google.com"
@@ -3797,7 +3808,7 @@ function normalizeItem(feed, item) {
     id: createDeterministicId(canonicalLink || link),
     feedId: feed.id,
     feedName: feed.name,
-    topic: feed.topic,
+    topic: classification.topic,
     title,
     normalizedTitle: normalizeTitle(title),
     canonicalLink,
@@ -3841,6 +3852,17 @@ async function upsertArticle(article) {
     !hasUsableStoredThumbnail(existing.thumbnail) &&
     hasUsableStoredThumbnail(article.thumbnail);
   const shouldBackfillSnippet = (!existing.contentSnippet || existing.contentSnippet.length < 40) && article.contentSnippet;
+  const nextKeywords = Array.isArray(article.keywords) ? article.keywords : [];
+  const existingKeywords = Array.isArray(existing.keywords) ? existing.keywords : [];
+  const shouldRefreshClassification =
+    (article.topic && article.topic !== existing.topic) ||
+    (
+      nextKeywords.length > 0 &&
+      (
+        nextKeywords.length !== existingKeywords.length ||
+        nextKeywords.some((keyword, index) => keyword !== existingKeywords[index])
+      )
+    );
   const shouldRefreshCoreMetadata =
     shouldUpdatePubDate ||
     (article.title && article.title !== existing.title) ||
@@ -3852,8 +3874,9 @@ async function upsertArticle(article) {
     (article.summaryShort && article.summaryShort !== existing.summaryShort) ||
     (article.contentSnippet && article.contentSnippet !== existing.contentSnippet);
 
-  if (shouldBackfillThumbnail || shouldBackfillSnippet || shouldRefreshCoreMetadata) {
+  if (shouldBackfillThumbnail || shouldBackfillSnippet || shouldRefreshCoreMetadata || shouldRefreshClassification) {
     const updated = await updateArticle(existing.id, {
+      topic: article.topic || existing.topic,
       title: article.title || existing.title,
       normalizedTitle: article.normalizedTitle || existing.normalizedTitle,
       link: article.link || existing.link,
@@ -3865,7 +3888,7 @@ async function upsertArticle(article) {
       contentSnippet: article.contentSnippet || existing.contentSnippet,
       summary: article.summary || existing.summary,
       summaryShort: article.summaryShort || existing.summaryShort,
-      keywords: article.keywords?.length ? article.keywords : existing.keywords,
+      keywords: nextKeywords.length ? nextKeywords : existing.keywords,
       fetchStatus: article.fetchStatus
     });
     broadcast("article:update", { type: "article:update", article: updated });
