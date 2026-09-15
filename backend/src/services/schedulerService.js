@@ -5,6 +5,11 @@ import { syncAllFeeds } from "./rssService.js";
 let isRunning = false;
 
 export function startScheduler() {
+  if (!env.schedulerEnabled) {
+    console.log("RSS scheduler disabled by SCHEDULER_ENABLED=false");
+    return;
+  }
+
   console.log(`Starting RSS scheduler with cron: ${env.pollCron}`);
 
   cron.schedule(env.pollCron, async () => {

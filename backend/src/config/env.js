@@ -13,6 +13,13 @@ const toNumber = (value, fallback) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const toBoolean = (value, fallback = false) => {
+  if (value === undefined || value === null || String(value).trim() === "") {
+    return fallback;
+  }
+  return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
+};
+
 const MAX_RSS_FEEDS = 300;
 
 export const env = {
@@ -23,6 +30,8 @@ export const env = {
   pollConcurrency: Math.max(1, toNumber(process.env.POLL_CONCURRENCY, 2)),
   scheduledPollConcurrency: Math.max(1, toNumber(process.env.SCHEDULED_POLL_CONCURRENCY, 2)),
   scheduledBatchDelayMs: Math.max(0, toNumber(process.env.SCHEDULED_BATCH_DELAY_MS, 1500)),
+  schedulerEnabled: toBoolean(process.env.SCHEDULER_ENABLED, true),
+  bootstrapInitialSyncEnabled: toBoolean(process.env.BOOTSTRAP_INITIAL_SYNC_ENABLED, true),
   refreshAbortRssMb: Math.max(0, toNumber(process.env.REFRESH_ABORT_RSS_MB, 2800)),
   requestTimeoutMs: Math.max(1000, toNumber(process.env.REQUEST_TIMEOUT_MS, 10000)),
   maxFeeds: Math.max(MAX_RSS_FEEDS, toNumber(process.env.MAX_FEEDS, MAX_RSS_FEEDS)),

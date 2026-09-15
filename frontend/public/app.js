@@ -5443,6 +5443,47 @@ const SELECTED_SOURCE_BORDER_CONTROL_STRONG_TERMS = Object.freeze([
   "eulisa",
 ]);
 
+const GOVUK_BORDER_CONTROL_REQUIRED_CONTEXT_TERMS = Object.freeze([
+  "border control",
+  "border force",
+  "border security",
+  "border checks",
+  "border crossing",
+  "border crossings",
+  "customs",
+  "immigration",
+  "immigration control",
+  "asylum",
+  "deportation",
+  "removed from the uk",
+  "visa",
+  "visas",
+  "ukvi",
+  "residence permit",
+  "biometric residence permit",
+  "brp",
+  "entry clearance",
+  "evisa",
+  "e-visa",
+  "electronic travel authorisation",
+  "electronic travel authorization",
+  "eta",
+  "entry exit system",
+  "entry/exit system",
+  "ees",
+  "etias",
+  "egate",
+  "egates",
+  "passport control",
+  "travel document",
+  "document verification",
+  "document inspection",
+]);
+
+function isGovUkSourceArticle(article) {
+  return articleMatchesSourceFingerprint(article, ["gov.uk", "www.gov.uk"]);
+}
+
 function getSelectedSourceBorderControlFilteringAssessment(article, sourceProfileAffinityRule = null) {
   const tags = getArticleTags(article).map((tag) => String(tag || "").trim().toLowerCase());
   const haystack = getArticleSearchText(article);
@@ -5453,14 +5494,21 @@ function getSelectedSourceBorderControlFilteringAssessment(article, sourceProfil
   const termMatched = SELECTED_SOURCE_BORDER_CONTROL_STRONG_TERMS.some((term) =>
     textMatchesKeyword(haystack, term)
   );
+  const govUkContextMatched = GOVUK_BORDER_CONTROL_REQUIRED_CONTEXT_TERMS.some((term) =>
+    textMatchesKeyword(haystack, term)
+  );
+  const govUkSourceRequiresContext = isGovUkSourceArticle(article);
+  const passed = tagMatched || (termMatched && (!govUkSourceRequiresContext || govUkContextMatched));
 
   return {
     mode: "selected_source_border_control",
     applies: true,
-    passed: tagMatched || termMatched,
-    reason: tagMatched || termMatched
+    passed,
+    reason: passed
       ? "selected_source_border_control_context"
-      : "selected_source_border_control_context_missing",
+      : govUkSourceRequiresContext
+        ? "selected_source_border_control_govuk_context_missing"
+        : "selected_source_border_control_context_missing",
     sourceProfileAffinityRule,
   };
 }
@@ -27958,6 +28006,40 @@ function getSelectedFeedStoredArticleCount(feedId = state.filters?.feedId) {
     .length;
 }
 
+function isLikelyResourceDirectorySource(feed) {
+  const fingerprint = [
+    feed?.name,
+    feed?.topic,
+    feed?.rssUrl,
+    feed?.officialUrl,
+    feed?.siteUrl,
+    feed?.homepage,
+    feed?.sourceType,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (!fingerprint) {
+    return false;
+  }
+
+  return [
+    "/resources",
+    "/resource",
+    "resources",
+    "resource center",
+    "resource centre",
+    "media library",
+    "download",
+    "downloads",
+    "whitepaper",
+    "whitepapers",
+    "case studies",
+    "knowledge hub",
+    "insight hub",
+  ].some((term) => fingerprint.includes(term));
+}
+
 function renderArticleEmptyStateHtml(defaultMessage = "No articles match the active filters.") {
   const queryContext = getActiveArticleQueryContext();
   const selectedFeed = queryContext.hasSelectedFeed ? resolveFeedByIdentity(queryContext.feedIdentity) : null;
@@ -27976,6 +28058,9 @@ function renderArticleEmptyStateHtml(defaultMessage = "No articles match the act
         : " is selected, but";
       message = `${selectedFeedLabel}${articleCountLabel} the active profile does not include this source.`;
       details.push("Clear the profile or choose a matching profile/source combination.");
+    } else if (!selectedFeedStoredArticleCount && isLikelyResourceDirectorySource(selectedFeed)) {
+      message = `${selectedFeedLabel} looks like a resource directory rather than a dated news feed.`;
+      details.push("It may be useful as a tracked source reference, but no dated article cards are available yet.");
     } else if (!selectedFeedStoredArticleCount) {
       message = `${selectedFeedLabel} has no articles available in the current loaded set.`;
       details.push("Open this source without profile filters or refresh sources if this looks wrong.");
@@ -52165,6 +52250,14 @@ const PASSPORT_HARD_NOISE_KEYWORDS = [
   "material traceability",
   "passport program",
   "passport scheme",
+  "passport challenge",
+  "passport crawl",
+  "passport stamp",
+  "passport stamps",
+  "passport punchlines",
+  "passport holder",
+  "passport cover",
+  "passport wallet",
   "phone passport",
   "tourism passport",
   "loyalty passport",
@@ -52384,6 +52477,19 @@ const IDENTITY_CONTEXT_KEYWORDS = {
     "generic travel",
     "travel warning",
     "travel story",
+    "passport alone",
+    "enough to fly",
+    "denied boarding",
+    "boarding at the gate",
+    "six-month validity",
+    "6 month passport rule",
+    "passport stamp rule",
+    "novelty stamp",
+    "novelty stamps",
+    "traveler",
+    "travelers",
+    "tourist",
+    "tourists",
   ],
 };
 const PRIMARY_PASSPORT_SUBJECT_RULES = {
@@ -52474,6 +52580,14 @@ const PRIMARY_PASSPORT_SUBJECT_RULES = {
     "backpacker",
     "celebrity",
     "tourist tips",
+    "passport stamp rule",
+    "passport alone",
+    "denied boarding",
+    "book crawl",
+    "bookstore",
+    "poker",
+    "passport holder",
+    "passport punchlines",
     "workflow",
     "payroll",
     "software",
@@ -52508,6 +52622,10 @@ const PRIMARY_PASSPORT_SOURCE_NEGATIVE_SIGNALS = [
   "payroll",
   "software",
   "travel blog",
+  "thetravel.com",
+  "msn.com/en-us/travel",
+  "pokernews.com",
+  "event calendar",
 ];
 const HIGH_CONFIDENCE_PASSPORT_POSITIVE_SIGNALS = [
   "immigration",
@@ -52557,8 +52675,19 @@ const HIGH_CONFIDENCE_PASSPORT_NEGATIVE_SIGNALS = [
   "tourist guide",
   "travel hacks",
   "holiday tips",
+  "passport alone",
+  "enough to fly",
+  "denied boarding",
+  "boarding at the gate",
+  "passport stamp rule",
+  "novelty stamp",
+  "novelty stamps",
+  "tourist visa advice",
   "library funding",
   "local fundraiser",
+  "book crawl",
+  "bookstore passport",
+  "passport punchlines",
   "school event",
   "easter message",
   "festival passport",

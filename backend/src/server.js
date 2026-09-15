@@ -59,24 +59,33 @@ async function bootstrapRuntime() {
   markMigrationsApplied(true);
   const strategicFeedResult = await ensureStrategicFeeds();
 
-  for (const feed of strategicFeedResult?.feedsNeedingInitialSync || []) {
-    try {
-      console.log(
-        `[strategic-feeds] bootstrapping-initial-sync feedId=${feed.id} name=${feed.name} sourceType=${feed.sourceType} rssUrl=${feed.rssUrl}`
-      );
-      await syncFeed(feed);
-    } catch (error) {
-      console.error(
-        `[strategic-feeds] initial sync failed for ${feed?.name || feed?.rssUrl}:`,
-        error?.stack || error
-      );
+  if (env.bootstrapInitialSyncEnabled) {
+    for (const feed of strategicFeedResult?.feedsNeedingInitialSync || []) {
+      try {
+        console.log(
+          `[strategic-feeds] bootstrapping-initial-sync feedId=${feed.id} name=${feed.name} sourceType=${feed.sourceType} rssUrl=${feed.rssUrl}`
+        );
+        await syncFeed(feed);
+      } catch (error) {
+        console.error(
+          `[strategic-feeds] initial sync failed for ${feed?.name || feed?.rssUrl}:`,
+          error?.stack || error
+        );
+      }
     }
+  } else {
+    const skippedCount = Array.isArray(strategicFeedResult?.feedsNeedingInitialSync)
+      ? strategicFeedResult.feedsNeedingInitialSync.length
+      : 0;
+    console.log(`[strategic-feeds] initial sync disabled by BOOTSTRAP_INITIAL_SYNC_ENABLED=false; skipped=${skippedCount}`);
   }
 
-  if (!schedulerStarted) {
+  if (env.schedulerEnabled && !schedulerStarted) {
     startScheduler();
     schedulerStarted = true;
     markSchedulerStarted(true);
+  } else if (!env.schedulerEnabled) {
+    markSchedulerStarted(false);
   }
 
   console.log("Background bootstrap complete.");
