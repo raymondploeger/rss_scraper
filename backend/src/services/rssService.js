@@ -66,6 +66,9 @@ const CRANE_CURRENCY_NEWSROOM_URL = "https://www.cranecurrency.com/news-insights
 const CRANE_CURRENCY_SITEMAP_URL = "https://www.cranecurrency.com/sitemap/";
 const CRANE_CURRENCY_MAX_ARCHIVE_PAGES = 8;
 const CRANE_CURRENCY_MAX_CANDIDATES = 80;
+const BUNDESDRUCKEREI_PRESS_RELEASES_URL = "https://www.bundesdruckerei.de/en/newsroom/press-releases";
+const KURZ_PRESS_RELEASES_URL = "https://www.kurz-world.com/en/newsroom/press/";
+const KURZ_PRESS_RELEASES_MAX_CANDIDATES = 24;
 const IND_NEWS_URL = "https://ind.nl/en/news";
 const CBP_MEDIA_RELEASES_URL = "https://www.cbp.gov/newsroom/media-releases/all";
 const GOV_UK_NEWS_URL = "https://www.gov.uk/search/news-and-communications";
@@ -183,6 +186,22 @@ function isCraneCurrencyNewsroomFeed(feed) {
     (String(feed.rssUrl || "").trim().toLowerCase() === CRANE_CURRENCY_NEWSROOM_URL.toLowerCase() ||
       String(feed.name || "").trim().toLowerCase() === "crane currency news & insights")
   );
+}
+
+function isBundesdruckereiPressReleasesFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: [BUNDESDRUCKEREI_PRESS_RELEASES_URL],
+    urlFragments: ["bundesdruckerei.de/en/newsroom/press-releases"],
+    exactNames: ["Bundesdruckerei Press Releases"],
+  });
+}
+
+function isKurzPressReleasesFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: [KURZ_PRESS_RELEASES_URL],
+    urlFragments: ["kurz-world.com/en/newsroom/press"],
+    exactNames: ["KURZ Press Releases"],
+  });
 }
 
 function isIdemiaPressroomFeed(feed) {
@@ -392,6 +411,9 @@ function shouldReplaceArticlesOnSync(feed) {
     isKinegramInsightsFeed(feed) ||
     isKoenigBauerPressReleasesFeed(feed) ||
     isAtlanticZeiserNewsFeed(feed) ||
+    isBundesdruckereiPressReleasesFeed(feed) ||
+    isKurzPressReleasesFeed(feed) ||
+    isIdemiaPressroomFeed(feed) ||
     isIdSecureDocumentNewsFeed(feed)
   );
 }
@@ -408,7 +430,10 @@ function isTrackedVendorWebsiteFeed(feed) {
     isVttNewsFeed(feed) ||
     isKinegramInsightsFeed(feed) ||
     isKoenigBauerPressReleasesFeed(feed) ||
-    isAtlanticZeiserNewsFeed(feed)
+    isAtlanticZeiserNewsFeed(feed) ||
+    isBundesdruckereiPressReleasesFeed(feed) ||
+    isKurzPressReleasesFeed(feed) ||
+    isIdemiaPressroomFeed(feed)
   );
 }
 
@@ -446,6 +471,9 @@ function getTrackedVendorWebsiteFeedDebugSnapshot(feed) {
     isKinegram: isKinegramInsightsFeed(feed),
     isKoenigBauer: isKoenigBauerPressReleasesFeed(feed),
     isAtlanticZeiser: isAtlanticZeiserNewsFeed(feed),
+    isBundesdruckerei: isBundesdruckereiPressReleasesFeed(feed),
+    isKurz: isKurzPressReleasesFeed(feed),
+    isIdemiaPressroom: isIdemiaPressroomFeed(feed),
     shouldReplace: shouldReplaceArticlesOnSync(feed),
   };
 }
@@ -610,6 +638,26 @@ function matchesWebsiteSourceCandidatePolicy(feed, link) {
 
   if (isAtlanticZeiserNewsFeed(feed)) {
     return lowerLink.includes("/en/news/") && lowerLink !== ATLANTIC_ZEISER_NEWS_URL;
+  }
+
+  if (isBundesdruckereiPressReleasesFeed(feed)) {
+    return (
+      (
+        lowerLink.includes("/en/newsroom/press-releases/") ||
+        lowerLink.includes("/en/newsroom/pressemitteilungen/")
+      ) &&
+      !lowerLink.includes("?") &&
+      !lowerLink.includes("#")
+    );
+  }
+
+  if (isKurzPressReleasesFeed(feed)) {
+    return (
+      lowerLink.includes("/en/newsroom/press/") &&
+      lowerLink !== KURZ_PRESS_RELEASES_URL &&
+      !lowerLink.includes("/page-") &&
+      !lowerLink.includes("#")
+    );
   }
 
   if (isIdemiaPressroomFeed(feed)) {
@@ -3073,6 +3121,94 @@ async function extractAtlanticZeiserNewsItems(feed, $, pageUrl) {
   return validatedItems;
 }
 
+function parseKurzPressDate(value) {
+  const match = String(value || "").match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/);
+  if (!match) {
+    return parseWebsiteDateFromText(value);
+  }
+
+  const [, day, month, year] = match;
+  return parseWebsiteDate(`${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`);
+}
+
+async function extractKurzPressReleaseItems(feed, $, pageUrl) {
+  const discoveredCandidates = [];
+  const seenLinks = new Set();
+
+  $(".enf-news-list .row[id^='enfn']")
+    .toArray()
+    .forEach((block) => {
+      const node = $(block);
+      const anchor = node.find("a[href*='/en/newsroom/press/']").first();
+      const link = resolveRelativeWebsiteLink(anchor.attr("href") || "", pageUrl);
+      if (!matchesWebsiteSourceCandidatePolicy(feed, link)) {
+        return;
+      }
+
+      const canonicalLink = canonicalizeUrl(link);
+      if (!canonicalLink || seenLinks.has(canonicalLink)) {
+        return;
+      }
+
+      const title = sanitizeFeedText(node.find("h3").first().text(), "");
+      if (!title) {
+        return;
+      }
+
+      const imageNode = node.find("img").first();
+      const image =
+        pickImageFromSrcset(imageNode.attr("srcset") || imageNode.attr("data-srcset") || "") ||
+        imageNode.attr("data-src") ||
+        imageNode.attr("src") ||
+        "";
+
+      seenLinks.add(canonicalLink);
+      discoveredCandidates.push({
+        title,
+        link,
+        excerpt: sanitizeFeedText(node.text(), "").replace(title, "").replace(/read more\.\.\./gi, "").trim(),
+        date: parseKurzPressDate(node.find("h4.small, h4, time").first().text()),
+        image: resolveFeedImageCandidate(link, image),
+      });
+    });
+
+  const validatedItems = [];
+  for (const candidate of discoveredCandidates.slice(0, KURZ_PRESS_RELEASES_MAX_CANDIDATES)) {
+    const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch((error) => {
+      console.warn(`Website article validation failed for ${candidate.link}:`, error?.message || error);
+      return null;
+    });
+
+    if (!validated?.accepted) {
+      continue;
+    }
+
+    const validatedTitle = sanitizeFeedText(validated.title, "");
+    const title =
+      validatedTitle && validatedTitle.toLowerCase() !== "kurz - press releases"
+        ? validatedTitle
+        : candidate.title;
+
+    validatedItems.push({
+      title,
+      link: candidate.link,
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : ""),
+      image: validated.image || candidate.image || "",
+      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+      author: "",
+      source: getSourceName(candidate.link),
+    });
+  }
+
+  logTrackedVendorWebsiteFeedState(feed, "extract-kurz-complete", {
+    discoveredCount: discoveredCandidates.length,
+    validatedCount: validatedItems.length,
+    pageUrl,
+  });
+
+  return validatedItems;
+}
+
 async function extractIdemiaPressroomItems(feed, $, pageUrl) {
   const discoveredCandidates = [];
   const seenLinks = new Set();
@@ -3725,6 +3861,13 @@ async function extractWebsiteItems(feed) {
     return items;
   }
 
+  if (isKurzPressReleasesFeed(feed)) {
+    console.log(`Using dedicated website extractor: kurz for source ${feed.id}`);
+    const items = await extractKurzPressReleaseItems(feed, $, fetchedUrl);
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
   if (isIdemiaPressroomFeed(feed)) {
     console.log(`Using dedicated website extractor: idemia for source ${feed.id}`);
     const items = await extractIdemiaPressroomItems(feed, $, fetchedUrl);
@@ -3776,7 +3919,7 @@ async function extractWebsiteItems(feed) {
       }
       continue;
     }
-    if (!articleMatchesSourceRelevanceRule(feed, {
+    if (!shouldBypassDedicatedVendorSourceRelevance(feed) && !articleMatchesSourceRelevanceRule(feed, {
       title: validated.title || text,
       link,
       contentSnippet: validated.contentSnippet || "",
