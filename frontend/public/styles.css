@@ -2525,6 +2525,28 @@ h3 {
   display: none !important;
 }
 
+.source-error-notice {
+  grid-column: 1 / -1;
+  padding: 14px 16px;
+  border: 1px solid rgba(156, 37, 57, 0.55);
+  border-left: 4px solid var(--danger);
+  border-radius: var(--radius-md);
+  background: rgba(156, 37, 57, 0.12);
+  color: var(--text);
+  box-shadow: none;
+}
+
+.source-error-notice strong,
+.source-error-notice span {
+  display: block;
+}
+
+.source-error-notice span {
+  margin-top: 4px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .pagination-controls {
   display: flex;
   align-items: center;

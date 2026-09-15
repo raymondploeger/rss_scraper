@@ -27998,6 +27998,30 @@ function renderArticleEmptyStateHtml(defaultMessage = "No articles match the act
   return `<div class="empty-state"><strong>${escapeHtml(message)}</strong>${detailHtml}</div>`;
 }
 
+function getSelectedFeedErrorArchiveNoticeHtml(selectedFeed, articles = []) {
+  if (!isFeedError(selectedFeed)) {
+    return "";
+  }
+
+  const visibleArticles = Array.isArray(articles) ? articles : [];
+  const latestPubDate = visibleArticles
+    .map((article) => toDate(article?.pubDate))
+    .filter((date) => date instanceof Date && !Number.isNaN(date.getTime()))
+    .sort((left, right) => right.getTime() - left.getTime())[0];
+  const latestLabel = latestPubDate ? formatDate(latestPubDate) : "";
+  const errorLabel = selectedFeed.lastError ? ` Refresh error: ${selectedFeed.lastError}.` : "";
+  const archiveLabel = latestLabel
+    ? ` Showing stored archive articles; newest stored article is ${latestLabel}.`
+    : " Showing stored archive articles.";
+
+  return `
+    <div class="source-error-notice" role="status">
+      <strong>${escapeHtml(selectedFeed.name || "Selected source")} is not updating right now.</strong>
+      <span>${escapeHtml(`${errorLabel}${archiveLabel}`.trim())}</span>
+    </div>
+  `;
+}
+
 function hasActiveAdvancedSearchFilters() {
   const filters = state.filters || {};
   const keywordFilters = state.keywordFilters || {};
@@ -59621,6 +59645,10 @@ function renderArticles() {
 
       logRenderingPageArticlesOnly(groupedArticlesCount, articlesToRender);
       patchSimpleArticleGrid(articlesToRender);
+      const selectedFeedNotice = getSelectedFeedErrorArchiveNoticeHtml(resolveFeedByIdentity(activeFeedId), articles);
+      if (selectedFeedNotice) {
+        elements.articlesGrid.insertAdjacentHTML("afterbegin", selectedFeedNotice);
+      }
       renderPaginationControls(safeArticlePagination);
       intelligenceTimeEnd("renderArticles:dom-update");
       finalizeRenderDiagnostics(renderDiagnostics);
