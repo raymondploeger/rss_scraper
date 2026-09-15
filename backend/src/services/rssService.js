@@ -3193,7 +3193,7 @@ async function extractKurzPressReleaseItems(feed, $, pageUrl) {
       title,
       link: candidate.link,
       isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : ""),
-      image: validated.image || candidate.image || "",
+      image: candidate.image || validated.image || "",
       contentSnippet: validated.contentSnippet || candidate.excerpt || "",
       author: "",
       source: getSourceName(candidate.link),
