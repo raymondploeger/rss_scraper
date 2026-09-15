@@ -80,6 +80,8 @@ const KOENIG_BAUER_MAX_CANDIDATES = 28;
 const ATLANTIC_ZEISER_NEWS_URL = "https://www.atlanticzeiser.com/en/news";
 const ATLANTIC_ZEISER_MAX_ARCHIVE_PAGES = 3;
 const ATLANTIC_ZEISER_MAX_CANDIDATES = 24;
+const IDEMIA_PRESSROOM_URL = "https://www.idemia.com/pressroom";
+const IDEMIA_PRESSROOM_MAX_CANDIDATES = 30;
 const ID_SECURE_DOCUMENT_NEWS_URL = "https://securedocumentnews.com/news/";
 const ID_SECURE_DOCUMENT_NEWS_MAX_CANDIDATES = 24;
 const LINXENS_NEWS_AJAX_URL = "https://www.linxens.com/en/ajax/news-events";
@@ -181,6 +183,26 @@ function isCraneCurrencyNewsroomFeed(feed) {
     (String(feed.rssUrl || "").trim().toLowerCase() === CRANE_CURRENCY_NEWSROOM_URL.toLowerCase() ||
       String(feed.name || "").trim().toLowerCase() === "crane currency news & insights")
   );
+}
+
+function isIdemiaPressroomFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: [IDEMIA_PRESSROOM_URL],
+    urlFragments: ["idemia.com/pressroom"],
+    exactNames: ["IDEMIA Pressroom"],
+  });
+}
+
+function isIdemiaRssFeed(feed) {
+  return (
+    Boolean(feed) &&
+    String(feed.rssUrl || "").trim().toLowerCase() === "https://www.idemia.com/feed" &&
+    String(feed.name || "").trim().toLowerCase() === "idemia"
+  );
+}
+
+function isIdemiaPressReleaseUrl(link) {
+  return String(link || "").toLowerCase().includes("idemia.com/press-release/");
 }
 
 function normalizeWebsiteFeedSignature(value) {
@@ -588,6 +610,10 @@ function matchesWebsiteSourceCandidatePolicy(feed, link) {
 
   if (isAtlanticZeiserNewsFeed(feed)) {
     return lowerLink.includes("/en/news/") && lowerLink !== ATLANTIC_ZEISER_NEWS_URL;
+  }
+
+  if (isIdemiaPressroomFeed(feed)) {
+    return isIdemiaPressReleaseUrl(lowerLink);
   }
 
   if (isIdSecureDocumentNewsFeed(feed)) {
@@ -3047,6 +3073,86 @@ async function extractAtlanticZeiserNewsItems(feed, $, pageUrl) {
   return validatedItems;
 }
 
+async function extractIdemiaPressroomItems(feed, $, pageUrl) {
+  const discoveredCandidates = [];
+  const seenLinks = new Set();
+
+  $(".pressroomArchive article")
+    .toArray()
+    .forEach((block) => {
+      const node = $(block);
+      const anchor = node.find("a[href*='/press-release/']").first();
+      const link = resolveRelativeWebsiteLink(anchor.attr("href") || "", pageUrl);
+      if (!matchesWebsiteSourceCandidatePolicy(feed, link)) {
+        return;
+      }
+
+      const canonicalLink = canonicalizeUrl(link);
+      if (!canonicalLink || seenLinks.has(canonicalLink)) {
+        return;
+      }
+
+      const title =
+        sanitizeFeedText(anchor.find("img[alt]").first().attr("alt"), "") ||
+        sanitizeFeedText(anchor.find("div").last().text(), "") ||
+        sanitizeFeedText(anchor.text(), "");
+      if (!title) {
+        return;
+      }
+
+      const text = sanitizeFeedText(node.text(), "");
+      const mmddyyMatch = text.match(/\b\d{2}\.\d{2}\.\d{2}\b/);
+      const date = mmddyyMatch ? parseWebsiteDate(`20${mmddyyMatch[0].slice(6, 8)}-${mmddyyMatch[0].slice(0, 2)}-${mmddyyMatch[0].slice(3, 5)}`) : null;
+      const imageNode = anchor.find(".releases2026Img, [style*='background-image']").first();
+      const backgroundStyle = imageNode.attr("style") || "";
+      const backgroundImage = backgroundStyle.match(/url\(([^)]+)\)/i)?.[1]?.replace(/^['"]|['"]$/g, "") || "";
+
+      seenLinks.add(canonicalLink);
+      discoveredCandidates.push({
+        title,
+        link,
+        excerpt: text.replace(title, "").replace(/\b\d{2}\.\d{2}\.\d{2}\b/g, "").trim(),
+        date,
+        image: resolveFeedImageCandidate(link, backgroundImage),
+      });
+    });
+
+  const validatedItems = [];
+  for (const candidate of discoveredCandidates.slice(0, IDEMIA_PRESSROOM_MAX_CANDIDATES)) {
+    const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch((error) => {
+      console.warn(`Website article validation failed for ${candidate.link}:`, error?.message || error);
+      return null;
+    });
+
+    if (!validated?.accepted) {
+      continue;
+    }
+
+    const contentSnippet =
+      String(validated.contentSnippet || "").length >= String(candidate.excerpt || "").length
+        ? validated.contentSnippet
+        : candidate.excerpt;
+
+    validatedItems.push({
+      title: validated.title || candidate.title,
+      link: candidate.link,
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : ""),
+      image: candidate.image || validated.image || "",
+      contentSnippet: contentSnippet || "",
+      author: "",
+      source: getSourceName(candidate.link),
+    });
+  }
+
+  logTrackedVendorWebsiteFeedState(feed, "extract-idemia-complete", {
+    discoveredCount: discoveredCandidates.length,
+    validatedCount: validatedItems.length,
+    pageUrl,
+  });
+
+  return validatedItems;
+}
+
 async function extractIdSecureDocumentNewsItems(feed, $, pageUrl) {
   const discoveredCandidates = [];
   const seenLinks = new Set();
@@ -3619,6 +3725,13 @@ async function extractWebsiteItems(feed) {
     return items;
   }
 
+  if (isIdemiaPressroomFeed(feed)) {
+    console.log(`Using dedicated website extractor: idemia for source ${feed.id}`);
+    const items = await extractIdemiaPressroomItems(feed, $, fetchedUrl);
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
   if (isIdSecureDocumentNewsFeed(feed)) {
     console.log(`Using dedicated website extractor: id-secure-document-news for source ${feed.id}`);
     const items = await extractIdSecureDocumentNewsItems(feed, $, fetchedUrl);
@@ -3673,10 +3786,11 @@ async function extractWebsiteItems(feed) {
     }
 
     seenLinks.add(canonicalLink);
+    const inferredDate = inferWebsiteItemDate($, anchor);
     items.push({
       title: validated.title || text,
       link,
-      isoDate: validated.isoDate || inferWebsiteItemDate($, anchor).toISOString(),
+      isoDate: validated.isoDate || (inferredDate ? inferredDate.toISOString() : ""),
       image: validated.image || "",
       contentSnippet:
         validated.contentSnippet || sanitizeFeedText($(anchor).closest("article, li, div").text(), ""),
@@ -3826,6 +3940,10 @@ function normalizeItem(feed, item) {
   }
 
   if (isPolyvantisPressFeed(feed) && isBrokenPolyvantisPressLink(link)) {
+    return null;
+  }
+
+  if (isIdemiaRssFeed(feed) && isIdemiaPressReleaseUrl(link)) {
     return null;
   }
 
