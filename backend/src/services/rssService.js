@@ -374,6 +374,10 @@ function shouldReplaceArticlesOnSync(feed) {
   );
 }
 
+function itemHasExplicitPubDate(item) {
+  return Boolean(normalizeText(item?.isoDate || item?.pubDate, ""));
+}
+
 function isTrackedVendorWebsiteFeed(feed) {
   return (
     isLandqartNewsFeed(feed) ||
@@ -1439,7 +1443,7 @@ function inferWebsiteItemDate($, anchor) {
     }
   }
 
-  return new Date();
+  return null;
 }
 
 function getWebsiteCandidateTitle($, anchor) {
@@ -2001,7 +2005,7 @@ async function assessCraneCurrencyCandidate(feed, candidate) {
     item: {
       title: validated.title || candidate.title,
       link: candidate.link,
-      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : ""),
       contentSnippet: validated.contentSnippet || candidate.excerpt || "",
       category: candidate.category || undefined,
       image: candidate.image || undefined,
@@ -2158,7 +2162,7 @@ async function extractSicpaNewsroomItems(feed, $, pageUrl) {
     items.push({
       title: validated.title || candidate.title,
       link: candidate.link,
-      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : ""),
       contentSnippet: validated.contentSnippet || candidate.excerpt || "",
       author: "",
       source: getSourceName(candidate.link),
@@ -2248,7 +2252,7 @@ async function extractSurysNewsroomItems(feed, $, pageUrl) {
     items.push({
       title: validated.title || candidate.title,
       link: candidate.link,
-      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : ""),
       contentSnippet: validated.contentSnippet || candidate.excerpt || "",
       author: "",
       source: getSourceName(candidate.link),
@@ -2335,7 +2339,7 @@ async function extractIqStructuresNewsroomItems(feed, $, pageUrl) {
     items.push({
       title: validated.title || candidate.title,
       link: candidate.link,
-      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : ""),
       contentSnippet: validated.contentSnippet || candidate.excerpt || "",
       author: "",
       source: getSourceName(candidate.link),
@@ -2416,7 +2420,7 @@ async function extractLandqartNewsItems(feed, $, pageUrl) {
     validatedItems.push({
       title: candidate.title,
       link: candidate.link,
-      isoDate: candidate.date ? candidate.date.toISOString() : new Date().toISOString(),
+      isoDate: candidate.date ? candidate.date.toISOString() : "",
       contentSnippet: candidate.excerpt || "",
       author: "",
       source: getSourceName(candidate.link),
@@ -2546,7 +2550,7 @@ async function extractPolyvantisPressItems(feed, $, pageUrl) {
     validatedItems.push({
       title: resolvedCandidate.title,
       link: resolvedCandidate.link,
-      isoDate: resolvedDate ? resolvedDate.toISOString() : new Date().toISOString(),
+      isoDate: resolvedDate ? resolvedDate.toISOString() : "",
       contentSnippet: resolvedCandidate.excerpt || "",
       author: "",
       source: getSourceName(resolvedCandidate.link),
@@ -2635,7 +2639,7 @@ async function extractLinxensNewsItems(feed, $, pageUrl) {
     validatedItems.push({
       title: candidate.title,
       link: candidate.link,
-      isoDate: resolvedDate ? resolvedDate.toISOString() : new Date().toISOString(),
+      isoDate: resolvedDate ? resolvedDate.toISOString() : "",
       contentSnippet: candidate.excerpt || "",
       image: candidate.image || "",
       author: "",
@@ -2702,7 +2706,7 @@ async function extractVttNewsItems(feed, $, pageUrl) {
     validatedItems.push({
       title: candidate.title,
       link: candidate.link,
-      isoDate: resolvedDate ? resolvedDate.toISOString() : new Date().toISOString(),
+      isoDate: resolvedDate ? resolvedDate.toISOString() : "",
       contentSnippet: candidate.excerpt || "",
       author: "",
       source: getSourceName(candidate.link),
@@ -2773,7 +2777,7 @@ async function extractKinegramInsightsItems(feed, $, pageUrl) {
     validatedItems.push({
       title: validated.title || candidate.title,
       link: resolvedLink,
-      isoDate: resolvedDate ? resolvedDate.toISOString() : new Date().toISOString(),
+      isoDate: resolvedDate ? resolvedDate.toISOString() : "",
       image: validated.image || "",
       contentSnippet: validated.contentSnippet || candidate.excerpt || "",
       author: "",
@@ -2901,7 +2905,7 @@ async function extractKoenigBauerPressReleaseItems(feed, $, pageUrl) {
     validatedItems.push({
       title: validated.title || candidate.title,
       link: candidate.link,
-      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : ""),
       image: validated.image || candidate.image || "",
       contentSnippet: contentSnippet || "",
       author: "",
@@ -3025,7 +3029,7 @@ async function extractAtlanticZeiserNewsItems(feed, $, pageUrl) {
     validatedItems.push({
       title: validated.title || candidate.title,
       link: candidate.link,
-      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : ""),
       image: candidate.image || validatedImage || "",
       contentSnippet: contentSnippet || "",
       author: "",
@@ -3110,7 +3114,7 @@ async function extractIdSecureDocumentNewsItems(feed, $, pageUrl) {
     validatedItems.push({
       title: validated.title || candidate.title,
       link: candidate.link,
-      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : ""),
       image: candidate.image || validatedImage || "",
       contentSnippet: contentSnippet || "",
       author: "",
@@ -3173,7 +3177,7 @@ async function extractCbpNewsItems(feed, $, pageUrl) {
     validatedItems.push({
       title: validated.title || candidate.title,
       link: candidate.link,
-      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : ""),
       image: validated.image || "",
       contentSnippet: validated.contentSnippet || candidate.excerpt || "",
       author: "",
@@ -3297,7 +3301,7 @@ async function extractEuLisaNewsItems(feed, $, pageUrl) {
     validatedItems.push({
       title: validated.title || candidate.title,
       link: candidate.link,
-      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : ""),
       image: validated.image || "",
       contentSnippet: validated.contentSnippet || candidate.excerpt || "",
       author: "",
@@ -3380,7 +3384,7 @@ async function extractIndNewsItems(feed, $, pageUrl) {
     validatedItems.push({
       title: validated.title || candidate.title,
       link: candidate.link,
-      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : new Date().toISOString()),
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : ""),
       contentSnippet: validated.contentSnippet || candidate.excerpt || "",
       author: "",
       source: getSourceName(candidate.link),
@@ -3825,7 +3829,9 @@ function normalizeItem(feed, item) {
     return null;
   }
 
-  const pubDate = new Date(String(item.isoDate || item.pubDate || new Date().toISOString()));
+  const rawPubDate = normalizeText(item.isoDate || item.pubDate, "");
+  const pubDateIsFallback = !rawPubDate;
+  const pubDate = new Date(String(rawPubDate || new Date().toISOString()));
   const contentSnippet = sanitizeFeedText(item.contentSnippet || item.content || item.summary || item.description, "");
   const title = sanitizeFeedText(item.title, "Untitled Article");
   const extractedThumbnail = extractFeedThumbnail(link, item);
@@ -3877,6 +3883,7 @@ function normalizeItem(feed, item) {
     link,
     source,
     pubDate,
+    pubDateIsFallback,
     thumbnail,
     summary: contentSnippet,
     summaryShort: summaryShortFromArticle({ title, contentSnippet }),
@@ -3907,6 +3914,7 @@ async function upsertArticle(article) {
   const nextPubDate = article.pubDate ? new Date(article.pubDate) : null;
   const currentPubDate = existing.pubDate ? new Date(existing.pubDate) : null;
   const shouldUpdatePubDate =
+    !article.pubDateIsFallback &&
     nextPubDate &&
     !Number.isNaN(nextPubDate.getTime()) &&
     (!currentPubDate || Number.isNaN(currentPubDate.getTime()) || nextPubDate.getTime() !== currentPubDate.getTime());
@@ -4168,7 +4176,16 @@ async function runFeedSync(feed) {
       console.log(`[${vendorFeedLogLabel}] articles_found count=${resolvedItems.length}`);
     }
 
-    if (feed.sourceType === "website" && shouldReplaceArticlesOnSync(feed)) {
+    const canReplaceWebsiteArticles =
+      feed.sourceType === "website" &&
+      shouldReplaceArticlesOnSync(feed) &&
+      resolvedItems.some(itemHasExplicitPubDate);
+
+    if (feed.sourceType === "website" && shouldReplaceArticlesOnSync(feed) && !canReplaceWebsiteArticles) {
+      console.warn(`Skipped replacing website-source articles for ${feed.id}: extracted items have no explicit dates`);
+    }
+
+    if (canReplaceWebsiteArticles) {
       const deletedCount = await deleteArticlesByFeedId(feed.id);
       console.log(`Replaced existing website-source articles for ${feed.id}: deleted=${deletedCount}`);
       logTrackedVendorWebsiteFeedState(feed, "post-delete-existing", {
