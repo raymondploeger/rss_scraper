@@ -1497,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "profile-context-per-interest-220";
+const APP_BUILD = "reference-source-ui-221";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -28006,8 +28006,8 @@ function getSelectedFeedStoredArticleCount(feedId = state.filters?.feedId) {
     .length;
 }
 
-function isLikelyResourceDirectorySource(feed) {
-  const fingerprint = [
+function getFeedReferenceFingerprint(feed) {
+  return [
     feed?.name,
     feed?.topic,
     feed?.rssUrl,
@@ -28019,6 +28019,10 @@ function isLikelyResourceDirectorySource(feed) {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+}
+
+function isLikelyReferenceSource(feed) {
+  const fingerprint = getFeedReferenceFingerprint(feed);
   if (!fingerprint) {
     return false;
   }
@@ -28037,7 +28041,36 @@ function isLikelyResourceDirectorySource(feed) {
     "case studies",
     "knowledge hub",
     "insight hub",
+    "reference",
+    "guidance",
+    "how-to",
+    "how to",
+    "word-explanations",
+    "mobile-passport-control",
+    "residence-permit-cards",
+    "facilitation-programmes/assistance",
+    "icao trip",
+    "cbp mobile passport control",
+    "swedish migration agency residence permit cards",
   ].some((term) => fingerprint.includes(term));
+}
+
+function isReferenceOnlySource(feed) {
+  if (!isLikelyReferenceSource(feed)) {
+    return false;
+  }
+
+  const feedIdentity = getUniqueFeedIdentity(feed);
+  return getSelectedFeedStoredArticleCount(feedIdentity) === 0;
+}
+
+function getFeedSourceUrl(feed) {
+  return [
+    feed?.officialUrl,
+    feed?.siteUrl,
+    feed?.homepage,
+    feed?.rssUrl,
+  ].find((url) => /^https?:\/\//i.test(String(url || "").trim())) || "";
 }
 
 function renderArticleEmptyStateHtml(defaultMessage = "No articles match the active filters.") {
@@ -28058,9 +28091,9 @@ function renderArticleEmptyStateHtml(defaultMessage = "No articles match the act
         : " is selected, but";
       message = `${selectedFeedLabel}${articleCountLabel} the active profile does not include this source.`;
       details.push("Clear the profile or choose a matching profile/source combination.");
-    } else if (!selectedFeedStoredArticleCount && isLikelyResourceDirectorySource(selectedFeed)) {
-      message = `${selectedFeedLabel} looks like a resource directory rather than a dated news feed.`;
-      details.push("It may be useful as a tracked source reference, but no dated article cards are available yet.");
+    } else if (!selectedFeedStoredArticleCount && isLikelyReferenceSource(selectedFeed)) {
+      message = `${selectedFeedLabel} is a reference source, not a dated article feed.`;
+      details.push("Use Open source for the original page; it is kept for context and profile matching.");
     } else if (!selectedFeedStoredArticleCount) {
       message = `${selectedFeedLabel} has no articles available in the current loaded set.`;
       details.push("Open this source without profile filters or refresh sources if this looks wrong.");
@@ -44931,6 +44964,13 @@ function isOfficialFallbackArticle(article) {
 }
 
 function getFeedStatusPresentation(feed) {
+  if (isReferenceOnlySource(feed)) {
+    return {
+      text: "reference",
+      tone: "is-reference",
+    };
+  }
+
   if (isLinkOnlyDmvSource(feed)) {
     return {
       text: "No RSS",
@@ -51479,6 +51519,7 @@ function renderFeedItem(feed) {
   const actions = node.querySelector(".feed-item-actions");
   const isCatalogOnly = Boolean(feed.isCatalogOnly);
   const isLinkOnly = isLinkOnlyDmvSource(feed);
+  const isReferenceOnly = isReferenceOnlySource(feed);
   const isRssBacked = isRssBackedDmvFeed(feed);
   const lastFetched = feed.lastFetchedAt
     ? formatDate(feed.lastFetchedAt)
@@ -51488,14 +51529,18 @@ function renderFeedItem(feed) {
   const statusPresentation = getFeedStatusPresentation(feed);
   const sourceKind = isLinkOnly
     ? "Link-only source"
+    : isReferenceOnly
+      ? "Reference source"
     : isRssBacked
       ? "RSS-backed source"
       : "";
+  const sourceUrl = getFeedSourceUrl(feed);
 
   item.classList.toggle("is-catalog-only", isCatalogOnly);
   item.classList.toggle("is-canada-link-only", isCanadaLinkOnlyFeed(feed));
   item.classList.toggle("is-canada-rss", isCanadaRssBackedFeed(feed));
   item.classList.toggle("is-link-only-source", isLinkOnly);
+  item.classList.toggle("is-reference-source", isReferenceOnly);
   item.classList.toggle("is-rss-backed-source", isRssBacked);
   title.textContent = feed.name || "Untitled feed";
   const metaText = [feed.topic || "General", sourceKind, lastFetched, feed.rssUrl || ""]
@@ -51526,6 +51571,17 @@ function renderFeedItem(feed) {
     viewButton.dataset.action = "view-feed-articles";
     editButton.dataset.action = "edit-feed";
     deleteButton.dataset.action = "delete-feed";
+
+    if (isReferenceOnly && sourceUrl && actions) {
+      viewButton.hidden = true;
+      const sourceLink = document.createElement("a");
+      sourceLink.className = "ghost-button feed-source-link";
+      sourceLink.href = sourceUrl;
+      sourceLink.target = "_blank";
+      sourceLink.rel = "noopener noreferrer";
+      sourceLink.textContent = "Open source";
+      actions.insertBefore(sourceLink, editButton);
+    }
   }
 
   return node;
