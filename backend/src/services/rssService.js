@@ -750,6 +750,9 @@ const DEBUG_ARTICLE_REJECTS =
 const DEBUG_IMAGE_EXTRACTION =
   process.env.NODE_ENV !== "production" &&
   String(process.env.DEBUG_IMAGE_EXTRACTION || "").trim().toLowerCase() === "true";
+const NOTAFILIA_OFFICIAL_RSS_URL = "https://news.notafilia.pl/feed/";
+const NOTAFILIA_LEGACY_FEEDBURNER_HOST = "feeds.feedburner.com";
+const NOTAFILIA_LEGACY_FEEDBURNER_PATH = "/nowocizewiatamonetibanknotw";
 
 function isNotafiliaUrl(value) {
   try {
@@ -757,6 +760,27 @@ function isNotafiliaUrl(value) {
   } catch {
     return false;
   }
+}
+
+function isLegacyNotafiliaFeedBurnerUrl(value) {
+  try {
+    const parsed = new URL(String(value || ""));
+    return (
+      parsed.hostname.replace(/^www\./, "").toLowerCase() === NOTAFILIA_LEGACY_FEEDBURNER_HOST &&
+      parsed.pathname.replace(/\/$/, "").toLowerCase() === NOTAFILIA_LEGACY_FEEDBURNER_PATH
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isNotafiliaFeed(feed) {
+  const name = String(feed?.name || "").toLowerCase();
+  return (
+    name.includes("notafilia") ||
+    isNotafiliaUrl(feed?.rssUrl) ||
+    isLegacyNotafiliaFeedBurnerUrl(feed?.rssUrl)
+  );
 }
 
 function getHostname(value) {
@@ -4121,11 +4145,23 @@ async function runFeedSync(feed) {
       }
     } else {
       console.log(`Fetching RSS source ${feed.id} (${feed.rssUrl})`);
-      const parsedFeed = await parser.parseURL(feed.rssUrl);
+      const rssUrl = isLegacyNotafiliaFeedBurnerUrl(feed.rssUrl)
+        ? NOTAFILIA_OFFICIAL_RSS_URL
+        : feed.rssUrl;
+      if (rssUrl !== feed.rssUrl) {
+        console.log(`[notafilia][rss] legacy FeedBurner source detected; using official RSS ${rssUrl}`);
+      }
+      const parsedFeed = await parser.parseURL(rssUrl);
       if (vendorFeedLogLabel) {
-        console.log(`[${vendorFeedLogLabel}] feed_loaded feedId=${feed.id} rssUrl=${feed.rssUrl}`);
+        console.log(`[${vendorFeedLogLabel}] feed_loaded feedId=${feed.id} rssUrl=${rssUrl}`);
       }
       resolvedItems = Array.isArray(parsedFeed.items) ? parsedFeed.items : [];
+    }
+
+    if (isNotafiliaFeed(feed) && resolvedItems.length === 0) {
+      throw new Error(
+        `Notafilia returned 0 RSS items. The old FeedBurner URL is obsolete; use ${NOTAFILIA_OFFICIAL_RSS_URL}.`
+      );
     }
 
     if (vendorFeedLogLabel) {

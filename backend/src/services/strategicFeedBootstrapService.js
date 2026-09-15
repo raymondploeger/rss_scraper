@@ -325,6 +325,13 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase2-vendor-sources",
   },
   {
+    name: "news.notafilia.pl",
+    topic: "Banknotes",
+    rssUrl: "https://news.notafilia.pl/feed/",
+    sourceType: "rss",
+    phase: "phase2-vendor-sources",
+  },
+  {
     name: "POLYVANTIS Press",
     topic: "Shared Security Printing",
     rssUrl: "https://www.polyvantis.com/en/press",
