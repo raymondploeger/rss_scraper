@@ -83,6 +83,8 @@ const KOENIG_BAUER_MAX_CANDIDATES = 28;
 const ATLANTIC_ZEISER_NEWS_URL = "https://www.atlanticzeiser.com/en/news";
 const ATLANTIC_ZEISER_MAX_ARCHIVE_PAGES = 3;
 const ATLANTIC_ZEISER_MAX_CANDIDATES = 24;
+const VERIDOS_PRESS_MEDIA_URL = "https://www.veridos.com/en/about/press-media/";
+const VERIDOS_PRESS_MEDIA_MAX_CANDIDATES = 24;
 const IDEMIA_PRESSROOM_URL = "https://www.idemia.com/pressroom";
 const IDEMIA_PRESSROOM_MAX_CANDIDATES = 30;
 const ID_SECURE_DOCUMENT_NEWS_URL = "https://securedocumentnews.com/news/";
@@ -378,6 +380,14 @@ function isIdSecureDocumentNewsFeed(feed) {
   });
 }
 
+function isVeridosPressMediaFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: [VERIDOS_PRESS_MEDIA_URL, "https://www.veridos.com/en/about/press-media"],
+    urlFragments: ["veridos.com/en/about/press-media"],
+    exactNames: ["Veridos Press & Media"],
+  });
+}
+
 function isIcaoNewsFeed(feed) {
   return matchesWebsiteFeedSignature(feed, {
     exactUrls: ["https://www.icao.int/news"],
@@ -413,6 +423,7 @@ function shouldReplaceArticlesOnSync(feed) {
     isAtlanticZeiserNewsFeed(feed) ||
     isBundesdruckereiPressReleasesFeed(feed) ||
     isKurzPressReleasesFeed(feed) ||
+    isVeridosPressMediaFeed(feed) ||
     isIdemiaPressroomFeed(feed) ||
     isIdSecureDocumentNewsFeed(feed)
   );
@@ -433,6 +444,7 @@ function isTrackedVendorWebsiteFeed(feed) {
     isAtlanticZeiserNewsFeed(feed) ||
     isBundesdruckereiPressReleasesFeed(feed) ||
     isKurzPressReleasesFeed(feed) ||
+    isVeridosPressMediaFeed(feed) ||
     isIdemiaPressroomFeed(feed)
   );
 }
@@ -656,6 +668,15 @@ function matchesWebsiteSourceCandidatePolicy(feed, link) {
       lowerLink.includes("/en/newsroom/press/") &&
       lowerLink !== KURZ_PRESS_RELEASES_URL &&
       !lowerLink.includes("/page-") &&
+      !lowerLink.includes("#")
+    );
+  }
+
+  if (isVeridosPressMediaFeed(feed)) {
+    return (
+      lowerLink.includes("/en/about/press-media/") &&
+      lowerLink !== VERIDOS_PRESS_MEDIA_URL.toLowerCase() &&
+      lowerLink !== "https://www.veridos.com/en/about/press-media" &&
       !lowerLink.includes("#")
     );
   }
@@ -3647,6 +3668,42 @@ function parseIcaoListingDate(value) {
   return parseWebsiteDate(`${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`);
 }
 
+function getListingCandidateImage($, node, link) {
+  const imageNode = node
+    .closest("article, li, section, .views-row, .card-item, .teaser, .item, div")
+    .find("img")
+    .first();
+  const image =
+    pickImageFromSrcset(imageNode.attr("srcset") || imageNode.attr("data-srcset") || "") ||
+    imageNode.attr("data-src") ||
+    imageNode.attr("src") ||
+    "";
+
+  return resolveFeedImageCandidate(link, image);
+}
+
+function cleanListingReadMoreTitle(value) {
+  return sanitizeFeedText(value, "")
+    .replace(/^read more about\s+/i, "")
+    .replace(/^read more\s*:\s*/i, "")
+    .trim();
+}
+
+function parseListingDateFromText(value) {
+  const text = sanitizeFeedText(value, "");
+  const monthDate = text.match(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},\s+20\d{2}\b/i);
+  if (monthDate) {
+    return parseWebsiteDate(monthDate[0]);
+  }
+
+  const slashDate = text.match(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/);
+  if (slashDate) {
+    return parseIcaoListingDate(slashDate[0]);
+  }
+
+  return parseWebsiteDateFromText(text);
+}
+
 function buildIcaoNewsCandidate(feed, $, block, pageUrl) {
   const node = $(block);
   const anchor = node.find(".card-title a[href^='/news/'], .card-title a[href*='/news/']").first();
@@ -3676,6 +3733,40 @@ function buildIcaoNewsCandidate(feed, $, block, pageUrl) {
   };
 }
 
+function buildIcaoNewsAnchorCandidate(feed, $, anchor, pageUrl) {
+  const node = $(anchor);
+  const link = resolveRelativeWebsiteLink(node.attr("href") || "", pageUrl);
+  if (!link || !matchesWebsiteSourceCandidatePolicy(feed, link)) {
+    return null;
+  }
+
+  let pathname = "";
+  try {
+    pathname = new URL(link).pathname.toLowerCase();
+  } catch {
+    return null;
+  }
+
+  if (!pathname.startsWith("/news/") || pathname === "/news" || pathname.includes("/es/") || pathname.includes("/fr/")) {
+    return null;
+  }
+
+  const title = cleanListingReadMoreTitle(node.text());
+  if (!title || title.toLowerCase() === "read more" || title.toLowerCase() === "icao newsroom") {
+    return null;
+  }
+
+  const block = node.closest("article, li, section, .views-row, .card-item, div");
+  const blockText = sanitizeFeedText(block.text(), "");
+  return {
+    title,
+    link,
+    excerpt: blockText.replace(title, "").trim().slice(0, 320),
+    date: parseListingDateFromText(blockText) || findNearbyWebsiteDate($, node) || null,
+    image: getListingCandidateImage($, node, link),
+  };
+}
+
 async function extractIcaoNewsItems(feed, $, pageUrl) {
   const candidates = [];
   const seenLinks = new Set();
@@ -3693,6 +3784,21 @@ async function extractIcaoNewsItems(feed, $, pageUrl) {
       candidates.push(candidate);
     });
 
+  if (!candidates.length) {
+    $("a[href^='/news/'], a[href*='icao.int/news/']")
+      .toArray()
+      .forEach((anchor) => {
+        const candidate = buildIcaoNewsAnchorCandidate(feed, $, anchor, pageUrl);
+        const canonicalLink = canonicalizeUrl(candidate?.link || "");
+        if (!candidate || !canonicalLink || seenLinks.has(canonicalLink)) {
+          return;
+        }
+
+        seenLinks.add(canonicalLink);
+        candidates.push(candidate);
+      });
+  }
+
   const validatedItems = [];
   for (const candidate of candidates.slice(0, 24)) {
     const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch((error) => {
@@ -3703,7 +3809,7 @@ async function extractIcaoNewsItems(feed, $, pageUrl) {
       continue;
     }
 
-    const item = {
+    validatedItems.push({
       title: validated.title || candidate.title,
       link: candidate.link,
       isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : ""),
@@ -3711,13 +3817,84 @@ async function extractIcaoNewsItems(feed, $, pageUrl) {
       contentSnippet: validated.contentSnippet || candidate.excerpt || "",
       author: "",
       source: getSourceName(candidate.link),
-    };
+    });
+  }
 
-    if (!articleMatchesSourceRelevanceRule(feed, item)) {
+  return validatedItems;
+}
+
+function buildVeridosPressMediaCandidate(feed, $, anchor, pageUrl) {
+  const node = $(anchor);
+  const link = resolveRelativeWebsiteLink(node.attr("href") || "", pageUrl);
+  if (!link || !matchesWebsiteSourceCandidatePolicy(feed, link)) {
+    return null;
+  }
+
+  try {
+    const parsedLink = new URL(link);
+    if (parsedLink.pathname.replace(/\/+$/, "") === "/en/about/press-media") {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  let title = cleanListingReadMoreTitle(node.text());
+  if (!title || /^image$/i.test(title)) {
+    title = findNearbyWebsiteHeadingText($, node);
+  }
+  title = cleanListingReadMoreTitle(title);
+  if (!title || isGenericWebsiteActionLabel(title) || title.toLowerCase() === "press & media - veridos") {
+    return null;
+  }
+
+  const block = node.closest("article, li, section, .views-row, .card, .teaser, div");
+  const blockText = sanitizeFeedText(block.text(), "");
+  return {
+    title,
+    link,
+    excerpt: blockText.replace(title, "").trim().slice(0, 320),
+    date: parseListingDateFromText(blockText) || findNearbyWebsiteDate($, node) || null,
+    image: getListingCandidateImage($, node, link),
+  };
+}
+
+async function extractVeridosPressMediaItems(feed, $, pageUrl) {
+  const candidates = [];
+  const seenLinks = new Set();
+
+  $("a[href*='/en/about/press-media/']")
+    .toArray()
+    .forEach((anchor) => {
+      const candidate = buildVeridosPressMediaCandidate(feed, $, anchor, pageUrl);
+      const canonicalLink = canonicalizeUrl(candidate?.link || "");
+      if (!candidate || !canonicalLink || seenLinks.has(canonicalLink)) {
+        return;
+      }
+
+      seenLinks.add(canonicalLink);
+      candidates.push(candidate);
+    });
+
+  const validatedItems = [];
+  for (const candidate of candidates.slice(0, VERIDOS_PRESS_MEDIA_MAX_CANDIDATES)) {
+    const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch((error) => {
+      console.warn(`Website article validation failed for ${candidate.link}:`, error?.message || error);
+      return null;
+    });
+    if (!validated?.accepted) {
       continue;
     }
 
-    validatedItems.push(item);
+    validatedItems.push({
+      title: validated.title || candidate.title,
+      link: candidate.link,
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : ""),
+      image: validated.image || candidate.image || "",
+      contentSnippet: validated.contentSnippet || candidate.excerpt || "",
+      author: "",
+      source: getSourceName(candidate.link),
+    });
   }
 
   return validatedItems;
@@ -3864,6 +4041,13 @@ async function extractWebsiteItems(feed) {
   if (isKurzPressReleasesFeed(feed)) {
     console.log(`Using dedicated website extractor: kurz for source ${feed.id}`);
     const items = await extractKurzPressReleaseItems(feed, $, fetchedUrl);
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isVeridosPressMediaFeed(feed)) {
+    console.log(`Using dedicated website extractor: veridos for source ${feed.id}`);
+    const items = await extractVeridosPressMediaItems(feed, $, fetchedUrl);
     console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
     return items;
   }
