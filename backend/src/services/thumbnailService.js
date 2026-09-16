@@ -211,10 +211,19 @@ export function isLikelyGenericMetadataImage(imageUrl) {
     "og-image",
     "media-image",
     "org-member-transparent",
+    "seo-bild",
     "sprite",
     "tracking",
     "pixel",
   ].some((token) => value.includes(token));
+}
+
+function isSwedishMigrationArticleUrl(value) {
+  try {
+    return new URL(String(value || "")).hostname.replace(/^www\./, "") === "migrationsverket.se";
+  } catch {
+    return false;
+  }
 }
 
 function collectMetaImageCandidates($, selector, pageUrl, source) {
@@ -1086,6 +1095,10 @@ export async function enrichArticle(articleId) {
   const article = await findArticleById(articleId);
   if (!article) {
     return;
+  }
+
+  if (isSwedishMigrationArticleUrl(article.link) || isSwedishMigrationArticleUrl(article.canonicalLink)) {
+    return article;
   }
 
   if (

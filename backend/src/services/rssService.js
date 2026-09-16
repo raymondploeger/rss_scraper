@@ -90,6 +90,7 @@ const IDEMIA_PRESSROOM_MAX_CANDIDATES = 30;
 const ID_SECURE_DOCUMENT_NEWS_URL = "https://securedocumentnews.com/news/";
 const ID_SECURE_DOCUMENT_NEWS_MAX_CANDIDATES = 24;
 const LINXENS_NEWS_AJAX_URL = "https://www.linxens.com/en/ajax/news-events";
+const SWEDISH_MIGRATION_NEWS_RSS_URL = "https://www.migrationsverket.se/rss_en";
 
 const VENDOR_FEED_LOG_CONFIG = [
   {
@@ -279,6 +280,14 @@ function isSwedishMigrationResidencePermitCardsFeed(feed) {
     exactUrls: ["https://www.migrationsverket.se/en/word-explanations/residence-permit-cards.html"],
     urlFragments: ["migrationsverket.se/en/word-explanations/residence-permit-cards"],
     exactNames: ["Swedish Migration Agency Residence Permit Cards"],
+  });
+}
+
+function isSwedishMigrationNewsFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: [SWEDISH_MIGRATION_NEWS_RSS_URL],
+    urlFragments: ["migrationsverket.se/rss_en"],
+    exactNames: ["Swedish Migration Agency News"],
   });
 }
 
@@ -899,6 +908,14 @@ function getSourceName(link) {
   }
 }
 
+function isSwedishMigrationArticleLink(value) {
+  try {
+    return new URL(String(value || "")).hostname.replace(/^www\./, "") === "migrationsverket.se";
+  } catch {
+    return false;
+  }
+}
+
 function isMeaningfulImageCandidate(candidate) {
   const normalized = String(candidate || "").trim().toLowerCase();
   if (!normalized || normalized.startsWith("data:")) {
@@ -1195,6 +1212,15 @@ function extractFeedThumbnail(link, item) {
   }
 
   return { url: "", source: "placeholder" };
+}
+
+function getSwedishMigrationTitleThumbnail(title) {
+  const cleanedTitle = sanitizeFeedText(title, "Migration update")
+    .replace(/[^\p{L}\p{N}\s.,:;!?&+-]/gu, "")
+    .slice(0, 88)
+    .trim();
+  const label = cleanedTitle || "Migration update";
+  return `https://placehold.co/800x450/0b4f42/ffffff/png?text=${encodeURIComponent(`Swedish Migration Agency\n${label}`)}`;
 }
 
 function summaryShortFromArticle(article) {
@@ -4280,13 +4306,19 @@ function normalizeItem(feed, item) {
   const contentSnippet = sanitizeFeedText(item.contentSnippet || item.content || item.summary || item.description, "");
   const title = sanitizeFeedText(item.title, "Untitled Article");
   const extractedThumbnail = extractFeedThumbnail(link, item);
+  const generatedSourceThumbnail =
+    isSwedishMigrationNewsFeed(feed) && !extractedThumbnail.url
+      ? getSwedishMigrationTitleThumbnail(title)
+      : "";
   const feedFallbackThumbnail = isGoogleAlertsFeed(feed)
     ? ""
     : resolveFeedImageCandidate(link, feed.sourceFallbackImage || "");
-  const thumbnail = normalizeText(extractedThumbnail.url || feedFallbackThumbnail, env.placeholderImage);
+  const thumbnail = normalizeText(extractedThumbnail.url || generatedSourceThumbnail || feedFallbackThumbnail, env.placeholderImage);
   const hasUsableThumbnail = hasUsableStoredThumbnail(thumbnail);
   const thumbnailSource = extractedThumbnail.url
     ? extractedThumbnail.source
+    : generatedSourceThumbnail
+      ? "generated-source-title-card"
     : feedFallbackThumbnail
       ? "feed-fallback-image"
       : "placeholder";
@@ -4511,6 +4543,10 @@ async function enrichDirectArticleThumbnail(feed, article) {
 
 function queueThumbnailEnrichment(article) {
   if (!article?.id) {
+    return;
+  }
+
+  if (isSwedishMigrationArticleLink(article.link) || isSwedishMigrationArticleLink(article.canonicalLink)) {
     return;
   }
 
