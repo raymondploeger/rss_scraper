@@ -1497,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "reference-source-ui-221";
+const APP_BUILD = "swedish-migration-rss-222";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -28051,7 +28051,6 @@ function isLikelyReferenceSource(feed) {
     "facilitation-programmes/assistance",
     "icao trip",
     "cbp mobile passport control",
-    "swedish migration agency residence permit cards",
   ].some((term) => fingerprint.includes(term));
 }
 

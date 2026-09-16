@@ -76,10 +76,10 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase1",
   },
   {
-    name: "Swedish Migration Agency Residence Permit Cards",
+    name: "Swedish Migration Agency News",
     topic: "Identity Documents",
-    rssUrl: "https://www.migrationsverket.se/en/word-explanations/residence-permit-cards.html",
-    sourceType: "website",
+    rssUrl: "https://www.migrationsverket.se/rss_en",
+    sourceType: "rss",
     phase: "phase1",
   },
   {
@@ -445,6 +445,10 @@ const RETIRED_STRATEGIC_FEEDS = [
   {
     name: "SICPA RSS",
     rssUrl: "https://www.sicpa.com/rss.xml",
+  },
+  {
+    name: "Swedish Migration Agency Residence Permit Cards",
+    rssUrl: "https://www.migrationsverket.se/en/word-explanations/residence-permit-cards.html",
   },
   {
     name: "SURYS RSS",
