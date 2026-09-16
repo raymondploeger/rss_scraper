@@ -1224,6 +1224,15 @@ function getSwedishMigrationTitleThumbnail(title) {
   return `https://placehold.co/800x450/0b4f42/ffffff/png?text=${encodeURIComponent(`Swedish Migration Agency\n${label}`)}`;
 }
 
+function getBundesdruckereiTitleThumbnail(title) {
+  const cleanedTitle = sanitizeFeedText(title, "Press release")
+    .replace(/[^\p{L}\p{N}\s.,:;!?&+-]/gu, "")
+    .slice(0, 88)
+    .trim();
+  const label = cleanedTitle || "Press release";
+  return `https://placehold.co/800x450/192c70/ffffff.png?text=${encodeURIComponent(`Bundesdruckerei\n${label}`)}`;
+}
+
 function summaryShortFromArticle(article) {
   const base = sanitizeFeedText(article.contentSnippet || article.summary || article.title, article.title);
   if (!base) {
@@ -3215,6 +3224,20 @@ function getBundesdruckereiListingImage($, articleNode, link) {
   return resolveFeedImageCandidate(link, image);
 }
 
+function isBundesdruckereiGenericPressImage(image) {
+  const value = String(image || "").toLowerCase();
+  return (
+    !value ||
+    value.includes("/files/logo/") ||
+    value.includes("/public/person/") ||
+    value.includes("newsletter-subscribe") ||
+    value.includes("bdrgruppe-color") ||
+    value.includes("presse_bdr_1920x1080") ||
+    value.includes("presse_bundesdruckerei_1920x1080") ||
+    value.includes("presse_genua_1920x1080")
+  );
+}
+
 function buildBundesdruckereiPressCandidate(feed, $, anchor, pageUrl) {
   const node = $(anchor);
   const link = resolveRelativeWebsiteLink(node.attr("href") || "", pageUrl);
@@ -3282,7 +3305,9 @@ async function extractBundesdruckereiPressReleaseItems(feed, $, pageUrl) {
     }
 
     const title = cleanBundesdruckereiPressTitle(validated.title) || candidate.title;
-    const validatedImage = isLikelyGenericMetadataImage(validated.image) ? "" : validated.image;
+    const validatedImage = isBundesdruckereiGenericPressImage(validated.image) ? "" : validated.image;
+    const listingImage = isBundesdruckereiGenericPressImage(candidate.image) ? "" : candidate.image;
+    const thumbnailImage = validatedImage || listingImage || getBundesdruckereiTitleThumbnail(title);
     const contentSnippet =
       String(validated.contentSnippet || "").length >= String(candidate.excerpt || "").length
         ? validated.contentSnippet
@@ -3292,7 +3317,7 @@ async function extractBundesdruckereiPressReleaseItems(feed, $, pageUrl) {
       title,
       link: candidate.link,
       isoDate: explicitDate,
-      image: candidate.image || validatedImage || "",
+      image: thumbnailImage,
       contentSnippet: contentSnippet || "",
       author: "",
       source: getSourceName(candidate.link),
