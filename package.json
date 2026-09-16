@@ -8,6 +8,7 @@
     "start": "npm --prefix backend start",
     "perf:production": "node scripts/run-production-performance-diagnostics.mjs",
     "audit:source-quality": "node scripts/audit-source-quality-playwright.mjs",
+    "audit:source-quality:compare": "node backend/scripts/compare-source-quality-audit.js",
     "audit:storage": "npm --prefix backend run audit:storage",
     "audit:crane-currency": "npm --prefix backend run audit:crane-currency",
     "db:storage-diagnostics": "npm --prefix backend run db:storage-diagnostics",
