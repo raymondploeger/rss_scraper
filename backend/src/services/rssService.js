@@ -67,6 +67,7 @@ const CRANE_CURRENCY_SITEMAP_URL = "https://www.cranecurrency.com/sitemap/";
 const CRANE_CURRENCY_MAX_ARCHIVE_PAGES = 8;
 const CRANE_CURRENCY_MAX_CANDIDATES = 80;
 const BUNDESDRUCKEREI_PRESS_RELEASES_URL = "https://www.bundesdruckerei.de/en/newsroom/press-releases";
+const BUNDESDRUCKEREI_PRESS_RELEASES_MAX_CANDIDATES = 24;
 const KURZ_PRESS_RELEASES_URL = "https://www.kurz-world.com/en/newsroom/press/";
 const KURZ_PRESS_RELEASES_MAX_CANDIDATES = 24;
 const IND_NEWS_URL = "https://ind.nl/en/news";
@@ -3168,6 +3169,145 @@ async function extractAtlanticZeiserNewsItems(feed, $, pageUrl) {
   return validatedItems;
 }
 
+function cleanBundesdruckereiPressTitle(value) {
+  return sanitizeFeedText(value, "")
+    .replace(/^to the press release\s+/i, "")
+    .replace(/\s*\|\s*Bundesdruckerei Gruppe GmbH\s*$/i, "")
+    .trim();
+}
+
+function parseBundesdruckereiListingDate(value) {
+  const text = sanitizeFeedText(value, "");
+  const slashDate = text.match(/\b(\d{1,2})\s*\/\s*(\d{1,2})\s*\/\s*(20\d{2})\b/);
+  if (slashDate) {
+    const [, day, month, year] = slashDate;
+    return parseWebsiteDate(`${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}T12:00:00Z`);
+  }
+
+  return parseWebsiteDateFromText(text);
+}
+
+function getBundesdruckereiListingImage($, articleNode, link) {
+  const imageNode = articleNode
+    .find("picture img, .teaser-image img, img")
+    .filter((_, element) => {
+      const node = $(element);
+      const candidate = [
+        node.attr("src"),
+        node.attr("data-src"),
+        node.attr("srcset"),
+        node.attr("data-srcset"),
+        node.attr("alt"),
+        node.attr("title"),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return !candidate.includes("/files/logo/") && !candidate.includes("logo bundesdruckerei");
+    })
+    .first();
+
+  const image =
+    pickImageFromSrcset(imageNode.attr("srcset") || imageNode.attr("data-srcset") || "") ||
+    imageNode.attr("data-src") ||
+    imageNode.attr("src") ||
+    "";
+
+  return resolveFeedImageCandidate(link, image);
+}
+
+function buildBundesdruckereiPressCandidate(feed, $, anchor, pageUrl) {
+  const node = $(anchor);
+  const link = resolveRelativeWebsiteLink(node.attr("href") || "", pageUrl);
+  if (!link || !matchesWebsiteSourceCandidatePolicy(feed, link)) {
+    return null;
+  }
+
+  const title =
+    cleanBundesdruckereiPressTitle(node.text()) ||
+    cleanBundesdruckereiPressTitle(node.attr("aria-label")) ||
+    cleanBundesdruckereiPressTitle(node.attr("title"));
+  if (!title || isGenericWebsiteActionLabel(title) || isBlockedWebsiteNavTitle(title)) {
+    return null;
+  }
+
+  const block = node.closest("article").length
+    ? node.closest("article")
+    : node.closest("li, .views-row, .teaser, .card, .paragraph, div");
+  const blockText = sanitizeFeedText(block.text(), "");
+  const date =
+    parseWebsiteDate(block.find("time").first().attr("datetime") || "") ||
+    parseBundesdruckereiListingDate(blockText) ||
+    findNearbyWebsiteDate($, node) ||
+    null;
+
+  return {
+    title,
+    link,
+    excerpt: blockText.replace(node.text(), "").replace(title, "").trim().slice(0, 420),
+    date,
+    image: getBundesdruckereiListingImage($, block, link),
+  };
+}
+
+async function extractBundesdruckereiPressReleaseItems(feed, $, pageUrl) {
+  const discoveredCandidates = [];
+  const seenLinks = new Set();
+
+  $("a[href*='/en/newsroom/press-releases/'], a[href*='/en/newsroom/pressemitteilungen/']")
+    .toArray()
+    .forEach((anchor) => {
+      const candidate = buildBundesdruckereiPressCandidate(feed, $, anchor, pageUrl);
+      const canonicalLink = canonicalizeUrl(candidate?.link || "");
+      if (!candidate || !canonicalLink || seenLinks.has(canonicalLink)) {
+        return;
+      }
+
+      seenLinks.add(canonicalLink);
+      discoveredCandidates.push(candidate);
+    });
+
+  const validatedItems = [];
+  for (const candidate of discoveredCandidates.slice(0, BUNDESDRUCKEREI_PRESS_RELEASES_MAX_CANDIDATES)) {
+    const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch((error) => {
+      console.warn(`Website article validation failed for ${candidate.link}:`, error?.message || error);
+      return null;
+    });
+    if (!validated?.accepted) {
+      continue;
+    }
+
+    const explicitDate = validated.isoDate || (candidate.date ? candidate.date.toISOString() : "");
+    if (!explicitDate) {
+      continue;
+    }
+
+    const title = cleanBundesdruckereiPressTitle(validated.title) || candidate.title;
+    const validatedImage = isLikelyGenericMetadataImage(validated.image) ? "" : validated.image;
+    const contentSnippet =
+      String(validated.contentSnippet || "").length >= String(candidate.excerpt || "").length
+        ? validated.contentSnippet
+        : candidate.excerpt;
+
+    validatedItems.push({
+      title,
+      link: candidate.link,
+      isoDate: explicitDate,
+      image: candidate.image || validatedImage || "",
+      contentSnippet: contentSnippet || "",
+      author: "",
+      source: getSourceName(candidate.link),
+    });
+  }
+
+  logTrackedVendorWebsiteFeedState(feed, "extract-bundesdruckerei-complete", {
+    discoveredCount: discoveredCandidates.length,
+    validatedCount: validatedItems.length,
+    pageUrl,
+  });
+
+  return validatedItems;
+}
+
 function parseKurzPressDate(value) {
   const match = String(value || "").match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/);
   if (!match) {
@@ -4060,6 +4200,13 @@ async function extractWebsiteItems(feed) {
   if (isAtlanticZeiserNewsFeed(feed)) {
     console.log(`Using dedicated website extractor: atlantic-zeiser for source ${feed.id}`);
     const items = await extractAtlanticZeiserNewsItems(feed, $, fetchedUrl);
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isBundesdruckereiPressReleasesFeed(feed)) {
+    console.log(`Using dedicated website extractor: bundesdruckerei for source ${feed.id}`);
+    const items = await extractBundesdruckereiPressReleaseItems(feed, $, fetchedUrl);
     console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
     return items;
   }
