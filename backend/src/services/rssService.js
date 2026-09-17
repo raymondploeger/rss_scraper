@@ -192,6 +192,13 @@ function isCraneCurrencyNewsroomFeed(feed) {
   );
 }
 
+function isKeesingPlatformFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    urlFragments: ["platform.keesingtechnologies.com"],
+    exactNames: ["Keesing Platform"],
+  });
+}
+
 function isBundesdruckereiPressReleasesFeed(feed) {
   return matchesWebsiteFeedSignature(feed, {
     exactUrls: [BUNDESDRUCKEREI_PRESS_RELEASES_URL],
@@ -658,6 +665,10 @@ function matchesWebsiteSourceCandidatePolicy(feed, link) {
     return false;
   }
 
+  if (isKeesingPlatformFeed(feed) && isBlockedKeesingPlatformCandidateUrl(lowerLink)) {
+    return false;
+  }
+
   if (isCbpNewsFeed(feed)) {
     return (
       lowerLink.includes("/newsroom/") &&
@@ -1092,6 +1103,24 @@ function urlHasProductWebsiteSegment(link) {
 function urlHasNewsWebsiteSegment(link) {
   const value = String(link || "").toLowerCase();
   return WEBSITE_NEWS_URL_SEGMENTS.some((segment) => value.includes(segment));
+}
+
+function isBlockedKeesingPlatformCandidateUrl(link) {
+  const value = String(link || "").toLowerCase();
+  if (!value.includes("platform.keesingtechnologies.com")) {
+    return false;
+  }
+
+  return (
+    value.includes("/author/") ||
+    value.includes("/category/") ||
+    value.includes("/tag/") ||
+    value.includes("/page/") ||
+    value.includes("/wp-content/") ||
+    /\/archives?(?:\/|$|[?#])/.test(value) ||
+    /\/[^/?#]*-archives?(?:\/|$|[?#])/.test(value) ||
+    /[?&]s=/.test(value)
+  );
 }
 
 function logArticleReject(reason, { link = "", title = "" } = {}) {
