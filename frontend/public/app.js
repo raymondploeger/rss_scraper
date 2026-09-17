@@ -27477,17 +27477,26 @@ function renderIdentityDocumentAuthorityStrictnessControl(profileDisplay) {
   `;
 }
 
-function renderPersonalDashboardTemplateOptions() {
+function renderPersonalDashboardTemplateOptions(profileDisplay = getPersonalDashboardProfileDisplay()) {
   return Object.entries(PERSONAL_DASHBOARD_PROFILE_TEMPLATES)
-    .map(([templateId, template]) => `
-      <button type="button" class="personal-dashboard-template-option" data-profile-template="${escapeHtml(templateId)}" role="radio" aria-checked="false">
-        <span class="profile-template-radio" aria-hidden="true"></span>
-        <span class="personal-dashboard-template-option-copy">
-          <span>${escapeHtml(template.label)}</span>
-          ${template.description ? `<small>${escapeHtml(template.description)}</small>` : ""}
-        </span>
-      </button>
-    `)
+    .map(([templateId, template]) => {
+      const selected = profileDisplay?.id === templateId;
+      const strictnessMarkup = templateId === "passport_authority" && selected
+        ? renderIdentityDocumentAuthorityStrictnessControl(profileDisplay)
+        : "";
+      return `
+        <div class="personal-dashboard-template-option-shell" data-profile-template-shell="${escapeHtml(templateId)}">
+          <button type="button" class="personal-dashboard-template-option" data-profile-template="${escapeHtml(templateId)}" role="radio" aria-checked="${selected ? "true" : "false"}" data-selected="${selected ? "true" : "false"}">
+            <span class="profile-template-radio" aria-hidden="true"></span>
+            <span class="personal-dashboard-template-option-copy">
+              <span>${escapeHtml(template.label)}</span>
+              ${template.description ? `<small>${escapeHtml(template.description)}</small>` : ""}
+            </span>
+          </button>
+          ${strictnessMarkup}
+        </div>
+      `;
+    })
     .join("");
 }
 
@@ -27674,13 +27683,10 @@ function renderPersonalDashboard() {
     elements.personalDashboardCustomProfiles.innerHTML = renderPersonalDashboardCustomProfileOptions();
   }
   if (elements.personalDashboardTemplateOptions) {
-    elements.personalDashboardTemplateOptions.innerHTML = renderPersonalDashboardTemplateOptions();
+    elements.personalDashboardTemplateOptions.innerHTML = renderPersonalDashboardTemplateOptions(profileDisplay);
   }
   if (elements.identityDocumentAuthorityStrictnessEditor) {
-    elements.identityDocumentAuthorityStrictnessEditor.innerHTML =
-      profileDisplay?.id === "passport_authority"
-        ? renderIdentityDocumentAuthorityStrictnessControl(profileDisplay)
-        : "";
+    elements.identityDocumentAuthorityStrictnessEditor.innerHTML = "";
   }
   if (elements.personalDashboardUpdateCustom) {
     const editableCustomProfile = getEditablePersonalDashboardCustomProfile();
@@ -60645,6 +60651,14 @@ function bindEvents() {
 
   if (elements.personalDashboardTemplateOptions) {
     elements.personalDashboardTemplateOptions.addEventListener("click", (event) => {
+      const strictnessButton = event.target instanceof Element
+        ? event.target.closest("[data-identity-document-authority-strictness]")
+        : null;
+      if (strictnessButton) {
+        setIdentityDocumentAuthorityStrictness(strictnessButton.dataset.identityDocumentAuthorityStrictness || "");
+        return;
+      }
+
       const option = event.target instanceof Element
         ? event.target.closest("[data-profile-template]")
         : null;
