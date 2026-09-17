@@ -1497,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "swedish-migration-rss-222";
+const APP_BUILD = "official-sources-223";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1592,6 +1592,10 @@ const GOVERNMENT_SOURCE_PATTERNS = Object.freeze([
   "tsa.gov/news/press/releases",
   "nist.gov/news-events/news/rss.xml",
   "enisa.europa.eu/news",
+  "api.io.canada.ca/io-server/gc/news/en/v2",
+  "bankofcanada.ca/utility/news/feed",
+  "rba.gov.au/rss/rss-cb-media-releases.xml",
+  "digital-strategy.ec.europa.eu/en/policies/electronic-identification",
   "migrationsverket.se/en/word-explanations/residence-permit-cards",
 ]);
 const GOOGLE_RSS_SOURCE_PATTERNS = Object.freeze([
@@ -1934,6 +1938,72 @@ const SPECIALIST_SOURCE_INTERESTS = {
   security_printing: ["security printing", "security printer", "secure documents", "holography"],
 };
 const SOURCE_PROFILE_AFFINITY_RULES = Object.freeze([
+  Object.freeze({
+    id: "digital_identity_standards_sources",
+    sourceTerms: Object.freeze([
+      "openid foundation",
+      "openid.net/feed",
+      "european commission digital identity",
+      "digital-strategy.ec.europa.eu/en/policies/electronic-identification",
+    ]),
+    mainDomains: Object.freeze(["digital_identity_biometrics"]),
+    interests: Object.freeze([
+      "digital_identity",
+      "identity_verification",
+      "authentication",
+      "eid",
+      "digital_wallet",
+    ]),
+  }),
+  Object.freeze({
+    id: "official_mobile_driver_license_sources",
+    sourceTerms: Object.freeze([
+      "aamva news",
+      "aamva.org/publications-news/aamva-news",
+    ]),
+    mainDomains: Object.freeze(["identity_documents", "digital_identity_biometrics"]),
+    interests: Object.freeze([
+      "drivers_licenses",
+      "digital_identity",
+      "identity_verification",
+      "digital_wallet",
+    ]),
+  }),
+  Object.freeze({
+    id: "ircc_identity_document_source",
+    sourceTerms: Object.freeze([
+      "ircc passport and digital identity news",
+      "departmentofcitizenshipandimmigration",
+      "api.io.canada.ca/io-server/gc/news/en/v2",
+    ]),
+    mainDomains: Object.freeze(["identity_documents"]),
+    interests: Object.freeze([
+      "passports",
+      "visas",
+      "residence_permits",
+      "issuance",
+      "border_control",
+      "digital_identity",
+    ]),
+  }),
+  Object.freeze({
+    id: "official_central_bank_news_sources",
+    sourceTerms: Object.freeze([
+      "bank of canada news",
+      "bankofcanada.ca/utility/news/feed",
+      "reserve bank of australia media releases",
+      "rba.gov.au/rss/rss-cb-media-releases.xml",
+    ]),
+    mainDomains: Object.freeze(["banknotes"]),
+    interests: Object.freeze([
+      "banknotes",
+      "central_bank",
+      "redesign",
+      "rollout",
+      "withdrawal",
+      "counterfeit",
+    ]),
+  }),
   Object.freeze({
     id: "border_control_government_sources",
     sourceTerms: Object.freeze([
@@ -44772,6 +44842,7 @@ function isCanadianDmvName(name) {
 
 function getFeedGroupName(feed) {
   const name = String(feed?.name || "").toLowerCase();
+  const fingerprint = [feed?.name, feed?.rssUrl].filter(Boolean).join(" ").toLowerCase();
   const country = getFeedCountry(feed);
 
   if (isDmvSource(feed) && country) {
@@ -44781,7 +44852,9 @@ function getFeedGroupName(feed) {
   if (
     isCanadianDmvAbbr(feed?.dmvAbbr) ||
     isCanadianDmvName(name) ||
-    name.includes("canada")
+    name.includes("canada") ||
+    fingerprint.includes("departmentofcitizenshipandimmigration") ||
+    fingerprint.includes("api.io.canada.ca/io-server/gc/news")
   ) {
     return "Canada";
   }

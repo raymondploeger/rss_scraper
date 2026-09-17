@@ -461,6 +461,30 @@ function isEnisaNewsFeed(feed) {
   });
 }
 
+function isAamvaNewsFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: ["https://www.aamva.org/publications-news/aamva-news"],
+    urlFragments: ["aamva.org/publications-news/aamva-news"],
+    exactNames: ["AAMVA News"],
+  });
+}
+
+function isEuropeanCommissionDigitalIdentityNewsFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: ["https://digital-strategy.ec.europa.eu/en/policies/electronic-identification"],
+    urlFragments: ["digital-strategy.ec.europa.eu/en/policies/electronic-identification"],
+    exactNames: ["European Commission Digital Identity News"],
+  });
+}
+
+function isReserveBankOfAustraliaMediaReleasesFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: ["https://www.rba.gov.au/rss/rss-cb-media-releases.xml"],
+    urlFragments: ["rba.gov.au/rss/rss-cb-media-releases.xml"],
+    exactNames: ["Reserve Bank of Australia Media Releases"],
+  });
+}
+
 function shouldReplaceArticlesOnSync(feed) {
   return (
     isIndNewsFeed(feed) ||
@@ -487,7 +511,9 @@ function shouldReplaceArticlesOnSync(feed) {
     isEuropolNewsroomFeed(feed) ||
     isInterpolNewsFeed(feed) ||
     isTsaPressReleasesFeed(feed) ||
-    isEnisaNewsFeed(feed)
+    isEnisaNewsFeed(feed) ||
+    isAamvaNewsFeed(feed) ||
+    isEuropeanCommissionDigitalIdentityNewsFeed(feed)
   );
 }
 
@@ -4497,6 +4523,26 @@ async function extractWebsiteItems(feed) {
     return items;
   }
 
+  if (isAamvaNewsFeed(feed)) {
+    console.log(`Using dedicated website extractor: aamva-news for source ${feed.id}`);
+    const items = await extractStrictGovernmentListingItems(feed, $, fetchedUrl, {
+      linkPattern: /aamva\.org\/publications-news\/aamva-news\/[a-z0-9%()-]+(?:$|[?#])/i,
+      maxItems: 30,
+    });
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isEuropeanCommissionDigitalIdentityNewsFeed(feed)) {
+    console.log(`Using dedicated website extractor: european-commission-digital-identity for source ${feed.id}`);
+    const items = await extractStrictGovernmentListingItems(feed, $, fetchedUrl, {
+      linkPattern: /digital-strategy\.ec\.europa\.eu\/en\/news\/[a-z0-9-]+(?:$|[?#])/i,
+      maxItems: 20,
+    });
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
   if (isLandqartNewsFeed(feed)) {
     console.log(`Using dedicated website extractor: landqart for source ${feed.id}`);
     const items = await extractLandqartNewsItems(feed, $, fetchedUrl);
@@ -5134,7 +5180,13 @@ async function runFeedSync(feed) {
       if (rssUrl !== feed.rssUrl) {
         console.log(`[notafilia][rss] legacy FeedBurner source detected; using official RSS ${rssUrl}`);
       }
-      const parsedFeed = await parser.parseURL(rssUrl);
+      const parsedFeed = isReserveBankOfAustraliaMediaReleasesFeed(feed)
+        ? await parser.parseString((await axios.get(rssUrl, {
+            timeout: env.requestTimeoutMs,
+            responseType: "text",
+            headers: { "User-Agent": "curl/8.0" },
+          })).data)
+        : await parser.parseURL(rssUrl);
       if (vendorFeedLogLabel) {
         console.log(`[${vendorFeedLogLabel}] feed_loaded feedId=${feed.id} rssUrl=${rssUrl}`);
       }

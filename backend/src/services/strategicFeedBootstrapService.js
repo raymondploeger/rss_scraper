@@ -155,6 +155,27 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase3-government-border-control",
   },
   {
+    name: "IRCC Passport and Digital Identity News",
+    topic: "Identity Documents",
+    rssUrl: "https://api.io.canada.ca/io-server/gc/news/en/v2?dept=departmentofcitizenshipandimmigration&sort=publishedDate&orderBy=desc&publishedDate%3E=2021-07-23&pick=50&format=atom&atomtitle=Immigration,%20Refugees%20and%20Citizenship%20Canada",
+    sourceType: "rss",
+    phase: "phase4-official-identity-and-banknote-sources",
+  },
+  {
+    name: "AAMVA News",
+    topic: "Identity Documents",
+    rssUrl: "https://www.aamva.org/publications-news/aamva-news",
+    sourceType: "website",
+    phase: "phase4-official-identity-and-banknote-sources",
+  },
+  {
+    name: "European Commission Digital Identity News",
+    topic: "Digital Identity & Biometrics",
+    rssUrl: "https://digital-strategy.ec.europa.eu/en/policies/electronic-identification",
+    sourceType: "website",
+    phase: "phase4-official-identity-and-banknote-sources",
+  },
+  {
     name: "Entry Exit System",
     topic: "Identity Documents",
     rssUrl: buildGoogleNewsRssUrl('"Entry Exit System"'),
@@ -393,6 +414,27 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     rssUrl: "https://www.enisa.europa.eu/news",
     sourceType: "website",
     phase: "phase3-government-border-control",
+  },
+  {
+    name: "OpenID Foundation News",
+    topic: "Digital Identity & Biometrics",
+    rssUrl: "https://openid.net/feed/",
+    sourceType: "rss",
+    phase: "phase4-official-identity-and-banknote-sources",
+  },
+  {
+    name: "Bank of Canada News",
+    topic: "Banknotes",
+    rssUrl: "https://www.bankofcanada.ca/utility/news/feed/",
+    sourceType: "rss",
+    phase: "phase4-official-identity-and-banknote-sources",
+  },
+  {
+    name: "Reserve Bank of Australia Media Releases",
+    topic: "Banknotes",
+    rssUrl: "https://www.rba.gov.au/rss/rss-cb-media-releases.xml",
+    sourceType: "rss",
+    phase: "phase4-official-identity-and-banknote-sources",
   },
 
   {
