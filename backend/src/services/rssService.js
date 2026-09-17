@@ -414,6 +414,46 @@ function isIcaoTripFeed(feed) {
   });
 }
 
+function isEuCommissionHomeAffairsNewsFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: ["https://home-affairs.ec.europa.eu/news_en"],
+    urlFragments: ["home-affairs.ec.europa.eu/news"],
+    exactNames: ["EU Commission Migration and Home Affairs News"],
+  });
+}
+
+function isEuropolNewsroomFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: ["https://www.europol.europa.eu/media-press/newsroom"],
+    urlFragments: ["europol.europa.eu/media-press/newsroom"],
+    exactNames: ["Europol Newsroom"],
+  });
+}
+
+function isInterpolNewsFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: ["https://www.interpol.int/en/News-and-Events/News"],
+    urlFragments: ["interpol.int/en/news-and-events/news"],
+    exactNames: ["INTERPOL News"],
+  });
+}
+
+function isTsaPressReleasesFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: ["https://www.tsa.gov/news/press/releases"],
+    urlFragments: ["tsa.gov/news/press/releases"],
+    exactNames: ["TSA Press Releases"],
+  });
+}
+
+function isEnisaNewsFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: ["https://www.enisa.europa.eu/news"],
+    urlFragments: ["enisa.europa.eu/news"],
+    exactNames: ["ENISA News"],
+  });
+}
+
 function shouldReplaceArticlesOnSync(feed) {
   return (
     isIndNewsFeed(feed) ||
@@ -435,7 +475,12 @@ function shouldReplaceArticlesOnSync(feed) {
     isKurzPressReleasesFeed(feed) ||
     isVeridosPressMediaFeed(feed) ||
     isIdemiaPressroomFeed(feed) ||
-    isIdSecureDocumentNewsFeed(feed)
+    isIdSecureDocumentNewsFeed(feed) ||
+    isEuCommissionHomeAffairsNewsFeed(feed) ||
+    isEuropolNewsroomFeed(feed) ||
+    isInterpolNewsFeed(feed) ||
+    isTsaPressReleasesFeed(feed) ||
+    isEnisaNewsFeed(feed)
   );
 }
 
@@ -927,6 +972,10 @@ function isMeaningfulImageCandidate(candidate) {
     return false;
   }
 
+  if (/\.svg(?:$|[?#/])/i.test(normalized)) {
+    return false;
+  }
+
   if (
     normalized.includes("/profiles/cbpd8_gov/themes/custom/cbpd8_gov_theme/") ||
     normalized.includes("/themes/custom/cbpd8_gov_theme/") ||
@@ -936,11 +985,11 @@ function isMeaningfulImageCandidate(candidate) {
     return false;
   }
 
-  if (["logo", "icon", "avatar", "org-member-transparent", "pixel", "tracking"].some((token) => normalized.includes(token))) {
+  if (["logo", "icon", "avatar", "org-member-transparent", "pixel", "tracking", "us_flag_small"].some((token) => normalized.includes(token))) {
     return false;
   }
 
-  const imageFilePattern = /\.(?:jpg|jpeg|png|gif|webp|avif|svg)(?:$|[?#])/i;
+  const imageFilePattern = /\.(?:jpg|jpeg|png|gif|webp|avif)(?:$|[?#])/i;
   if (imageFilePattern.test(normalized)) {
     return true;
   }
@@ -956,7 +1005,7 @@ function isMeaningfulImageCandidate(candidate) {
     }
     if (
       pathname.includes("/binaries/content/gallery/") &&
-      /\.(?:jpg|jpeg|png|gif|webp|avif|svg)(?:\/|$)/i.test(pathname)
+      /\.(?:jpg|jpeg|png|gif|webp|avif)(?:\/|$)/i.test(pathname)
     ) {
       return true;
     }
@@ -1231,6 +1280,16 @@ function getBundesdruckereiTitleThumbnail(title) {
     .trim();
   const label = cleanedTitle || "Press release";
   return `https://placehold.co/800x450/192c70/ffffff.png?text=${encodeURIComponent(`Bundesdruckerei\n${label}`)}`;
+}
+
+function getOfficialSourceTitleThumbnail(sourceName, title, color = "1f2937") {
+  const cleanedTitle = sanitizeFeedText(title, "News")
+    .replace(/[^\p{L}\p{N}\s.,:;!?&+-]/gu, "")
+    .slice(0, 88)
+    .trim();
+  const label = cleanedTitle || "News";
+  const source = sanitizeFeedText(sourceName, "Official source");
+  return `https://placehold.co/800x450/${color}/ffffff.png?text=${encodeURIComponent(`${source}\n${label}`)}`;
 }
 
 function summaryShortFromArticle(article) {
@@ -3677,6 +3736,188 @@ async function extractGovUkNewsItems(feed, $, pageUrl) {
     .filter((item) => item && item.title);
 }
 
+function getClosestListingText($, node) {
+  let current = $(node);
+  let fallbackText = "";
+  for (let depth = 0; depth < 8 && current.length; depth += 1) {
+    const text = sanitizeFeedText(current.text(), "");
+    if (!fallbackText && text.length >= 20 && text.length <= 900) {
+      fallbackText = text;
+    }
+    if (text.length >= 20 && text.length <= 1200 && extractDateFromListingText(text)) {
+      return text;
+    }
+    current = current.parent();
+  }
+  return fallbackText || sanitizeFeedText($(node).text(), "");
+}
+
+function getClosestListingImage($, node, pageUrl) {
+  let current = $(node);
+  for (let depth = 0; depth < 5 && current.length; depth += 1) {
+    const img = current.find("img").first();
+    if (img.length) {
+      const candidate =
+        img.attr("src") ||
+        img.attr("data-src") ||
+        img.attr("data-lazy-src") ||
+        img.attr("data-original") ||
+        pickImageFromSrcset(img.attr("srcset") || img.attr("data-srcset")) ||
+        "";
+      const resolved = resolveFeedImageCandidate(pageUrl, candidate);
+      if (resolved) {
+        return resolved;
+      }
+    }
+    current = current.parent();
+  }
+  return "";
+}
+
+function extractDateFromListingText(value) {
+  const text = sanitizeFeedText(value, "");
+  const patterns = [
+    /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})\b/,
+    /\b\d{1,2}\s+[A-Z][a-z]{2,}\s+20\d{2}\b/,
+    /\b[A-Z][a-z]{2,}\s+\d{1,2}\s+20\d{2}\b/,
+    /\b[A-Z][a-z]{2,}\s+\d{1,2},\s+20\d{2}\b/,
+    /\b20\d{2}-\d{1,2}-\d{1,2}\b/,
+  ];
+  const match = patterns.map((pattern) => text.match(pattern)).find(Boolean);
+  return match ? parseWebsiteDate(match[0]) : null;
+}
+
+async function extractStrictGovernmentListingItems(feed, $, pageUrl, { linkPattern, maxItems = 20 } = {}) {
+  const candidates = [];
+  const seenLinks = new Set();
+
+  $("a[href]").each((_, anchor) => {
+    let link = "";
+    try {
+      link = new URL($(anchor).attr("href") || "", pageUrl).toString();
+    } catch {
+      return;
+    }
+
+    if (linkPattern && !linkPattern.test(link)) {
+      return;
+    }
+
+    const canonicalLink = canonicalizeUrl(link);
+    if (!canonicalLink || seenLinks.has(canonicalLink)) {
+      return;
+    }
+
+    const title = sanitizeFeedText(
+      $(anchor).text() ||
+        $(anchor).attr("aria-label") ||
+        $(anchor).attr("title") ||
+        $(anchor).closest("article,li,[class*='card'],[class*='teaser'],[class*='views-row'],div").find("h2,h3,h4").first().text(),
+      ""
+    );
+    if (!title || isBlockedWebsiteNavTitle(title)) {
+      return;
+    }
+
+    const listingText = getClosestListingText($, anchor);
+    candidates.push({
+      title,
+      link,
+      listingDate: extractDateFromListingText(listingText),
+      listingImage: getClosestListingImage($, anchor, pageUrl),
+      listingText,
+    });
+    seenLinks.add(canonicalLink);
+  });
+
+  const items = [];
+  for (const candidate of candidates.slice(0, Math.max(maxItems * 2, 30))) {
+    const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch((error) => {
+      console.warn(`Website article validation failed for ${candidate.link}:`, error?.message || error);
+      return null;
+    });
+    if (!validated?.accepted) {
+      continue;
+    }
+
+    const article = {
+      title: candidate.title || validated.title,
+      link: candidate.link,
+      contentSnippet: validated.contentSnippet || candidate.listingText || "",
+    };
+    const sourceRelevance = getSourceRelevanceAssessment(feed, article);
+    if (!sourceRelevance.accepted) {
+      console.log(`Rejected website candidate ${candidate.link}: source-relevance-filter`);
+      continue;
+    }
+
+    items.push({
+      title: article.title,
+      link: candidate.link,
+      isoDate: validated.isoDate || (candidate.listingDate ? candidate.listingDate.toISOString() : ""),
+      image: resolveFeedImageCandidate(candidate.link, validated.image) || candidate.listingImage || "",
+      contentSnippet: validated.contentSnippet || candidate.listingText || "",
+      author: "",
+      source: getSourceName(candidate.link),
+    });
+
+    if (items.length >= maxItems) {
+      break;
+    }
+  }
+
+  return items;
+}
+
+async function extractEuropolNewsroomItems(feed) {
+  const parsedFeed = await parser.parseURL("https://www.europol.europa.eu/cms/api/rss/news");
+  const rawItems = Array.isArray(parsedFeed.items) ? parsedFeed.items : [];
+  const items = [];
+
+  for (const rawItem of rawItems.slice(0, 30)) {
+    const link = resolveItemLink(rawItem);
+    const title = sanitizeFeedText(rawItem.title, "");
+    if (!link || !title) {
+      continue;
+    }
+
+    const validated = await validateWebsiteArticleCandidate(link, title).catch((error) => {
+      console.warn(`Website article validation failed for ${link}:`, error?.message || error);
+      return null;
+    });
+    if (!validated?.accepted) {
+      continue;
+    }
+
+    const article = {
+      title,
+      link,
+      contentSnippet: validated.contentSnippet || sanitizeFeedText(rawItem.contentSnippet || rawItem.content || "", ""),
+    };
+    const sourceRelevance = getSourceRelevanceAssessment(feed, article);
+    if (!sourceRelevance.accepted) {
+      console.log(`Rejected website candidate ${link}: source-relevance-filter`);
+      continue;
+    }
+
+    items.push({
+      title,
+      link,
+      isoDate: validated.isoDate || rawItem.isoDate || rawItem.pubDate || "",
+      image: resolveFeedImageCandidate(link, validated.image) || "",
+      contentSnippet: article.contentSnippet,
+      author: "",
+      source: getSourceName(link),
+    });
+
+    if (items.length >= 20) {
+      break;
+    }
+  }
+
+  return items;
+}
+
 function isEuLisaNewsEventArticleUrl(link) {
   try {
     const parsed = new URL(String(link || ""));
@@ -4180,6 +4421,53 @@ async function extractWebsiteItems(feed) {
     return items;
   }
 
+  if (isEuCommissionHomeAffairsNewsFeed(feed)) {
+    console.log(`Using dedicated website extractor: eu-commission-home-affairs for source ${feed.id}`);
+    const items = await extractStrictGovernmentListingItems(feed, $, fetchedUrl, {
+      linkPattern: /home-affairs\.ec\.europa\.eu\/news\/.+-20\d{2}-\d{2}-\d{2}_en(?:$|[?#])/,
+      maxItems: 20,
+    });
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isEuropolNewsroomFeed(feed)) {
+    console.log(`Using dedicated website extractor: europol-newsroom for source ${feed.id}`);
+    const items = await extractEuropolNewsroomItems(feed);
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isInterpolNewsFeed(feed)) {
+    console.log(`Using dedicated website extractor: interpol-news for source ${feed.id}`);
+    const items = await extractStrictGovernmentListingItems(feed, $, fetchedUrl, {
+      linkPattern: /interpol\.int\/en\/News-and-Events\/News\/20\d{2}\/[^/?#]+(?:$|[?#])/,
+      maxItems: 20,
+    });
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isTsaPressReleasesFeed(feed)) {
+    console.log(`Using dedicated website extractor: tsa-press-releases for source ${feed.id}`);
+    const items = await extractStrictGovernmentListingItems(feed, $, fetchedUrl, {
+      linkPattern: /tsa\.gov\/news\/press\/releases\/20\d{2}\/\d{2}\/\d{2}\//,
+      maxItems: 20,
+    });
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isEnisaNewsFeed(feed)) {
+    console.log(`Using dedicated website extractor: enisa-news for source ${feed.id}`);
+    const items = await extractStrictGovernmentListingItems(feed, $, fetchedUrl, {
+      linkPattern: /enisa\.europa\.eu\/news\/[a-z0-9-]+(?:$|[?#])/,
+      maxItems: 20,
+    });
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
   if (isLandqartNewsFeed(feed)) {
     console.log(`Using dedicated website extractor: landqart for source ${feed.id}`);
     const items = await extractLandqartNewsItems(feed, $, fetchedUrl);
@@ -4478,16 +4766,21 @@ function normalizeItem(feed, item) {
   const contentSnippet = sanitizeFeedText(item.contentSnippet || item.content || item.summary || item.description, "");
   const title = sanitizeFeedText(item.title, "Untitled Article");
   const extractedThumbnail = extractFeedThumbnail(link, item);
+  const extractedThumbnailUrl = resolveFeedImageCandidate(link, extractedThumbnail.url);
   const generatedSourceThumbnail =
-    isSwedishMigrationNewsFeed(feed) && !extractedThumbnail.url
+    isSwedishMigrationNewsFeed(feed) && !extractedThumbnailUrl
       ? getSwedishMigrationTitleThumbnail(title)
+      : isInterpolNewsFeed(feed) && !extractedThumbnailUrl
+        ? getOfficialSourceTitleThumbnail("INTERPOL", title, "1f3a5f")
+      : isTsaPressReleasesFeed(feed) && !extractedThumbnailUrl
+        ? getOfficialSourceTitleThumbnail("TSA", title, "005ea8")
       : "";
   const feedFallbackThumbnail = isGoogleAlertsFeed(feed)
     ? ""
     : resolveFeedImageCandidate(link, feed.sourceFallbackImage || "");
-  const thumbnail = normalizeText(extractedThumbnail.url || generatedSourceThumbnail || feedFallbackThumbnail, env.placeholderImage);
+  const thumbnail = normalizeText(extractedThumbnailUrl || generatedSourceThumbnail || feedFallbackThumbnail, env.placeholderImage);
   const hasUsableThumbnail = hasUsableStoredThumbnail(thumbnail);
-  const thumbnailSource = extractedThumbnail.url
+  const thumbnailSource = extractedThumbnailUrl
     ? extractedThumbnail.source
     : generatedSourceThumbnail
       ? "generated-source-title-card"
@@ -4854,6 +5147,14 @@ async function runFeedSync(feed) {
             itemLink: resolveItemLink(item) || "",
             itemTitle: String(item?.title || ""),
           });
+          continue;
+        }
+
+        const sourceRelevance = getSourceRelevanceAssessment(feed, normalized);
+        if (!sourceRelevance.accepted) {
+          console.log(
+            `Rejected item for feed ${feed.id}: source-relevance-filter (${sourceRelevance.reason}) title=${JSON.stringify(normalized.title || "")}`
+          );
           continue;
         }
 

@@ -127,6 +127,34 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase1",
   },
   {
+    name: "EU Commission Migration and Home Affairs News",
+    topic: "Identity Documents",
+    rssUrl: "https://home-affairs.ec.europa.eu/news_en",
+    sourceType: "website",
+    phase: "phase3-government-border-control",
+  },
+  {
+    name: "Europol Newsroom",
+    topic: "Identity Documents",
+    rssUrl: "https://www.europol.europa.eu/media-press/newsroom",
+    sourceType: "website",
+    phase: "phase3-government-border-control",
+  },
+  {
+    name: "INTERPOL News",
+    topic: "Identity Documents",
+    rssUrl: "https://www.interpol.int/en/News-and-Events/News",
+    sourceType: "website",
+    phase: "phase3-government-border-control",
+  },
+  {
+    name: "TSA Press Releases",
+    topic: "Identity Documents",
+    rssUrl: "https://www.tsa.gov/news/press/releases",
+    sourceType: "website",
+    phase: "phase3-government-border-control",
+  },
+  {
     name: "Entry Exit System",
     topic: "Identity Documents",
     rssUrl: buildGoogleNewsRssUrl('"Entry Exit System"'),
@@ -351,6 +379,20 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     rssUrl: "https://www.vttresearch.com/en/news-stories/news-and-stories",
     sourceType: "website",
     phase: "phase2-vendor-sources",
+  },
+  {
+    name: "NIST Digital Identity News",
+    topic: "Digital Identity & Biometrics",
+    rssUrl: "https://www.nist.gov/news-events/news/rss.xml",
+    sourceType: "rss",
+    phase: "phase3-government-border-control",
+  },
+  {
+    name: "ENISA News",
+    topic: "Digital Identity & Biometrics",
+    rssUrl: "https://www.enisa.europa.eu/news",
+    sourceType: "website",
+    phase: "phase3-government-border-control",
   },
 
   {
