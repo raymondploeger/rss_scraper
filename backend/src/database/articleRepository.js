@@ -10,7 +10,11 @@ function buildArticleWhere(filters = {}) {
     where.topic = filters.topic;
   }
 
-  if (filters.feedId) {
+  if (Array.isArray(filters.feedIds) && filters.feedIds.length) {
+    where.feedId = {
+      in: Array.from(new Set(filters.feedIds.map((feedId) => String(feedId || "").trim()).filter(Boolean))),
+    };
+  } else if (filters.feedId) {
     where.feedId = filters.feedId;
   }
 

@@ -1586,6 +1586,12 @@ const GOVERNMENT_SOURCE_PATTERNS = Object.freeze([
   "icao.int/facilitation-programmes/assistance",
   "eulisa.europa.eu/news-and-events",
   "frontex.europa.eu/media-centre/news",
+  "home-affairs.ec.europa.eu/news",
+  "europol.europa.eu/media-press/newsroom",
+  "interpol.int/en/news-and-events/news",
+  "tsa.gov/news/press/releases",
+  "nist.gov/news-events/news/rss.xml",
+  "enisa.europa.eu/news",
   "migrationsverket.se/en/word-explanations/residence-permit-cards",
 ]);
 const GOOGLE_RSS_SOURCE_PATTERNS = Object.freeze([
@@ -24526,6 +24532,14 @@ function classifyAdvancedFilterRejection(article, options = {}) {
     return { category: "other", reason: "active article feed did not match" };
   }
 
+  if (
+    !ignoreFeedId &&
+    !getActiveArticleFeedId() &&
+    !articleMatchesSelectedSourceGroup(article)
+  ) {
+    return { category: "sourceGroupMismatch", reason: "article does not match selected source group" };
+  }
+
   if (!ignoreFeedId && !getActiveArticleFeedId() && state.filters.canadaDmvAll && !isCanadianDmvAbbr(
     state.feeds.find((feed) => feed.id === article.feedId)?.dmvAbbr
   )) {
@@ -28166,6 +28180,7 @@ function shouldShowPersonalDashboardEmptyProfileState(renderDispatch = null) {
       String(state.filters.signalCategory || "").trim() ||
       String(state.filters.date || "").trim() ||
       String(state.filters.feedId || "").trim() ||
+      (state.filters.sourceGroup && state.filters.sourceGroup !== "all") ||
       (Array.isArray(state.filters.articleIds) && state.filters.articleIds.length > 0) ||
       state.filters.favoritesOnly ||
       state.filters.dmvFeedId ||
@@ -44792,6 +44807,18 @@ function getFeedGroupName(feed) {
   return "Other";
 }
 
+function getFeedIdsForSourceGroup(sourceGroup = state.filters.sourceGroup || "all") {
+  const normalizedSourceGroup = String(sourceGroup || "all").trim() || "all";
+  if (normalizedSourceGroup === "all") {
+    return [];
+  }
+
+  return state.feeds
+    .filter((feed) => getFeedGroupName(feed) === normalizedSourceGroup)
+    .map((feed) => String(feed.id || "").trim())
+    .filter(Boolean);
+}
+
 function getSourceGroupLabels(feeds) {
   const labels = new Set(DEFAULT_SOURCE_GROUPS.filter((label) => label !== "Other"));
   feeds.forEach((feed) => {
@@ -51767,6 +51794,14 @@ function articleMatchesFilters(article, options = {}) {
   if (
     !ignoreFeedId &&
     !activeArticleFeedId &&
+    !measureFilterSegment("sourceGroupMatch", () => articleMatchesSelectedSourceGroup(article))
+  ) {
+    return finishFilterTiming(false, "source_group_match");
+  }
+
+  if (
+    !ignoreFeedId &&
+    !activeArticleFeedId &&
     state.filters.canadaDmvAll &&
     !measureFilterSegment("canadaDmvAll", () => isCanadianDmvAbbr(
       state.feeds.find((feed) => feed.id === article.feedId)?.dmvAbbr
@@ -56003,6 +56038,7 @@ function shouldUseBackendArticleQuery() {
     (
       queryContext.hasProfile ||
       state.filters.feedId ||
+      queryContext.hasSourceGroup ||
       state.filters.topic ||
       state.filters.tag ||
       state.filters.signalCategory ||
@@ -56016,6 +56052,7 @@ function getBackendArticleQueryKey() {
   const personalDomainPlan = getPersonalDashboardBackendDomainPlan();
   return JSON.stringify({
     feedId: state.filters.feedId || "",
+    sourceGroup: state.filters.sourceGroup || "all",
     sourceOnly: isSourceOnlyFeedViewActive(),
     topic: state.filters.topic || "",
     tag: state.filters.tag || "",
@@ -56039,6 +56076,11 @@ function applyBackendArticleQueryBaseParams(options = {}) {
     params.set("feedId", String(resolvedFeed.id));
   } else if (state.filters.feedId) {
     params.set("feed", state.filters.feedId);
+  } else {
+    const sourceGroupFeedIds = getFeedIdsForSourceGroup();
+    if (sourceGroupFeedIds.length) {
+      params.set("feedIds", sourceGroupFeedIds.join(","));
+    }
   }
 
   if (state.filters.topic) {
@@ -56833,6 +56875,16 @@ function groupedArticleMatchesFeedFilter(article, feedId) {
   return articleMatchesSelectedFeed(article, feedId);
 }
 
+function articleMatchesSelectedSourceGroup(article, sourceGroup = state.filters.sourceGroup || "all") {
+  const normalizedSourceGroup = String(sourceGroup || "all").trim() || "all";
+  if (normalizedSourceGroup === "all") {
+    return true;
+  }
+
+  const feed = resolveFeedByIdentity(article?.feedId);
+  return Boolean(feed && getFeedGroupName(feed) === normalizedSourceGroup);
+}
+
 function getGlobalArticleCandidateSource() {
   return Array.isArray(state.articles) ? state.articles : [];
 }
@@ -56850,16 +56902,24 @@ function createFilterPipelineStageResult(stage, inputCount, outputCount, notes =
 
 function applyFeedScopeStage({ articles, activeFeedId, diagnostics } = {}) {
   const inputArticles = Array.isArray(articles) ? articles : [];
+  const sourceGroup = String(state.filters.sourceGroup || "all").trim() || "all";
   const outputArticles = [];
   inputArticles.forEach((article) => {
-    if (!activeFeedId || articleMatchesSelectedFeed(article, activeFeedId)) {
+    const matchesSelectedFeed = !activeFeedId || articleMatchesSelectedFeed(article, activeFeedId);
+    const matchesSourceGroup = Boolean(activeFeedId) || articleMatchesSelectedSourceGroup(article, sourceGroup);
+    if (matchesSelectedFeed && matchesSourceGroup) {
       recordFilterDecisionStage(diagnostics, article, {
         stage: "feed_scope",
         result: "passed",
-        reason: activeFeedId ? "article belongs to selected feed" : "no selected feed scope",
+        reason: activeFeedId
+          ? "article belongs to selected feed"
+          : sourceGroup !== "all"
+            ? "article belongs to selected source group"
+            : "no selected feed scope",
         notes: ["feed scope stage wraps existing selected-feed checks"],
         metadata: {
           activeFeedId: activeFeedId || "",
+          sourceGroup,
         },
       });
       outputArticles.push(article);
@@ -56902,16 +56962,24 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
 function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
   const inputArticles = Array.isArray(articles) ? articles : [];
   const queryContext = getActiveArticleQueryContext();
-  if (queryContext.sourceOnly && !queryContext.hasProfile) {
+  if (!queryContext.hasProfile && (queryContext.sourceOnly || queryContext.hasSourceGroup)) {
     inputArticles.forEach((article) => {
       recordFilterDecisionStage(diagnostics, article, {
         stage: "personal_dashboard",
         result: "passed",
-        reason: "source_only_feed_view_without_profile",
-        notes: ["Source list View articles has no active profile to apply"],
+        reason: queryContext.sourceOnly
+          ? "source_only_feed_view_without_profile"
+          : "source_group_view_without_profile",
+        notes: [
+          queryContext.sourceOnly
+            ? "Source list View articles has no active profile to apply"
+            : "Source group view has no active profile to apply",
+        ],
         metadata: {
-          sourceOnlyFeedView: true,
+          sourceOnlyFeedView: queryContext.sourceOnly,
+          sourceGroupView: queryContext.hasSourceGroup,
           selectedFeed: state.filters.feedId || "",
+          sourceGroup: queryContext.sourceGroup || "all",
         },
       });
     });
@@ -56921,7 +56989,11 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
         "personal_dashboard",
         inputArticles.length,
         inputArticles.length,
-        ["Source-only feed view had no active Personal Dashboard profile"]
+        [
+          queryContext.sourceOnly
+            ? "Source-only feed view had no active Personal Dashboard profile"
+            : "Source group view had no active Personal Dashboard profile",
+        ]
       ),
     };
   }
@@ -61325,8 +61397,10 @@ function bindEvents() {
       }
 
       state.filters.sourceGroup = button.dataset.sourceGroup || "all";
+      state.pagination.page = 1;
       syncSelectedFeedWithSourceGroup();
       renderFeedList();
+      scheduleRenderArticles("source-group-filter", { mode: "frame" });
     });
   }
 

@@ -112,6 +112,13 @@ function serializeArticleQuery(value) {
   return String(value);
 }
 
+function parseArticleQueryList(value) {
+  return serializeArticleQuery(value)
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 function buildArticleQueryDiagnostics(request, details = {}) {
   const query = request?.query || {};
   return {
@@ -121,6 +128,7 @@ function buildArticleQueryDiagnostics(request, details = {}) {
     offset: Number(details.offset || 0),
     includePagination: String(query.includePagination || "").trim().toLowerCase() === "true",
     feedId: serializeArticleQuery(query.feedId),
+    feedIds: serializeArticleQuery(query.feedIds),
     feed: serializeArticleQuery(query.feed),
     resolvedFeedId: serializeArticleQuery(details.resolvedFeedId),
     topic: serializeArticleQuery(query.topic),
@@ -165,6 +173,7 @@ export async function listArticles(request, response) {
     const {
       topic,
       feedId: requestedFeedId,
+      feedIds,
       feed,
       from,
       to,
@@ -181,6 +190,7 @@ export async function listArticles(request, response) {
     const resolvedFeedId = requestedFeedId
       ? String(requestedFeedId).trim()
       : await resolveFeedIdFromQuery(feed);
+    const requestedFeedIds = parseArticleQueryList(feedIds);
     const signalKeywords = SIGNAL_QUERY_KEYWORDS[String(signal || "").trim()] || [];
     const dateFrom = date ? startOfDay(date) : null;
     const dateTo = date ? endOfDay(date) : null;
@@ -189,6 +199,7 @@ export async function listArticles(request, response) {
     const filters = {
       topic,
       feedId: resolvedFeedId || null,
+      feedIds: resolvedFeedId ? [] : requestedFeedIds,
       from: dateFrom || (from ? startOfDay(from) : null),
       to: dateTo || (to ? endOfDay(to) : null),
       search,
@@ -197,7 +208,7 @@ export async function listArticles(request, response) {
       excludeDuplicates: !includeDuplicates
     };
 
-    const shouldCanonicalDedupe = !includeDuplicates && Boolean(resolvedFeedId);
+    const shouldCanonicalDedupe = !includeDuplicates && Boolean(resolvedFeedId || requestedFeedIds.length);
     const offset = (pageNumber - 1) * pageSize;
     const candidateLimit = shouldCanonicalDedupe
       ? Math.max(pageSize + offset, Math.min(env.canonicalDedupeCandidateLimit, 5000))
