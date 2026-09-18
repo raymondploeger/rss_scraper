@@ -1497,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "identity-authority-ircc-224";
+const APP_BUILD = "profile-source-affinity-225";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1936,6 +1936,8 @@ const SPECIALIST_SOURCE_INTERESTS = {
     "ircc passport and digital identity news",
     "departmentofcitizenshipandimmigration",
     "api.io.canada.ca/io-server/gc/news",
+    "aamva news",
+    "aamva.org/publications-news/aamva-news",
   ],
   digital_identity_biometrics: ["biometric update", "digital identity", "authentication", "identity verification"],
   security_printing: ["security printing", "security printer", "secure documents", "holography"],
@@ -2149,6 +2151,8 @@ const ID_DOCUMENT_SOURCE_AUTHORITY = {
     "ircc passport and digital identity news",
     "departmentofcitizenshipandimmigration",
     "api.io.canada.ca/io-server/gc/news",
+    "aamva news",
+    "aamva.org/publications-news/aamva-news",
   ],
   high: [
     "passport",
@@ -2233,6 +2237,8 @@ const IDENTITY_PROFILE_SOURCE_PRIORITY = {
       "ircc passport and digital identity news",
       "departmentofcitizenshipandimmigration",
       "api.io.canada.ca/io-server/gc/news",
+      "aamva news",
+      "aamva.org/publications-news/aamva-news",
     ],
     medium: [
       "government",
@@ -57715,6 +57721,29 @@ function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, 
 
   const outputArticles = [];
   inputArticles.forEach((article) => {
+    const sourceFilteringAssessment = getProfileSourceFilteringAssessment(
+      article,
+      normalizePersonalDashboardInterests(state.personalDashboard.interests)
+    );
+    if (
+      sourceFilteringAssessment.mode === "trusted_specialist" &&
+      sourceFilteringAssessment.passed
+    ) {
+      recordFilterDecisionStage(diagnostics, article, {
+        stage: "digital_identity_professional_guard",
+        result: "passed",
+        reason: sourceFilteringAssessment.reason,
+        notes: ["Explicit profile-to-source affinity remained authoritative after content quality guards"],
+        metadata: {
+          enabled: true,
+          trustedSpecialistSource: true,
+          sourceProfileAffinityRule: sourceFilteringAssessment.sourceProfileAffinityRule,
+        },
+      });
+      outputArticles.push(article);
+      return;
+    }
+
     const digitalIdentityAssessment = digitalIdentityGuardActive
       ? getDigitalIdentityProfessionalGuardAssessment(article, { branch })
       : null;
