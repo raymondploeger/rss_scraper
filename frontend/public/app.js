@@ -1497,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "profile-source-affinity-225";
+const APP_BUILD = "profile-source-scope-226";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -5803,14 +5803,25 @@ function getProfileSourceFilteringAssessment(article, selectedInterests) {
   };
 }
 
+function isAuthoritativeProfileSourceFilteringAssessment(assessment) {
+  return Boolean(
+    assessment?.passed &&
+    ["trusted_specialist", "source_only", "selected_source"].includes(assessment.mode)
+  );
+}
+
 function getSourceProfileAffinityFeedsForSelectedInterests(selectedInterests) {
   const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
   if (!normalizedInterests.length) {
     return [];
   }
   const feeds = Array.isArray(state.feeds) ? state.feeds : [];
+  const sourceGroup = String(state.filters?.sourceGroup || "all").trim() || "all";
   return feeds.filter((feed) => {
     if (!feed?.id || feed?.isActive === false || isGoogleAlertsFeed(feed) || isGoogleRssFeed(feed) || isBingAlertsFeed(feed)) {
+      return false;
+    }
+    if (sourceGroup !== "all" && getFeedGroupName(feed) !== sourceGroup) {
       return false;
     }
     return Boolean(getSelectedFeedSourceProfileAffinityRule(normalizedInterests, feed));
@@ -18062,10 +18073,7 @@ function articlePassesLegacyIdentityProfessionalRelevance(article, options = {})
     article,
     normalizePersonalDashboardInterests(state.personalDashboard.interests)
   );
-  if (
-    sourceFilteringAssessment.mode === "trusted_specialist" &&
-    sourceFilteringAssessment.passed
-  ) {
+  if (isAuthoritativeProfileSourceFilteringAssessment(sourceFilteringAssessment)) {
     return true;
   }
 
@@ -44896,6 +44904,13 @@ function getFeedGroupName(feed) {
     return "Canada";
   }
 
+  if (
+    name.includes("aamva") ||
+    fingerprint.includes("aamva.org/publications-news/aamva-news")
+  ) {
+    return "USA";
+  }
+
   if (name.includes("dmv")) {
     return "USA";
   }
@@ -56413,6 +56428,7 @@ function buildPersonalDashboardBackendQueryParamsList() {
       addParams((params) => {
         params.delete("search");
         params.delete("topic");
+        params.delete("feedIds");
         params.set("limit", String(MAX_ARTICLES_IN_MEMORY));
         params.set("feedId", String(feed.id));
       });
@@ -56426,6 +56442,7 @@ function buildPersonalDashboardBackendQueryParamsList() {
     addParams((params) => {
       params.delete("search");
       params.delete("topic");
+      params.delete("feedIds");
       params.set("limit", String(MAX_ARTICLES_IN_MEMORY));
       params.set("feedId", String(feed.id));
     });
@@ -57725,10 +57742,7 @@ function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, 
       article,
       normalizePersonalDashboardInterests(state.personalDashboard.interests)
     );
-    if (
-      sourceFilteringAssessment.mode === "trusted_specialist" &&
-      sourceFilteringAssessment.passed
-    ) {
+    if (isAuthoritativeProfileSourceFilteringAssessment(sourceFilteringAssessment)) {
       recordFilterDecisionStage(diagnostics, article, {
         stage: "digital_identity_professional_guard",
         result: "passed",
