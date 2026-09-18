@@ -1497,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "official-sources-223";
+const APP_BUILD = "identity-authority-ircc-224";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1933,6 +1933,9 @@ const SPECIALIST_SOURCE_INTERESTS = {
     "secure document",
     "dmv",
     "driver license agency",
+    "ircc passport and digital identity news",
+    "departmentofcitizenshipandimmigration",
+    "api.io.canada.ca/io-server/gc/news",
   ],
   digital_identity_biometrics: ["biometric update", "digital identity", "authentication", "identity verification"],
   security_printing: ["security printing", "security printer", "secure documents", "holography"],
@@ -2143,6 +2146,9 @@ const ID_DOCUMENT_SOURCE_AUTHORITY = {
     "eulisa",
     "cbp newsroom",
     "mobile passport control",
+    "ircc passport and digital identity news",
+    "departmentofcitizenshipandimmigration",
+    "api.io.canada.ca/io-server/gc/news",
   ],
   high: [
     "passport",
@@ -2224,6 +2230,9 @@ const IDENTITY_PROFILE_SOURCE_PRIORITY = {
       "immigration authority",
       "ministry of interior",
       "passport authority",
+      "ircc passport and digital identity news",
+      "departmentofcitizenshipandimmigration",
+      "api.io.canada.ca/io-server/gc/news",
     ],
     medium: [
       "government",
@@ -4863,7 +4872,9 @@ function getIdentityDocumentBundleQualityGateAssessment(article) {
     const hasAbsoluteHardNoise = matchedHardOffTopicNoise.some((term) =>
       !matchedBroadAllowedServiceContext.includes(term)
     );
-    const hasStrictnessOnlyNoise = matchedHardOffTopicNoise.length > 0 && authorityStrictness !== "broad";
+    const hasStrictnessOnlyNoise = matchedHardOffTopicNoise.length > 0 &&
+      authorityStrictness !== "broad" &&
+      sourcePriority.level !== "strong";
     const blocked = hasAbsoluteHardNoise ||
       hasStrictnessOnlyNoise ||
       (matchedNoise.length > 0 && !hasProfessionalContext) ||
@@ -7702,9 +7713,10 @@ function prepareDateFirstGroupedArticles(articles) {
 function prepareDateFirstGroupedArticlesMeasured(articles) {
   incrementFilterPerformanceCounter("groupingInputCount", Array.isArray(articles) ? articles.length : 0);
   const dateSortedArticles = sortArticlesByPublicationDate(articles);
-  return sortArticlesByPublicationDate(
-    groupArticlesByEvent(dateSortedArticles).map(promoteNewestArticleInSelectedFeedGroup)
-  );
+  const groupedArticles = groupArticlesByEvent(dateSortedArticles).map(promoteNewestArticleInSelectedFeedGroup);
+  return hasPersonalDashboardSelections()
+    ? sortArticlesForCurrentDashboardMode(groupedArticles)
+    : sortArticlesByPublicationDate(groupedArticles);
 }
 
 function prepareSelectedFeedGroupedArticles(articles) {
@@ -18037,6 +18049,17 @@ function getIdentityProfessionalRelevanceGuardAssessment(article, options = {}) 
 
 function articlePassesLegacyIdentityProfessionalRelevance(article, options = {}) {
   if (!shouldApplyIdentityProfessionalRelevanceGuard(options)) {
+    return true;
+  }
+
+  const sourceFilteringAssessment = getProfileSourceFilteringAssessment(
+    article,
+    normalizePersonalDashboardInterests(state.personalDashboard.interests)
+  );
+  if (
+    sourceFilteringAssessment.mode === "trusted_specialist" &&
+    sourceFilteringAssessment.passed
+  ) {
     return true;
   }
 
@@ -43942,6 +43965,7 @@ function sortPersonalDashboardResults(articles, options = {}) {
   }
 
   const sortMode = options.sortMode || getPersonalDashboardSortMode();
+  const activeTemplateId = getMatchingPersonalDashboardTemplateId(state.personalDashboard.interests);
   const sortedArticles = articles.slice().sort((left, right) => {
     if (isVendorsProfileActive()) {
       return compareVendorsProfileArticlesByProducerPriority(left, right, (fallbackLeft, fallbackRight) => {
@@ -43950,6 +43974,13 @@ function sortPersonalDashboardResults(articles, options = {}) {
         }
         return comparePersonalDashboardArticlesByNewest(fallbackLeft, fallbackRight);
       });
+    }
+    if (activeTemplateId === "passport_authority") {
+      const leftSourcePriority = getIdentityProfileSourcePriorityBoost(left, activeTemplateId).boost;
+      const rightSourcePriority = getIdentityProfileSourcePriorityBoost(right, activeTemplateId).boost;
+      if (rightSourcePriority !== leftSourcePriority) {
+        return rightSourcePriority - leftSourcePriority;
+      }
     }
     if (sortMode === "relevance") {
       return comparePersonalDashboardArticlesByRelevance(left, right);
@@ -56501,18 +56532,27 @@ async function ensureBackendArticleQueryData() {
   }
 
   const mergedRawArticles = [];
-  responses.forEach((response) => {
+  const directlyRequestedFeedArticleKeys = new Set();
+  const getRawArticleDedupeKey = (article) => (
+    String(article?.id || "").trim() ||
+    String(article?.canonicalLink || article?.link || "").trim().toLowerCase()
+  );
+  responses.forEach((response, responseIndex) => {
     const items = Array.isArray(response?.items) ? response.items : Array.isArray(response?.articles) ? response.articles : [];
     items.forEach((item) => {
       mergedRawArticles.push(item);
+      if (queryParamsList[responseIndex]?.has("feedId")) {
+        const key = getRawArticleDedupeKey(item);
+        if (key) {
+          directlyRequestedFeedArticleKeys.add(key);
+        }
+      }
     });
   });
 
   const dedupedRawArticleMap = new Map();
   mergedRawArticles.forEach((article) => {
-    const dedupeKey =
-      String(article?.id || "").trim() ||
-      String(article?.canonicalLink || article?.link || "").trim().toLowerCase();
+    const dedupeKey = getRawArticleDedupeKey(article);
     if (!dedupeKey || dedupedRawArticleMap.has(dedupeKey)) {
       return;
     }
@@ -56520,7 +56560,14 @@ async function ensureBackendArticleQueryData() {
   });
 
   const dedupedRawArticles = Array.from(dedupedRawArticleMap.values())
-    .sort((left, right) => new Date(right?.pubDate || 0) - new Date(left?.pubDate || 0))
+    .sort((left, right) => {
+      const leftDirectlyRequested = directlyRequestedFeedArticleKeys.has(getRawArticleDedupeKey(left));
+      const rightDirectlyRequested = directlyRequestedFeedArticleKeys.has(getRawArticleDedupeKey(right));
+      if (leftDirectlyRequested !== rightDirectlyRequested) {
+        return rightDirectlyRequested ? 1 : -1;
+      }
+      return new Date(right?.pubDate || 0) - new Date(left?.pubDate || 0);
+    })
     .slice(0, backendCandidateLimit);
   let normalizedArticles = dedupedRawArticles.map(normalizeLoadedArticle);
   if (personalDomainPlan?.domain === "identity_documents") {
