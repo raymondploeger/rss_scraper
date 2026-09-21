@@ -102,8 +102,8 @@
         "state":  "Hawaii",
         "abbr":  "HI",
         "region":  "us",
-        "mode":  "rss",
-        "rss_url":  "https://hidot.hawaii.gov/feed/",
+        "mode":  "link-only",
+        "rss_url":  null,
         "official_url":  "https://hidot.hawaii.gov/blog/category/news/",
         "feed_path":  "/feeds/hawaii.xml"
     },

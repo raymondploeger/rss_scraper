@@ -26,6 +26,8 @@
     "cleanup:hid-quality:apply": "node scripts/cleanup-hid-quality.js --apply",
     "cleanup:hid-thumbnails": "node scripts/cleanup-hid-thumbnails.js",
     "cleanup:hid-thumbnails:apply": "node scripts/cleanup-hid-thumbnails.js --apply",
+    "cleanup:dmv-source-noise": "node scripts/cleanup-dmv-source-noise.js",
+    "cleanup:dmv-source-noise:apply": "node scripts/cleanup-dmv-source-noise.js --apply",
     "cleanup:sicpa-quality": "node scripts/cleanup-sicpa-quality.js",
     "cleanup:sicpa-quality:apply": "node scripts/cleanup-sicpa-quality.js --apply",
     "cleanup:sicpa-thumbnails": "node scripts/cleanup-sicpa-thumbnails.js",

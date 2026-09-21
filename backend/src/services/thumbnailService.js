@@ -167,6 +167,17 @@ export function isLikelyGenericMetadataImage(imageUrl) {
     value.includes("/profiles/cbpd8_gov/themes/custom/cbpd8_gov_theme/") ||
     value.includes("/themes/custom/cbpd8_gov_theme/") ||
     value.includes("/sites/default/files/cbp-seal-vertical-blue_twitter-card") ||
+    value.includes("hidot.hawaii.gov/wp-content/themes/hic_state_template_parent/images/design/footer/footer-seal.png") ||
+    (
+      value.includes("dmv.nebraska.gov/") &&
+      (
+        value.includes("/sites/all/themes/") ||
+        value.includes("/sites/default/files/") ||
+        value.includes("/sites/dmv.nebraska.gov/files/img/") ||
+        value.includes("/sites/dmv.nebraska.gov/files/doc/dvr/plates/") ||
+        value.includes("/files/img/dmv-media-image")
+      )
+    ) ||
     /\/sites\/default\/files\/(?:styles\/[^/]+\/public\/)?[^/?#]*_card_[^/?#]*\.(?:jpe?g|png|webp)(?:$|[?#.])/i.test(value)
   ) {
     return true;

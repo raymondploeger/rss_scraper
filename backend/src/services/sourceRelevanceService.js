@@ -1,5 +1,22 @@
 export const SOURCE_RELEVANCE_RULES = [
   {
+    name: "Nebraska DMV",
+    sourceKeys: ["nebraska dmv", "dmv.nebraska.gov/rss/news"],
+    include: [
+      "driver license and id card",
+      "driver license and state id",
+      "driver license services",
+      "driver's license and id",
+      "driver’s license and id",
+      "issuance of credentials",
+      "real id",
+      "temporary driver license",
+      "tracks driver's license and id",
+      "tracks driver’s license and id",
+    ],
+    exclude: [],
+  },
+  {
     name: "Veridos Press & Media",
     sourceKeys: ["veridos press & media", "veridos.com/en/about/press-media"],
     rejectPagePatterns: [
