@@ -1497,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "tracked-source-group-transition-230";
+const APP_BUILD = "tracked-sources-all-231";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -7370,6 +7370,7 @@ const state = {
     canadaDmvFeedPath: "",
     canadaDmvAll: false,
     sourceGroup: "all",
+    trackedSourcesAll: false,
     date: "",
     favoritesOnly: false,
     articleIds: [],
@@ -27098,6 +27099,7 @@ function loadSourceSelectionPreferences() {
   state.filters.feedId = feedId;
   state.filters.sourceOnly = Boolean(feedId && stored.sourceOnly !== false);
   state.filters.sourceGroup = sourceGroup;
+  state.filters.trackedSourcesAll = Boolean(sourceGroup === "all" && stored.trackedSourcesAll);
 }
 
 function saveSourceSelectionPreferences() {
@@ -27108,9 +27110,10 @@ function saveSourceSelectionPreferences() {
   const feedId = String(state.filters.feedId || "").trim();
   const sourceGroup = String(state.filters.sourceGroup || "all").trim() || "all";
   const sourceOnly = Boolean(feedId && state.filters.sourceOnly);
+  const trackedSourcesAll = Boolean(sourceGroup === "all" && state.filters.trackedSourcesAll);
 
   try {
-    if (!feedId && sourceGroup === "all") {
+    if (!feedId && sourceGroup === "all" && !trackedSourcesAll) {
       window.localStorage.removeItem(SOURCE_SELECTION_STORAGE_KEY);
       return;
     }
@@ -27121,6 +27124,7 @@ function saveSourceSelectionPreferences() {
         feedId,
         sourceGroup,
         sourceOnly,
+        trackedSourcesAll,
       })
     );
   } catch {
@@ -28009,7 +28013,7 @@ function getActiveArticleQueryContext() {
     hasSelectedFeed: Boolean(feedIdentity),
     sourceOnly: isSourceOnlyFeedViewActive(),
     sourceGroup,
-    hasSourceGroup: sourceGroup !== "all",
+    hasSourceGroup: sourceGroup !== "all" || Boolean(state.filters?.trackedSourcesAll),
     search,
     hasSearch: Boolean(search),
     topic,
@@ -28298,6 +28302,7 @@ function hasActiveAdvancedSearchFilters() {
       String(filters.canadaDmvFeedPath || "").trim() ||
       String(filters.date || "").trim() ||
       (filters.sourceGroup && filters.sourceGroup !== "all") ||
+      filters.trackedSourcesAll ||
       filters.canadaDmvAll ||
       (Array.isArray(keywordFilters.include) && keywordFilters.include.length > 0) ||
       (Array.isArray(keywordFilters.exclude) && keywordFilters.exclude.length > 0)
@@ -28313,6 +28318,7 @@ function shouldShowPersonalDashboardEmptyProfileState(renderDispatch = null) {
       String(state.filters.date || "").trim() ||
       String(state.filters.feedId || "").trim() ||
       (state.filters.sourceGroup && state.filters.sourceGroup !== "all") ||
+      state.filters.trackedSourcesAll ||
       (Array.isArray(state.filters.articleIds) && state.filters.articleIds.length > 0) ||
       state.filters.favoritesOnly ||
       state.filters.dmvFeedId ||
@@ -50878,6 +50884,7 @@ function clearActiveFilter(filterKey) {
     elements.feedVisibilityFilter.value = "all";
   } else if (filterKey === "source-group") {
     state.filters.sourceGroup = "all";
+    state.filters.trackedSourcesAll = false;
   }
 
   renderDashboard();
@@ -51407,6 +51414,7 @@ function syncSourceGroupTabs() {
   const labels = getSourceGroupTabLabels();
   if (!labels.includes(state.filters.sourceGroup || "all")) {
     state.filters.sourceGroup = "all";
+    state.filters.trackedSourcesAll = false;
   }
 
   const activeGroup = state.filters.sourceGroup || "all";
@@ -51485,6 +51493,7 @@ function resetDashboardState() {
   state.filters.canadaDmvFeedPath = "";
   state.filters.canadaDmvAll = false;
   state.filters.sourceGroup = "all";
+  state.filters.trackedSourcesAll = false;
   state.filters.date = "";
   state.filters.favoritesOnly = false;
   clearExactArticleFilter({ clearStorage: false });
@@ -51547,6 +51556,7 @@ function clearSourcePanelView() {
   state.filters.canadaDmvFeedPath = "";
   state.filters.canadaDmvAll = false;
   state.filters.sourceGroup = "all";
+  state.filters.trackedSourcesAll = false;
   state.filters.favoritesOnly = false;
   state.dashboardMode = "normal";
 
@@ -51983,7 +51993,7 @@ function articleMatchesFilters(article, options = {}) {
 
   if (
     !ignorePersonalDashboard &&
-    (state.filters.sourceGroup || "all") === "all" &&
+    !getActiveArticleQueryContext().hasSourceGroup &&
     !measureFilterSegment("personalDashboard", () => articleMatchesPersonalDashboardSelection(article, {
       timingContext: filterTimingContext,
     }))
@@ -55675,8 +55685,9 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
   const profileDisplay = getPersonalDashboardProfileDisplay(interests);
   const selectedFeed = state.filters.feedId ? resolveFeedByIdentity(state.filters.feedId) : null;
   const sourceGroup = String(state.filters.sourceGroup || "all").trim() || "all";
-  const hasSource = Boolean(selectedFeed || sourceGroup !== "all");
-  const sourceLabel = selectedFeed?.name || (sourceGroup !== "all" ? sourceGroup : "");
+  const trackedSourcesAll = Boolean(sourceGroup === "all" && state.filters.trackedSourcesAll);
+  const hasSource = Boolean(selectedFeed || sourceGroup !== "all" || trackedSourcesAll);
+  const sourceLabel = selectedFeed?.name || (trackedSourcesAll ? "All tracked sources" : sourceGroup !== "all" ? sourceGroup : "");
   const displayedResultCount = Number.parseInt(String(elements.resultsCount?.textContent || ""), 10);
   const hasExplicitCount = articleCount !== null && articleCount !== undefined;
   const hasDisplayedCount = Number.isFinite(displayedResultCount);
@@ -56316,6 +56327,7 @@ function getBackendArticleQueryKey() {
   return JSON.stringify({
     feedId: state.filters.feedId || "",
     sourceGroup: state.filters.sourceGroup || "all",
+    trackedSourcesAll: Boolean(state.filters.trackedSourcesAll),
     sourceOnly: isSourceOnlyFeedViewActive(),
     topic: state.filters.topic || "",
     tag: state.filters.tag || "",
@@ -56367,6 +56379,23 @@ function applyBackendArticleQueryBaseParams(options = {}) {
 
 function getBackendArticleQueryParams() {
   return applyBackendArticleQueryBaseParams();
+}
+
+function buildTrackedSourcesAllBackendQueryParamsList() {
+  const sourceGroups = getSourceGroupLabels(state.feeds.concat(getNonUsCatalogOnlySources()));
+  const sourceGroupPairs = [];
+  for (let index = 0; index < sourceGroups.length; index += 2) {
+    sourceGroupPairs.push(sourceGroups.slice(index, index + 2));
+  }
+
+  return sourceGroupPairs
+    .map((sourceGroupPair) => {
+      const feedIds = sourceGroupPair.flatMap((sourceGroup) => getFeedIdsForSourceGroup(sourceGroup).slice(0, 12));
+      const params = applyBackendArticleQueryBaseParams({ limit: 60 });
+      params.set("feedIds", feedIds.join(","));
+      return params;
+    })
+    .filter((params) => Boolean(params.get("feedIds")));
 }
 
 function getSelectedFeedFullPoolKey(feedIdentity) {
@@ -56647,7 +56676,9 @@ async function ensureBackendArticleQueryData() {
   const queryParamsList =
     personalDomainPlan && hasPersonalDashboardSelections()
       ? buildPersonalDashboardBackendQueryParamsList()
-      : [getBackendArticleQueryParams()];
+      : state.filters.trackedSourcesAll
+        ? buildTrackedSourcesAllBackendQueryParamsList()
+        : [getBackendArticleQueryParams()];
   const contributionDiagnosticsEnabled = isBackendRequestContributionDiagnosticsEnabled();
   const requestContributionPlans = buildBackendRequestContributionPlans(queryParamsList, personalDomainPlan);
   const backendRequestTimingStartedMs = getPerformanceNow();
@@ -59410,7 +59441,9 @@ function readBackendCacheStage(queryKey) {
 function planBackendRequestsStage(cachedQuery) {
   const plannedRequests = getPersonalDashboardBackendDomainPlan() && hasPersonalDashboardSelections()
     ? buildPersonalDashboardBackendQueryParamsList()
-    : [getBackendArticleQueryParams()];
+    : state.filters.trackedSourcesAll
+      ? buildTrackedSourcesAllBackendQueryParamsList()
+      : [getBackendArticleQueryParams()];
   const backendRequests = cachedQuery?.backendRequests || plannedRequests.map((params) => Object.fromEntries(params.entries()));
   return {
     backendRequests,
@@ -60084,7 +60117,7 @@ function renderArticles() {
       Number(articlePagination?.totalCount || 0) > 0;
     const baseArticlePagination = hasStalePaginationMismatch ? getPaginatedItems([]) : articlePagination;
     const explicitSourceGroupActive =
-      String(state.filters.sourceGroup || "all").trim() !== "all" &&
+      (String(state.filters.sourceGroup || "all").trim() !== "all" || state.filters.trackedSourcesAll) &&
       !state.filters.feedId;
     const sourceGroupVisibleCount = renderedArticleSource.length;
     const safeArticlePagination = explicitSourceGroupActive
@@ -61399,6 +61432,7 @@ function bindEvents() {
       canadaDmvFeedPath: "",
       canadaDmvAll: false,
       sourceGroup: "all",
+      trackedSourcesAll: false,
       date: "",
       favoritesOnly: false,
       articleIds: [],
@@ -61763,8 +61797,14 @@ function bindEvents() {
       }
 
       state.filters.sourceGroup = button.dataset.sourceGroup || "all";
+      state.filters.trackedSourcesAll = state.filters.sourceGroup === "all";
       state.pagination.page = 1;
-      syncSelectedFeedWithSourceGroup();
+      if (state.filters.trackedSourcesAll) {
+        state.filters.feedId = "";
+        state.filters.sourceOnly = false;
+      } else {
+        syncSelectedFeedWithSourceGroup();
+      }
       clearFeedRenderCaches();
       renderFeedList();
       renderSkeletons();
