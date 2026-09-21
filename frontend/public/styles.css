@@ -1346,9 +1346,23 @@ button.intelligence-context-chip:focus-visible {
 }
 
 .intelligence-context-chip-remove {
-  color: var(--muted);
-  font-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.95rem;
+  font-weight: 800;
   line-height: 1;
+}
+
+button.intelligence-context-chip:hover .intelligence-context-chip-remove,
+button.intelligence-context-chip:focus-visible .intelligence-context-chip-remove {
+  background: var(--accent);
+  color: var(--bg-elevated);
 }
 
 .summary-card {

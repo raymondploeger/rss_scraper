@@ -1497,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "tracked-source-group-scope-228";
+const APP_BUILD = "tracked-source-group-transition-230";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -26852,10 +26852,7 @@ function renderFavoritesOnlyArticles() {
   renderSummary();
   renderFavoritesPanel();
 
-  if (elements.resultsCount) {
-    elements.resultsCount.textContent = `${pagination.totalCount} results`;
-  }
-  updateIntelligenceFeedHeader(pagination.totalCount);
+  setArticleResultCount(pagination.totalCount);
 
   if (elements.articlesGrid) {
     elements.articlesGrid.classList.remove("is-grouped-feed-view");
@@ -55650,6 +55647,7 @@ function appendIntelligenceContextChip(fragment, label, options = {}) {
       chip.dataset.interestId = options.interestId;
     }
     chip.setAttribute("aria-label", `${options.ariaLabel || `Remove ${label}`}`);
+    chip.title = options.ariaLabel || `Remove ${label}`;
     const remove = document.createElement("span");
     remove.className = "intelligence-context-chip-remove";
     remove.setAttribute("aria-hidden", "true");
@@ -55657,6 +55655,14 @@ function appendIntelligenceContextChip(fragment, label, options = {}) {
     chip.appendChild(remove);
   }
   fragment.appendChild(chip);
+}
+
+function setArticleResultCount(totalCount) {
+  const count = Math.max(0, Number(totalCount) || 0);
+  if (elements.resultsCount) {
+    elements.resultsCount.textContent = `${count} results`;
+  }
+  updateIntelligenceFeedHeader(count);
 }
 
 function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false) {
@@ -59901,9 +59907,7 @@ function renderArticlesFallback(error) {
   const fallbackPageArticles = Array.isArray(fallbackPagination.items) ? fallbackPagination.items : [];
   const articlesToRender = fallbackPageArticles.slice(0, MAX_RENDERED_ARTICLES);
 
-  if (elements.resultsCount) {
-    elements.resultsCount.textContent = `${fallbackPagination.totalCount} results`;
-  }
+  setArticleResultCount(fallbackPagination.totalCount);
 
   if (elements.articlesGrid) {
     elements.articlesGrid.classList.remove("is-grouped-feed-view");
@@ -60078,7 +60082,22 @@ function renderArticles() {
     const hasStalePaginationMismatch =
       renderedArticleSource.length === 0 &&
       Number(articlePagination?.totalCount || 0) > 0;
-    const safeArticlePagination = hasStalePaginationMismatch ? getPaginatedItems([]) : articlePagination;
+    const baseArticlePagination = hasStalePaginationMismatch ? getPaginatedItems([]) : articlePagination;
+    const explicitSourceGroupActive =
+      String(state.filters.sourceGroup || "all").trim() !== "all" &&
+      !state.filters.feedId;
+    const sourceGroupVisibleCount = renderedArticleSource.length;
+    const safeArticlePagination = explicitSourceGroupActive
+      ? {
+          ...baseArticlePagination,
+          totalCount: sourceGroupVisibleCount,
+          totalPages: Math.max(1, Math.ceil(sourceGroupVisibleCount / Math.max(1, Number(baseArticlePagination?.pageSize) || ARTICLE_RENDER_PAGE_SIZE))),
+          endIndex: Math.min(
+            Number(baseArticlePagination?.endIndex) || sourceGroupVisibleCount,
+            sourceGroupVisibleCount
+          ),
+        }
+      : baseArticlePagination;
     const articlesToRender = hasStalePaginationMismatch
       ? []
       : Array.isArray(renderModel?.items) ? renderModel.items : [];
@@ -60169,7 +60188,7 @@ function renderArticles() {
     if (shouldShowPersonalDashboardEmptyProfileState(renderDispatch)) {
       intelligenceTime("renderArticles:dom-update");
       startFilterPerformanceDomRender();
-      elements.resultsCount.textContent = "0 results";
+      setArticleResultCount(0);
       elements.articlesGrid.classList.remove("is-grouped-feed-view");
       elements.articlesGrid.classList.remove("has-personal-lanes");
       elements.articlesGrid.innerHTML = `
@@ -60201,7 +60220,7 @@ function renderArticles() {
       startFilterPerformanceDomRender();
       elements.articlesGrid.classList.remove("is-grouped-feed-view");
       elements.articlesGrid.classList.remove("has-personal-lanes");
-      elements.resultsCount.textContent = `${safeArticlePagination.totalCount} results`;
+      setArticleResultCount(safeArticlePagination.totalCount);
       elements.articlesGrid.innerHTML = "";
 
       if (!safeArticlePagination.totalCount) {
@@ -60229,7 +60248,7 @@ function renderArticles() {
       startFilterPerformanceDomRender();
       elements.articlesGrid.classList.remove("is-grouped-feed-view");
       elements.articlesGrid.classList.remove("has-personal-lanes");
-      elements.resultsCount.textContent = `${safeArticlePagination.totalCount} results`;
+      setArticleResultCount(safeArticlePagination.totalCount);
       elements.articlesGrid.innerHTML = "";
 
       if (!safeArticlePagination.totalCount) {
@@ -60272,7 +60291,7 @@ function renderArticles() {
       const visibleFeedIds = new Set(articlesToRender.map((article) => article.feedId).filter(Boolean));
       const visibleFeeds = dmvFeeds.filter((feed) => visibleFeedIds.has(feed.id));
 
-      elements.resultsCount.textContent = `${safeArticlePagination.totalCount} results`;
+      setArticleResultCount(safeArticlePagination.totalCount);
       elements.articlesGrid.innerHTML = "";
 
       if (!safeArticlePagination.totalCount) {
@@ -60321,7 +60340,7 @@ function renderArticles() {
         return feed ? visibleFeedIds.has(feed.id) : false;
       });
 
-      elements.resultsCount.textContent = `${safeArticlePagination.totalCount} results`;
+      setArticleResultCount(safeArticlePagination.totalCount);
       elements.articlesGrid.innerHTML = "";
 
       if (!safeArticlePagination.totalCount) {
@@ -60368,7 +60387,7 @@ function renderArticles() {
 
     intelligenceTime("renderArticles:dom-update");
     startFilterPerformanceDomRender();
-    elements.resultsCount.textContent = `${safeArticlePagination.totalCount} results`;
+    setArticleResultCount(safeArticlePagination.totalCount);
     elements.articlesGrid.classList.remove("is-grouped-feed-view");
     elements.articlesGrid.classList.remove("has-personal-lanes");
     elements.articlesGrid.innerHTML = "";
@@ -61746,7 +61765,13 @@ function bindEvents() {
       state.filters.sourceGroup = button.dataset.sourceGroup || "all";
       state.pagination.page = 1;
       syncSelectedFeedWithSourceGroup();
+      clearFeedRenderCaches();
       renderFeedList();
+      renderSkeletons();
+      if (elements.resultsCount) {
+        elements.resultsCount.textContent = "Loading articles...";
+      }
+      updateIntelligenceFeedHeader(null, true);
       scheduleRenderArticles("source-group-filter", { mode: "frame" });
     });
   }
