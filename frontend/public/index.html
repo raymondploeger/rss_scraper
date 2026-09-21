@@ -454,16 +454,21 @@
           </div>
         </a>
         <div class="article-card-actions">
-          <div class="article-share-actions" aria-label="Share article">
-            <button class="article-share-button" type="button" data-share-channel="mail">Mail</button>
-            <button class="article-share-button" type="button" data-share-channel="whatsapp">WhatsApp</button>
-            <button class="article-share-button" type="button" data-share-channel="linkedin">LinkedIn</button>
-          </div>
           <button class="article-favorite-button" type="button" aria-pressed="false" title="Save article">Save</button>
+          <a class="article-open-action" target="_blank" rel="noopener noreferrer">Open <span aria-hidden="true">→</span></a>
+          <details class="article-share-actions">
+            <summary class="article-share-toggle" aria-label="Share article" title="Share article">•••</summary>
+            <div class="article-share-menu" aria-label="Share article">
+              <strong>Share</strong>
+              <button class="article-share-button" type="button" data-share-channel="mail">Email</button>
+              <button class="article-share-button" type="button" data-share-channel="whatsapp">WhatsApp</button>
+              <button class="article-share-button" type="button" data-share-channel="linkedin">LinkedIn</button>
+            </div>
+          </details>
         </div>
       </article>
     </template>
 
-    <script type="module" src="/app.js?v=20260921-tracked-sources-all-231"></script>
+    <script type="module" src="/app.js?v=20260921-card-actions-232"></script>
   </body>
 </html>
