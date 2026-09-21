@@ -1,5 +1,20 @@
 export const SOURCE_RELEVANCE_RULES = [
   {
+    name: "Missouri DMV",
+    sourceKeys: ["missouri dmv", "dor.mo.gov/news/rss"],
+    include: [
+      "commercial driver license",
+      "driver license",
+      "driver licenses",
+      "driver's license",
+      "driver’s license",
+      "nondriver id card",
+      "real id",
+      "temporary driver license",
+    ],
+    exclude: [],
+  },
+  {
     name: "Nebraska DMV",
     sourceKeys: ["nebraska dmv", "dmv.nebraska.gov/rss/news"],
     include: [

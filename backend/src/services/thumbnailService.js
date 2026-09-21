@@ -168,6 +168,7 @@ export function isLikelyGenericMetadataImage(imageUrl) {
     value.includes("/themes/custom/cbpd8_gov_theme/") ||
     value.includes("/sites/default/files/cbp-seal-vertical-blue_twitter-card") ||
     value.includes("hidot.hawaii.gov/wp-content/themes/hic_state_template_parent/images/design/footer/footer-seal.png") ||
+    value.includes("dor.mo.gov/img/save-life-footer.png") ||
     (
       value.includes("dmv.nebraska.gov/") &&
       (

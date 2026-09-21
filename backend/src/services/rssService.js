@@ -231,6 +231,16 @@ function isIdemiaRssFeed(feed) {
   );
 }
 
+function isMissouriDmvFeed(feed) {
+  return (
+    Boolean(feed) &&
+    (
+      String(feed.rssUrl || "").trim().toLowerCase() === "https://dor.mo.gov/news/rss" ||
+      String(feed.name || "").trim().toLowerCase() === "missouri dmv"
+    )
+  );
+}
+
 function isIdemiaPressReleaseUrl(link) {
   return String(link || "").toLowerCase().includes("idemia.com/press-release/");
 }
@@ -4841,7 +4851,10 @@ function normalizeItem(feed, item) {
   const contentSnippet = sanitizeFeedText(item.contentSnippet || item.content || item.summary || item.description, "");
   const title = sanitizeFeedText(item.title, "Untitled Article");
   const extractedThumbnail = extractFeedThumbnail(link, item);
-  const extractedThumbnailUrl = resolveFeedImageCandidate(link, extractedThumbnail.url);
+  const rawExtractedThumbnailUrl = resolveFeedImageCandidate(link, extractedThumbnail.url);
+  const extractedThumbnailUrl = isLikelyGenericMetadataImage(rawExtractedThumbnailUrl)
+    ? ""
+    : rawExtractedThumbnailUrl;
   const generatedSourceThumbnail =
     isSwedishMigrationNewsFeed(feed) && !extractedThumbnailUrl
       ? getSwedishMigrationTitleThumbnail(title)
@@ -4849,6 +4862,8 @@ function normalizeItem(feed, item) {
         ? getOfficialSourceTitleThumbnail("INTERPOL", title, "1f3a5f")
       : isTsaPressReleasesFeed(feed) && !extractedThumbnailUrl
         ? getOfficialSourceTitleThumbnail("TSA", title, "005ea8")
+      : isMissouriDmvFeed(feed) && !extractedThumbnailUrl
+        ? getOfficialSourceTitleThumbnail("Missouri DMV", title, "17365d")
       : "";
   const feedFallbackThumbnail = isGoogleAlertsFeed(feed)
     ? ""
