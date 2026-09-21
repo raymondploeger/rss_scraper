@@ -1295,6 +1295,62 @@ h3 {
   border-bottom: 1px solid var(--line);
 }
 
+.content-head {
+  align-items: flex-start;
+}
+
+.intelligence-feed-heading {
+  min-width: 0;
+}
+
+.intelligence-feed-summary {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.intelligence-feed-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.intelligence-feed-context:empty {
+  display: none;
+}
+
+.intelligence-context-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--text);
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+button.intelligence-context-chip {
+  cursor: pointer;
+}
+
+button.intelligence-context-chip:hover,
+button.intelligence-context-chip:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.intelligence-context-chip-remove {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
 .summary-card {
   padding: 20px;
 }

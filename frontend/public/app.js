@@ -7476,6 +7476,10 @@ const elements = {
   articlesGrid: document.getElementById("articles-grid"),
   sidebar: document.querySelector(".sidebar"),
   articleFilterContext: document.getElementById("article-filter-context"),
+  intelligenceFeedEyebrow: document.getElementById("intelligence-feed-eyebrow"),
+  intelligenceFeedTitle: document.getElementById("intelligence-feed-title"),
+  intelligenceFeedSummary: document.getElementById("intelligence-feed-summary"),
+  intelligenceFeedContext: document.getElementById("intelligence-feed-context"),
   paginationControls: document.getElementById("pagination-controls"),
   paginationRange: document.getElementById("pagination-range"),
   paginationStatus: document.getElementById("pagination-status"),
@@ -26851,6 +26855,7 @@ function renderFavoritesOnlyArticles() {
   if (elements.resultsCount) {
     elements.resultsCount.textContent = `${pagination.totalCount} results`;
   }
+  updateIntelligenceFeedHeader(pagination.totalCount);
 
   if (elements.articlesGrid) {
     elements.articlesGrid.classList.remove("is-grouped-feed-view");
@@ -27895,6 +27900,7 @@ function renderPersonalDashboard() {
   }
 
   elements.personalDashboardClear.disabled = !activeInterests.size;
+  updateIntelligenceFeedHeader(null, true);
 }
 
 function setPersonalDashboardInterest(interestId, enabled) {
@@ -55577,6 +55583,7 @@ function updateArticleFilterContext(articles) {
   }
 
   const countLabel = getArticleCountLabel(articles.length);
+  updateIntelligenceFeedHeader(articles.length);
   const exactArticleIds = Array.isArray(state.filters.articleIds) ? state.filters.articleIds : [];
 
   if (exactArticleIds.length) {
@@ -55587,13 +55594,6 @@ function updateArticleFilterContext(articles) {
   }
 
   const contextParts = [];
-  if (state.filters.feedId) {
-    contextParts.push(
-      isSourceOnlyFeedViewActive()
-        ? `source view: ${getSelectedOptionText(elements.feedFilter) || "Selected source"}`
-        : `feed: ${getSelectedOptionText(elements.feedFilter) || "Selected feed"}`
-    );
-  }
   if (state.filters.dmvFeedId) {
     contextParts.push(`USA feed: ${getSelectedOptionText(elements.dmvFeedFilter) || "Selected state"}`);
   } else if (state.dashboardMode === "usa") {
@@ -55628,6 +55628,115 @@ function updateArticleFilterContext(articles) {
   elements.articleFilterContext.textContent = contextParts.length
     ? `Showing ${countLabel} for ${contextParts.join(" + ")}`
     : "";
+}
+
+function getIntelligenceFeedModeLabel(profileDisplay) {
+  if (profileDisplay?.id === "passport_authority") {
+    return IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_OPTIONS[getIdentityDocumentAuthorityStrictness()]?.label || "Focused";
+  }
+  const mode = normalizePersonalDashboardMode(state.personalDashboard.mode);
+  return mode === "strict" ? "Focused" : mode === "broad" ? "Research mode" : "Balanced";
+}
+
+function appendIntelligenceContextChip(fragment, label, options = {}) {
+  const removable = Boolean(options.action || options.interestId);
+  const chip = document.createElement(removable ? "button" : "span");
+  chip.className = "intelligence-context-chip";
+  chip.textContent = label;
+  if (chip instanceof HTMLButtonElement) {
+    chip.type = "button";
+    chip.dataset.feedContextAction = options.action || "interest";
+    if (options.interestId) {
+      chip.dataset.interestId = options.interestId;
+    }
+    chip.setAttribute("aria-label", `${options.ariaLabel || `Remove ${label}`}`);
+    const remove = document.createElement("span");
+    remove.className = "intelligence-context-chip-remove";
+    remove.setAttribute("aria-hidden", "true");
+    remove.textContent = "×";
+    chip.appendChild(remove);
+  }
+  fragment.appendChild(chip);
+}
+
+function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false) {
+  if (!elements.intelligenceFeedEyebrow || !elements.intelligenceFeedTitle || !elements.intelligenceFeedContext) {
+    return;
+  }
+
+  const interests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const hasProfile = interests.length > 0;
+  const profileDisplay = getPersonalDashboardProfileDisplay(interests);
+  const selectedFeed = state.filters.feedId ? resolveFeedByIdentity(state.filters.feedId) : null;
+  const sourceGroup = String(state.filters.sourceGroup || "all").trim() || "all";
+  const hasSource = Boolean(selectedFeed || sourceGroup !== "all");
+  const sourceLabel = selectedFeed?.name || (sourceGroup !== "all" ? sourceGroup : "");
+  const displayedResultCount = Number.parseInt(String(elements.resultsCount?.textContent || ""), 10);
+  const hasExplicitCount = articleCount !== null && articleCount !== undefined;
+  const hasDisplayedCount = Number.isFinite(displayedResultCount);
+  const hasCount = !forceLoading && (hasExplicitCount || hasDisplayedCount);
+  const count = Math.max(0, hasExplicitCount ? Number(articleCount) || 0 : hasDisplayedCount ? displayedResultCount : 0);
+  const countLabel = `${count} article${count === 1 ? "" : "s"}`;
+
+  let eyebrow = "Live Stream";
+  let title = "Latest articles";
+  let summary = hasCount
+    ? count ? `${countLabel} available` : "No articles match the current selection"
+    : "Loading articles...";
+
+  if (state.filters.favoritesOnly) {
+    eyebrow = "Saved intelligence";
+    title = "Saved articles";
+    summary = hasCount ? `${countLabel} saved locally on this device` : "Loading saved articles...";
+  } else if (hasProfile && hasSource) {
+    eyebrow = "Your Intelligence Feed";
+    title = `${profileDisplay.label || "Custom profile"} · ${sourceLabel}`;
+    summary = hasCount
+      ? `${countLabel} from selected sources · Source selection is leading`
+      : "Loading selected sources · Source selection is leading";
+  } else if (hasProfile) {
+    eyebrow = "Your Intelligence Feed";
+    title = profileDisplay.label || "Custom profile";
+    summary = hasCount ? `${countLabel} matched your profile` : "Loading articles matched to your profile...";
+  } else if (hasSource) {
+    eyebrow = "Tracked Source Feed";
+    title = sourceLabel;
+    summary = hasCount ? `${countLabel} from selected sources` : "Loading articles from selected sources...";
+  }
+
+  elements.intelligenceFeedEyebrow.textContent = eyebrow;
+  elements.intelligenceFeedTitle.textContent = title;
+  if (elements.intelligenceFeedSummary) {
+    elements.intelligenceFeedSummary.textContent = summary;
+  }
+
+  const fragment = document.createDocumentFragment();
+  if (hasProfile) {
+    appendIntelligenceContextChip(fragment, `Profile: ${profileDisplay.label || "Custom profile"}`, {
+      action: "profile",
+      ariaLabel: "Clear active profile",
+    });
+    appendIntelligenceContextChip(fragment, `Mode: ${getIntelligenceFeedModeLabel(profileDisplay)}`);
+  }
+  if (hasSource) {
+    appendIntelligenceContextChip(fragment, `Source: ${sourceLabel}`, {
+      action: selectedFeed ? "feed" : "source-group",
+      ariaLabel: `Clear source ${sourceLabel}`,
+    });
+  }
+  interests.slice(0, 3).forEach((interestId) => {
+    const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
+    if (interest?.label) {
+      appendIntelligenceContextChip(fragment, interest.label, {
+        interestId,
+        ariaLabel: `Remove interest ${interest.label}`,
+      });
+    }
+  });
+  if (interests.length > 3) {
+    appendIntelligenceContextChip(fragment, `+${interests.length - 3} interests`);
+  }
+  elements.intelligenceFeedContext.replaceChildren(fragment);
 }
 
 function getGroupedArticleStateKey(article) {
@@ -61319,6 +61428,32 @@ function bindEvents() {
       }
 
       clearActiveFilter(button.dataset.clearFilter || "");
+    });
+  }
+
+  if (elements.intelligenceFeedContext) {
+    elements.intelligenceFeedContext.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+      const chip = target?.closest("[data-feed-context-action]");
+      if (!chip) {
+        return;
+      }
+
+      const action = chip.dataset.feedContextAction || "";
+      if (action === "profile") {
+        clearPersonalDashboardPreferences();
+        invalidateProfileTodaySummary();
+        renderPersonalDashboard();
+        renderSummary();
+        clearFeedRenderCaches();
+        scheduleRenderArticles("intelligence-context-clear-profile", { mode: "frame" });
+      } else if (action === "feed") {
+        clearActiveFilter("feed");
+      } else if (action === "source-group") {
+        clearActiveFilter("source-group");
+      } else if (action === "interest") {
+        setPersonalDashboardInterest(chip.dataset.interestId || "", false);
+      }
     });
   }
 
