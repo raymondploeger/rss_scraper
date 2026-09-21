@@ -1497,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "profile-source-scope-226";
+const APP_BUILD = "dmv-source-only-scope-227";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -6458,6 +6458,14 @@ function compareVendorsProfileArticlesByProducerPriority(left, right, fallbackCo
 
 function applyIdentityDocumentBundleQualityGateToArticles(articles = []) {
   const sourceArticles = Array.isArray(articles) ? articles : [];
+  const queryContext = getActiveArticleQueryContext();
+  if (queryContext.sourceOnly && shouldUseSelectedFeedAsProfileScope()) {
+    return {
+      active: false,
+      articles: sourceArticles,
+      rejectedCount: 0,
+    };
+  }
   if (!shouldUseIdentityDocumentBundleQualityGate()) {
     return {
       active: false,
