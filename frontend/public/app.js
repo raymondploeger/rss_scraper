@@ -1497,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "dmv-source-only-scope-227";
+const APP_BUILD = "tracked-source-group-scope-228";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -6459,7 +6459,10 @@ function compareVendorsProfileArticlesByProducerPriority(left, right, fallbackCo
 function applyIdentityDocumentBundleQualityGateToArticles(articles = []) {
   const sourceArticles = Array.isArray(articles) ? articles : [];
   const queryContext = getActiveArticleQueryContext();
-  if (queryContext.sourceOnly && shouldUseSelectedFeedAsProfileScope()) {
+  if (
+    (queryContext.sourceOnly && shouldUseSelectedFeedAsProfileScope()) ||
+    (queryContext.hasSourceGroup && !queryContext.hasSelectedFeed)
+  ) {
     return {
       active: false,
       articles: sourceArticles,
@@ -18074,6 +18077,11 @@ function getIdentityProfessionalRelevanceGuardAssessment(article, options = {}) 
 
 function articlePassesLegacyIdentityProfessionalRelevance(article, options = {}) {
   if (!shouldApplyIdentityProfessionalRelevanceGuard(options)) {
+    return true;
+  }
+
+  const queryContext = getActiveArticleQueryContext();
+  if (queryContext.hasSourceGroup && !queryContext.hasSelectedFeed) {
     return true;
   }
 
@@ -51972,6 +51980,7 @@ function articleMatchesFilters(article, options = {}) {
 
   if (
     !ignorePersonalDashboard &&
+    (state.filters.sourceGroup || "all") === "all" &&
     !measureFilterSegment("personalDashboard", () => articleMatchesPersonalDashboardSelection(article, {
       timingContext: filterTimingContext,
     }))
@@ -56384,6 +56393,11 @@ function buildPersonalDashboardBackendQueryParamsList() {
     return [applyBackendArticleQueryBaseParams()];
   }
 
+  const sourceGroup = String(state.filters.sourceGroup || "all").trim() || "all";
+  if (sourceGroup !== "all") {
+    return [applyBackendArticleQueryBaseParams({ limit: MAX_ARTICLES_IN_MEMORY })];
+  }
+
   const requestParamsList = [];
   const seenKeys = new Set();
   const planPerRequestLimit = Number(plan.perRequestLimit);
@@ -56601,7 +56615,11 @@ async function ensureBackendArticleQueryData() {
     })
     .slice(0, backendCandidateLimit);
   let normalizedArticles = dedupedRawArticles.map(normalizeLoadedArticle);
-  if (personalDomainPlan?.domain === "identity_documents") {
+  const queryContext = getActiveArticleQueryContext();
+  if (
+    personalDomainPlan?.domain === "identity_documents" &&
+    !(queryContext.hasSourceGroup && !queryContext.hasSelectedFeed)
+  ) {
     normalizedArticles = normalizedArticles.filter((article) => !shouldExcludeIdentityDocumentsRetrievalCandidate(article));
   }
   const totalCount = normalizedArticles.length;
@@ -57119,7 +57137,10 @@ function applyPersonalDashboardStage({ articles, diagnostics } = {}) {
 function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
   const inputArticles = Array.isArray(articles) ? articles : [];
   const queryContext = getActiveArticleQueryContext();
-  if (!queryContext.hasProfile && (queryContext.sourceOnly || queryContext.hasSourceGroup)) {
+  if (
+    (!queryContext.hasProfile && queryContext.sourceOnly) ||
+    (queryContext.hasSourceGroup && !queryContext.hasSelectedFeed)
+  ) {
     inputArticles.forEach((article) => {
       recordFilterDecisionStage(diagnostics, article, {
         stage: "personal_dashboard",
@@ -57589,7 +57610,10 @@ function applyAdvancedFiltersStage({ articles, advancedFilterOptions, diagnostic
 function applyIdentityProfessionalRelevanceGuardStage({ articles, branch, diagnostics } = {}) {
   const inputArticles = Array.isArray(articles) ? articles : [];
   const queryContext = getActiveArticleQueryContext();
-  if (queryContext.sourceOnly && !queryContext.hasProfile) {
+  if (
+    (queryContext.sourceOnly && !queryContext.hasProfile) ||
+    (queryContext.hasSourceGroup && !queryContext.hasSelectedFeed)
+  ) {
     return {
       articles: inputArticles,
       stage: createFilterPipelineStageResult(
@@ -57682,7 +57706,10 @@ function applyDigitalIdentityProfessionalGuardStage({ articles, branch, diagnost
 function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, diagnostics } = {}) {
   const inputArticles = Array.isArray(articles) ? articles : [];
   const queryContext = getActiveArticleQueryContext();
-  if (queryContext.sourceOnly && !queryContext.hasProfile) {
+  if (
+    (queryContext.sourceOnly && !queryContext.hasProfile) ||
+    (queryContext.hasSourceGroup && !queryContext.hasSelectedFeed)
+  ) {
     return {
       articles: inputArticles,
       stage: createFilterPipelineStageResult(
