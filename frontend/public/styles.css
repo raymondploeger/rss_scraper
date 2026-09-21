@@ -2785,7 +2785,6 @@ button.intelligence-context-chip:focus-visible .intelligence-context-chip-remove
   margin-left: auto;
 }
 
-.article-open-action,
 .article-share-toggle {
   display: inline-flex;
   align-items: center;
@@ -2800,31 +2799,22 @@ button.intelligence-context-chip:focus-visible .intelligence-context-chip-remove
   text-decoration: none;
 }
 
-.article-open-action {
-  gap: 6px;
-  padding: 0 13px;
-}
-
 .article-share-toggle {
-  width: 38px;
-  padding: 0;
+  padding: 0 13px;
   cursor: pointer;
   list-style: none;
-  letter-spacing: 1px;
 }
 
 .article-share-toggle::-webkit-details-marker {
   display: none;
 }
 
-.article-open-action:hover,
 .article-share-toggle:hover,
 .article-share-actions[open] .article-share-toggle {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
 
-.article-open-action:focus-visible,
 .article-share-toggle:focus-visible {
   outline: 2px solid rgba(25, 44, 112, 0.24);
   outline-offset: 2px;
