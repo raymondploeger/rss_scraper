@@ -1,4 +1,5 @@
 import { createFilterContract, FILTER_CONTRACT_VERSION } from "./filter-contract.js";
+import { evaluateProfilePolicyEvidence, getProfilePolicyDefinition } from "./profile-policies.js";
 
 const PLACEHOLDER_IMAGE = "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image";
 const THEME_STORAGE_KEY = "rss-monitor-theme";
@@ -1499,7 +1500,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "filter-contract-shadow-236";
+const APP_BUILD = "profile-policy-evidence-238";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -5856,26 +5857,12 @@ function getProfileSourceFilteringAssessment(article, selectedInterests) {
     normalizedInterests
   );
 
-  if (queryContext.sourceOnly && selectedFeedScope?.compatible) {
-    return {
-      mode: "source_only",
-      applies: true,
-      passed: true,
-      reason: `source_only:${selectedFeedScope.reason}`,
-      sourceProfileAffinityRule,
-    };
-  }
-
   if (queryContext.hasSelectedFeed && selectedFeedScope?.compatible) {
-    if (isBorderControlProfileSelection(normalizedInterests)) {
-      return getSelectedSourceBorderControlFilteringAssessment(article, sourceProfileAffinityRule);
-    }
-
     return {
-      mode: "selected_source",
-      applies: true,
+      mode: queryContext.sourceOnly ? "source_only_context" : "selected_source_context",
+      applies: false,
       passed: true,
-      reason: `selected_source:${selectedFeedScope.reason}`,
+      reason: `selected_source_requires_profile_match:${selectedFeedScope.reason}`,
       sourceProfileAffinityRule,
     };
   }
@@ -5891,29 +5878,15 @@ function getProfileSourceFilteringAssessment(article, selectedInterests) {
 
   if (sourceProfileAffinityRule) {
     const broadIdentitySourceProfileContextAssessment = getBroadIdentitySourceProfileContextAssessment(article, normalizedInterests);
-    if (
-      !queryContext.hasSelectedFeed &&
-      selectedMainDomains.includes("identity_documents") &&
-      broadIdentitySourceProfileContextAssessment.applies
-    ) {
-      return {
-        mode: "profile_context",
-        applies: true,
-        passed: broadIdentitySourceProfileContextAssessment.passed,
-        reason: broadIdentitySourceProfileContextAssessment.passed
-          ? `profile_context:${sourceProfileAffinityRule.id}`
-          : "broad_identity_source_profile_context_missing",
-        sourceProfileAffinityRule,
-        contextAssessment: broadIdentitySourceProfileContextAssessment,
-      };
-    }
-
     return {
-      mode: "trusted_specialist",
-      applies: true,
+      mode: "trusted_source_context",
+      applies: false,
       passed: true,
-      reason: `trusted_specialist:${sourceProfileAffinityRule.id}`,
+      reason: `trusted_source_requires_profile_match:${sourceProfileAffinityRule.id}`,
       sourceProfileAffinityRule,
+      contextAssessment: selectedMainDomains.includes("identity_documents")
+        ? broadIdentitySourceProfileContextAssessment
+        : null,
     };
   }
 
@@ -5925,10 +5898,13 @@ function getProfileSourceFilteringAssessment(article, selectedInterests) {
   };
 }
 
-function isAuthoritativeProfileSourceFilteringAssessment(assessment) {
-  return Boolean(
-    assessment?.passed &&
-    ["trusted_specialist", "source_only", "selected_source"].includes(assessment.mode)
+function getActiveProfilePolicyEvidenceAssessment(
+  article,
+  selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)
+) {
+  return evaluateProfilePolicyEvidence(
+    article,
+    getMatchingPersonalDashboardTemplateId(selectedInterests)
   );
 }
 
@@ -8176,11 +8152,12 @@ function createNormalizedFilterState() {
     profilePolicy: {
       id: contractProfileId,
       label: contractProfileLabel,
-      version: 1,
+      version: getProfilePolicyDefinition(contractProfileId)?.version || 1,
       mode: normalizePersonalDashboardMode(state.personalDashboard.mode),
       strictness: normalizeIdentityDocumentAuthorityStrictness(
         state.personalDashboard.identityDocumentAuthorityStrictness
       ),
+      definition: getProfilePolicyDefinition(contractProfileId),
     },
     interestSelection: {
       selected: selectedPersonalInterests,
@@ -18261,11 +18238,7 @@ function articlePassesLegacyIdentityProfessionalRelevance(article, options = {})
     return true;
   }
 
-  const sourceFilteringAssessment = getProfileSourceFilteringAssessment(
-    article,
-    normalizePersonalDashboardInterests(state.personalDashboard.interests)
-  );
-  if (isAuthoritativeProfileSourceFilteringAssessment(sourceFilteringAssessment)) {
+  if (getActiveProfilePolicyEvidenceAssessment(article).passed) {
     return true;
   }
 
@@ -43696,6 +43669,17 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
     );
   }
 
+  const explicitProfilePolicyAssessment = measurePersonalDashboardSegment("explicitProfilePolicyEvidence", () =>
+    getActiveProfilePolicyEvidenceAssessment(article, selectedInterests)
+  );
+  if (explicitProfilePolicyAssessment.applies && explicitProfilePolicyAssessment.passed) {
+    return finishPersonalDashboardTiming(true, explicitProfilePolicyAssessment.reason, {
+      policyVersion: explicitProfilePolicyAssessment.policyVersion,
+      matchedPolicyAnchors: explicitProfilePolicyAssessment.matchedAnchors,
+      matchedPolicyEvents: explicitProfilePolicyAssessment.matchedEvents,
+    });
+  }
+
   const vendorsProfileAssessment = measurePersonalDashboardSegment("vendorsProfileProfessionalGuard", () =>
     getVendorsProfileProfessionalGuard(article, selectedInterests)
   );
@@ -58148,20 +58132,18 @@ function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, 
 
   const outputArticles = [];
   inputArticles.forEach((article) => {
-    const sourceFilteringAssessment = getProfileSourceFilteringAssessment(
-      article,
-      normalizePersonalDashboardInterests(state.personalDashboard.interests)
-    );
-    if (isAuthoritativeProfileSourceFilteringAssessment(sourceFilteringAssessment)) {
+    const explicitProfilePolicyAssessment = getActiveProfilePolicyEvidenceAssessment(article);
+    if (explicitProfilePolicyAssessment.passed) {
       recordFilterDecisionStage(diagnostics, article, {
         stage: "digital_identity_professional_guard",
         result: "passed",
-        reason: sourceFilteringAssessment.reason,
-        notes: ["Explicit profile-to-source affinity remained authoritative after content quality guards"],
+        reason: explicitProfilePolicyAssessment.reason,
+        notes: ["Explicit profile content evidence satisfied the professional relevance guard"],
         metadata: {
           enabled: true,
-          trustedSpecialistSource: true,
-          sourceProfileAffinityRule: sourceFilteringAssessment.sourceProfileAffinityRule,
+          policyVersion: explicitProfilePolicyAssessment.policyVersion,
+          matchedAnchors: explicitProfilePolicyAssessment.matchedAnchors,
+          matchedEvents: explicitProfilePolicyAssessment.matchedEvents,
         },
       });
       outputArticles.push(article);

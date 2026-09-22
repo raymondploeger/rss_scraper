@@ -51,6 +51,9 @@ function normalizeSourceScope(source = {}) {
 
 function normalizeProfilePolicy(profile = {}) {
   const id = String(profile.id || "").trim();
+  const definition = profile.definition && typeof profile.definition === "object"
+    ? profile.definition
+    : null;
   return {
     active: Boolean(id),
     id,
@@ -59,6 +62,10 @@ function normalizeProfilePolicy(profile = {}) {
     mode: String(profile.mode || "balanced").trim() || "balanced",
     strictness: String(profile.strictness || "").trim(),
     rule: id ? "REQUIRED" : "INACTIVE",
+    domains: uniqueStrings(definition?.domains),
+    requiredEvidence: uniqueStrings(definition?.requiredEvidence),
+    preferredEvidence: uniqueStrings(definition?.preferredEvidence),
+    excludedEvidence: uniqueStrings(definition?.excludedEvidence),
   };
 }
 

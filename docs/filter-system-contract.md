@@ -22,4 +22,8 @@ This document fixes the intended semantics before the legacy filter engine is re
 
 Version 1 runs as `shadow_contract`. It is attached to the existing normalized filter state and diagnostics, while the legacy engine remains responsible for production decisions. This makes current selections inspectable without changing results during steps 1 and 2.
 
+Each Start Profile now also has an explicit versioned policy in `frontend/public/profile-policies.js`. Source compatibility and source authority are context signals only: they may support evidence or ranking, but they cannot create an automatic profile pass.
+
+The first production migration slice evaluates explicit content evidence (an anchor plus a professional event) before the legacy profile matcher. That evidence may satisfy later professional guards because it is derived from article content, never merely from the selected feed or source reputation. Legacy matching remains as a fallback until all interests and quality rules have moved to the unified evaluator.
+
 The behavior corpus in `tests/fixtures/filter-behavior-corpus.json` contains the initial positive and negative examples. These examples become executable decision tests when the unified evaluator is introduced.
