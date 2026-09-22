@@ -2780,6 +2780,101 @@ button.intelligence-context-chip:focus-visible .intelligence-context-chip-remove
   position: relative;
 }
 
+.article-why {
+  margin: -2px 22px 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.article-why[hidden] {
+  display: none;
+}
+
+.article-why > summary {
+  width: max-content;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 800;
+  list-style: none;
+}
+
+.article-why > summary::-webkit-details-marker {
+  display: none;
+}
+
+.article-why > summary::after {
+  content: " ›";
+}
+
+.article-why[open] > summary::after {
+  content: " ↓";
+}
+
+.article-why > summary:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.article-why > summary:focus-visible {
+  outline: 2px solid rgba(25, 44, 112, 0.24);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.article-why-panel {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--accent-soft);
+}
+
+.article-why-eyebrow {
+  color: var(--accent);
+  font-size: 0.64rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.article-why-profile {
+  font-size: 0.82rem;
+}
+
+.article-why-reason {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.article-why-signals {
+  display: grid;
+  gap: 4px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.article-why-signals li {
+  position: relative;
+  padding-left: 18px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.article-why-signals li::before {
+  position: absolute;
+  left: 0;
+  color: var(--success);
+  content: "✓";
+  font-weight: 900;
+}
+
 .article-share-actions {
   position: relative;
   margin-left: auto;

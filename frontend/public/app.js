@@ -1497,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "article-card-actions-233";
+const APP_BUILD = "why-this-article-mvp-234";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4579,6 +4579,125 @@ function getPersonalDashboardProfileDisplay(interests = state.personalDashboard.
   };
 }
 
+function getArticleDecisionReceiptKey(article) {
+  return String(getFavoriteArticleIdentity(article) || article?.id || "").trim();
+}
+
+function getArticleDecisionReceiptSignature(interests = state.personalDashboard.interests) {
+  return JSON.stringify({
+    interests: normalizePersonalDashboardInterests(interests).slice().sort(),
+    mode: normalizePersonalDashboardMode(state.personalDashboard?.mode),
+    strictness: normalizeIdentityDocumentAuthorityStrictness(
+      state.personalDashboard?.identityDocumentAuthorityStrictness
+    ),
+    feedId: String(state.filters?.feedId || ""),
+    sourceGroup: String(state.filters?.sourceGroup || "all"),
+    trackedSourcesAll: Boolean(state.filters?.trackedSourcesAll),
+  });
+}
+
+function getArticleDecisionReasonLabel(reason = "") {
+  const labels = {
+    identity_documents_passed: "Identity-document evidence matched your profile",
+    digital_identity_passed: "Digital identity evidence matched your profile",
+    banknote_interest_passed: "Banknote intelligence matched your profile",
+    banknote_parent_gate_passed: "Banknote intelligence matched your selected focus",
+    banknote_domain_passed: "Banknote domain evidence matched your profile",
+    shared_security_only_passed: "Security-printing evidence matched your profile",
+    shared_security_bridge_passed: "Document and security-printing evidence matched together",
+    shared_security_technique_passed: "Security technology evidence matched your profile",
+    vendors_profile_guard_passed: "A specialist industry source matched your vendor profile",
+  };
+  return labels[reason] || "Matched the active professional profile";
+}
+
+function getArticleDecisionSourceSignal(article) {
+  const feed = resolveFeedByIdentity(article?.feedId);
+  const sourceName = String(feed?.name || article?.source || "Tracked source").trim();
+  const sourceGroup = feed ? getFeedGroupName(feed) : "";
+  let label = `Tracked source: ${sourceName}`;
+  if (feed && isGovernmentSource(feed)) {
+    label = `Official government source: ${sourceName}`;
+  } else if (sourceGroup === "Vendors") {
+    label = `Specialist industry source: ${sourceName}`;
+  }
+  return { label, sourceName, sourceGroup };
+}
+
+function recordArticleDecisionReceipt(article, options = {}) {
+  const selectedInterests = normalizePersonalDashboardInterests(options.selectedInterests || []);
+  if (!article || !selectedInterests.length || options.passed === false) {
+    return null;
+  }
+
+  const articleKey = getArticleDecisionReceiptKey(article);
+  if (!articleKey) {
+    return null;
+  }
+
+  const matchedInterestIds = normalizePersonalDashboardInterests(options.matchedInterestIds || [])
+    .filter((interestId) => selectedInterests.includes(interestId));
+  const matchedInterestLabels = matchedInterestIds
+    .map((interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.label || "")
+    .filter(Boolean)
+    .slice(0, 3);
+  const sourceSignal = getArticleDecisionSourceSignal(article);
+  const reason = String(options.reason || "profile_match");
+  const signals = [
+    ...matchedInterestLabels.slice(0, options.sourceLeading ? 0 : 2),
+    ...(options.sourceLeading ? ["Selected tracked source"] : []),
+    sourceSignal.label,
+  ].filter(Boolean).slice(0, 3);
+  const profileDisplay = getPersonalDashboardProfileDisplay(selectedInterests);
+  const receipt = Object.freeze({
+    articleId: articleKey,
+    signature: getArticleDecisionReceiptSignature(selectedInterests),
+    profileLabel: profileDisplay.label || "Custom profile",
+    modeLabel: getIntelligenceFeedModeLabel(profileDisplay),
+    reason,
+    reasonLabel: options.sourceLeading
+      ? "Included because the selected source is leading this feed"
+      : getArticleDecisionReasonLabel(reason),
+    matchedInterestIds: Object.freeze(matchedInterestIds.slice(0, 3)),
+    matchedInterestLabels: Object.freeze(matchedInterestLabels),
+    signals: Object.freeze(signals),
+    sourceName: sourceSignal.sourceName,
+    sourceGroup: sourceSignal.sourceGroup,
+    sourceLeading: Boolean(options.sourceLeading),
+  });
+
+  runtime.articleDecisionReceiptMap.set(articleKey, receipt);
+  if (runtime.articleDecisionReceiptMap.size > 2000) {
+    const oldestKey = runtime.articleDecisionReceiptMap.keys().next().value;
+    runtime.articleDecisionReceiptMap.delete(oldestKey);
+  }
+  return receipt;
+}
+
+function getArticleDecisionReceipt(article) {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  if (!selectedInterests.length) {
+    return null;
+  }
+  const articleKey = getArticleDecisionReceiptKey(article);
+  const existing = runtime.articleDecisionReceiptMap.get(articleKey) || null;
+  const signature = getArticleDecisionReceiptSignature(selectedInterests);
+  if (existing?.signature === signature) {
+    return existing;
+  }
+
+  const queryContext = getActiveArticleQueryContext();
+  if (queryContext.hasSelectedFeed || queryContext.hasSourceGroup) {
+    return recordArticleDecisionReceipt(article, {
+      passed: true,
+      selectedInterests,
+      reason: "selected_source_leading",
+      sourceLeading: true,
+    });
+  }
+  return null;
+}
+
 function isPersonalDashboardProfileBundleSelection(interests = state.personalDashboard.interests) {
   const templateId = getMatchingPersonalDashboardTemplateId(interests);
   return Boolean(templateId && templateId !== "custom");
@@ -7431,6 +7550,7 @@ const runtime = {
   filterPipelineRenderId: 0,
   filterDecisionTraceMap: new Map(),
   personalDashboardScoreMap: new Map(),
+  articleDecisionReceiptMap: new Map(),
   activeProductionDecisionLedger: null,
   latestProductionDecisionLedgerSummary: null,
   renderedFavoriteArticleLookup: new Map(),
@@ -26666,6 +26786,37 @@ function setArticleShareButtonState(container, article) {
   });
 }
 
+function renderArticleDecisionReceipt(container, article) {
+  if (!container) {
+    return;
+  }
+  const receipt = getArticleDecisionReceipt(article);
+  if (!receipt) {
+    container.hidden = true;
+    container.removeAttribute("open");
+    return;
+  }
+
+  const profile = container.querySelector(".article-why-profile");
+  const reason = container.querySelector(".article-why-reason");
+  const signals = container.querySelector(".article-why-signals");
+  container.hidden = false;
+  if (profile) {
+    profile.textContent = [receipt.profileLabel, receipt.modeLabel].filter(Boolean).join(" · ");
+  }
+  if (reason) {
+    reason.textContent = receipt.reasonLabel;
+  }
+  if (signals) {
+    signals.replaceChildren();
+    receipt.signals.forEach((signal) => {
+      const item = document.createElement("li");
+      item.textContent = signal;
+      signals.appendChild(item);
+    });
+  }
+}
+
 function handleArticleShareButton(button) {
   if (!(button instanceof HTMLElement)) {
     return false;
@@ -26879,6 +27030,7 @@ function renderSavedArticleCard(article) {
   const card = node.querySelector(".article-card");
   const favoriteButton = node.querySelector(".article-favorite-button");
   const shareActions = node.querySelector(".article-share-actions");
+  const whyArticle = node.querySelector(".article-why");
   const link = node.querySelector(".article-link");
   const image = node.querySelector(".article-image");
   const topic = node.querySelector(".article-topic");
@@ -26904,6 +27056,7 @@ function renderSavedArticleCard(article) {
     }
   }
   setArticleShareButtonState(shareActions, article);
+  renderArticleDecisionReceipt(whyArticle, article);
 
   if (link) {
     link.href = getPreferredArticleOpenUrl(article);
@@ -43431,6 +43584,7 @@ function articleMatchesPersonalDashboardSelection(article, options = {}) {
 
 function articleMatchesPersonalDashboardSelectionMeasured(article, options = {}) {
   incrementFilterPerformanceCounter("personalInterestAssessmentCount");
+  let selectedInterests = [];
   const personalDashboardTimingContext = typeof options.timingContext === "string" ? options.timingContext : "";
   const personalDashboardTimingEnabled = Boolean(personalDashboardTimingContext && runtime.activeProductionLoadTimingRun);
   const personalDashboardTimingStartedAt = personalDashboardTimingEnabled ? getPerformanceNow() : 0;
@@ -43450,7 +43604,7 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
       );
     }
   };
-  const finishPersonalDashboardTiming = (passed, reason) => {
+  const finishPersonalDashboardTiming = (passed, reason, receiptOptions = {}) => {
     if (personalDashboardTimingEnabled) {
       recordProductionLoadTimingBreakdown(
         "articleMatchesPersonalDashboardSelection",
@@ -43463,10 +43617,18 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
         }
       );
     }
+    if (passed && selectedInterests.length) {
+      recordArticleDecisionReceipt(article, {
+        passed,
+        reason,
+        selectedInterests,
+        ...receiptOptions,
+      });
+    }
     return passed;
   };
 
-  const selectedInterests = measurePersonalDashboardSegment("normalizeSelectedInterests", () =>
+  selectedInterests = measurePersonalDashboardSegment("normalizeSelectedInterests", () =>
     normalizePersonalDashboardInterests(state.personalDashboard.interests)
   );
   if (!selectedInterests.length) {
@@ -43741,7 +43903,13 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
     }
     return finishPersonalDashboardTiming(
       identityScopeAssessment.passed && sharedSecurityTechniqueMatched,
-      identityScopeAssessment.passed && sharedSecurityTechniqueMatched ? "identity_documents_passed" : "identity_documents_rejected"
+      identityScopeAssessment.passed && sharedSecurityTechniqueMatched ? "identity_documents_passed" : "identity_documents_rejected",
+      {
+        matchedInterestIds: [
+          ...(identityScopeAssessment.matchedObjectInterests || []),
+          ...(identityScopeAssessment.matchedIntelligenceInterests || []),
+        ],
+      }
     );
   }
 
@@ -43751,13 +43919,14 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
         (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "digital_identity_biometrics"
       )
     );
-    const digitalScopeMatched = !selectedDigitalInterests.length
-      || measurePersonalDashboardSegment("digitalSubgroupHybridAssessment", () =>
-        selectedDigitalInterests.some((interestId) => getDigitalSubgroupHybridAssessment(article, interestId).included)
-      );
+    const matchedDigitalInterests = measurePersonalDashboardSegment("digitalSubgroupHybridAssessment", () =>
+      selectedDigitalInterests.filter((interestId) => getDigitalSubgroupHybridAssessment(article, interestId).included)
+    );
+    const digitalScopeMatched = !selectedDigitalInterests.length || matchedDigitalInterests.length > 0;
     return finishPersonalDashboardTiming(
       digitalScopeMatched && sharedSecurityTechniqueMatched,
-      digitalScopeMatched && sharedSecurityTechniqueMatched ? "digital_identity_passed" : "digital_identity_rejected"
+      digitalScopeMatched && sharedSecurityTechniqueMatched ? "digital_identity_passed" : "digital_identity_rejected",
+      { matchedInterestIds: matchedDigitalInterests }
     );
   }
 
@@ -56049,6 +56218,7 @@ function renderArticleCard(article) {
   const card = node.querySelector(".article-card");
   const favoriteButton = node.querySelector(".article-favorite-button");
   const shareActions = node.querySelector(".article-share-actions");
+  const whyArticle = node.querySelector(".article-why");
   const link = node.querySelector(".article-link");
   const image = node.querySelector(".article-image");
   const topic = node.querySelector(".article-topic");
@@ -56081,6 +56251,7 @@ function renderArticleCard(article) {
     }
   }
   setArticleShareButtonState(shareActions, article);
+  renderArticleDecisionReceipt(whyArticle, article);
 
   if (card && isGroupedSourcesExpanded && groupedSources.length) {
     card.classList.add("article-card--sources-expanded");
