@@ -1,3 +1,5 @@
+import { createFilterContract, FILTER_CONTRACT_VERSION } from "./filter-contract.js";
+
 const PLACEHOLDER_IMAGE = "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image";
 const THEME_STORAGE_KEY = "rss-monitor-theme";
 const FEED_PANEL_COLLAPSED_STORAGE_KEY = "feedPanelCollapsed";
@@ -1497,7 +1499,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "profile-source-intersection-235";
+const APP_BUILD = "filter-contract-shadow-236";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -8141,6 +8143,14 @@ function freezeNormalizedFilterState(value) {
 function createNormalizedFilterState() {
   const selectedPersonalInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const selectedFeed = state.filters.feedId ? resolveFeedByIdentity(state.filters.feedId) : null;
+  const profileDisplay = getPersonalDashboardProfileDisplay(selectedPersonalInterests);
+  const activeTemplateId = String(state.personalDashboard.activeTemplateId || "").trim();
+  const contractProfileId = PERSONAL_DASHBOARD_PROFILE_TEMPLATES[activeTemplateId]
+    ? activeTemplateId
+    : profileDisplay.id || "";
+  const contractProfileLabel = PERSONAL_DASHBOARD_PROFILE_TEMPLATES[contractProfileId]?.label
+    || profileDisplay.label
+    || "";
   const selectedBanknoteInterests = selectedPersonalInterests.filter(
     (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "banknote_intelligence"
   );
@@ -8149,20 +8159,62 @@ function createNormalizedFilterState() {
   const selectedDigitalIdentityInterests = selectedPersonalInterests.filter(
     (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "digital_identity_biometrics"
   );
+  const interestsByGroup = {
+    banknote_intelligence: selectedBanknoteInterests,
+    identity_documents: selectedIdentityInterests,
+    security_printing: selectedSharedSecurityInterests,
+    digital_identity_biometrics: selectedDigitalIdentityInterests,
+  };
+  const filterContract = createFilterContract({
+    sourceScope: {
+      feedId: state.filters.feedId || "",
+      resolvedFeedId: selectedFeed?.id || "",
+      group: state.filters.sourceGroup || "all",
+      trackedSourcesAll: Boolean(state.filters.trackedSourcesAll),
+      sourceOnly: isSourceOnlyFeedViewActive(),
+    },
+    profilePolicy: {
+      id: contractProfileId,
+      label: contractProfileLabel,
+      version: 1,
+      mode: normalizePersonalDashboardMode(state.personalDashboard.mode),
+      strictness: normalizeIdentityDocumentAuthorityStrictness(
+        state.personalDashboard.identityDocumentAuthorityStrictness
+      ),
+    },
+    interestSelection: {
+      selected: selectedPersonalInterests,
+      byGroup: interestsByGroup,
+    },
+    advancedFilters: {
+      search: state.filters.search || "",
+      topic: state.filters.topic || "",
+      tag: state.filters.tag || "",
+      signal: state.filters.signalCategory || "",
+      date: state.filters.date || "",
+      includeKeywords: state.keywordFilters?.include || [],
+      excludeKeywords: state.keywordFilters?.exclude || [],
+    },
+  });
 
   return freezeNormalizedFilterState({
+    contractVersion: FILTER_CONTRACT_VERSION,
+    contract: filterContract,
     feed: {
       id: state.filters.feedId || "",
       resolvedId: selectedFeed?.id || "",
       name: getSelectedFeedLabel(),
       sourceOnly: isSourceOnlyFeedViewActive(),
       sourceGroup: state.filters.sourceGroup || "all",
+      trackedSourcesAll: Boolean(state.filters.trackedSourcesAll),
       dmvFeedId: state.filters.dmvFeedId || "",
       canadaDmvFeedPath: state.filters.canadaDmvFeedPath || "",
       canadaDmvAll: Boolean(state.filters.canadaDmvAll),
     },
     dashboard: {
       enabled: hasPersonalDashboardSelections(),
+      profileId: contractProfileId,
+      profileLabel: contractProfileLabel,
       mode: normalizePersonalDashboardMode(state.personalDashboard.mode),
       mainDomains: getSelectedMainDomains(selectedPersonalInterests),
       selectedInterests: selectedPersonalInterests,
@@ -8202,14 +8254,18 @@ function serializeNormalizedFilterState(normalizedFilterState) {
   }
 
   return JSON.stringify({
+    contractVersion: normalizedFilterState.contractVersion || FILTER_CONTRACT_VERSION,
+    contract: normalizedFilterState.contract || null,
     feed: {
       id: normalizedFilterState.feed?.id || "",
       sourceGroup: normalizedFilterState.feed?.sourceGroup || "all",
+      trackedSourcesAll: Boolean(normalizedFilterState.feed?.trackedSourcesAll),
       dmvFeedId: normalizedFilterState.feed?.dmvFeedId || "",
       canadaDmvFeedPath: normalizedFilterState.feed?.canadaDmvFeedPath || "",
       canadaDmvAll: Boolean(normalizedFilterState.feed?.canadaDmvAll),
     },
     dashboard: {
+      profileId: normalizedFilterState.dashboard?.profileId || "",
       mode: normalizedFilterState.dashboard?.mode || "balanced",
       selectedInterests: normalizedFilterState.dashboard?.selectedInterests || [],
       mainDomains: normalizedFilterState.dashboard?.mainDomains || [],

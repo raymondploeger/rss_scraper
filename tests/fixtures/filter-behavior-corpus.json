@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "purpose": "Golden behavior examples for the unified source, profile, and interest filter contract.",
+  "cases": [
+    {
+      "id": "central-bank-google-alert-banknote",
+      "selection": { "profileId": "central_bank", "sourceGroup": "Google Alerts", "interests": [] },
+      "article": { "title": "Central bank unveils new polymer banknote design", "sourceGroup": "Google Alerts" },
+      "expected": { "sourceScope": true, "profilePolicy": true, "interestRefinement": true, "qualityNoise": true, "final": true }
+    },
+    {
+      "id": "central-bank-google-alert-forex-noise",
+      "selection": { "profileId": "central_bank", "sourceGroup": "Google Alerts", "interests": [] },
+      "article": { "title": "Dollar rises after central bank interest-rate decision", "sourceGroup": "Google Alerts" },
+      "expected": { "sourceScope": true, "profilePolicy": false, "interestRefinement": true, "qualityNoise": false, "final": false }
+    },
+    {
+      "id": "central-bank-wrong-source-group",
+      "selection": { "profileId": "central_bank", "sourceGroup": "Google Alerts", "interests": [] },
+      "article": { "title": "Central bank issues redesigned banknote", "sourceGroup": "Government" },
+      "expected": { "sourceScope": false, "profilePolicy": true, "interestRefinement": true, "qualityNoise": true, "final": false }
+    },
+    {
+      "id": "identity-authority-passport-renewal",
+      "selection": { "profileId": "passport_authority", "sourceGroup": "Canada", "interests": [] },
+      "article": { "title": "Canada expands online passport renewal", "sourceGroup": "Canada" },
+      "expected": { "sourceScope": true, "profilePolicy": true, "interestRefinement": true, "qualityNoise": true, "final": true }
+    },
+    {
+      "id": "identity-authority-general-government-noise",
+      "selection": { "profileId": "passport_authority", "sourceGroup": "Canada", "interests": [] },
+      "article": { "title": "New campsites available this summer", "sourceGroup": "Canada" },
+      "expected": { "sourceScope": true, "profilePolicy": false, "interestRefinement": true, "qualityNoise": false, "final": false }
+    },
+    {
+      "id": "border-control-operational-update",
+      "selection": { "profileId": "border_control", "sourceGroup": "Government", "interests": [] },
+      "article": { "title": "Entry Exit System biometric border checks begin", "sourceGroup": "Government" },
+      "expected": { "sourceScope": true, "profilePolicy": true, "interestRefinement": true, "qualityNoise": true, "final": true }
+    },
+    {
+      "id": "border-control-travel-queue-noise",
+      "selection": { "profileId": "border_control", "sourceGroup": "Google RSS", "interests": [] },
+      "article": { "title": "Holiday travellers warned of long airport queues", "sourceGroup": "Google RSS" },
+      "expected": { "sourceScope": true, "profilePolicy": false, "interestRefinement": true, "qualityNoise": false, "final": false }
+    },
+    {
+      "id": "security-printer-hologram",
+      "selection": { "profileId": "security_printer", "sourceGroup": "Vendors", "interests": ["holography"] },
+      "article": { "title": "New holographic security feature for identity documents", "sourceGroup": "Vendors" },
+      "expected": { "sourceScope": true, "profilePolicy": true, "interestRefinement": true, "qualityNoise": true, "final": true }
+    },
+    {
+      "id": "security-printer-missing-hologram-refinement",
+      "selection": { "profileId": "security_printer", "sourceGroup": "Vendors", "interests": ["holography"] },
+      "article": { "title": "Secure document personalization platform launched", "sourceGroup": "Vendors" },
+      "expected": { "sourceScope": true, "profilePolicy": true, "interestRefinement": false, "qualityNoise": true, "final": false }
+    },
+    {
+      "id": "vendors-product-launch",
+      "selection": { "profileId": "vendors", "sourceGroup": "Vendors", "interests": [] },
+      "article": { "title": "Security-document producer launches a new personalization platform", "sourceGroup": "Vendors" },
+      "expected": { "sourceScope": true, "profilePolicy": true, "interestRefinement": true, "qualityNoise": true, "final": true }
+    },
+    {
+      "id": "vendors-generic-corporate-noise",
+      "selection": { "profileId": "vendors", "sourceGroup": "Vendors", "interests": [] },
+      "article": { "title": "Company announces quarterly office catering contract", "sourceGroup": "Vendors" },
+      "expected": { "sourceScope": true, "profilePolicy": false, "interestRefinement": true, "qualityNoise": false, "final": false }
+    },
+    {
+      "id": "identity-verification-authentication",
+      "selection": { "profileId": "identity_verification", "sourceGroup": "Other", "interests": ["authentication"] },
+      "article": { "title": "OpenID authentication standard reaches final specification", "sourceGroup": "Other" },
+      "expected": { "sourceScope": true, "profilePolicy": true, "interestRefinement": true, "qualityNoise": true, "final": true }
+    },
+    {
+      "id": "identity-verification-generic-identity-mention",
+      "selection": { "profileId": "identity_verification", "sourceGroup": "Other", "interests": ["authentication"] },
+      "article": { "title": "Company refreshes its brand identity", "sourceGroup": "Other" },
+      "expected": { "sourceScope": true, "profilePolicy": false, "interestRefinement": false, "qualityNoise": false, "final": false }
+    },
+    {
+      "id": "passport-and-holography-both-match",
+      "selection": { "profileId": "passport_authority", "sourceGroup": "Vendors", "interests": ["passports", "holography"] },
+      "article": { "title": "Passport receives a new holographic security overlay", "sourceGroup": "Vendors" },
+      "expected": { "sourceScope": true, "profilePolicy": true, "interestRefinement": true, "qualityNoise": true, "final": true }
+    },
+    {
+      "id": "passport-and-holography-technique-missing",
+      "selection": { "profileId": "passport_authority", "sourceGroup": "Vendors", "interests": ["passports", "holography"] },
+      "article": { "title": "Passport renewal service expands nationwide", "sourceGroup": "Vendors" },
+      "expected": { "sourceScope": true, "profilePolicy": true, "interestRefinement": false, "qualityNoise": true, "final": false }
+    },
+    {
+      "id": "industry-research-cross-domain",
+      "selection": { "profileId": "researcher", "sourceGroup": "All", "interests": [] },
+      "article": { "title": "Study compares digital identity and document fraud trends", "sourceGroup": "Government" },
+      "expected": { "sourceScope": true, "profilePolicy": true, "interestRefinement": true, "qualityNoise": true, "final": true }
+    }
+  ]
+}
