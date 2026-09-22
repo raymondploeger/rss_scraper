@@ -95,7 +95,7 @@ function normalizeInterestSelection(interests = {}) {
 export function createFilterContract(input = {}) {
   const contract = {
     version: FILTER_CONTRACT_VERSION,
-    executionMode: "shadow_contract",
+    executionMode: String(input.executionMode || "shadow_contract").trim() || "shadow_contract",
     evaluationOrder: FILTER_EVALUATION_ORDER.slice(),
     sourceScope: normalizeSourceScope(input.sourceScope),
     profilePolicy: normalizeProfilePolicy(input.profilePolicy),

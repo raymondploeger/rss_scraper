@@ -86,14 +86,14 @@ const CONTENT_EVIDENCE_RULES = freezeDefinition({
   },
   border_control: {
     anchors: ["border", "frontex", "customs", "migration"],
-    events: ["crossing", "operation", "smuggling", "trafficking", "arrest", "seized", "surveillance", "coordination", "document inspection", "identity check"],
+    events: ["border check", "entry exit system", "crossing", "operation", "smuggling", "trafficking", "arrest", "seized", "surveillance", "coordination", "document inspection", "identity check"],
   },
   security_printer: {
     anchors: ["security print", "banknote", "passport", "identity document", "secure document"],
     events: ["substrate", "ink", "hologram", "holograph", "personalization", "personalisation", "production", "manufactur", "technology"],
   },
   vendors: {
-    anchors: ["identity", "biometric", "authentication", "banknote", "passport", "security print", "credential"],
+    anchors: ["identity", "biometric", "authentication", "banknote", "passport", "security print", "security document", "credential"],
     events: ["launch", "contract", "partner", "deploy", "research", "platform", "solution", "product", "technology"],
   },
   identity_verification: {
@@ -107,7 +107,11 @@ const CONTENT_EVIDENCE_RULES = freezeDefinition({
 });
 
 function normalizeEvidenceText(value) {
-  return String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[-–—_/]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function getArticleContentText(article) {

@@ -1,5 +1,6 @@
 import { createFilterContract, FILTER_CONTRACT_VERSION } from "./filter-contract.js";
 import { evaluateProfilePolicyEvidence, getProfilePolicyDefinition } from "./profile-policies.js";
+import { evaluateInterestRefinementGroups, evaluateUnifiedFilterDecision } from "./unified-filter-evaluator.js";
 
 const PLACEHOLDER_IMAGE = "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image";
 const THEME_STORAGE_KEY = "rss-monitor-theme";
@@ -1500,7 +1501,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "profile-policy-evidence-238";
+const APP_BUILD = "unified-profile-interests-239";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4481,10 +4482,8 @@ function getMatchingPersonalDashboardTemplateId(interests = state.personalDashbo
     activeTemplateId &&
     PERSONAL_DASHBOARD_PROFILE_TEMPLATES[activeTemplateId] &&
     (
-      samePersonalDashboardInterestSet(
-        normalizedInterests,
-        PERSONAL_DASHBOARD_PROFILE_TEMPLATES[activeTemplateId].interests
-      ) ||
+      normalizePersonalDashboardInterests(PERSONAL_DASHBOARD_PROFILE_TEMPLATES[activeTemplateId].interests)
+        .every((interestId) => normalizedInterests.includes(interestId)) ||
       (
         activeTemplateId === "vendors" &&
         samePersonalDashboardInterestSet(normalizedInterests, PERSONAL_DASHBOARD_LEGACY_VENDOR_TEMPLATE_INTERESTS)
@@ -4500,6 +4499,17 @@ function getMatchingPersonalDashboardTemplateId(interests = state.personalDashbo
   });
   const matchedTemplateId = matchedTemplate?.[0] || "";
   return matchedTemplateId === "security_printer" ? "custom" : matchedTemplateId || "custom";
+}
+
+function getPersonalDashboardRefinementInterests(interests = state.personalDashboard.interests) {
+  const normalizedInterests = normalizePersonalDashboardInterests(interests);
+  const activeTemplateId = String(state.personalDashboard.activeTemplateId || "").trim();
+  const template = PERSONAL_DASHBOARD_PROFILE_TEMPLATES[activeTemplateId];
+  if (!template) {
+    return normalizedInterests;
+  }
+  const baseInterests = new Set(normalizePersonalDashboardInterests(template.interests));
+  return normalizedInterests.filter((interestId) => !baseInterests.has(interestId));
 }
 
 function getEffectiveIdentitySubinterestForScoring(selectedIdentityInterests = [], selectedInterests = state.personalDashboard.interests) {
@@ -4589,6 +4599,7 @@ function getArticleDecisionReceiptKey(article) {
 function getArticleDecisionReceiptSignature(interests = state.personalDashboard.interests) {
   return JSON.stringify({
     interests: normalizePersonalDashboardInterests(interests).slice().sort(),
+    activeTemplateId: String(state.personalDashboard?.activeTemplateId || ""),
     mode: normalizePersonalDashboardMode(state.personalDashboard?.mode),
     strictness: normalizeIdentityDocumentAuthorityStrictness(
       state.personalDashboard?.identityDocumentAuthorityStrictness
@@ -4611,6 +4622,7 @@ function getArticleDecisionReasonLabel(reason = "") {
     shared_security_technique_passed: "Security technology evidence matched your profile",
     vendors_profile_guard_passed: "A specialist industry source matched your vendor profile",
     profile_and_source_match: "Matched your profile within the selected sources",
+    profile_and_interest_refinement_match: "Matched your Start Profile and selected Profile Interests",
   };
   return labels[reason] || "Matched the active professional profile";
 }
@@ -4709,9 +4721,13 @@ function isPersonalDashboardProfileBundleSelection(interests = state.personalDas
 
 function shouldUseSharedSecurityAsHardRefinement(interests = state.personalDashboard.interests) {
   const normalizedInterests = normalizePersonalDashboardInterests(interests);
+  const explicitRefinements = getPersonalDashboardRefinementInterests(normalizedInterests);
   return getSelectedSharedSecuritySubinterests(normalizedInterests).length > 0 &&
     getSelectedMainDomains(normalizedInterests).length > 0 &&
-    !isPersonalDashboardProfileBundleSelection(normalizedInterests);
+    (
+      !isPersonalDashboardProfileBundleSelection(normalizedInterests) ||
+      getSelectedSharedSecuritySubinterests(explicitRefinements).length > 0
+    );
 }
 
 function shouldUseIdentityDocumentInterestOrMode(interests = state.personalDashboard.interests) {
@@ -4721,9 +4737,13 @@ function shouldUseIdentityDocumentInterestOrMode(interests = state.personalDashb
 
 function shouldUsePassportIcaoHardRefinement(interests = state.personalDashboard.interests) {
   const selectedIdentityInterests = getSelectedIdentityDashboardInterests(interests);
+  const explicitRefinements = getPersonalDashboardRefinementInterests(interests);
   return selectedIdentityInterests.includes("passports") &&
     selectedIdentityInterests.includes("icao") &&
-    !isPersonalDashboardProfileBundleSelection(interests);
+    (
+      !isPersonalDashboardProfileBundleSelection(interests) ||
+      explicitRefinements.includes("icao")
+    );
 }
 
 function shouldUseIdentityDocumentAuthorityProfileGuard(interests = state.personalDashboard.interests) {
@@ -8118,6 +8138,7 @@ function freezeNormalizedFilterState(value) {
 
 function createNormalizedFilterState() {
   const selectedPersonalInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const refinementInterests = getPersonalDashboardRefinementInterests(selectedPersonalInterests);
   const selectedFeed = state.filters.feedId ? resolveFeedByIdentity(state.filters.feedId) : null;
   const profileDisplay = getPersonalDashboardProfileDisplay(selectedPersonalInterests);
   const activeTemplateId = String(state.personalDashboard.activeTemplateId || "").trim();
@@ -8127,12 +8148,12 @@ function createNormalizedFilterState() {
   const contractProfileLabel = PERSONAL_DASHBOARD_PROFILE_TEMPLATES[contractProfileId]?.label
     || profileDisplay.label
     || "";
-  const selectedBanknoteInterests = selectedPersonalInterests.filter(
+  const selectedBanknoteInterests = refinementInterests.filter(
     (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "banknote_intelligence"
   );
-  const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(selectedPersonalInterests);
-  const selectedSharedSecurityInterests = getSelectedSharedSecuritySubinterests(selectedPersonalInterests);
-  const selectedDigitalIdentityInterests = selectedPersonalInterests.filter(
+  const selectedIdentityInterests = getSelectedIdentityDocumentSubinterests(refinementInterests);
+  const selectedSharedSecurityInterests = getSelectedSharedSecuritySubinterests(refinementInterests);
+  const selectedDigitalIdentityInterests = refinementInterests.filter(
     (interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId === "digital_identity_biometrics"
   );
   const interestsByGroup = {
@@ -8142,6 +8163,7 @@ function createNormalizedFilterState() {
     digital_identity_biometrics: selectedDigitalIdentityInterests,
   };
   const filterContract = createFilterContract({
+    executionMode: "unified_selection_production",
     sourceScope: {
       feedId: state.filters.feedId || "",
       resolvedFeedId: selectedFeed?.id || "",
@@ -8160,7 +8182,7 @@ function createNormalizedFilterState() {
       definition: getProfilePolicyDefinition(contractProfileId),
     },
     interestSelection: {
-      selected: selectedPersonalInterests,
+      selected: refinementInterests,
       byGroup: interestsByGroup,
     },
     advancedFilters: {
@@ -27204,10 +27226,8 @@ function loadPersonalDashboardPreferences() {
   const storedTemplateId = String(window.localStorage.getItem(PERSONAL_DASHBOARD_ACTIVE_TEMPLATE_STORAGE_KEY) || "").trim();
   state.personalDashboard.activeTemplateId = (
     PERSONAL_DASHBOARD_PROFILE_TEMPLATES[storedTemplateId] &&
-    samePersonalDashboardInterestSet(
-      state.personalDashboard.interests,
-      PERSONAL_DASHBOARD_PROFILE_TEMPLATES[storedTemplateId].interests
-    )
+    normalizePersonalDashboardInterests(PERSONAL_DASHBOARD_PROFILE_TEMPLATES[storedTemplateId].interests)
+      .every((interestId) => state.personalDashboard.interests.includes(interestId))
   ) ? storedTemplateId : "";
 }
 
@@ -27238,10 +27258,8 @@ function savePersonalDashboardPreferences() {
   if (
     activeTemplateId &&
     PERSONAL_DASHBOARD_PROFILE_TEMPLATES[activeTemplateId] &&
-    samePersonalDashboardInterestSet(
-      state.personalDashboard.interests,
-      PERSONAL_DASHBOARD_PROFILE_TEMPLATES[activeTemplateId].interests
-    )
+    normalizePersonalDashboardInterests(PERSONAL_DASHBOARD_PROFILE_TEMPLATES[activeTemplateId].interests)
+      .every((interestId) => state.personalDashboard.interests.includes(interestId))
   ) {
     window.localStorage.setItem(PERSONAL_DASHBOARD_ACTIVE_TEMPLATE_STORAGE_KEY, activeTemplateId);
   } else {
@@ -28096,7 +28114,15 @@ function setPersonalDashboardInterest(interestId, enabled) {
 
   state.personalDashboard.interests = Array.from(nextInterests);
   state.filters.sourceOnly = false;
-  state.personalDashboard.activeTemplateId = "";
+  const activeTemplateId = String(state.personalDashboard.activeTemplateId || "").trim();
+  const activeTemplate = PERSONAL_DASHBOARD_PROFILE_TEMPLATES[activeTemplateId];
+  if (
+    activeTemplate &&
+    !normalizePersonalDashboardInterests(activeTemplate.interests)
+      .every((baseInterestId) => nextInterests.has(baseInterestId))
+  ) {
+    state.personalDashboard.activeTemplateId = "";
+  }
   state.personalDashboard.activeCustomProfileId = "";
   state.personalDashboard.explicitlyCleared = false;
   updatePersonalDashboardTemplateSelection(state.personalDashboard.interests);
@@ -43599,11 +43625,70 @@ function getPersonalDashboardDomainMatch(article) {
 }
 
 function articleMatchesPersonalDashboardSelection(article, options = {}) {
-  return measureFilterFunction("articleMatchesPersonalDashboardSelection", () =>
-    articleMatchesPersonalDashboardSelectionMeasured(article, options), {
+  return measureFilterFunction("articleMatchesPersonalDashboardSelection", () => {
+    const profilePolicyPassed = articleMatchesPersonalDashboardSelectionMeasured(article, options);
+    const interestRefinement = getUnifiedInterestRefinementAssessment(article);
+    const unifiedDecision = evaluateUnifiedFilterDecision({
+      sourceScope: { passed: true, reason: "source_scope_applied_upstream" },
+      profilePolicy: {
+        passed: profilePolicyPassed,
+        reason: profilePolicyPassed ? "profile_policy_matched" : "profile_policy_rejected",
+      },
+      interestRefinement,
+      qualityNoise: { passed: true, reason: "quality_gate_applied_downstream" },
+    });
+    if (unifiedDecision.passed && interestRefinement.matchedInterestIds.length) {
+      recordArticleDecisionReceipt(article, {
+        passed: true,
+        reason: "profile_and_interest_refinement_match",
+        selectedInterests: normalizePersonalDashboardInterests(state.personalDashboard.interests),
+        matchedInterestIds: interestRefinement.matchedInterestIds,
+      });
+    }
+    return unifiedDecision.passed;
+  }, {
       logicalStage: "personal_dashboard",
       interest: "cross_domain",
     });
+}
+
+function articleMatchesUnifiedInterestRefinement(article, interestId) {
+  const interest = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId);
+  if (!interest) {
+    return false;
+  }
+  if (interest.groupId === "banknote_intelligence") {
+    return matchesBanknoteInterest(article, interestId);
+  }
+  if (interest.groupId === "identity_documents") {
+    return getIdentityDocumentConjunctiveInterestAssessment(article, [interestId], {
+      forceOrMode: true,
+    }).passed;
+  }
+  if (interest.groupId === PERSONAL_DASHBOARD_SHARED_GROUP_ID) {
+    return getSharedSecurityStandaloneAssessment(article, interestId).included;
+  }
+  if (interest.groupId === "digital_identity_biometrics") {
+    return getDigitalSubgroupHybridAssessment(article, interestId).included;
+  }
+  return computePersonalInterestBoost(article, interestId).score >= 18;
+}
+
+function getUnifiedInterestRefinementAssessment(
+  article,
+  selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)
+) {
+  const refinementInterests = getPersonalDashboardRefinementInterests(selectedInterests);
+  const groups = {};
+  refinementInterests.forEach((interestId) => {
+    const groupId = PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId)?.groupId || "other";
+    groups[groupId] ||= { selected: [], matched: [] };
+    groups[groupId].selected.push(interestId);
+    if (articleMatchesUnifiedInterestRefinement(article, interestId)) {
+      groups[groupId].matched.push(interestId);
+    }
+  });
+  return evaluateInterestRefinementGroups(groups);
 }
 
 function articleMatchesPersonalDashboardSelectionMeasured(article, options = {}) {

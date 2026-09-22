@@ -6,6 +6,10 @@ import {
   getProfilePolicyDefinition,
   PROFILE_POLICY_DEFINITIONS,
 } from "../frontend/public/profile-policies.js";
+import {
+  evaluateInterestRefinementGroups,
+  evaluateUnifiedFilterDecision,
+} from "../frontend/public/unified-filter-evaluator.js";
 
 const corpusUrl = new URL("../tests/fixtures/filter-behavior-corpus.json", import.meta.url);
 const corpus = JSON.parse(fs.readFileSync(corpusUrl, "utf8"));
@@ -20,6 +24,38 @@ assert.equal(evaluateProfilePolicyEvidence({ title: "Canada expands online passp
 assert.equal(evaluateProfilePolicyEvidence({ title: "Irregular border crossings decline after operation" }, "border_control").passed, true);
 assert.equal(evaluateProfilePolicyEvidence({ title: "Post-Quantum OpenID Connect specification" }, "identity_verification").passed, true);
 assert.equal(evaluateProfilePolicyEvidence({ title: "Quarterly interest-rate decision" }, "central_bank").passed, false);
+
+assert.equal(evaluateInterestRefinementGroups({
+  identity_documents: { selected: ["passports", "id_cards"], matched: ["passports"] },
+}).passed, true, "One match inside an interest group must satisfy OR");
+assert.equal(evaluateInterestRefinementGroups({
+  identity_documents: { selected: ["passports"], matched: ["passports"] },
+  security_printing: { selected: ["holography"], matched: [] },
+}).passed, false, "Every selected interest group must satisfy AND");
+
+const INTEREST_GROUPS = {
+  passports: "identity_documents",
+  holography: "security_printing",
+  authentication: "digital_identity_biometrics",
+};
+const INTEREST_TERMS = {
+  passports: ["passport"],
+  holography: ["hologram", "holographic", "holography"],
+  authentication: ["authentication", "openid"],
+};
+
+function getCorpusInterestGroups(entry) {
+  const title = String(entry.article?.title || "").toLowerCase();
+  return (entry.selection?.interests || []).reduce((groups, interestId) => {
+    const groupId = INTEREST_GROUPS[interestId] || "other";
+    groups[groupId] ||= { selected: [], matched: [] };
+    groups[groupId].selected.push(interestId);
+    if ((INTEREST_TERMS[interestId] || [interestId.replaceAll("_", " ")]).some((term) => title.includes(term))) {
+      groups[groupId].matched.push(interestId);
+    }
+    return groups;
+  }, {});
+}
 
 const coveredProfiles = new Set(cases.map((entry) => entry.selection?.profileId).filter(Boolean));
 [
@@ -65,6 +101,23 @@ cases.forEach((entry) => {
   ]);
   assert.equal(contract.interestSelection.semantics.withinGroup, "OR");
   assert.equal(contract.interestSelection.semantics.acrossGroups, "AND");
+  const sourceScopePassed = String(entry.selection?.sourceGroup || "All") === "All"
+    || String(entry.article?.sourceGroup || "") === String(entry.selection?.sourceGroup || "");
+  const profileAssessment = evaluateProfilePolicyEvidence(entry.article, entry.selection?.profileId);
+  const unifiedDecision = evaluateUnifiedFilterDecision({
+    sourceScope: { passed: sourceScopePassed },
+    profilePolicy: profileAssessment,
+    interestRefinement: { groups: getCorpusInterestGroups(entry) },
+    qualityNoise: { passed: entry.expected?.qualityNoise !== false },
+  });
+  assert.equal(sourceScopePassed, entry.expected?.sourceScope, `${entry.id} source-scope mismatch`);
+  assert.equal(profileAssessment.passed, entry.expected?.profilePolicy, `${entry.id} profile-policy mismatch`);
+  assert.equal(
+    unifiedDecision.stages.interestRefinement.passed,
+    entry.expected?.interestRefinement,
+    `${entry.id} interest-refinement mismatch`
+  );
+  assert.equal(unifiedDecision.passed, entry.expected?.final, `${entry.id} unified final-decision mismatch`);
   assert.equal(
     entry.expected?.final,
     Boolean(

@@ -20,10 +20,12 @@ This document fixes the intended semantics before the legacy filter engine is re
 
 ## Contract migration state
 
-Version 1 runs as `shadow_contract`. It is attached to the existing normalized filter state and diagnostics, while the legacy engine remains responsible for production decisions. This makes current selections inspectable without changing results during steps 1 and 2.
+Version 1 now runs the source/profile/interest selection decision as `unified_selection_production`. Source scope is applied first, the profile matcher supplies the profile-policy result, and `unified-filter-evaluator.js` owns the final boolean combination for these three stages. Quality/noise guards still run downstream and are the next migration boundary.
 
 Each Start Profile now also has an explicit versioned policy in `frontend/public/profile-policies.js`. Source compatibility and source authority are context signals only: they may support evidence or ranking, but they cannot create an automatic profile pass.
 
 The first production migration slice evaluates explicit content evidence (an anchor plus a professional event) before the legacy profile matcher. That evidence may satisfy later professional guards because it is derived from article content, never merely from the selected feed or source reputation. Legacy matching remains as a fallback until all interests and quality rules have moved to the unified evaluator.
 
-The behavior corpus in `tests/fixtures/filter-behavior-corpus.json` contains the initial positive and negative examples. These examples become executable decision tests when the unified evaluator is introduced.
+Start Profile interests form the profile's base policy and are not treated as manual refinements. Interests added after choosing a Start Profile remain separate refinements: matches within one interest group use `OR`, while every selected group must pass using `AND`. Adding a refinement no longer clears the active Start Profile, and the combined selection persists across a reload.
+
+The behavior corpus in `tests/fixtures/filter-behavior-corpus.json` contains executable positive and negative decision tests for source scope, profile policy, interest refinement, and the combined outcome.

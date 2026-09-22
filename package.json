@@ -12,6 +12,7 @@
     "audit:profile-sources": "node scripts/audit-profile-source-visibility.mjs",
     "audit:profile-source-combinations": "node scripts/audit-profile-source-combinations.mjs",
     "audit:profile-selected-feeds": "node scripts/audit-profile-selected-feed-intersections.mjs",
+    "audit:profile-interest-combinations": "node scripts/audit-profile-interest-combinations.mjs",
     "test:filter-contract": "node scripts/test-filter-contract.mjs",
     "audit:storage": "npm --prefix backend run audit:storage",
     "audit:crane-currency": "npm --prefix backend run audit:crane-currency",
