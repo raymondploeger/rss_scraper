@@ -1497,7 +1497,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "why-this-article-mvp-234";
+const APP_BUILD = "profile-source-intersection-235";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4607,6 +4607,7 @@ function getArticleDecisionReasonLabel(reason = "") {
     shared_security_bridge_passed: "Document and security-printing evidence matched together",
     shared_security_technique_passed: "Security technology evidence matched your profile",
     vendors_profile_guard_passed: "A specialist industry source matched your vendor profile",
+    profile_and_source_match: "Matched your profile within the selected sources",
   };
   return labels[reason] || "Matched the active professional profile";
 }
@@ -4691,8 +4692,8 @@ function getArticleDecisionReceipt(article) {
     return recordArticleDecisionReceipt(article, {
       passed: true,
       selectedInterests,
-      reason: "selected_source_leading",
-      sourceLeading: true,
+      reason: "profile_and_source_match",
+      sourceLeading: false,
     });
   }
   return null;
@@ -6579,8 +6580,7 @@ function applyIdentityDocumentBundleQualityGateToArticles(articles = []) {
   const sourceArticles = Array.isArray(articles) ? articles : [];
   const queryContext = getActiveArticleQueryContext();
   if (
-    (queryContext.sourceOnly && shouldUseSelectedFeedAsProfileScope()) ||
-    (queryContext.hasSourceGroup && !queryContext.hasSelectedFeed)
+    queryContext.sourceOnly && shouldUseSelectedFeedAsProfileScope()
   ) {
     return {
       active: false,
@@ -18202,11 +18202,6 @@ function getIdentityProfessionalRelevanceGuardAssessment(article, options = {}) 
 
 function articlePassesLegacyIdentityProfessionalRelevance(article, options = {}) {
   if (!shouldApplyIdentityProfessionalRelevanceGuard(options)) {
-    return true;
-  }
-
-  const queryContext = getActiveArticleQueryContext();
-  if (queryContext.hasSourceGroup && !queryContext.hasSelectedFeed) {
     return true;
   }
 
@@ -52162,7 +52157,6 @@ function articleMatchesFilters(article, options = {}) {
 
   if (
     !ignorePersonalDashboard &&
-    !getActiveArticleQueryContext().hasSourceGroup &&
     !measureFilterSegment("personalDashboard", () => articleMatchesPersonalDashboardSelection(article, {
       timingContext: filterTimingContext,
     }))
@@ -55878,8 +55872,8 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
     eyebrow = "Your Intelligence Feed";
     title = `${profileDisplay.label || "Custom profile"} · ${sourceLabel}`;
     summary = hasCount
-      ? `${countLabel} from selected sources · Source selection is leading`
-      : "Loading selected sources · Source selection is leading";
+      ? `${countLabel} matched your profile within selected sources`
+      : "Loading articles matched to your profile within selected sources...";
   } else if (hasProfile) {
     eyebrow = "Your Intelligence Feed";
     title = profileDisplay.label || "Custom profile";
@@ -56709,6 +56703,9 @@ function buildPersonalDashboardBackendQueryParamsList() {
   }
 
   const sourceGroup = String(state.filters.sourceGroup || "all").trim() || "all";
+  if (state.filters.trackedSourcesAll) {
+    return buildTrackedSourcesAllBackendQueryParamsList();
+  }
   if (sourceGroup !== "all") {
     return [applyBackendArticleQueryBaseParams({ limit: MAX_ARTICLES_IN_MEMORY })];
   }
@@ -56932,10 +56929,8 @@ async function ensureBackendArticleQueryData() {
     })
     .slice(0, backendCandidateLimit);
   let normalizedArticles = dedupedRawArticles.map(normalizeLoadedArticle);
-  const queryContext = getActiveArticleQueryContext();
   if (
-    personalDomainPlan?.domain === "identity_documents" &&
-    !(queryContext.hasSourceGroup && !queryContext.hasSelectedFeed)
+    personalDomainPlan?.domain === "identity_documents"
   ) {
     normalizedArticles = normalizedArticles.filter((article) => !shouldExcludeIdentityDocumentsRetrievalCandidate(article));
   }
@@ -57370,7 +57365,14 @@ function groupedArticleMatchesFeedFilter(article, feedId) {
 function articleMatchesSelectedSourceGroup(article, sourceGroup = state.filters.sourceGroup || "all") {
   const normalizedSourceGroup = String(sourceGroup || "all").trim() || "all";
   if (normalizedSourceGroup === "all") {
-    return true;
+    if (!state.filters.trackedSourcesAll) {
+      return true;
+    }
+    const resolvedFeed = resolveFeedByIdentity(article?.feedId);
+    return Boolean(
+      resolvedFeed?.id &&
+      state.feeds.some((feed) => String(feed?.id || "") === String(resolvedFeed.id))
+    );
   }
 
   const feed = resolveFeedByIdentity(article?.feedId);
@@ -57456,7 +57458,7 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
   const queryContext = getActiveArticleQueryContext();
   if (
     (!queryContext.hasProfile && queryContext.sourceOnly) ||
-    (queryContext.hasSourceGroup && !queryContext.hasSelectedFeed)
+    (!queryContext.hasProfile && queryContext.hasSourceGroup && !queryContext.hasSelectedFeed)
   ) {
     inputArticles.forEach((article) => {
       recordFilterDecisionStage(diagnostics, article, {
@@ -57929,7 +57931,7 @@ function applyIdentityProfessionalRelevanceGuardStage({ articles, branch, diagno
   const queryContext = getActiveArticleQueryContext();
   if (
     (queryContext.sourceOnly && !queryContext.hasProfile) ||
-    (queryContext.hasSourceGroup && !queryContext.hasSelectedFeed)
+    (!queryContext.hasProfile && queryContext.hasSourceGroup && !queryContext.hasSelectedFeed)
   ) {
     return {
       articles: inputArticles,
@@ -58025,7 +58027,7 @@ function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, 
   const queryContext = getActiveArticleQueryContext();
   if (
     (queryContext.sourceOnly && !queryContext.hasProfile) ||
-    (queryContext.hasSourceGroup && !queryContext.hasSelectedFeed)
+    (!queryContext.hasProfile && queryContext.hasSourceGroup && !queryContext.hasSelectedFeed)
   ) {
     return {
       articles: inputArticles,
@@ -59685,6 +59687,7 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
 
   const candidatePool = Array.from(candidatePoolMap.values())
     .filter((article) => !activeFeedId || articleMatchesSelectedFeed(article, activeFeedId))
+    .filter((article) => activeFeedId || articleMatchesSelectedSourceGroup(article))
     .sort((left, right) => new Date(right?.pubDate || 0) - new Date(left?.pubDate || 0));
   markProductionLoadTiming("backendNormalizationAdvancedFiltersStart", {
     inputCount: candidatePool.length,

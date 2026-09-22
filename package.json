@@ -10,6 +10,7 @@
     "audit:source-quality": "node scripts/audit-source-quality-playwright.mjs",
     "audit:source-quality:compare": "node backend/scripts/compare-source-quality-audit.js",
     "audit:profile-sources": "node scripts/audit-profile-source-visibility.mjs",
+    "audit:profile-source-combinations": "node scripts/audit-profile-source-combinations.mjs",
     "audit:storage": "npm --prefix backend run audit:storage",
     "audit:crane-currency": "npm --prefix backend run audit:crane-currency",
     "db:storage-diagnostics": "npm --prefix backend run db:storage-diagnostics",
