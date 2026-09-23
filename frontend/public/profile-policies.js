@@ -136,9 +136,14 @@ export function evaluateProfilePolicyEvidence(article, profileId) {
     return Object.freeze({ applies: false, passed: false, profileId: String(profileId || "") });
   }
 
-  const contentText = getArticleContentText(article);
+  const contentText = profileId === "central_bank"
+    ? normalizeEvidenceText([article?.title, article?.description, article?.summary, article?.content]
+      .filter(Boolean).join(" "))
+    : getArticleContentText(article);
   const matchedAnchors = matchingTerms(contentText, rules.anchors);
-  const matchedEvents = matchingTerms(contentText, rules.events);
+  const matchedEvents = matchingTerms(contentText, profileId === "central_bank"
+    ? rules.events.filter((term) => term !== "new ")
+    : rules.events);
   const passed = matchedAnchors.length > 0 && matchedEvents.length > 0;
 
   return Object.freeze({

@@ -42798,8 +42798,18 @@ const CENTRAL_BANK_PROFILE_EDUCATION_NOISE_TERMS = [
   "explained for students",
 ];
 
+function getCentralBankProfileTitleNoiseAssessment(article) {
+  const normalizedTitle = String(article?.title || "").toLowerCase().trim();
+  return {
+    coinOnlyTitle: /\b(?:coin|coins|moneta|monety|monet[ęay]|numismatic)\b/i.test(normalizedTitle) &&
+      !/\b(?:banknote|banknotes|bank note|bank notes|banknot\w*|currency note|currency notes)\b/i.test(normalizedTitle),
+    nonArticleTitle: /^(?:media kit|application for permission|wniosek o zgodę(?:\s*\/\s*application for permission)?)$/i.test(normalizedTitle),
+  };
+}
+
 function getCentralBankProfileProfessionalAssessment(article) {
   return getCachedArticleValue(article, "centralBankProfileProfessionalAssessment", () => {
+    const { coinOnlyTitle, nonArticleTitle } = getCentralBankProfileTitleNoiseAssessment(article);
     const dominantDomain = getArticleDominantDomain(article);
     const signals = getBanknoteInterestSignals(article);
     const noiseAssessment = getBanknoteNoiseAssessment(article);
@@ -42861,7 +42871,7 @@ function getCentralBankProfileProfessionalAssessment(article) {
     const consumerNoise = consumerNoiseTerms.length > 0 && !professionalEventMatched;
     const digitalCurrencyNoise = digitalCurrencyNoiseTerms.length > 0 && physicalBanknoteContextTerms.length === 0;
     const educationNoise = educationNoiseTerms.length > 0;
-    const blocked = dominantDomain !== "banknotes" ||
+    const blocked = coinOnlyTitle || nonArticleTitle || dominantDomain !== "banknotes" ||
       noiseAssessment.contaminated ||
       collectorOrSocialNoise ||
       digitalIdNoise ||
@@ -42878,7 +42888,11 @@ function getCentralBankProfileProfessionalAssessment(article) {
     );
 
     let rejectionReason = "";
-    if (dominantDomain !== "banknotes") {
+    if (coinOnlyTitle) {
+      rejectionReason = "central_bank_profile_coin_only_title";
+    } else if (nonArticleTitle) {
+      rejectionReason = "central_bank_profile_navigation_title";
+    } else if (dominantDomain !== "banknotes") {
       rejectionReason = "central_bank_profile_wrong_domain";
     } else if (collectorOrSocialNoise || eventType === "banknote_auction_noise") {
       rejectionReason = "central_bank_profile_collector_social_or_auction_noise";
@@ -42904,6 +42918,8 @@ function getCentralBankProfileProfessionalAssessment(article) {
       passed,
       rejected: !passed,
       rejectionReason,
+      coinOnlyTitle,
+      nonArticleTitle,
       eventType,
       relevanceScore: Number(relevance?.score) || 0,
       relevanceKept: Boolean(relevance?.kept),
@@ -43652,6 +43668,17 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
     return finishPersonalDashboardTiming(true, "no_selected_interests");
   }
 
+  if (getMatchingPersonalDashboardTemplateId(selectedInterests) === "central_bank") {
+    const titleNoise = measurePersonalDashboardSegment("centralBankProfileTitleGuard", () =>
+      getCentralBankProfileTitleNoiseAssessment(article)
+    );
+    if (titleNoise.coinOnlyTitle || titleNoise.nonArticleTitle) {
+      return finishPersonalDashboardTiming(false, titleNoise.coinOnlyTitle
+        ? "central_bank_profile_coin_only_title"
+        : "central_bank_profile_navigation_title");
+    }
+  }
+
   const explicitProfilePolicyAssessment = measurePersonalDashboardSegment("explicitProfilePolicyEvidence", () =>
     getActiveProfilePolicyEvidenceAssessment(article, selectedInterests)
   );
@@ -43746,7 +43773,6 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
         return finishPersonalDashboardTiming(false, centralBankProfileAssessment.rejectionReason || "central_bank_profile_guard");
       }
     }
-
     const getBanknoteSharedSecurityTechniqueMatched = () => !sharedSecurityHardRefinement
       || measurePersonalDashboardSegment("sharedSecurityTechniqueMatch", () => matchesSelectedSharedSecurityTechnique(article, selectedInterests))
       || measurePersonalDashboardSegment("identityTechniqueBridge", () =>

@@ -15,6 +15,18 @@
       "expected": { "sourceScope": true, "profilePolicy": false, "interestRefinement": true, "qualityNoise": false, "final": false }
     },
     {
+      "id": "central-bank-vendor-collector-coin",
+      "selection": { "profileId": "central_bank", "sourceGroup": "Vendors", "interests": [] },
+      "article": { "title": "Abchazja – moneta kolekcjonerska", "summary": "Narodowy Bank emituje monetę kolekcjonerską", "topic": "Banknotes", "tags": ["banknotes", "new"], "sourceGroup": "Vendors" },
+      "expected": { "sourceScope": true, "profilePolicy": false, "interestRefinement": true, "qualityNoise": false, "final": false }
+    },
+    {
+      "id": "central-bank-vendor-media-kit",
+      "selection": { "profileId": "central_bank", "sourceGroup": "Vendors", "interests": [] },
+      "article": { "title": "Media Kit", "topic": "Banknotes", "tags": ["banknotes", "new"], "sourceGroup": "Vendors" },
+      "expected": { "sourceScope": true, "profilePolicy": false, "interestRefinement": true, "qualityNoise": false, "final": false }
+    },
+    {
       "id": "central-bank-wrong-source-group",
       "selection": { "profileId": "central_bank", "sourceGroup": "Google Alerts", "interests": [] },
       "article": { "title": "Central bank issues redesigned banknote", "sourceGroup": "Government" },
