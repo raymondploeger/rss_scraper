@@ -10,6 +10,7 @@ import {
   evaluateInterestRefinementGroups,
   evaluateUnifiedFilterDecision,
 } from "../frontend/public/unified-filter-evaluator.js";
+import { getProfileModePolicy, GENERAL_PROFILE_MODES } from "../frontend/public/profile-mode-policy.js";
 
 const corpusUrl = new URL("../tests/fixtures/filter-behavior-corpus.json", import.meta.url);
 const corpus = JSON.parse(fs.readFileSync(corpusUrl, "utf8"));
@@ -24,6 +25,15 @@ assert.equal(evaluateProfilePolicyEvidence({ title: "Canada expands online passp
 assert.equal(evaluateProfilePolicyEvidence({ title: "Irregular border crossings decline after operation" }, "border_control").passed, true);
 assert.equal(evaluateProfilePolicyEvidence({ title: "Post-Quantum OpenID Connect specification" }, "identity_verification").passed, true);
 assert.equal(evaluateProfilePolicyEvidence({ title: "Quarterly interest-rate decision" }, "central_bank").passed, false);
+assert.deepEqual(
+  ["focused", "balanced", "broad"].map((mode) =>
+    getProfileModePolicy("passport_authority", "balanced", mode).label
+  ),
+  ["Focused", "Balanced", "Research mode"]
+);
+assert.equal(getProfileModePolicy("security_printer", "balanced", "focused").userSelectable, false);
+assert.ok(GENERAL_PROFILE_MODES.strict.domainThreshold > GENERAL_PROFILE_MODES.balanced.domainThreshold);
+assert.ok(GENERAL_PROFILE_MODES.balanced.domainThreshold > GENERAL_PROFILE_MODES.broad.domainThreshold);
 
 assert.equal(evaluateInterestRefinementGroups({
   identity_documents: { selected: ["passports", "id_cards"], matched: ["passports"] },
@@ -32,6 +42,12 @@ assert.equal(evaluateInterestRefinementGroups({
   identity_documents: { selected: ["passports"], matched: ["passports"] },
   security_printing: { selected: ["holography"], matched: [] },
 }).passed, false, "Every selected interest group must satisfy AND");
+assert.equal(evaluateUnifiedFilterDecision({
+  sourceScope: true,
+  profilePolicy: true,
+  interestRefinement: true,
+  qualityNoise: { passed: false, reason: "legacy_false_positive_guard" },
+}).failedStage, "qualityNoise", "Hard noise must reject after profile and interest matches");
 
 const INTEREST_GROUPS = {
   passports: "identity_documents",

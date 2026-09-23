@@ -1,6 +1,13 @@
 import { createFilterContract, FILTER_CONTRACT_VERSION } from "./filter-contract.js";
 import { evaluateProfilePolicyEvidence, getProfilePolicyDefinition } from "./profile-policies.js";
 import { evaluateInterestRefinementGroups, evaluateUnifiedFilterDecision } from "./unified-filter-evaluator.js";
+import {
+  GENERAL_PROFILE_MODES,
+  IDENTITY_AUTHORITY_MODES,
+  getProfileModePolicy,
+  normalizeGeneralProfileMode,
+  normalizeIdentityAuthorityMode,
+} from "./profile-mode-policy.js";
 
 const PLACEHOLDER_IMAGE = "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image";
 const THEME_STORAGE_KEY = "rss-monitor-theme";
@@ -1501,7 +1508,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "unified-profile-interests-239";
+const APP_BUILD = "profile-mode-quality-240";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1618,25 +1625,7 @@ const PERSONAL_DASHBOARD_CUSTOM_PROFILES_STORAGE_KEY = "personalDashboardCustomP
 const PERSONAL_DASHBOARD_ACTIVE_TEMPLATE_STORAGE_KEY = "personalDashboardActiveTemplate";
 const DEFAULT_PERSONAL_DASHBOARD_SORT = "newest";
 const NOISE_KEYWORDS_EXPANDED_STORAGE_KEY = "noiseKeywordsExpanded";
-const PERSONAL_DASHBOARD_MODES = {
-  strict: 1.8,
-  balanced: 1.0,
-  broad: 0.5,
-};
-const IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_OPTIONS = Object.freeze({
-  focused: Object.freeze({
-    label: "Focused",
-    description: "Issuance, security, ID cards and passport lifecycle.",
-  }),
-  balanced: Object.freeze({
-    label: "Balanced",
-    description: "Also includes broader government ID document context.",
-  }),
-  broad: Object.freeze({
-    label: "Research mode",
-    description: "Research mode for adjacent authority and civil identity context.",
-  }),
-});
+const IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_OPTIONS = IDENTITY_AUTHORITY_MODES;
 const PERSONAL_DASHBOARD_GENERIC_INTEREST_IDS = new Set(["rollout", "release", "issuance", "redesign"]);
 const DIGITAL_SUBGROUP_BASELINE_MINIMUM_SCORE = 18;
 const DIGITAL_SUBGROUP_HYBRID_FILTERS = {
@@ -4669,7 +4658,9 @@ function recordArticleDecisionReceipt(article, options = {}) {
     articleId: articleKey,
     signature: getArticleDecisionReceiptSignature(selectedInterests),
     profileLabel: profileDisplay.label || "Custom profile",
-    modeLabel: getIntelligenceFeedModeLabel(profileDisplay),
+    modeLabel: profileDisplay.id === "passport_authority"
+      ? getIntelligenceFeedModeLabel(profileDisplay)
+      : "",
     reason,
     reasonLabel: options.sourceLeading
       ? "Included because the selected source is leading this feed"
@@ -8175,7 +8166,11 @@ function createNormalizedFilterState() {
       id: contractProfileId,
       label: contractProfileLabel,
       version: getProfilePolicyDefinition(contractProfileId)?.version || 1,
-      mode: normalizePersonalDashboardMode(state.personalDashboard.mode),
+      mode: getProfileModePolicy(
+        contractProfileId,
+        state.personalDashboard.mode,
+        state.personalDashboard.identityDocumentAuthorityStrictness
+      ).id,
       strictness: normalizeIdentityDocumentAuthorityStrictness(
         state.personalDashboard.identityDocumentAuthorityStrictness
       ),
@@ -22692,12 +22687,9 @@ function getAdvancedFiltersTraceMetadata(article, options = {}, rejection = null
   const tagMatched = hasTag ? getArticleFilterTags(article).includes(normalizeFilterTag(state.filters.tag)) : null;
   const hasSignal = Boolean(state.filters.signalCategory);
   const signalMatched = hasSignal ? getArticleSignalCategories(article).includes(state.filters.signalCategory) : null;
-  const keywordExcludeMatched = activeKeywordRule ? isKeywordRuleFalsePositive(article, activeKeywordRule) : false;
-  const officialFallbackMatched = isOfficialFallbackArticle(article);
-  const hardNoiseMatched =
-    !activeKeywordRule &&
-    (isPassportFalsePositive(article) || isDriverLicenseMusicFalsePositive(article) || isCoinGamingFalsePositive(article));
-  const noiseGuardMatched = officialFallbackMatched || hardNoiseMatched;
+  const qualityNoise = getCoreQualityNoiseAssessment(article);
+  const keywordExcludeMatched = Boolean(activeKeywordRule && qualityNoise.reason === "keyword_rule_false_positive");
+  const noiseGuardMatched = !qualityNoise.passed;
 
   return {
     searchMatched,
@@ -22708,11 +22700,7 @@ function getAdvancedFiltersTraceMetadata(article, options = {}, rejection = null
     keywordIncludeMatched: activeKeywordRule ? !keywordExcludeMatched : null,
     keywordExcludeMatched,
     noiseGuardMatched,
-    noiseGuardReason: officialFallbackMatched
-      ? "official fallback article"
-      : hardNoiseMatched
-        ? "hard false-positive guard matched"
-        : "",
+    noiseGuardReason: noiseGuardMatched ? qualityNoise.reason : "",
     rejectedCategory: rejection?.category || "",
     rejectionReason: rejection?.reason || "",
     ignoreFeedId: Boolean(options?.ignoreFeedId),
@@ -24768,22 +24756,9 @@ function classifyAdvancedFilterRejection(article, options = {}) {
   const ignoreFeedId = Boolean(options.ignoreFeedId);
   const ignorePersonalDashboard = Boolean(options.ignorePersonalDashboard);
 
-  if (isOfficialFallbackArticle(article)) {
-    return { category: "noiseGuard", reason: "official fallback article" };
-  }
-
-  const activeKeywordRule = getActiveTopicKeywordRule();
-  if (activeKeywordRule && isKeywordRuleFalsePositive(article, activeKeywordRule)) {
-    return { category: "keywordExclude", reason: "active topic keyword exclusion matched" };
-  }
-
-  if (
-    !activeKeywordRule &&
-    (isPassportFalsePositive(article) ||
-      isDriverLicenseMusicFalsePositive(article) ||
-      isCoinGamingFalsePositive(article))
-  ) {
-    return { category: "noiseGuard", reason: "hard false-positive guard matched" };
+  const qualityNoise = getCoreQualityNoiseAssessment(article);
+  if (!qualityNoise.passed) {
+    return { category: qualityNoise.category, reason: qualityNoise.reason };
   }
 
   const exactArticleIds = Array.isArray(state.filters.articleIds) ? state.filters.articleIds : [];
@@ -27182,17 +27157,11 @@ function migrateStoredPersonalDashboardInterests(interests) {
 }
 
 function normalizePersonalDashboardMode(value) {
-  const normalizedValue = String(value || "").trim().toLowerCase();
-  return Object.prototype.hasOwnProperty.call(PERSONAL_DASHBOARD_MODES, normalizedValue)
-    ? normalizedValue
-    : "balanced";
+  return normalizeGeneralProfileMode(value);
 }
 
 function normalizeIdentityDocumentAuthorityStrictness(value) {
-  const normalizedValue = String(value || "").trim().toLowerCase();
-  return Object.prototype.hasOwnProperty.call(IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_OPTIONS, normalizedValue)
-    ? normalizedValue
-    : "focused";
+  return normalizeIdentityAuthorityMode(value);
 }
 
 function getIdentityDocumentAuthorityStrictness() {
@@ -43508,7 +43477,7 @@ function calculatePersonalDomainScoreMeasured(article, selectedInterests = norma
       }
     });
 
-    const modeMultiplier = PERSONAL_DASHBOARD_MODES[mode] || 1;
+    const modeMultiplier = GENERAL_PROFILE_MODES[mode]?.scoreMultiplier || 1;
     const decayMultiplier = getDomainDecayMultiplier(article, selectedMainDomains);
     const domainScore = Math.round(Math.max(-120, bestScore) * modeMultiplier * decayMultiplier);
     const relevanceBand = domainScore >= 320 ? "high" : domainScore >= 180 ? "relevant" : domainScore >= 80 ? "related" : "";
@@ -43523,13 +43492,7 @@ function calculatePersonalDomainScoreMeasured(article, selectedInterests = norma
 
 function getPersonalDashboardDomainThreshold() {
   const mode = normalizePersonalDashboardMode(state.personalDashboard.mode);
-  if (mode === "strict") {
-    return 20;
-  }
-  if (mode === "broad") {
-    return 8;
-  }
-  return 12;
+  return GENERAL_PROFILE_MODES[mode].domainThreshold;
 }
 
 function getPersonalDashboardDomainMatch(article) {
@@ -43628,6 +43591,7 @@ function articleMatchesPersonalDashboardSelection(article, options = {}) {
   return measureFilterFunction("articleMatchesPersonalDashboardSelection", () => {
     const profilePolicyPassed = articleMatchesPersonalDashboardSelectionMeasured(article, options);
     const interestRefinement = getUnifiedInterestRefinementAssessment(article);
+    const qualityNoise = getCoreQualityNoiseAssessment(article);
     const unifiedDecision = evaluateUnifiedFilterDecision({
       sourceScope: { passed: true, reason: "source_scope_applied_upstream" },
       profilePolicy: {
@@ -43635,7 +43599,7 @@ function articleMatchesPersonalDashboardSelection(article, options = {}) {
         reason: profilePolicyPassed ? "profile_policy_matched" : "profile_policy_rejected",
       },
       interestRefinement,
-      qualityNoise: { passed: true, reason: "quality_gate_applied_downstream" },
+      qualityNoise,
     });
     if (unifiedDecision.passed && interestRefinement.matchedInterestIds.length) {
       recordArticleDecisionReceipt(article, {
@@ -52109,6 +52073,27 @@ function renderFeedList() {
   syncFeedPanelVisibility();
 }
 
+function getCoreQualityNoiseAssessment(article) {
+  if (isOfficialFallbackArticle(article)) {
+    return { passed: false, reason: "official_fallback", category: "noiseGuard" };
+  }
+
+  const activeKeywordRule = getActiveTopicKeywordRule();
+  if (activeKeywordRule) {
+    if (isKeywordRuleFalsePositive(article, activeKeywordRule)) {
+      return { passed: false, reason: "keyword_rule_false_positive", category: "keywordExclude" };
+    }
+  } else if (
+    isPassportFalsePositive(article) ||
+    isDriverLicenseMusicFalsePositive(article) ||
+    isCoinGamingFalsePositive(article)
+  ) {
+    return { passed: false, reason: "legacy_false_positive_guard", category: "noiseGuard" };
+  }
+
+  return { passed: true, reason: "core_quality_passed", category: "" };
+}
+
 function articleMatchesFilters(article, options = {}) {
   const filterTimingContext = typeof options.timingContext === "string" ? options.timingContext : "";
   const filterTimingEnabled = Boolean(filterTimingContext && runtime.activeProductionLoadTimingRun);
@@ -52145,31 +52130,13 @@ function articleMatchesFilters(article, options = {}) {
     return passed;
   };
 
-  if (measureFilterSegment("officialFallback", () => isOfficialFallbackArticle(article))) {
-    return finishFilterTiming(false, "official_fallback");
+  const qualityNoise = measureFilterSegment("coreQualityNoise", () => getCoreQualityNoiseAssessment(article));
+  if (!qualityNoise.passed) {
+    return finishFilterTiming(false, qualityNoise.reason);
   }
 
   const ignoreFeedId = Boolean(options.ignoreFeedId);
   const ignorePersonalDashboard = Boolean(options.ignorePersonalDashboard);
-
-  const activeKeywordRule = measureFilterSegment("activeKeywordRule", () => getActiveTopicKeywordRule());
-  if (
-    activeKeywordRule &&
-    measureFilterSegment("keywordRuleFalsePositive", () => isKeywordRuleFalsePositive(article, activeKeywordRule))
-  ) {
-    return finishFilterTiming(false, "keyword_rule_false_positive");
-  }
-
-  if (
-    !activeKeywordRule &&
-    measureFilterSegment("legacyFalsePositiveGuards", () =>
-      isPassportFalsePositive(article) ||
-      isDriverLicenseMusicFalsePositive(article) ||
-      isCoinGamingFalsePositive(article)
-    )
-  ) {
-    return finishFilterTiming(false, "legacy_false_positive_guard");
-  }
 
   if (
     state.filters.favoritesOnly &&
@@ -55926,11 +55893,11 @@ function updateArticleFilterContext(articles) {
 }
 
 function getIntelligenceFeedModeLabel(profileDisplay) {
-  if (profileDisplay?.id === "passport_authority") {
-    return IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_OPTIONS[getIdentityDocumentAuthorityStrictness()]?.label || "Focused";
-  }
-  const mode = normalizePersonalDashboardMode(state.personalDashboard.mode);
-  return mode === "strict" ? "Focused" : mode === "broad" ? "Research mode" : "Balanced";
+  return getProfileModePolicy(
+    profileDisplay?.id,
+    state.personalDashboard.mode,
+    getIdentityDocumentAuthorityStrictness()
+  ).label;
 }
 
 function appendIntelligenceContextChip(fragment, label, options = {}) {
@@ -56021,7 +55988,9 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
       action: "profile",
       ariaLabel: "Clear active profile",
     });
-    appendIntelligenceContextChip(fragment, `Mode: ${getIntelligenceFeedModeLabel(profileDisplay)}`);
+    if (profileDisplay.id === "passport_authority") {
+      appendIntelligenceContextChip(fragment, `Profile strictness: ${getIntelligenceFeedModeLabel(profileDisplay)}`);
+    }
   }
   if (hasSource) {
     appendIntelligenceContextChip(fragment, `Source: ${sourceLabel}`, {

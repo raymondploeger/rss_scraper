@@ -33,6 +33,10 @@ async function snapshot(page) {
     activeProfile: document.querySelector('[data-profile-template][data-selected="true"]')?.dataset.profileTemplate || "",
     holographyChecked: Boolean(document.querySelector('[data-personal-interest="holography"]')?.checked),
     storedTemplate: localStorage.getItem("personalDashboardActiveTemplate") || "",
+    modeChip: Array.from(document.querySelectorAll("#intelligence-feed-context .intelligence-context-chip"))
+      .map((node) => node.textContent?.trim() || "")
+      .find((label) => label.startsWith("Mode:") || label.startsWith("Profile strictness:")) || "",
+    firstArticleWhyProfile: document.querySelector(".article-card .article-why-profile")?.textContent?.trim() || "",
   }));
 }
 
@@ -73,12 +77,39 @@ try {
   if (combined.activeProfile !== "security_printer") failures.push("Adding an interest cleared the Start Profile");
   if (!combined.holographyChecked) failures.push("Holography was not retained as selected");
   if (combined.storedTemplate !== "security_printer") failures.push("Start Profile was not persisted with the refinement");
+  if (combined.modeChip) failures.push("Security Printer displays a mode that cannot be changed in the interface");
+  if (combined.firstArticleWhyProfile.includes("Balanced")) {
+    failures.push("Article explanation displays a mode that cannot be changed in the interface");
+  }
   if (afterReload.activeProfile !== "security_printer" || !afterReload.holographyChecked) {
     failures.push("Profile + interest combination did not survive reload");
   }
   if (afterReload.count !== combined.count) failures.push("Reload changed the combined result count");
 
-  process.stdout.write(`${JSON.stringify({ appUrl, failures, profileOnly, combined, afterReload }, null, 2)}\n`);
+  await clickDom(page, '[data-profile-template="passport_authority"]');
+  await waitForSettled(page);
+  const focusedMode = await snapshot(page);
+  await clickDom(page, '[data-identity-document-authority-strictness="balanced"]');
+  await waitForSettled(page);
+  const balancedMode = await snapshot(page);
+  await clickDom(page, '[data-identity-document-authority-strictness="broad"]');
+  await waitForSettled(page);
+  const researchMode = await snapshot(page);
+  if (focusedMode.modeChip !== "Profile strictness: Focused") failures.push("Identity Document Authority Focused label is incorrect");
+  if (balancedMode.modeChip !== "Profile strictness: Balanced") failures.push("Identity Document Authority Balanced label is incorrect");
+  if (researchMode.modeChip !== "Profile strictness: Research mode") failures.push("Identity Document Authority Research label is incorrect");
+  if (!(focusedMode.count <= balancedMode.count && balancedMode.count <= researchMode.count)) {
+    failures.push("Identity Document Authority modes did not broaden results from Focused to Research");
+  }
+
+  process.stdout.write(`${JSON.stringify({
+    appUrl,
+    failures,
+    profileOnly,
+    combined,
+    afterReload,
+    identityAuthorityModes: [focusedMode, balancedMode, researchMode],
+  }, null, 2)}\n`);
   if (failures.length) process.exitCode = 1;
 } finally {
   await browser.close();
