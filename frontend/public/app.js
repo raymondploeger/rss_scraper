@@ -4612,6 +4612,7 @@ function getArticleDecisionReasonLabel(reason = "") {
     vendors_profile_guard_passed: "A specialist industry source matched your vendor profile",
     profile_and_source_match: "Matched your profile within the selected sources",
     profile_and_interest_refinement_match: "Matched your Start Profile and selected Profile Interests",
+    explicit_profile_policy_content_match: "The article's content matched your Start Profile",
   };
   return labels[reason] || "Matched the active professional profile";
 }
@@ -4620,13 +4621,19 @@ function getArticleDecisionSourceSignal(article) {
   const feed = resolveFeedByIdentity(article?.feedId);
   const sourceName = String(feed?.name || article?.source || "Tracked source").trim();
   const sourceGroup = feed ? getFeedGroupName(feed) : "";
-  let label = `Tracked source: ${sourceName}`;
-  if (feed && isGovernmentSource(feed)) {
-    label = `Official government source: ${sourceName}`;
-  } else if (sourceGroup === "Vendors") {
-    label = `Specialist industry source: ${sourceName}`;
-  }
+  const label = `Article source: ${sourceName}`;
   return { label, sourceName, sourceGroup };
+}
+
+function getArticleDecisionEvidenceLabel(term) {
+  const normalizedTerm = String(term || "").trim().toLowerCase();
+  const readableTerms = {
+    "issu": "issuance",
+    "renew": "renewal",
+    "manufactur": "manufacturing",
+    "holograph": "holography",
+  };
+  return readableTerms[normalizedTerm] || normalizedTerm;
 }
 
 function recordArticleDecisionReceipt(article, options = {}) {
@@ -4648,11 +4655,14 @@ function recordArticleDecisionReceipt(article, options = {}) {
     .slice(0, 3);
   const sourceSignal = getArticleDecisionSourceSignal(article);
   const reason = String(options.reason || "profile_match");
+  const policyAnchors = Array.isArray(options.matchedPolicyAnchors) ? options.matchedPolicyAnchors : [];
+  const policyEvents = Array.isArray(options.matchedPolicyEvents) ? options.matchedPolicyEvents : [];
   const signals = [
-    ...matchedInterestLabels.slice(0, options.sourceLeading ? 0 : 2),
-    ...(options.sourceLeading ? ["Selected tracked source"] : []),
+    ...(policyAnchors[0] ? [`Profile topic: ${getArticleDecisionEvidenceLabel(policyAnchors[0])}`] : []),
+    ...(policyEvents[0] ? [`Content signal: ${getArticleDecisionEvidenceLabel(policyEvents[0])}`] : []),
+    ...matchedInterestLabels.slice(0, 2).map((label) => `Selected interest: ${label}`),
     sourceSignal.label,
-  ].filter(Boolean).slice(0, 3);
+  ].filter(Boolean).slice(0, 4);
   const profileDisplay = getPersonalDashboardProfileDisplay(selectedInterests);
   const receipt = Object.freeze({
     articleId: articleKey,

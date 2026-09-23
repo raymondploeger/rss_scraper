@@ -31,3 +31,5 @@ Start Profile interests form the profile's base policy and are not treated as ma
 `profile-mode-policy.js` records the legacy general scoring modes separately from Identity Document Authority strictness. The Authority has a user-selectable Focused, Balanced, or Research mode. Other profiles retain their existing Balanced scoring default; because the interface provides no control for it, the feed and article explanation do not display a mode badge for those profiles.
 
 The behavior corpus in `tests/fixtures/filter-behavior-corpus.json` contains executable positive and negative decision tests for source scope, profile policy, interest refinement, and the combined outcome.
+
+Article explanations separate match evidence from source context. When the explicit profile policy supplies content anchors and developments, the receipt shows those terms; selected interest refinements are shown by name. The article's source is identified as context, not presented as a reason that can bypass the profile policy.

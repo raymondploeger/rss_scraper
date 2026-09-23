@@ -37,6 +37,9 @@ async function snapshot(page) {
       .map((node) => node.textContent?.trim() || "")
       .find((label) => label.startsWith("Mode:") || label.startsWith("Profile strictness:")) || "",
     firstArticleWhyProfile: document.querySelector(".article-card .article-why-profile")?.textContent?.trim() || "",
+    firstArticleWhyReason: document.querySelector(".article-card .article-why-reason")?.textContent?.trim() || "",
+    firstArticleWhySignals: Array.from(document.querySelector(".article-card")?.querySelectorAll(".article-why-signals li") || [])
+      .map((node) => node.textContent?.trim() || ""),
     titles: Array.from(document.querySelectorAll(".article-card h3"))
       .map((node) => node.textContent?.trim() || ""),
   }));
@@ -91,6 +94,16 @@ try {
   if (combined.modeChip) failures.push("Security Printer displays a mode that cannot be changed in the interface");
   if (combined.firstArticleWhyProfile.includes("Balanced")) {
     failures.push("Article explanation displays a mode that cannot be changed in the interface");
+  }
+  if (profileOnly.firstArticleWhyReason === "The article's content matched your Start Profile" &&
+      !profileOnly.firstArticleWhySignals.some((signal) => signal.startsWith("Profile topic: "))) {
+    failures.push("Article explanation omits the profile content evidence");
+  }
+  if (!combined.firstArticleWhySignals.some((signal) => signal.startsWith("Selected interest: Holography"))) {
+    failures.push("Article explanation does not identify the selected Holography refinement");
+  }
+  if (!combined.firstArticleWhySignals.some((signal) => signal.startsWith("Article source: "))) {
+    failures.push("Article explanation does not distinguish source context from matching evidence");
   }
   if (afterReload.activeProfile !== "security_printer" || !afterReload.holographyChecked) {
     failures.push("Profile + interest combination did not survive reload");
