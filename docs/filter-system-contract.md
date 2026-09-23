@@ -36,6 +36,8 @@ Article explanations separate match evidence from source context. When the expli
 
 The former `getProfileSourceFilteringAssessment` compatibility layer has been removed. Every branch returned `applies: false`, so it did not participate in the selection decision. Active source scoping and domain-specific professional guards remain in place; the remaining legacy profile matcher is still a fallback pending broader regression coverage.
 
+The unused selected-source Border Control assessment and its private term lists have also been removed. The obsolete article-level source-affinity lookup, GOV.UK alias, and Identity Document Authority guard alias had no call sites. Feed-level source affinity and the active Border Control and identity-document quality checks remain intact.
+
 ## Regression matrix
 
 Run `npm run audit:profile-source-combinations` to test all seven Start Profiles against every tracked-source group. It verifies that a profile narrows (or preserves) its source scope and that `All` never returns fewer matches than any individual source group. Where complete result sets are visible, it also checks article-title inclusion.

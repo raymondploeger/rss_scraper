@@ -5050,10 +5050,6 @@ function getIdentityDocumentBundleQualityGateAssessment(article) {
   });
 }
 
-function getIdentityDocumentAuthorityProfileGuardAssessment(article) {
-  return getIdentityDocumentBundleQualityGateAssessment(article);
-}
-
 function isSecurityPrinterProfileActive(interests = state.personalDashboard.interests) {
   const normalizedInterests = normalizePersonalDashboardInterests(interests);
   const stateTemplateId = String(state.personalDashboard.activeTemplateId || "").trim();
@@ -5483,26 +5479,6 @@ function getFeedSourceProfileAffinityMatches(feed) {
   return getSourceProfileAffinityMatchesForFingerprint(buildFeedSourceAffinityFingerprint(feed));
 }
 
-function getArticleSourceProfileAffinityMatches(article) {
-  return getCachedArticleValue(article, "sourceProfileAffinityMatches", () => {
-    const feed = resolveFeedByIdentity(article?.feedId);
-    const fingerprint = [
-      buildFeedSourceAffinityFingerprint(feed),
-      article?.source,
-      article?.sourceName,
-      article?.feedTitle,
-      article?.feedName,
-      article?.link,
-      article?.canonicalLink,
-      article?.feedUrl,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    return getSourceProfileAffinityMatchesForFingerprint(fingerprint);
-  });
-}
-
 function getMatchingSourceProfileAffinityRule(matches, selectedInterests) {
   const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
   if (!normalizedInterests.length || !Array.isArray(matches) || !matches.length) {
@@ -5521,10 +5497,6 @@ function getMatchingSourceProfileAffinityRule(matches, selectedInterests) {
 
 function getSelectedFeedSourceProfileAffinityRule(selectedInterests, feed = resolveFeedByIdentity(state.filters?.feedId)) {
   return getMatchingSourceProfileAffinityRule(getFeedSourceProfileAffinityMatches(feed), selectedInterests);
-}
-
-function isGovUkArticle(article) {
-  return articleMatchesSourceFingerprint(article, ["gov.uk"]);
 }
 
 function articleMatchesSourceFingerprint(article, sourceTerms = []) {
@@ -5647,104 +5619,6 @@ const BORDER_CONTROL_PROFILE_CONTEXT_KEEP_TERMS = Object.freeze([
   "joint operations",
   "removed from the uk",
 ]);
-
-const SELECTED_SOURCE_BORDER_CONTROL_STRONG_TERMS = Object.freeze([
-  "border control",
-  "travel documents",
-  "border",
-  "frontier",
-  "immigration",
-  "preclearance",
-  "entry/exit",
-  "entry-exit",
-  "entry exit",
-  "eta",
-  "etias",
-  "ees",
-  "egate",
-  "egates",
-  "airport",
-  "cross-border",
-  "traveller",
-  "traveler",
-  "ceuta",
-  "asylum",
-  "visa",
-  "visas",
-  "frontex",
-  "eu-lisa",
-  "eulisa",
-]);
-
-const GOVUK_BORDER_CONTROL_REQUIRED_CONTEXT_TERMS = Object.freeze([
-  "border control",
-  "border force",
-  "border security",
-  "border checks",
-  "border crossing",
-  "border crossings",
-  "customs",
-  "immigration",
-  "immigration control",
-  "asylum",
-  "deportation",
-  "removed from the uk",
-  "visa",
-  "visas",
-  "ukvi",
-  "residence permit",
-  "biometric residence permit",
-  "brp",
-  "entry clearance",
-  "evisa",
-  "e-visa",
-  "electronic travel authorisation",
-  "electronic travel authorization",
-  "eta",
-  "entry exit system",
-  "entry/exit system",
-  "ees",
-  "etias",
-  "egate",
-  "egates",
-  "passport control",
-  "travel document",
-  "document verification",
-  "document inspection",
-]);
-
-function isGovUkSourceArticle(article) {
-  return articleMatchesSourceFingerprint(article, ["gov.uk", "www.gov.uk"]);
-}
-
-function getSelectedSourceBorderControlFilteringAssessment(article, sourceProfileAffinityRule = null) {
-  const tags = getArticleTags(article).map((tag) => String(tag || "").trim().toLowerCase());
-  const haystack = getArticleSearchText(article);
-  const tagMatched = tags.some((tag) => (
-    tag === "border control" ||
-    tag === "travel documents"
-  ));
-  const termMatched = SELECTED_SOURCE_BORDER_CONTROL_STRONG_TERMS.some((term) =>
-    textMatchesKeyword(haystack, term)
-  );
-  const govUkContextMatched = GOVUK_BORDER_CONTROL_REQUIRED_CONTEXT_TERMS.some((term) =>
-    textMatchesKeyword(haystack, term)
-  );
-  const govUkSourceRequiresContext = isGovUkSourceArticle(article);
-  const passed = tagMatched || (termMatched && (!govUkSourceRequiresContext || govUkContextMatched));
-
-  return {
-    mode: "selected_source_border_control",
-    applies: true,
-    passed,
-    reason: passed
-      ? "selected_source_border_control_context"
-      : govUkSourceRequiresContext
-        ? "selected_source_border_control_govuk_context_missing"
-        : "selected_source_border_control_context_missing",
-    sourceProfileAffinityRule,
-  };
-}
 
 const IDENTITY_DOCUMENT_AUTHORITY_PROFILE_CONTEXT_KEEP_TERMS = Object.freeze([
   "passport",
