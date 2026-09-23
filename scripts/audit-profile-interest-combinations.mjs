@@ -37,6 +37,8 @@ async function snapshot(page) {
       .map((node) => node.textContent?.trim() || "")
       .find((label) => label.startsWith("Mode:") || label.startsWith("Profile strictness:")) || "",
     firstArticleWhyProfile: document.querySelector(".article-card .article-why-profile")?.textContent?.trim() || "",
+    titles: Array.from(document.querySelectorAll(".article-card h3"))
+      .map((node) => node.textContent?.trim() || ""),
   }));
 }
 
@@ -65,6 +67,12 @@ try {
   await waitForSettled(page);
   const combined = await snapshot(page);
 
+  await clickDom(page, '[data-source-group="all"]');
+  await waitForSettled(page);
+  const allTracked = await snapshot(page);
+  await clickDom(page, '[data-source-group="Vendors"]');
+  await waitForSettled(page);
+
   await page.reload({ waitUntil: "domcontentloaded", timeout: 30000 });
   await page.waitForSelector('[data-profile-template="security_printer"]', { state: "attached", timeout: 30000 });
   await waitForSettled(page);
@@ -74,6 +82,9 @@ try {
   if (profileOnly.count <= 0) failures.push("Security Printer + Vendors profile returned no baseline articles");
   if (combined.count <= 0) failures.push("Holography refinement returned no articles");
   if (combined.count >= profileOnly.count) failures.push("Holography did not narrow the profile result");
+  if (allTracked.count < combined.count) failures.push("All tracked sources returned fewer results than Vendors");
+  const missingVendorTitles = combined.titles.filter((title) => !allTracked.titles.includes(title));
+  if (missingVendorTitles.length) failures.push(`All tracked sources omitted Vendor articles: ${missingVendorTitles.join("; ")}`);
   if (combined.activeProfile !== "security_printer") failures.push("Adding an interest cleared the Start Profile");
   if (!combined.holographyChecked) failures.push("Holography was not retained as selected");
   if (combined.storedTemplate !== "security_printer") failures.push("Start Profile was not persisted with the refinement");
@@ -107,6 +118,7 @@ try {
     failures,
     profileOnly,
     combined,
+    allTracked,
     afterReload,
     identityAuthorityModes: [focusedMode, balancedMode, researchMode],
   }, null, 2)}\n`);

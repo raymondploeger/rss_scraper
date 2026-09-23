@@ -56642,15 +56642,10 @@ function getBackendArticleQueryParams() {
 
 function buildTrackedSourcesAllBackendQueryParamsList() {
   const sourceGroups = getSourceGroupLabels(state.feeds.concat(getNonUsCatalogOnlySources()));
-  const sourceGroupPairs = [];
-  for (let index = 0; index < sourceGroups.length; index += 2) {
-    sourceGroupPairs.push(sourceGroups.slice(index, index + 2));
-  }
-
-  return sourceGroupPairs
-    .map((sourceGroupPair) => {
-      const feedIds = sourceGroupPair.flatMap((sourceGroup) => getFeedIdsForSourceGroup(sourceGroup).slice(0, 12));
-      const params = applyBackendArticleQueryBaseParams({ limit: 60 });
+  return sourceGroups
+    .map((sourceGroup) => {
+      const feedIds = getFeedIdsForSourceGroup(sourceGroup);
+      const params = applyBackendArticleQueryBaseParams({ limit: MAX_ARTICLES_IN_MEMORY });
       params.set("feedIds", feedIds.join(","));
       return params;
     })
@@ -57021,7 +57016,7 @@ async function ensureBackendArticleQueryData() {
       }
       return new Date(right?.pubDate || 0) - new Date(left?.pubDate || 0);
     })
-    .slice(0, backendCandidateLimit);
+    .slice(0, state.filters.trackedSourcesAll ? dedupedRawArticleMap.size : backendCandidateLimit);
   let normalizedArticles = dedupedRawArticles.map(normalizeLoadedArticle);
   if (
     personalDomainPlan?.domain === "identity_documents"
