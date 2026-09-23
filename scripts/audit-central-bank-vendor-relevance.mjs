@@ -20,6 +20,7 @@ try {
     cards: Array.from(document.querySelectorAll(".article-card")).map((card) => ({
       title: card.querySelector("h3")?.textContent?.trim() || "",
       feed: card.querySelector(".article-feed")?.textContent?.trim() || "",
+      link: card.querySelector("a.article-link")?.href || "",
       reason: card.querySelector(".article-why-reason")?.textContent?.trim() || "",
       signals: Array.from(card.querySelectorAll(".article-why-signals li")).map((item) => item.textContent?.trim() || ""),
     })),
@@ -27,8 +28,10 @@ try {
   const suspiciousTitle = (title) => /\b(?:moneta|monety|monetę|coin|coins)\b|media kit|application for permission|wniosek o zgod/i.test(title);
   const suspicious = snapshot.cards.filter(({ title }) => suspiciousTitle(title));
   const retainedExamples = snapshot.cards.filter(({ title }) => /20 dollar banknote|20-dollar note|new banknote/i.test(title));
+  const identityWeek = snapshot.cards.filter(({ link }) => /identityweek\.net/i.test(link));
   const failures = [];
   if (suspicious.length) failures.push("Collector coins or navigation pages remain in Central Bank + Vendors");
+  if (identityWeek.length) failures.push("Unrelated Identity Week articles remain in Central Bank + Vendors");
   if (!retainedExamples.length) failures.push("No representative banknote article survived the Central Bank filter");
   const targetedSearches = [];
   for (const term of ["moneta", "Media Kit"]) {
@@ -50,6 +53,7 @@ try {
     rendered: snapshot.cards.length,
     suspicious,
     retainedExamples,
+    identityWeek,
     targetedSearches,
     failures,
   }, null, 2)}\n`);

@@ -42798,18 +42798,26 @@ const CENTRAL_BANK_PROFILE_EDUCATION_NOISE_TERMS = [
   "explained for students",
 ];
 
-function getCentralBankProfileTitleNoiseAssessment(article) {
+function getCentralBankProfileHardNoiseAssessment(article) {
   const normalizedTitle = String(article?.title || "").toLowerCase().trim();
+  const articleLink = String(article?.canonicalLink || article?.link || "").toLowerCase();
+  const identityWeekArticle = /^https?:\/\/(?:www\.)?identityweek\.net\//.test(articleLink);
+  const articleContent = [article?.title, article?.summary, article?.summaryShort, article?.description, article?.contentSnippet, article?.content]
+    .filter(Boolean).join(" ").toLowerCase();
   return {
     coinOnlyTitle: /\b(?:coin|coins|moneta|monety|monet[ęay]|numismatic)\b/i.test(normalizedTitle) &&
       !/\b(?:banknote|banknotes|bank note|bank notes|banknot\w*|currency note|currency notes)\b/i.test(normalizedTitle),
     nonArticleTitle: /^(?:media kit|application for permission|wniosek o zgodę(?:\s*\/\s*application for permission)?)$/i.test(normalizedTitle),
+    identityWeekUnrelated: identityWeekArticle && (
+      /^https?:\/\/(?:www\.)?identityweek\.net\/category\//.test(articleLink) ||
+      !/\b(?:banknote|banknotes|bank note|bank notes|banknot\w*|currency note|currency notes)\b/.test(articleContent)
+    ),
   };
 }
 
 function getCentralBankProfileProfessionalAssessment(article) {
   return getCachedArticleValue(article, "centralBankProfileProfessionalAssessment", () => {
-    const { coinOnlyTitle, nonArticleTitle } = getCentralBankProfileTitleNoiseAssessment(article);
+    const { coinOnlyTitle, nonArticleTitle, identityWeekUnrelated } = getCentralBankProfileHardNoiseAssessment(article);
     const dominantDomain = getArticleDominantDomain(article);
     const signals = getBanknoteInterestSignals(article);
     const noiseAssessment = getBanknoteNoiseAssessment(article);
@@ -42871,7 +42879,7 @@ function getCentralBankProfileProfessionalAssessment(article) {
     const consumerNoise = consumerNoiseTerms.length > 0 && !professionalEventMatched;
     const digitalCurrencyNoise = digitalCurrencyNoiseTerms.length > 0 && physicalBanknoteContextTerms.length === 0;
     const educationNoise = educationNoiseTerms.length > 0;
-    const blocked = coinOnlyTitle || nonArticleTitle || dominantDomain !== "banknotes" ||
+    const blocked = coinOnlyTitle || nonArticleTitle || identityWeekUnrelated || dominantDomain !== "banknotes" ||
       noiseAssessment.contaminated ||
       collectorOrSocialNoise ||
       digitalIdNoise ||
@@ -42892,6 +42900,8 @@ function getCentralBankProfileProfessionalAssessment(article) {
       rejectionReason = "central_bank_profile_coin_only_title";
     } else if (nonArticleTitle) {
       rejectionReason = "central_bank_profile_navigation_title";
+    } else if (identityWeekUnrelated) {
+      rejectionReason = "central_bank_profile_identity_week_without_banknote_content";
     } else if (dominantDomain !== "banknotes") {
       rejectionReason = "central_bank_profile_wrong_domain";
     } else if (collectorOrSocialNoise || eventType === "banknote_auction_noise") {
@@ -42920,6 +42930,7 @@ function getCentralBankProfileProfessionalAssessment(article) {
       rejectionReason,
       coinOnlyTitle,
       nonArticleTitle,
+      identityWeekUnrelated,
       eventType,
       relevanceScore: Number(relevance?.score) || 0,
       relevanceKept: Boolean(relevance?.kept),
@@ -43669,13 +43680,16 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
   }
 
   if (getMatchingPersonalDashboardTemplateId(selectedInterests) === "central_bank") {
-    const titleNoise = measurePersonalDashboardSegment("centralBankProfileTitleGuard", () =>
-      getCentralBankProfileTitleNoiseAssessment(article)
+    const hardNoise = measurePersonalDashboardSegment("centralBankProfileHardNoiseGuard", () =>
+      getCentralBankProfileHardNoiseAssessment(article)
     );
-    if (titleNoise.coinOnlyTitle || titleNoise.nonArticleTitle) {
-      return finishPersonalDashboardTiming(false, titleNoise.coinOnlyTitle
+    if (hardNoise.coinOnlyTitle || hardNoise.nonArticleTitle || hardNoise.identityWeekUnrelated) {
+      const rejectionReason = hardNoise.coinOnlyTitle
         ? "central_bank_profile_coin_only_title"
-        : "central_bank_profile_navigation_title");
+        : hardNoise.nonArticleTitle
+          ? "central_bank_profile_navigation_title"
+          : "central_bank_profile_identity_week_without_banknote_content";
+      return finishPersonalDashboardTiming(false, rejectionReason);
     }
   }
 
