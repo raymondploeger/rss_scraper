@@ -4672,15 +4672,12 @@ function recordArticleDecisionReceipt(article, options = {}) {
       ? getIntelligenceFeedModeLabel(profileDisplay)
       : "",
     reason,
-    reasonLabel: options.sourceLeading
-      ? "Included because the selected source is leading this feed"
-      : getArticleDecisionReasonLabel(reason),
+    reasonLabel: getArticleDecisionReasonLabel(reason),
     matchedInterestIds: Object.freeze(matchedInterestIds.slice(0, 3)),
     matchedInterestLabels: Object.freeze(matchedInterestLabels),
     signals: Object.freeze(signals),
     sourceName: sourceSignal.sourceName,
     sourceGroup: sourceSignal.sourceGroup,
-    sourceLeading: Boolean(options.sourceLeading),
   });
 
   runtime.articleDecisionReceiptMap.set(articleKey, receipt);
@@ -4709,7 +4706,6 @@ function getArticleDecisionReceipt(article) {
       passed: true,
       selectedInterests,
       reason: "profile_and_source_match",
-      sourceLeading: false,
     });
   }
   return null;
@@ -5855,68 +5851,6 @@ function getBroadIdentitySourceProfileContextAssessment(article, selectedInteres
       matchedKeepTerms,
     };
   });
-}
-
-function getProfileSourceFilteringAssessment(article, selectedInterests) {
-  const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
-  if (!normalizedInterests.length) {
-    return {
-      mode: "no_profile",
-      applies: false,
-      passed: true,
-      reason: "no_selected_interests",
-    };
-  }
-
-  const queryContext = getActiveArticleQueryContext();
-  const selectedMainDomains = getSelectedMainDomains(normalizedInterests);
-  const selectedFeedScope = queryContext.hasSelectedFeed
-    ? getSelectedFeedProfileScope(normalizedInterests)
-    : null;
-  const sourceProfileAffinityRule = getMatchingSourceProfileAffinityRule(
-    getArticleSourceProfileAffinityMatches(article),
-    normalizedInterests
-  );
-
-  if (queryContext.hasSelectedFeed && selectedFeedScope?.compatible) {
-    return {
-      mode: queryContext.sourceOnly ? "source_only_context" : "selected_source_context",
-      applies: false,
-      passed: true,
-      reason: `selected_source_requires_profile_match:${selectedFeedScope.reason}`,
-      sourceProfileAffinityRule,
-    };
-  }
-
-  if (getMatchingPersonalDashboardTemplateId(normalizedInterests) === "vendors") {
-    return {
-      mode: queryContext.hasSourceGroup ? "vendors_profile_group" : "vendors_profile",
-      applies: false,
-      passed: true,
-      reason: queryContext.hasSourceGroup ? "vendors_profile_group_guard_fallback" : "vendors_profile_guard_fallback",
-    };
-  }
-
-  if (sourceProfileAffinityRule) {
-    const broadIdentitySourceProfileContextAssessment = getBroadIdentitySourceProfileContextAssessment(article, normalizedInterests);
-    return {
-      mode: "trusted_source_context",
-      applies: false,
-      passed: true,
-      reason: `trusted_source_requires_profile_match:${sourceProfileAffinityRule.id}`,
-      sourceProfileAffinityRule,
-      contextAssessment: selectedMainDomains.includes("identity_documents")
-        ? broadIdentitySourceProfileContextAssessment
-        : null,
-    };
-  }
-
-  return {
-    mode: queryContext.hasSourceGroup ? "strict_profile_group" : "strict_profile",
-    applies: false,
-    passed: true,
-    reason: queryContext.hasSourceGroup ? "strict_profile_group_fallback" : "strict_profile_fallback",
-  };
 }
 
 function getActiveProfilePolicyEvidenceAssessment(
@@ -43716,16 +43650,6 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
   );
   if (!selectedInterests.length) {
     return finishPersonalDashboardTiming(true, "no_selected_interests");
-  }
-
-  const profileSourceFilteringAssessment = measurePersonalDashboardSegment("profileSourceFilteringMode", () =>
-    getProfileSourceFilteringAssessment(article, selectedInterests)
-  );
-  if (profileSourceFilteringAssessment.applies) {
-    return finishPersonalDashboardTiming(
-      profileSourceFilteringAssessment.passed,
-      profileSourceFilteringAssessment.reason || profileSourceFilteringAssessment.mode
-    );
   }
 
   const explicitProfilePolicyAssessment = measurePersonalDashboardSegment("explicitProfilePolicyEvidence", () =>

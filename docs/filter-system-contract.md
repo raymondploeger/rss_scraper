@@ -33,3 +33,5 @@ Start Profile interests form the profile's base policy and are not treated as ma
 The behavior corpus in `tests/fixtures/filter-behavior-corpus.json` contains executable positive and negative decision tests for source scope, profile policy, interest refinement, and the combined outcome.
 
 Article explanations separate match evidence from source context. When the explicit profile policy supplies content anchors and developments, the receipt shows those terms; selected interest refinements are shown by name. The article's source is identified as context, not presented as a reason that can bypass the profile policy.
+
+The former `getProfileSourceFilteringAssessment` compatibility layer has been removed. Every branch returned `applies: false`, so it did not participate in the selection decision. Active source scoping and domain-specific professional guards remain in place; the remaining legacy profile matcher is still a fallback pending broader regression coverage.
