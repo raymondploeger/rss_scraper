@@ -35,3 +35,11 @@ The behavior corpus in `tests/fixtures/filter-behavior-corpus.json` contains exe
 Article explanations separate match evidence from source context. When the explicit profile policy supplies content anchors and developments, the receipt shows those terms; selected interest refinements are shown by name. The article's source is identified as context, not presented as a reason that can bypass the profile policy.
 
 The former `getProfileSourceFilteringAssessment` compatibility layer has been removed. Every branch returned `applies: false`, so it did not participate in the selection decision. Active source scoping and domain-specific professional guards remain in place; the remaining legacy profile matcher is still a fallback pending broader regression coverage.
+
+## Regression matrix
+
+Run `npm run audit:profile-source-combinations` to test all seven Start Profiles against every tracked-source group. It verifies that a profile narrows (or preserves) its source scope and that `All` never returns fewer matches than any individual source group. Where complete result sets are visible, it also checks article-title inclusion.
+
+Run `npm run audit:profile-mode-source-matrix` to test Identity Document Authority's Focused, Balanced, and Research modes against every source group plus IRCC and AAMVA as individual feeds. For each scope, result sets must expand monotonically (`Focused ⊆ Balanced ⊆ Research`) and remain within the source-only result set. The same `All` superset rule applies to every mode. Counts are intentionally not hard-coded because ingestion changes them over time.
+
+Run `npm run audit:profile-selected-feeds` for five representative individual-feed intersections spanning Central Bank, Identity Document Authority, Identity Verification, and Border Control. The 16-case `npm run test:filter-contract` corpus covers the policy's positive and negative content examples independently of live ingestion.

@@ -84,6 +84,7 @@ try {
         sourceOnlyCount: sourceOnly.count,
         combinedCount: combined.count,
         sameFirstPageTitles: JSON.stringify(sourceOnly.titles) === JSON.stringify(combined.titles),
+        titles: combined.titles,
         heading: combined.heading,
         summary: combined.summary,
       });
@@ -104,6 +105,20 @@ const failures = results.filter((row) => (
 const centralBankVendors = results.find((row) => (
   row.profile === "Central Bank" && row.group === "Vendors"
 ));
+for (const profile of new Set(results.map((row) => row.profile))) {
+  const allSources = results.find((row) => row.profile === profile && row.group === "All");
+  for (const scoped of results.filter((row) => row.profile === profile && row.group !== "All")) {
+    if (!allSources || allSources.combinedCount < scoped.combinedCount) {
+      failures.push({ profile, group: scoped.group, failure: "All has fewer profile results than a source group" });
+    }
+    if (allSources && allSources.combinedCount === allSources.titles?.length && scoped.combinedCount === scoped.titles?.length) {
+      const missingTitles = scoped.titles.filter((title) => !allSources.titles.includes(title));
+      if (missingTitles.length) {
+        failures.push({ profile, group: scoped.group, failure: "All omits source-group articles", missingTitles });
+      }
+    }
+  }
+}
 if (
   !centralBankVendors ||
   centralBankVendors.combinedCount >= centralBankVendors.sourceOnlyCount ||
@@ -119,8 +134,8 @@ process.stdout.write(`${JSON.stringify({
   appUrl,
   combinations: results.length,
   failures,
-  centralBankVendors,
-  results,
+  centralBankVendors: centralBankVendors ? (({ titles, ...row }) => row)(centralBankVendors) : null,
+  results: results.map(({ titles, ...row }) => row),
 }, null, 2)}\n`);
 
 if (failures.length) {
