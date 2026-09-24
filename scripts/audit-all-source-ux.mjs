@@ -5,12 +5,15 @@ const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage();
 
 async function clickAndSettle(selector) {
+  const previousRunId = await page.evaluate(() => window.getLatestFilterPerformanceDiagnostics?.()?.runId || "");
   await page.locator(selector).evaluate((element) => element.click());
-  await page.waitForFunction(() => {
+  await page.waitForFunction((oldRunId) => {
     const count = document.querySelector("#results-count")?.textContent || "";
-    return count && !/loading/i.test(count);
-  }, null, { timeout: 90000 });
-  await page.waitForTimeout(500);
+    const run = window.getLatestFilterPerformanceDiagnostics?.();
+    return Number.parseInt(count, 10) > 0 && run?.runId && run.runId !== oldRunId &&
+      run?.profilePolicyRouteSummary?.central_bank?.assessed > 0;
+  }, previousRunId, { timeout: 90000 });
+  await page.waitForTimeout(800);
 }
 
 function snapshot() {
@@ -20,13 +23,21 @@ function snapshot() {
     summary: document.querySelector("#intelligence-feed-summary")?.textContent?.trim(),
     allPressed: document.querySelector('[data-source-group="all"]')?.getAttribute("aria-pressed"),
     resetButtons: document.querySelectorAll("[data-source-scope-reset]").length,
+    routes: window.getLatestFilterPerformanceDiagnostics?.()?.profilePolicyRouteSummary?.central_bank || null,
   }));
 }
 
 try {
-  await page.addInitScript(() => localStorage.clear());
+  await page.addInitScript(() => {
+    localStorage.clear();
+    localStorage.setItem("debugFilterPerformance", "1");
+  });
   await page.goto(appUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
   await page.waitForSelector('[data-profile-template="central_bank"]', { state: "attached", timeout: 30000 });
+  await page.waitForFunction(() => {
+    const run = window.getLatestFilterPerformanceDiagnostics?.();
+    return run?.candidateCount > 0 && !run?.loading;
+  }, null, { timeout: 90000 });
   await clickAndSettle('[data-profile-template="central_bank"]');
   const initial = await snapshot();
   await clickAndSettle('[data-source-group="Vendors"]');
@@ -37,7 +48,8 @@ try {
   if (initial.resetButtons !== 0 || initial.allPressed !== "true" ||
       initial.count !== returned.count || returned.allPressed !== "true" ||
       !returned.summary.includes("across all sources") ||
-      vendors.count > returned.count) {
+      vendors.count > returned.count ||
+      returned.routes?.fallbackPass !== 0 || returned.routes?.fallbackReject !== 0) {
     throw new Error(`All-source UX mismatch: ${JSON.stringify({ initial, vendors, returned })}`);
   }
   console.log(JSON.stringify({ initial, vendors, returned }, null, 2));

@@ -54,7 +54,7 @@ try {
       await page.waitForFunction((oldRunId) => {
         const run = window.getLatestFilterPerformanceDiagnostics?.();
         return run?.runId && run.runId !== oldRunId &&
-          (document.querySelector("#intelligence-feed-title")?.textContent || "").includes("·");
+          (document.querySelector("#intelligence-feed-title")?.textContent || "").length > 0;
       }, previousRunId, { timeout: 90000 });
       await waitForSettled(page);
       const snapshot = await page.evaluate(() => ({
@@ -86,6 +86,11 @@ try {
         routeSummary.sharedSecurityPolicyPass === 0
       )) {
         failures.push({ profile: profile.id, group, failure: "Security Printer still uses legacy fallback", routes: routeSummary });
+      }
+      if (profile.id === "central_bank" && routeSummary && (
+        routeSummary.fallbackPass !== 0 || routeSummary.fallbackReject !== 0
+      )) {
+        failures.push({ profile: profile.id, group, failure: "Central Bank still uses legacy fallback", routes: routeSummary });
       }
       if (profile.id === "identity_verification" && routeSummary && (
         routeSummary.fallbackPass !== 0 || routeSummary.digitalIdentityPolicyPass === 0

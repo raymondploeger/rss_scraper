@@ -14,6 +14,7 @@ import { getProfileModePolicy, GENERAL_PROFILE_MODES } from "../frontend/public/
 import { evaluateSharedSecurityProfileDecision } from "../frontend/public/shared-security-profile-policy.js";
 import { evaluateDigitalIdentityProfileDecision } from "../frontend/public/digital-identity-profile-policy.js";
 import { evaluateIdentityDocumentProfileDecision } from "../frontend/public/identity-document-profile-policy.js";
+import { evaluateBanknoteProfileDecision } from "../frontend/public/banknote-profile-policy.js";
 import { evaluateProfileDomainScopeDecision } from "../frontend/public/profile-domain-scope-policy.js";
 import { evaluateProfileProfessionalGuardDecision } from "../frontend/public/profile-professional-guard-policy.js";
 
@@ -53,6 +54,53 @@ assert.deepEqual(evaluateSharedSecurityProfileDecision({
   techniqueMatched: true,
   professionalGuard: { applies: false, passed: false },
 }), { passed: true, reason: "shared_security_only_passed" });
+const banknoteCalls = [];
+const banknoteDecisionInputs = {
+  isContaminated: () => { banknoteCalls.push("contamination"); return false; },
+  assessConsumerNoise: () => { banknoteCalls.push("consumer"); return { rejected: false }; },
+  isCentralBankProfileActive: () => { banknoteCalls.push("profile"); return true; },
+  assessCentralBankProfessional: () => { banknoteCalls.push("professional"); return { passed: true }; },
+  resolveInterests: () => { banknoteCalls.push("interests"); return { groupInterestIds: ["banknote_design"], effectiveInterestIds: ["banknote_design"] }; },
+  profileBundleSelection: true,
+  matchesDomain: () => { throw new Error("Domain check is only for empty interest selections"); },
+  matchesInterest: () => { banknoteCalls.push("interest_match"); return true; },
+  matchesSharedSecurityTechnique: () => { banknoteCalls.push("technique"); return true; },
+};
+assert.deepEqual(evaluateBanknoteProfileDecision(banknoteDecisionInputs), {
+  passed: true,
+  reason: "banknote_interest_passed",
+});
+assert.deepEqual(banknoteCalls, ["contamination", "consumer", "profile", "professional", "interests", "interest_match", "technique"]);
+assert.deepEqual(evaluateBanknoteProfileDecision({
+  ...banknoteDecisionInputs,
+  isContaminated: () => true,
+  assessConsumerNoise: () => { throw new Error("Consumer assessment must not run after contamination"); },
+}), { passed: false, reason: "banknote_contaminated" });
+assert.deepEqual(evaluateBanknoteProfileDecision({
+  ...banknoteDecisionInputs,
+  assessConsumerNoise: () => ({ rejected: true, rejectionReason: "collector_noise" }),
+  isCentralBankProfileActive: () => { throw new Error("Professional assessment must not run after consumer rejection"); },
+}), { passed: false, reason: "collector_noise" });
+assert.deepEqual(evaluateBanknoteProfileDecision({
+  ...banknoteDecisionInputs,
+  assessCentralBankProfessional: () => ({ passed: false, rejectionReason: "not_physical_banknote" }),
+  resolveInterests: () => { throw new Error("Interests must not run after professional rejection"); },
+}), { passed: false, reason: "not_physical_banknote" });
+assert.deepEqual(evaluateBanknoteProfileDecision({
+  ...banknoteDecisionInputs,
+  profileBundleSelection: false,
+  isCentralBankProfileActive: () => false,
+  resolveInterests: () => ({ effectiveInterestIds: [], parentActsAsDomainGate: false }),
+  matchesDomain: () => true,
+  matchesSharedSecurityTechnique: () => false,
+}), { passed: false, reason: "banknote_domain_rejected" });
+assert.deepEqual(evaluateBanknoteProfileDecision({
+  ...banknoteDecisionInputs,
+  profileBundleSelection: false,
+  isCentralBankProfileActive: () => false,
+  resolveInterests: () => ({ effectiveInterestIds: ["banknotes"], parentActsAsDomainGate: true }),
+  matchesInterest: () => false,
+}), { passed: false, reason: "banknote_parent_gate_rejected" });
 assert.deepEqual(evaluateDigitalIdentityProfileDecision({
   selectedInterestCount: 2,
   matchedInterestIds: ["authentication"],
