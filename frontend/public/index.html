@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Security Industry Information</title>
     <link rel="icon" type="image/png" href="/images/favicon.png" />
-    <link rel="stylesheet" href="/styles.css?v=20260916-swedish-migration-rss-223" />
+    <link rel="stylesheet" href="/styles.css?v=20260924-tracked-all-profile-retrieval-247" />
   </head>
   <body>
     <div id="notification-region" class="notification-region" aria-live="polite" aria-label="Notifications"></div>
@@ -212,12 +212,14 @@
                 </select>
               </label>
               <div id="feed-group-tabs" class="feed-group-tabs" aria-label="Source group filters">
-                <button class="feed-group-tab is-active" type="button" data-source-group="all" aria-pressed="true">All</button>
+                <button class="feed-group-tab is-active" type="button" data-source-scope-reset="true" aria-pressed="true">No source filter</button>
+                <button class="feed-group-tab" type="button" data-source-group="all" aria-pressed="false">All tracked sources</button>
                 <button class="feed-group-tab" type="button" data-source-group="USA" aria-pressed="false">USA</button>
                 <button class="feed-group-tab" type="button" data-source-group="Canada" aria-pressed="false">Canada</button>
                 <button class="feed-group-tab" type="button" data-source-group="Google Alerts" aria-pressed="false">Google Alerts</button>
                 <button class="feed-group-tab" type="button" data-source-group="Other" aria-pressed="false">Other</button>
               </div>
+              <p class="source-scope-help">No source filter clears your selection. All tracked sources searches every registered source; choose a group to narrow it.</p>
               <div id="feed-panel-context" class="feed-panel-context" hidden>
                 <span id="feed-panel-context-label" class="feed-panel-context-label"></span>
                 <div class="feed-panel-context-actions">
@@ -477,6 +479,6 @@
       </article>
     </template>
 
-    <script type="module" src="/app.js?v=20260924-identity-document-policy-246"></script>
+    <script type="module" src="/app.js?v=20260924-tracked-all-profile-retrieval-247"></script>
   </body>
 </html>

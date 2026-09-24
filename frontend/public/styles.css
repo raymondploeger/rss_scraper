@@ -1911,6 +1911,13 @@ button.intelligence-context-chip:focus-visible .intelligence-context-chip-remove
   gap: 7px;
 }
 
+.source-scope-help {
+  margin: -4px 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
 .feed-panel-context {
   display: grid;
   gap: 10px;

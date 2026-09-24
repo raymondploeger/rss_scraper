@@ -42,6 +42,7 @@ async function snapshot(page) {
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 const results = [];
+const unscopedProfileCounts = new Map();
 
 try {
   await page.addInitScript(() => localStorage.clear());
@@ -66,7 +67,6 @@ try {
     id: node.dataset.sourceGroup,
     label: node.textContent?.trim(),
   })));
-
   for (const group of groups) {
     await clickDom(page, "#personal-dashboard-clear");
     await waitForSettled(page);
@@ -80,6 +80,7 @@ try {
       const combined = await snapshot(page);
       results.push({
         profile: profile.label,
+        groupId: group.id,
         group: group.label,
         sourceOnlyCount: sourceOnly.count,
         combinedCount: combined.count,
@@ -88,6 +89,13 @@ try {
         heading: combined.heading,
         summary: combined.summary,
       });
+      if (group.id === "all") {
+        await clickDom(page, "[data-source-scope-reset]");
+        await waitForSettled(page);
+        unscopedProfileCounts.set(profile.label, (await snapshot(page)).count);
+        await clickDom(page, '[data-source-group="all"]');
+        await waitForSettled(page);
+      }
       await clickDom(page, "#personal-dashboard-clear");
       await waitForSettled(page);
     }
@@ -97,17 +105,20 @@ try {
 }
 
 const failures = results.filter((row) => (
-  row.combinedCount > row.sourceOnlyCount ||
+  (row.groupId !== "all" && row.combinedCount > row.sourceOnlyCount) ||
   !row.heading.includes(row.profile) ||
-  !row.heading.includes(row.group === "All" ? "All tracked sources" : row.group) ||
+  !row.heading.includes(row.group) ||
   !row.summary.includes("matched your profile within selected sources")
 ));
 const centralBankVendors = results.find((row) => (
   row.profile === "Central Bank" && row.group === "Vendors"
 ));
 for (const profile of new Set(results.map((row) => row.profile))) {
-  const allSources = results.find((row) => row.profile === profile && row.group === "All");
-  for (const scoped of results.filter((row) => row.profile === profile && row.group !== "All")) {
+  const allSources = results.find((row) => row.profile === profile && row.groupId === "all");
+  if (allSources && allSources.combinedCount !== unscopedProfileCounts.get(profile)) {
+    failures.push({ profile, failure: "Unscoped profile and All tracked sources differ", unscoped: unscopedProfileCounts.get(profile), all: allSources.combinedCount });
+  }
+  for (const scoped of results.filter((row) => row.profile === profile && row.groupId !== "all")) {
     if (!allSources || allSources.combinedCount < scoped.combinedCount) {
       failures.push({ profile, group: scoped.group, failure: "All has fewer profile results than a source group" });
     }
@@ -135,6 +146,7 @@ process.stdout.write(`${JSON.stringify({
   combinations: results.length,
   failures,
   centralBankVendors: centralBankVendors ? (({ titles, ...row }) => row)(centralBankVendors) : null,
+  unscopedProfileCounts: Object.fromEntries(unscopedProfileCounts),
   results: results.map(({ titles, ...row }) => row),
 }, null, 2)}\n`);
 

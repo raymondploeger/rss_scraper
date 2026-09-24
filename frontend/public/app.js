@@ -1568,7 +1568,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "identity-document-policy-246";
+const APP_BUILD = "tracked-all-profile-retrieval-247";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -51560,15 +51560,26 @@ function syncSourceGroupTabs() {
 
   const activeGroup = state.filters.sourceGroup || "all";
   elements.feedGroupTabs.innerHTML = "";
+  const noFilterButton = document.createElement("button");
+  const noFilterActive = activeGroup === "all" && !state.filters.trackedSourcesAll &&
+    !state.filters.feedId && !state.filters.dmvFeedId && !state.filters.canadaDmvFeedPath &&
+    !state.filters.canadaDmvAll && state.dashboardMode === "normal";
+  noFilterButton.className = "feed-group-tab";
+  noFilterButton.type = "button";
+  noFilterButton.dataset.sourceScopeReset = "true";
+  noFilterButton.setAttribute("aria-pressed", String(noFilterActive));
+  noFilterButton.classList.toggle("is-active", noFilterActive);
+  noFilterButton.textContent = "No source filter";
+  elements.feedGroupTabs.appendChild(noFilterButton);
   labels.forEach((label) => {
     const button = document.createElement("button");
-    const isActive = label === activeGroup;
+    const isActive = label === activeGroup && (label !== "all" || state.filters.trackedSourcesAll);
     button.className = "feed-group-tab";
     button.type = "button";
     button.dataset.sourceGroup = label;
     button.setAttribute("aria-pressed", String(isActive));
     button.classList.toggle("is-active", isActive);
-    button.textContent = label === "all" ? "All" : label;
+    button.textContent = label === "all" ? "All tracked sources" : label;
     elements.feedGroupTabs.appendChild(button);
   });
 }
@@ -55861,7 +55872,7 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
   } else if (hasSource) {
     eyebrow = "Tracked Source Feed";
     title = sourceLabel;
-    summary = hasCount ? `${countLabel} from selected sources` : "Loading articles from selected sources...";
+    summary = hasCount ? `${countLabel} recently loaded from selected sources` : "Loading articles from selected sources...";
   }
 
   elements.intelligenceFeedEyebrow.textContent = eyebrow;
@@ -56471,10 +56482,15 @@ function shouldUseBackendArticleQuery() {
 
 function getBackendArticleQueryKey() {
   const personalDomainPlan = getPersonalDashboardBackendDomainPlan();
+  const shareUnscopedProfilePool = Boolean(
+    personalDomainPlan && hasPersonalDashboardSelections() &&
+    String(state.filters.sourceGroup || "all") === "all" &&
+    !state.filters.feedId && !state.filters.search
+  );
   return JSON.stringify({
     feedId: state.filters.feedId || "",
     sourceGroup: state.filters.sourceGroup || "all",
-    trackedSourcesAll: Boolean(state.filters.trackedSourcesAll),
+    trackedSourcesAll: shareUnscopedProfilePool ? false : Boolean(state.filters.trackedSourcesAll),
     sourceOnly: isSourceOnlyFeedViewActive(),
     topic: state.filters.topic || "",
     tag: state.filters.tag || "",
@@ -56680,9 +56696,6 @@ function buildPersonalDashboardBackendQueryParamsList() {
   }
 
   const sourceGroup = String(state.filters.sourceGroup || "all").trim() || "all";
-  if (state.filters.trackedSourcesAll) {
-    return buildTrackedSourcesAllBackendQueryParamsList();
-  }
   if (sourceGroup !== "all") {
     return [applyBackendArticleQueryBaseParams({ limit: MAX_ARTICLES_IN_MEMORY })];
   }
@@ -56757,6 +56770,17 @@ function buildPersonalDashboardBackendQueryParamsList() {
       params.set("limit", String(MAX_ARTICLES_IN_MEMORY));
       params.set("feedId", String(feed.id));
     });
+  });
+
+  // Keep the same candidate pool for an unscoped profile and "All tracked sources".
+  // The profile searches reach older relevant articles, while the per-group
+  // recent baseline guarantees that All includes every group-level candidate.
+  buildTrackedSourcesAllBackendQueryParamsList().forEach((params) => {
+    const key = params.toString();
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      requestParamsList.push(params);
+    }
   });
 
   return requestParamsList;
@@ -56895,6 +56919,11 @@ async function ensureBackendArticleQueryData() {
     dedupedRawArticleMap.set(dedupeKey, article);
   });
 
+  const retainProfileAllSourceCandidates = Boolean(
+    personalDomainPlan && hasPersonalDashboardSelections() &&
+    String(state.filters.sourceGroup || "all") === "all" &&
+    !state.filters.feedId && !state.filters.search
+  );
   const dedupedRawArticles = Array.from(dedupedRawArticleMap.values())
     .sort((left, right) => {
       const leftDirectlyRequested = directlyRequestedFeedArticleKeys.has(getRawArticleDedupeKey(left));
@@ -56904,7 +56933,9 @@ async function ensureBackendArticleQueryData() {
       }
       return new Date(right?.pubDate || 0) - new Date(left?.pubDate || 0);
     })
-    .slice(0, state.filters.trackedSourcesAll ? dedupedRawArticleMap.size : backendCandidateLimit);
+    .slice(0, state.filters.trackedSourcesAll || retainProfileAllSourceCandidates
+      ? dedupedRawArticleMap.size
+      : backendCandidateLimit);
   let normalizedArticles = dedupedRawArticles.map(normalizeLoadedArticle);
   if (
     personalDomainPlan?.domain === "identity_documents"
@@ -61944,6 +61975,32 @@ function bindEvents() {
 
   if (elements.feedGroupTabs) {
     elements.feedGroupTabs.addEventListener("click", (event) => {
+      const resetButton = event.target.closest("[data-source-scope-reset]");
+      if (resetButton) {
+        state.filters.sourceGroup = "all";
+        state.filters.trackedSourcesAll = false;
+        state.filters.feedId = "";
+        state.filters.sourceOnly = false;
+        state.filters.dmvFeedId = "";
+        state.filters.canadaDmvFeedPath = "";
+        state.filters.canadaDmvAll = false;
+        state.dashboardMode = "normal";
+        state.pagination.page = 1;
+        if (elements.feedFilter) elements.feedFilter.value = "";
+        if (elements.dmvFeedFilter) elements.dmvFeedFilter.value = "";
+        if (elements.canadaDmvFilter) elements.canadaDmvFilter.value = "";
+        clearFeedRenderCaches({ preserveBackendArticleQueryCache: true });
+        renderFeedList();
+        renderDmvOfficialLink();
+        renderDmvModeIndicator();
+        renderSkeletons();
+        if (elements.resultsCount) {
+          elements.resultsCount.textContent = "Loading articles...";
+        }
+        updateIntelligenceFeedHeader(null, true);
+        scheduleRenderArticles("source-scope-reset", { mode: "frame" });
+        return;
+      }
       const button = event.target.closest("[data-source-group]");
       if (!button) {
         return;
@@ -61958,7 +62015,7 @@ function bindEvents() {
       } else {
         syncSelectedFeedWithSourceGroup();
       }
-      clearFeedRenderCaches();
+      clearFeedRenderCaches({ preserveBackendArticleQueryCache: true });
       renderFeedList();
       renderSkeletons();
       if (elements.resultsCount) {
