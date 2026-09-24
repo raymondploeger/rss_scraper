@@ -15,6 +15,8 @@ import { evaluateSharedSecurityProfileDecision } from "../frontend/public/shared
 import { evaluateDigitalIdentityProfileDecision } from "../frontend/public/digital-identity-profile-policy.js";
 import { evaluateIdentityDocumentProfileDecision } from "../frontend/public/identity-document-profile-policy.js";
 import { evaluateBanknoteProfileDecision } from "../frontend/public/banknote-profile-policy.js";
+import { evaluateSharedSecurityRefinementDecision } from "../frontend/public/shared-security-refinement-policy.js";
+import { evaluateIdentityDocumentQualityGateDecision } from "../frontend/public/identity-document-quality-policy.js";
 import { evaluateProfileDomainScopeDecision } from "../frontend/public/profile-domain-scope-policy.js";
 import { evaluateProfileProfessionalGuardDecision } from "../frontend/public/profile-professional-guard-policy.js";
 
@@ -101,6 +103,28 @@ assert.deepEqual(evaluateBanknoteProfileDecision({
   resolveInterests: () => ({ effectiveInterestIds: ["banknotes"], parentActsAsDomainGate: true }),
   matchesInterest: () => false,
 }), { passed: false, reason: "banknote_parent_gate_rejected" });
+assert.deepEqual(evaluateSharedSecurityRefinementDecision({
+  hardRefinementActive: true,
+  bridgeDecision: { applies: true, passed: false },
+  techniqueMatched: true,
+}), { passed: false, reason: "shared_security_bridge_rejected" });
+assert.deepEqual(evaluateSharedSecurityRefinementDecision({
+  hardRefinementActive: true,
+  bridgeDecision: { applies: true, passed: true },
+  techniqueMatched: false,
+}), { passed: true, reason: "shared_security_bridge_passed" });
+assert.deepEqual(evaluateSharedSecurityRefinementDecision({
+  hardRefinementActive: false,
+  bridgeDecision: { applies: true, passed: false },
+  techniqueMatched: true,
+}), { passed: true, reason: "shared_security_technique_passed" });
+assert.deepEqual(evaluateIdentityDocumentQualityGateDecision({
+  assessment: { passed: false, rejectionReason: "identity_document_bundle_missing_document_context" },
+}), { passed: false, reason: "identity_document_bundle_missing_document_context" });
+assert.deepEqual(evaluateIdentityDocumentQualityGateDecision({ assessment: { passed: true } }), {
+  passed: true,
+  reason: "identity_document_quality_passed",
+});
 assert.deepEqual(evaluateDigitalIdentityProfileDecision({
   selectedInterestCount: 2,
   matchedInterestIds: ["authentication"],

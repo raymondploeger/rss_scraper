@@ -5,6 +5,8 @@ import { evaluateSharedSecurityProfileDecision } from "./shared-security-profile
 import { evaluateDigitalIdentityProfileDecision } from "./digital-identity-profile-policy.js";
 import { evaluateIdentityDocumentProfileDecision } from "./identity-document-profile-policy.js";
 import { evaluateBanknoteProfileDecision } from "./banknote-profile-policy.js";
+import { evaluateSharedSecurityRefinementDecision } from "./shared-security-refinement-policy.js";
+import { evaluateIdentityDocumentQualityGateDecision } from "./identity-document-quality-policy.js";
 import { evaluateProfileDomainScopeDecision } from "./profile-domain-scope-policy.js";
 import { evaluateProfileProfessionalGuardDecision } from "./profile-professional-guard-policy.js";
 import {
@@ -565,8 +567,11 @@ function recordProfilePolicyRoute(article, selectedInterests, route, passed, rea
     sharedSecurityPolicyReject: 0,
     banknotePolicyPass: 0,
     banknotePolicyReject: 0,
+    sharedSecurityRefinementPolicyPass: 0,
+    sharedSecurityRefinementPolicyReject: 0,
     identityDocumentPolicyPass: 0,
     identityDocumentPolicyReject: 0,
+    identityDocumentQualityPolicyReject: 0,
     digitalIdentityPolicyPass: 0,
     digitalIdentityPolicyReject: 0,
     domainScopeReject: 0,
@@ -585,8 +590,12 @@ function recordProfilePolicyRoute(article, selectedInterests, route, passed, rea
     bucket[passed ? "sharedSecurityPolicyPass" : "sharedSecurityPolicyReject"] += 1;
   } else if (route === "banknote_policy") {
     bucket[passed ? "banknotePolicyPass" : "banknotePolicyReject"] += 1;
+  } else if (route === "shared_security_refinement_policy") {
+    bucket[passed ? "sharedSecurityRefinementPolicyPass" : "sharedSecurityRefinementPolicyReject"] += 1;
   } else if (route === "identity_document_policy") {
     bucket[passed ? "identityDocumentPolicyPass" : "identityDocumentPolicyReject"] += 1;
+  } else if (route === "identity_document_quality_policy") {
+    if (!passed) bucket.identityDocumentQualityPolicyReject += 1;
   } else if (route === "digital_identity_policy") {
     bucket[passed ? "digitalIdentityPolicyPass" : "digitalIdentityPolicyReject"] += 1;
   } else if (route === "domain_scope_policy") {
@@ -1573,7 +1582,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "banknote-profile-policy-249";
+const APP_BUILD = "identity-document-quality-policy-251";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -43762,10 +43771,16 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
   const sharedSecurityBridgeDecision = measurePersonalDashboardSegment("sharedSecurityBridgeDecision", () =>
     getSharedSecurityBridgeDecision(article, selectedInterests)
   );
+  const sharedSecurityBridgeRefinementDecision = evaluateSharedSecurityRefinementDecision({
+    hardRefinementActive: sharedSecurityHardRefinement,
+    bridgeDecision: sharedSecurityBridgeDecision,
+  });
   if (sharedSecurityHardRefinement && sharedSecurityBridgeDecision.applies && !isBanknotesOnlyPersonalSelection(selectedInterests)) {
     return finishPersonalDashboardTiming(
-      sharedSecurityBridgeDecision.passed,
-      sharedSecurityBridgeDecision.passed ? "shared_security_bridge_passed" : "shared_security_bridge_rejected"
+      sharedSecurityBridgeRefinementDecision.passed,
+      sharedSecurityBridgeRefinementDecision.reason,
+      {},
+      "shared_security_refinement_policy"
     );
   }
   const primaryDomain = measurePersonalDashboardSegment("dominantDomain", () => getArticleDominantDomain(article));
@@ -43785,8 +43800,16 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
     const identityDocumentBundleQualityGate = measurePersonalDashboardSegment("identityDocumentBundleQualityGate", () =>
       getIdentityDocumentBundleQualityGateAssessment(article)
     );
-    if (!identityDocumentBundleQualityGate.passed) {
-      return finishPersonalDashboardTiming(false, identityDocumentBundleQualityGate.rejectionReason || "identity_document_bundle_quality_noise");
+    const identityDocumentQualityDecision = evaluateIdentityDocumentQualityGateDecision({
+      assessment: identityDocumentBundleQualityGate,
+    });
+    if (!identityDocumentQualityDecision.passed) {
+      return finishPersonalDashboardTiming(
+        false,
+        identityDocumentQualityDecision.reason,
+        {},
+        "identity_document_quality_policy"
+      );
     }
   }
 
@@ -43797,6 +43820,10 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
     || measurePersonalDashboardSegment("sharedSecurityTechniqueMatch", () => matchesSelectedSharedSecurityTechnique(article, selectedInterests))
     || identityTechniqueBridgeMatched
     || banknoteTechniqueBridgeMatched;
+
+  const sharedSecurityRefinementDecision = evaluateSharedSecurityRefinementDecision({
+    techniqueMatched: sharedSecurityTechniqueMatched,
+  });
 
   if (primaryDomain === "identity_documents") {
     if (measurePersonalDashboardSegment("identityNavigationPage", () => isIdentityNavigationPageArticle(article))) {
@@ -43862,8 +43889,10 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
   }
 
   return finishPersonalDashboardTiming(
-    sharedSecurityTechniqueMatched,
-    sharedSecurityTechniqueMatched ? "shared_security_technique_passed" : "shared_security_technique_rejected"
+    sharedSecurityRefinementDecision.passed,
+    sharedSecurityRefinementDecision.reason,
+    {},
+    "shared_security_refinement_policy"
   );
 }
 

@@ -92,6 +92,11 @@ try {
       )) {
         failures.push({ profile: profile.id, group, failure: "Central Bank still uses legacy fallback", routes: routeSummary });
       }
+      if (profile.id === "researcher" && routeSummary && (
+        routeSummary.fallbackPass !== 0 || routeSummary.fallbackReject !== 0
+      )) {
+        failures.push({ profile: profile.id, group, failure: "Industry Research still uses legacy fallback", routes: routeSummary });
+      }
       if (profile.id === "identity_verification" && routeSummary && (
         routeSummary.fallbackPass !== 0 || routeSummary.digitalIdentityPolicyPass === 0
       )) {

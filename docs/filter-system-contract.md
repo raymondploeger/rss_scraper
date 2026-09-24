@@ -52,7 +52,11 @@ The shared digital-identity and authentication professional guards now run throu
 
 The identity-document final decision now runs through `identity-document-profile-policy.js`, including the border queue and visa service-noise checks. Existing evidence functions and their ordering remain unchanged. The route audit asserts that identity-document pass/reject outcomes no longer come from the legacy fallback.
 
-The banknote final decision now runs through `banknote-profile-policy.js`. Contamination, consumer-noise, Central Bank professional relevance, interest matching, and technique bridges still use the existing helpers in their previous short-circuit order. The route audit asserts that Central Bank no longer reaches the legacy fallback. Residual shared-security decisions and domain-specific quality rules still need migration.
+The banknote final decision now runs through `banknote-profile-policy.js`. Contamination, consumer-noise, Central Bank professional relevance, interest matching, and technique bridges still use the existing helpers in their previous short-circuit order. The route audit asserts that Central Bank no longer reaches the legacy fallback.
+
+The shared-security refinement decision now runs through `shared-security-refinement-policy.js`. It preserves the existing order: an applicable shared-security bridge decides before dominant-domain scope; otherwise a profile that reaches the residual technique decision is accepted or rejected on its shared-security technique result. The detailed bridge evidence and technique helpers remain unchanged.
+
+The identity-document bundle quality gate now reports through `identity-document-quality-policy.js`. It preserves the existing hard rejections for missing document context and identity-document noise, but makes them explicit quality-policy decisions rather than legacy-fallback outcomes.
 
 ## Regression matrix
 
