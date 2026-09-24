@@ -3,6 +3,7 @@ import { evaluateProfilePolicyEvidence, getProfilePolicyDefinition } from "./pro
 import { evaluateInterestRefinementGroups, evaluateUnifiedFilterDecision } from "./unified-filter-evaluator.js";
 import { evaluateSharedSecurityProfileDecision } from "./shared-security-profile-policy.js";
 import { evaluateDigitalIdentityProfileDecision } from "./digital-identity-profile-policy.js";
+import { evaluateIdentityDocumentProfileDecision } from "./identity-document-profile-policy.js";
 import { evaluateProfileDomainScopeDecision } from "./profile-domain-scope-policy.js";
 import { evaluateProfileProfessionalGuardDecision } from "./profile-professional-guard-policy.js";
 import {
@@ -561,6 +562,8 @@ function recordProfilePolicyRoute(article, selectedInterests, route, passed, rea
     professionalGuardReject: 0,
     sharedSecurityPolicyPass: 0,
     sharedSecurityPolicyReject: 0,
+    identityDocumentPolicyPass: 0,
+    identityDocumentPolicyReject: 0,
     digitalIdentityPolicyPass: 0,
     digitalIdentityPolicyReject: 0,
     domainScopeReject: 0,
@@ -577,6 +580,8 @@ function recordProfilePolicyRoute(article, selectedInterests, route, passed, rea
     bucket[passed ? "professionalGuardPass" : "professionalGuardReject"] += 1;
   } else if (route === "shared_security_policy") {
     bucket[passed ? "sharedSecurityPolicyPass" : "sharedSecurityPolicyReject"] += 1;
+  } else if (route === "identity_document_policy") {
+    bucket[passed ? "identityDocumentPolicyPass" : "identityDocumentPolicyReject"] += 1;
   } else if (route === "digital_identity_policy") {
     bucket[passed ? "digitalIdentityPolicyPass" : "digitalIdentityPolicyReject"] += 1;
   } else if (route === "domain_scope_policy") {
@@ -1563,7 +1568,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "profile-professional-guard-245";
+const APP_BUILD = "identity-document-policy-246";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -43862,39 +43867,20 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
     const borderControlProfileSelection =
       getMatchingPersonalDashboardTemplateId(selectedInterests) === "border_control" &&
       selectedIdentityInterests.includes("border_control");
-    if (identityScopeAssessment.passed && borderControlProfileSelection) {
-      const borderGuidancePenalty = measurePersonalDashboardSegment("borderControlGuidancePenalty", () =>
+    const decision = evaluateIdentityDocumentProfileDecision({
+      scopeAssessment: identityScopeAssessment,
+      sharedSecurityTechniqueMatched,
+      borderControlProfileSelection,
+      assessBorderGuidance: () => measurePersonalDashboardSegment("borderControlGuidancePenalty", () =>
         getBorderControlGuidancePenalty(article)
-      );
-      if (
-        (borderGuidancePenalty.matchedQueueTravelTerms?.length || 0) &&
-        !(borderGuidancePenalty.matchedOperationalDetailTerms?.length || 0)
-      ) {
-        return finishPersonalDashboardTiming(false, "border_control_travel_queue_noise");
-      }
-      if ((borderGuidancePenalty.matchedQueueTravelTerms?.length || 0) >= 2) {
-        return finishPersonalDashboardTiming(false, "border_control_travel_queue_noise");
-      }
-    }
-    const visaResidencePermitServiceNoiseGuard = measurePersonalDashboardSegment("visaResidencePermitServiceNoiseGuard", () =>
-      getVisaResidencePermitServiceNoiseGuard(article, selectedIdentityInterests)
-    );
-    if (identityScopeAssessment.passed && visaResidencePermitServiceNoiseGuard.rejected) {
-      return finishPersonalDashboardTiming(
-        false,
-        visaResidencePermitServiceNoiseGuard.rejectionReason || "visa_residence_permit_service_noise"
-      );
-    }
-    return finishPersonalDashboardTiming(
-      identityScopeAssessment.passed && sharedSecurityTechniqueMatched,
-      identityScopeAssessment.passed && sharedSecurityTechniqueMatched ? "identity_documents_passed" : "identity_documents_rejected",
-      {
-        matchedInterestIds: [
-          ...(identityScopeAssessment.matchedObjectInterests || []),
-          ...(identityScopeAssessment.matchedIntelligenceInterests || []),
-        ],
-      }
-    );
+      ),
+      assessVisaServiceNoise: () => measurePersonalDashboardSegment("visaResidencePermitServiceNoiseGuard", () =>
+        getVisaResidencePermitServiceNoiseGuard(article, selectedIdentityInterests)
+      ),
+    });
+    return finishPersonalDashboardTiming(decision.passed, decision.reason, {
+      matchedInterestIds: decision.matchedInterestIds,
+    }, "identity_document_policy");
   }
 
   if (primaryDomain === "digital_identity_biometrics") {

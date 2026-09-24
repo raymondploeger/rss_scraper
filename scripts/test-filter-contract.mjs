@@ -13,6 +13,7 @@ import {
 import { getProfileModePolicy, GENERAL_PROFILE_MODES } from "../frontend/public/profile-mode-policy.js";
 import { evaluateSharedSecurityProfileDecision } from "../frontend/public/shared-security-profile-policy.js";
 import { evaluateDigitalIdentityProfileDecision } from "../frontend/public/digital-identity-profile-policy.js";
+import { evaluateIdentityDocumentProfileDecision } from "../frontend/public/identity-document-profile-policy.js";
 import { evaluateProfileDomainScopeDecision } from "../frontend/public/profile-domain-scope-policy.js";
 import { evaluateProfileProfessionalGuardDecision } from "../frontend/public/profile-professional-guard-policy.js";
 
@@ -64,6 +65,23 @@ assert.equal(evaluateDigitalIdentityProfileDecision({
   selectedInterestCount: 0,
   sharedSecurityTechniqueMatched: false,
 }).passed, false);
+assert.deepEqual(evaluateIdentityDocumentProfileDecision({
+  scopeAssessment: { passed: true, matchedObjectInterests: ["passports"], matchedIntelligenceInterests: ["issuance"] },
+}), { passed: true, reason: "identity_documents_passed", matchedInterestIds: ["passports", "issuance"] });
+assert.equal(evaluateIdentityDocumentProfileDecision({
+  scopeAssessment: { passed: true },
+  sharedSecurityTechniqueMatched: false,
+}).reason, "identity_documents_rejected");
+assert.equal(evaluateIdentityDocumentProfileDecision({
+  scopeAssessment: { passed: true },
+  borderControlProfileSelection: true,
+  assessBorderGuidance: () => ({ matchedQueueTravelTerms: ["queue"], matchedOperationalDetailTerms: [] }),
+  assessVisaServiceNoise: () => { throw new Error("Visa guard must not run after border rejection"); },
+}).reason, "border_control_travel_queue_noise");
+assert.equal(evaluateIdentityDocumentProfileDecision({
+  scopeAssessment: { passed: true },
+  assessVisaServiceNoise: () => ({ rejected: true, rejectionReason: "visa_service_noise" }),
+}).reason, "visa_service_noise");
 assert.deepEqual(evaluateProfileDomainScopeDecision({
   primaryDomain: "other",
   selectedMainDomains: ["digital_identity_biometrics"],

@@ -50,6 +50,8 @@ The two shared dominant-domain checks now use `profile-domain-scope-policy.js`. 
 
 The shared digital-identity and authentication professional guards now run through `profile-professional-guard-policy.js`. Their evidence functions are unchanged, and the digital guard still short-circuits the authentication guard when it rejects. The route audit asserts that these two rejection reasons no longer come from the legacy fallback. Domain-specific quality rules remain in the matcher.
 
+The identity-document final decision now runs through `identity-document-profile-policy.js`, including the border queue and visa service-noise checks. Existing evidence functions and their ordering remain unchanged. The route audit asserts that identity-document pass/reject outcomes no longer come from the legacy fallback. Banknote and residual shared-security decisions still need migration.
+
 ## Regression matrix
 
 Run `npm run audit:profile-source-combinations` to test all seven Start Profiles against every tracked-source group. It verifies that a profile narrows (or preserves) its source scope and that `All` never returns fewer matches than any individual source group. Where complete result sets are visible, it also checks article-title inclusion.

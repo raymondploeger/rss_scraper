@@ -92,6 +92,14 @@ try {
       )) {
         failures.push({ profile: profile.id, group, failure: "Identity Verification still accepts through legacy fallback", routes: routeSummary });
       }
+      if (["passport_authority", "border_control", "researcher"].includes(profile.id) && routeSummary && (
+        routeSummary.fallbackReasons.identity_documents_passed ||
+        routeSummary.fallbackReasons.identity_documents_rejected ||
+        routeSummary.fallbackReasons.border_control_travel_queue_noise ||
+        routeSummary.fallbackReasons.visa_residence_permit_service_noise
+      )) {
+        failures.push({ profile: profile.id, group, failure: "Identity-document decision still uses legacy fallback", routes: routeSummary });
+      }
       results.push({
         profile: profile.id,
         group,
