@@ -2,6 +2,7 @@ import { createFilterContract, FILTER_CONTRACT_VERSION } from "./filter-contract
 import { evaluateProfilePolicyEvidence, getProfilePolicyDefinition } from "./profile-policies.js";
 import { evaluateInterestRefinementGroups, evaluateUnifiedFilterDecision } from "./unified-filter-evaluator.js";
 import { evaluateSharedSecurityProfileDecision } from "./shared-security-profile-policy.js";
+import { evaluateDigitalIdentityProfileDecision } from "./digital-identity-profile-policy.js";
 import {
   GENERAL_PROFILE_MODES,
   IDENTITY_AUTHORITY_MODES,
@@ -558,6 +559,8 @@ function recordProfilePolicyRoute(article, selectedInterests, route, passed, rea
     professionalGuardReject: 0,
     sharedSecurityPolicyPass: 0,
     sharedSecurityPolicyReject: 0,
+    digitalIdentityPolicyPass: 0,
+    digitalIdentityPolicyReject: 0,
     fallbackPass: 0,
     fallbackReject: 0,
     fallbackReasons: {},
@@ -571,6 +574,8 @@ function recordProfilePolicyRoute(article, selectedInterests, route, passed, rea
     bucket[passed ? "professionalGuardPass" : "professionalGuardReject"] += 1;
   } else if (route === "shared_security_policy") {
     bucket[passed ? "sharedSecurityPolicyPass" : "sharedSecurityPolicyReject"] += 1;
+  } else if (route === "digital_identity_policy") {
+    bucket[passed ? "digitalIdentityPolicyPass" : "digitalIdentityPolicyReject"] += 1;
   } else {
     bucket[passed ? "fallbackPass" : "fallbackReject"] += 1;
     const reasonKey = String(reason || "unknown");
@@ -1553,7 +1558,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "shared-security-policy-242";
+const APP_BUILD = "digital-identity-policy-243";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -43900,12 +43905,14 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
     const matchedDigitalInterests = measurePersonalDashboardSegment("digitalSubgroupHybridAssessment", () =>
       selectedDigitalInterests.filter((interestId) => getDigitalSubgroupHybridAssessment(article, interestId).included)
     );
-    const digitalScopeMatched = !selectedDigitalInterests.length || matchedDigitalInterests.length > 0;
-    return finishPersonalDashboardTiming(
-      digitalScopeMatched && sharedSecurityTechniqueMatched,
-      digitalScopeMatched && sharedSecurityTechniqueMatched ? "digital_identity_passed" : "digital_identity_rejected",
-      { matchedInterestIds: matchedDigitalInterests }
-    );
+    const decision = evaluateDigitalIdentityProfileDecision({
+      selectedInterestCount: selectedDigitalInterests.length,
+      matchedInterestIds: matchedDigitalInterests,
+      sharedSecurityTechniqueMatched,
+    });
+    return finishPersonalDashboardTiming(decision.passed, decision.reason, {
+      matchedInterestIds: decision.matchedInterestIds,
+    }, "digital_identity_policy");
   }
 
   return finishPersonalDashboardTiming(

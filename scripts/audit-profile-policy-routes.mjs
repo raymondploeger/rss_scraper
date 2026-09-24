@@ -75,6 +75,11 @@ try {
       )) {
         failures.push({ profile: profile.id, group, failure: "Security Printer still uses legacy fallback", routes: routeSummary });
       }
+      if (profile.id === "identity_verification" && routeSummary && (
+        routeSummary.fallbackPass !== 0 || routeSummary.digitalIdentityPolicyPass === 0
+      )) {
+        failures.push({ profile: profile.id, group, failure: "Identity Verification still accepts through legacy fallback", routes: routeSummary });
+      }
       results.push({
         profile: profile.id,
         group,

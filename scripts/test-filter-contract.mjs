@@ -12,6 +12,7 @@ import {
 } from "../frontend/public/unified-filter-evaluator.js";
 import { getProfileModePolicy, GENERAL_PROFILE_MODES } from "../frontend/public/profile-mode-policy.js";
 import { evaluateSharedSecurityProfileDecision } from "../frontend/public/shared-security-profile-policy.js";
+import { evaluateDigitalIdentityProfileDecision } from "../frontend/public/digital-identity-profile-policy.js";
 
 const corpusUrl = new URL("../tests/fixtures/filter-behavior-corpus.json", import.meta.url);
 const corpus = JSON.parse(fs.readFileSync(corpusUrl, "utf8"));
@@ -49,6 +50,18 @@ assert.deepEqual(evaluateSharedSecurityProfileDecision({
   techniqueMatched: true,
   professionalGuard: { applies: false, passed: false },
 }), { passed: true, reason: "shared_security_only_passed" });
+assert.deepEqual(evaluateDigitalIdentityProfileDecision({
+  selectedInterestCount: 2,
+  matchedInterestIds: ["authentication"],
+}), { passed: true, reason: "digital_identity_passed", matchedInterestIds: ["authentication"] });
+assert.deepEqual(evaluateDigitalIdentityProfileDecision({
+  selectedInterestCount: 2,
+  matchedInterestIds: [],
+}), { passed: false, reason: "digital_identity_rejected", matchedInterestIds: [] });
+assert.equal(evaluateDigitalIdentityProfileDecision({
+  selectedInterestCount: 0,
+  sharedSecurityTechniqueMatched: false,
+}).passed, false);
 assert.ok(GENERAL_PROFILE_MODES.strict.domainThreshold > GENERAL_PROFILE_MODES.balanced.domainThreshold);
 assert.ok(GENERAL_PROFILE_MODES.balanced.domainThreshold > GENERAL_PROFILE_MODES.broad.domainThreshold);
 
