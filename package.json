@@ -14,6 +14,7 @@
     "audit:profile-selected-feeds": "node scripts/audit-profile-selected-feed-intersections.mjs",
     "audit:profile-interest-combinations": "node scripts/audit-profile-interest-combinations.mjs",
     "audit:profile-mode-source-matrix": "node scripts/audit-profile-mode-source-matrix.mjs",
+    "audit:profile-policy-routes": "node scripts/audit-profile-policy-routes.mjs",
     "audit:central-bank-vendor-relevance": "node scripts/audit-central-bank-vendor-relevance.mjs",
     "test:filter-contract": "node scripts/test-filter-contract.mjs",
     "audit:storage": "npm --prefix backend run audit:storage",

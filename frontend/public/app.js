@@ -496,6 +496,8 @@ function createFilterPerformanceRun(reason = "render") {
     totalUserVisibleMs: null,
     operationCounters: createFilterPerformanceCounters(),
     operationMaps: createFilterPerformanceCounterMap(),
+    profilePolicyRouteSeen: new Set(),
+    profilePolicyRouteSummary: {},
     articleContextAttributionState: createArticleContextAttributionState(),
     functionTimingProfiler: createFunctionTimingProfilerState(""),
     functionTimingProfilerSummary: null,
@@ -533,6 +535,42 @@ function createFilterPerformanceRun(reason = "render") {
 function getActiveFilterPerformanceRun() {
   const run = runtime.activeFilterPerformanceRun;
   return run && !run.completed ? run : null;
+}
+
+function recordProfilePolicyRoute(article, selectedInterests, route, passed, reason) {
+  const run = getActiveFilterPerformanceRun();
+  if (!run || !selectedInterests.length) {
+    return;
+  }
+  const profileId = getMatchingPersonalDashboardTemplateId(selectedInterests) || "custom";
+  const articleId = getArticlePerformanceId(article);
+  const key = `${profileId}|${articleId}`;
+  if (run.profilePolicyRouteSeen.has(key)) {
+    return;
+  }
+  run.profilePolicyRouteSeen.add(key);
+  const bucket = run.profilePolicyRouteSummary[profileId] ||= {
+    assessed: 0,
+    explicitPolicyPass: 0,
+    hardGuardReject: 0,
+    professionalGuardPass: 0,
+    professionalGuardReject: 0,
+    fallbackPass: 0,
+    fallbackReject: 0,
+    fallbackReasons: {},
+  };
+  bucket.assessed += 1;
+  if (route === "explicit_policy") {
+    bucket.explicitPolicyPass += 1;
+  } else if (route === "hard_guard") {
+    bucket.hardGuardReject += 1;
+  } else if (route === "professional_guard") {
+    bucket[passed ? "professionalGuardPass" : "professionalGuardReject"] += 1;
+  } else {
+    bucket[passed ? "fallbackPass" : "fallbackReject"] += 1;
+    const reasonKey = String(reason || "unknown");
+    bucket.fallbackReasons[reasonKey] = (bucket.fallbackReasons[reasonKey] || 0) + 1;
+  }
 }
 
 function getFilterPerformanceStageLabels(stageField) {
@@ -1311,6 +1349,7 @@ function compactFilterPerformanceRun(run) {
     selectedMainDomains: Array.isArray(run.selectedMainDomains) ? run.selectedMainDomains.slice() : [],
     selectedInterests: Array.isArray(run.selectedInterests) ? run.selectedInterests.slice() : [],
     selectedInterestCount: Number(run.selectedInterestCount) || 0,
+    profilePolicyRouteSummary: run.profilePolicyRouteSummary || {},
     candidateCount: Number(run.candidateCount) || 0,
     backendResultNormalizationMs: run.backendResultNormalizationMs,
     candidatePreparationMs: run.candidatePreparationMs,
@@ -1454,6 +1493,7 @@ function completeFilterPerformanceRun(extra = {}) {
   run.interpretation = buildFilterPerformanceInterpretation(run);
   run.completed = true;
   run.operationMaps = null;
+  run.profilePolicyRouteSeen = null;
   run.articleContextAttributionState = null;
   run.functionTimingProfiler = null;
   run.professionalGuardRunLocalReuseState = null;
@@ -1508,7 +1548,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "profile-mode-quality-240";
+const APP_BUILD = "profile-policy-routes-241";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -43522,7 +43562,8 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
       );
     }
   };
-  const finishPersonalDashboardTiming = (passed, reason, receiptOptions = {}) => {
+  const finishPersonalDashboardTiming = (passed, reason, receiptOptions = {}, decisionRoute = "legacy_fallback") => {
+    recordProfilePolicyRoute(article, selectedInterests, decisionRoute, passed, reason);
     if (personalDashboardTimingEnabled) {
       recordProductionLoadTimingBreakdown(
         "articleMatchesPersonalDashboardSelection",
@@ -43563,7 +43604,7 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
         : hardNoise.nonArticleTitle
           ? "central_bank_profile_navigation_title"
           : "central_bank_profile_identity_week_without_banknote_content";
-      return finishPersonalDashboardTiming(false, rejectionReason);
+      return finishPersonalDashboardTiming(false, rejectionReason, {}, "hard_guard");
     }
   }
 
@@ -43575,17 +43616,17 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
       policyVersion: explicitProfilePolicyAssessment.policyVersion,
       matchedPolicyAnchors: explicitProfilePolicyAssessment.matchedAnchors,
       matchedPolicyEvents: explicitProfilePolicyAssessment.matchedEvents,
-    });
+    }, "explicit_policy");
   }
 
   const vendorsProfileAssessment = measurePersonalDashboardSegment("vendorsProfileProfessionalGuard", () =>
     getVendorsProfileProfessionalGuard(article, selectedInterests)
   );
   if (vendorsProfileAssessment.applies && !vendorsProfileAssessment.passed) {
-    return finishPersonalDashboardTiming(false, vendorsProfileAssessment.rejectionReason || "vendors_profile_guard_rejected");
+    return finishPersonalDashboardTiming(false, vendorsProfileAssessment.rejectionReason || "vendors_profile_guard_rejected", {}, "professional_guard");
   }
   if (vendorsProfileAssessment.applies && vendorsProfileAssessment.passed) {
-    return finishPersonalDashboardTiming(true, "vendors_profile_guard_passed");
+    return finishPersonalDashboardTiming(true, "vendors_profile_guard_passed", {}, "professional_guard");
   }
 
   if (measurePersonalDashboardSegment("sharedSecurityOnlySelection", () => isSharedSecurityOnlyPersonalSelection(selectedInterests))) {

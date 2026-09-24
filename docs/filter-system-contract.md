@@ -38,6 +38,12 @@ The former `getProfileSourceFilteringAssessment` compatibility layer has been re
 
 The unused selected-source Border Control assessment and its private term lists have also been removed. The obsolete article-level source-affinity lookup, GOV.UK alias, and Identity Document Authority guard alias had no call sites. Feed-level source affinity and the active Border Control and identity-document quality checks remain intact.
 
+## Profile-policy route diagnostics
+
+Set `localStorage.debugFilterPerformance = "1"` in the browser to enable optional filter diagnostics. `window.getLatestFilterPerformanceDiagnostics().profilePolicyRouteSummary` then counts, per active Start Profile, the articles assessed by the explicit policy, a hard guard, a professional guard, or the remaining legacy fallback. The fallback reason counts identify the branches that still decide results. These are decision-path counts before later quality checks, sorting, grouping, and pagination; they are **not** visible-article counts. Assessment counts may also be lower than candidate counts when an article is excluded before profile evaluation. The diagnostic flag does not change filter decisions.
+
+Run `npm run audit:profile-policy-routes` against a local app (override `APP_URL` if needed) to measure all seven profiles in `Vendors` and `All`. The audit fails if a profile has no route measurements or the wrong heading, but does not freeze ingestion-dependent counts. On 24 September 2026, the local `All` sample still recorded fallback passes for Researcher (97), Security Printer (51), Identity Verification (30), Border Control (27), Passport Authority (21), and Central Bank (15). Vendors had no fallback decisions. Migrate one profile branch at a time, using the reported fallback reasons and the existing profile/source regression matrix to preserve its accepted and rejected cases.
+
 ## Regression matrix
 
 Run `npm run audit:profile-source-combinations` to test all seven Start Profiles against every tracked-source group. It verifies that a profile narrows (or preserves) its source scope and that `All` never returns fewer matches than any individual source group. Where complete result sets are visible, it also checks article-title inclusion.
