@@ -34,6 +34,9 @@ try {
   await page.waitForSelector('[data-profile-template="central_bank"]', { state: "attached", timeout: 30000 });
   await page.waitForFunction(() => document.querySelectorAll("[data-source-group]").length >= 5, null, { timeout: 30000 });
   await waitForSettled(page);
+  await page.waitForFunction(() => (
+    (window.getLatestFilterPerformanceDiagnostics?.()?.candidateCount || 0) > 0
+  ), null, { timeout: 90000 });
   const profiles = await page.locator("[data-profile-template]").evaluateAll((nodes) => nodes.map((node) => ({
     id: node.dataset.profileTemplate,
     label: node.querySelector(".personal-dashboard-template-option-copy > span")?.textContent?.trim()
@@ -65,6 +68,12 @@ try {
       }
       if (!snapshot.heading.includes(profile.label)) {
         failures.push({ profile: profile.id, group, failure: "Wrong profile heading", heading: snapshot.heading });
+      }
+      if (profile.id === "security_printer" && routeSummary && (
+        routeSummary.fallbackPass !== 0 || routeSummary.fallbackReject !== 0 ||
+        routeSummary.sharedSecurityPolicyPass === 0
+      )) {
+        failures.push({ profile: profile.id, group, failure: "Security Printer still uses legacy fallback", routes: routeSummary });
       }
       results.push({
         profile: profile.id,

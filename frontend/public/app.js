@@ -1,6 +1,7 @@
 import { createFilterContract, FILTER_CONTRACT_VERSION } from "./filter-contract.js";
 import { evaluateProfilePolicyEvidence, getProfilePolicyDefinition } from "./profile-policies.js";
 import { evaluateInterestRefinementGroups, evaluateUnifiedFilterDecision } from "./unified-filter-evaluator.js";
+import { evaluateSharedSecurityProfileDecision } from "./shared-security-profile-policy.js";
 import {
   GENERAL_PROFILE_MODES,
   IDENTITY_AUTHORITY_MODES,
@@ -555,6 +556,8 @@ function recordProfilePolicyRoute(article, selectedInterests, route, passed, rea
     hardGuardReject: 0,
     professionalGuardPass: 0,
     professionalGuardReject: 0,
+    sharedSecurityPolicyPass: 0,
+    sharedSecurityPolicyReject: 0,
     fallbackPass: 0,
     fallbackReject: 0,
     fallbackReasons: {},
@@ -566,6 +569,8 @@ function recordProfilePolicyRoute(article, selectedInterests, route, passed, rea
     bucket.hardGuardReject += 1;
   } else if (route === "professional_guard") {
     bucket[passed ? "professionalGuardPass" : "professionalGuardReject"] += 1;
+  } else if (route === "shared_security_policy") {
+    bucket[passed ? "sharedSecurityPolicyPass" : "sharedSecurityPolicyReject"] += 1;
   } else {
     bucket[passed ? "fallbackPass" : "fallbackReject"] += 1;
     const reasonKey = String(reason || "unknown");
@@ -1548,7 +1553,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "profile-policy-routes-241";
+const APP_BUILD = "shared-security-policy-242";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -43653,11 +43658,11 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
     const securityPrinterProfileAssessment = measurePersonalDashboardSegment("securityPrinterProfileProfessionalGuard", () =>
       getSecurityPrinterProfileProfessionalGuard(article, selectedInterests)
     );
-    if (matched && securityPrinterProfileAssessment.applies && !securityPrinterProfileAssessment.passed) {
-      return finishPersonalDashboardTiming(false, securityPrinterProfileAssessment.rejectionReason || "security_printer_profile_guard_rejected");
-    }
-
-    return finishPersonalDashboardTiming(matched, matched ? "shared_security_only_passed" : "shared_security_only_rejected");
+    const decision = evaluateSharedSecurityProfileDecision({
+      techniqueMatched: matched,
+      professionalGuard: securityPrinterProfileAssessment,
+    });
+    return finishPersonalDashboardTiming(decision.passed, decision.reason, {}, "shared_security_policy");
   }
 
   const selectedMainDomains = measurePersonalDashboardSegment("selectedMainDomains", () => getSelectedMainDomains(selectedInterests));

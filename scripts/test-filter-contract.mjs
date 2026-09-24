@@ -11,6 +11,7 @@ import {
   evaluateUnifiedFilterDecision,
 } from "../frontend/public/unified-filter-evaluator.js";
 import { getProfileModePolicy, GENERAL_PROFILE_MODES } from "../frontend/public/profile-mode-policy.js";
+import { evaluateSharedSecurityProfileDecision } from "../frontend/public/shared-security-profile-policy.js";
 
 const corpusUrl = new URL("../tests/fixtures/filter-behavior-corpus.json", import.meta.url);
 const corpus = JSON.parse(fs.readFileSync(corpusUrl, "utf8"));
@@ -32,6 +33,22 @@ assert.deepEqual(
   ["Focused", "Balanced", "Research mode"]
 );
 assert.equal(getProfileModePolicy("security_printer", "balanced", "focused").userSelectable, false);
+assert.deepEqual(evaluateSharedSecurityProfileDecision({ techniqueMatched: false }), {
+  passed: false,
+  reason: "shared_security_only_rejected",
+});
+assert.deepEqual(evaluateSharedSecurityProfileDecision({
+  techniqueMatched: true,
+  professionalGuard: { applies: true, passed: false, rejectionReason: "off_domain_printing" },
+}), { passed: false, reason: "off_domain_printing" });
+assert.deepEqual(evaluateSharedSecurityProfileDecision({
+  techniqueMatched: true,
+  professionalGuard: { applies: true, passed: true },
+}), { passed: true, reason: "shared_security_only_passed" });
+assert.deepEqual(evaluateSharedSecurityProfileDecision({
+  techniqueMatched: true,
+  professionalGuard: { applies: false, passed: false },
+}), { passed: true, reason: "shared_security_only_passed" });
 assert.ok(GENERAL_PROFILE_MODES.strict.domainThreshold > GENERAL_PROFILE_MODES.balanced.domainThreshold);
 assert.ok(GENERAL_PROFILE_MODES.balanced.domainThreshold > GENERAL_PROFILE_MODES.broad.domainThreshold);
 
