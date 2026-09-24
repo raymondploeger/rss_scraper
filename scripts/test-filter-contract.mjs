@@ -14,6 +14,7 @@ import { getProfileModePolicy, GENERAL_PROFILE_MODES } from "../frontend/public/
 import { evaluateSharedSecurityProfileDecision } from "../frontend/public/shared-security-profile-policy.js";
 import { evaluateDigitalIdentityProfileDecision } from "../frontend/public/digital-identity-profile-policy.js";
 import { evaluateProfileDomainScopeDecision } from "../frontend/public/profile-domain-scope-policy.js";
+import { evaluateProfileProfessionalGuardDecision } from "../frontend/public/profile-professional-guard-policy.js";
 
 const corpusUrl = new URL("../tests/fixtures/filter-behavior-corpus.json", import.meta.url);
 const corpus = JSON.parse(fs.readFileSync(corpusUrl, "utf8"));
@@ -85,6 +86,26 @@ assert.equal(evaluateProfileDomainScopeDecision({
   selectedMainDomains: ["banknotes"],
   banknoteTechniqueBridgeMatched: true,
 }).passed, true);
+const professionalGuardCalls = [];
+assert.deepEqual(evaluateProfileProfessionalGuardDecision({
+  assessDigitalIdentity: () => {
+    professionalGuardCalls.push("digital");
+    return { passed: false };
+  },
+  assessAuthentication: () => {
+    professionalGuardCalls.push("authentication");
+    return { passed: true };
+  },
+}), { passed: false, reason: "digital_identity_professional_guard" });
+assert.deepEqual(professionalGuardCalls, ["digital"], "Authentication guard must not run after a digital-identity rejection");
+assert.deepEqual(evaluateProfileProfessionalGuardDecision({
+  assessDigitalIdentity: () => ({ passed: true }),
+  assessAuthentication: () => ({ passed: false }),
+}), { passed: false, reason: "authentication_professional_guard" });
+assert.deepEqual(evaluateProfileProfessionalGuardDecision({
+  multiDigitalIdentityProfileSelection: true,
+  assessDigitalIdentity: () => { throw new Error("Skipped guard should not run"); },
+}), { passed: true, reason: "professional_guard_not_applicable" });
 assert.ok(GENERAL_PROFILE_MODES.strict.domainThreshold > GENERAL_PROFILE_MODES.balanced.domainThreshold);
 assert.ok(GENERAL_PROFILE_MODES.balanced.domainThreshold > GENERAL_PROFILE_MODES.broad.domainThreshold);
 

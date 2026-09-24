@@ -72,6 +72,12 @@ try {
       )) {
         failures.push({ profile: profile.id, group, failure: "Domain scope still rejects through legacy fallback", routes: routeSummary });
       }
+      if (routeSummary && (
+        routeSummary.fallbackReasons.digital_identity_professional_guard ||
+        routeSummary.fallbackReasons.authentication_professional_guard
+      )) {
+        failures.push({ profile: profile.id, group, failure: "Professional guard still rejects through legacy fallback", routes: routeSummary });
+      }
       if (!snapshot.heading.includes(profile.label)) {
         failures.push({ profile: profile.id, group, failure: "Wrong profile heading", heading: snapshot.heading });
       }

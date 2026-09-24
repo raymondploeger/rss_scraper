@@ -46,7 +46,9 @@ Run `npm run audit:profile-policy-routes` against a local app (override `APP_URL
 
 The digital-identity domain's final decision now lives in `digital-identity-profile-policy.js`. For Identity Verification, accepted articles therefore no longer pass through the legacy fallback. The route audit asserts this narrower migration boundary while the profile/source and interest audits protect visible results.
 
-The two shared dominant-domain checks now use `profile-domain-scope-policy.js`. They reject articles with no recognized domain or with a domain outside the selected profile, while preserving the existing identity-document and banknote technique bridges. The route audit asserts that these two rejection reasons no longer come from the legacy fallback. Other upstream professional guards and domain-specific quality rules remain where they are.
+The two shared dominant-domain checks now use `profile-domain-scope-policy.js`. They reject articles with no recognized domain or with a domain outside the selected profile, while preserving the existing identity-document and banknote technique bridges. The route audit asserts that these two rejection reasons no longer come from the legacy fallback.
+
+The shared digital-identity and authentication professional guards now run through `profile-professional-guard-policy.js`. Their evidence functions are unchanged, and the digital guard still short-circuits the authentication guard when it rejects. The route audit asserts that these two rejection reasons no longer come from the legacy fallback. Domain-specific quality rules remain in the matcher.
 
 ## Regression matrix
 

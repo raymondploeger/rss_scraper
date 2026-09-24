@@ -4,6 +4,7 @@ import { evaluateInterestRefinementGroups, evaluateUnifiedFilterDecision } from 
 import { evaluateSharedSecurityProfileDecision } from "./shared-security-profile-policy.js";
 import { evaluateDigitalIdentityProfileDecision } from "./digital-identity-profile-policy.js";
 import { evaluateProfileDomainScopeDecision } from "./profile-domain-scope-policy.js";
+import { evaluateProfileProfessionalGuardDecision } from "./profile-professional-guard-policy.js";
 import {
   GENERAL_PROFILE_MODES,
   IDENTITY_AUTHORITY_MODES,
@@ -1562,7 +1563,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "profile-domain-scope-244";
+const APP_BUILD = "profile-professional-guard-245";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -43775,19 +43776,17 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
     );
   }
 
-  if (!multiDigitalIdentityProfileSelection) {
-    const digitalIdentityProfessionalGuardAssessment = measurePersonalDashboardSegment("digitalIdentityProfessionalGuard", () =>
+  const professionalGuardDecision = evaluateProfileProfessionalGuardDecision({
+    multiDigitalIdentityProfileSelection,
+    assessDigitalIdentity: () => measurePersonalDashboardSegment("digitalIdentityProfessionalGuard", () =>
       getDigitalIdentityProfessionalGuardBooleanGateAssessment(article, selectedInterests)
-    );
-    if (digitalIdentityProfessionalGuardAssessment && !digitalIdentityProfessionalGuardAssessment.passed) {
-      return finishPersonalDashboardTiming(false, "digital_identity_professional_guard");
-    }
-    const authenticationProfessionalGuardAssessment = measurePersonalDashboardSegment("authenticationProfessionalGuard", () =>
+    ),
+    assessAuthentication: () => measurePersonalDashboardSegment("authenticationProfessionalGuard", () =>
       getAuthenticationProfessionalGuardBooleanGateAssessment(article, selectedInterests)
-    );
-    if (authenticationProfessionalGuardAssessment && !authenticationProfessionalGuardAssessment.passed) {
-      return finishPersonalDashboardTiming(false, "authentication_professional_guard");
-    }
+    ),
+  });
+  if (!professionalGuardDecision.passed) {
+    return finishPersonalDashboardTiming(false, professionalGuardDecision.reason, {}, "professional_guard");
   }
 
   const identityTechniqueBridgeMatched = measurePersonalDashboardSegment("identityTechniqueBridge", () =>
