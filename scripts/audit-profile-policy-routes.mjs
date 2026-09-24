@@ -66,6 +66,12 @@ try {
       if (!routeSummary || routeSummary.assessed === 0) {
         failures.push({ profile: profile.id, group, failure: "No profile-route assessments recorded" });
       }
+      if (routeSummary && (
+        routeSummary.fallbackReasons.primary_domain_other ||
+        routeSummary.fallbackReasons.selected_main_domain_mismatch
+      )) {
+        failures.push({ profile: profile.id, group, failure: "Domain scope still rejects through legacy fallback", routes: routeSummary });
+      }
       if (!snapshot.heading.includes(profile.label)) {
         failures.push({ profile: profile.id, group, failure: "Wrong profile heading", heading: snapshot.heading });
       }

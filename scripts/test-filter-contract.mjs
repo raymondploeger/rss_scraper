@@ -13,6 +13,7 @@ import {
 import { getProfileModePolicy, GENERAL_PROFILE_MODES } from "../frontend/public/profile-mode-policy.js";
 import { evaluateSharedSecurityProfileDecision } from "../frontend/public/shared-security-profile-policy.js";
 import { evaluateDigitalIdentityProfileDecision } from "../frontend/public/digital-identity-profile-policy.js";
+import { evaluateProfileDomainScopeDecision } from "../frontend/public/profile-domain-scope-policy.js";
 
 const corpusUrl = new URL("../tests/fixtures/filter-behavior-corpus.json", import.meta.url);
 const corpus = JSON.parse(fs.readFileSync(corpusUrl, "utf8"));
@@ -62,6 +63,28 @@ assert.equal(evaluateDigitalIdentityProfileDecision({
   selectedInterestCount: 0,
   sharedSecurityTechniqueMatched: false,
 }).passed, false);
+assert.deepEqual(evaluateProfileDomainScopeDecision({
+  primaryDomain: "other",
+  selectedMainDomains: ["digital_identity_biometrics"],
+}), { passed: false, reason: "primary_domain_other" });
+assert.deepEqual(evaluateProfileDomainScopeDecision({
+  primaryDomain: "identity_documents",
+  selectedMainDomains: ["digital_identity_biometrics"],
+}), { passed: false, reason: "selected_main_domain_mismatch" });
+assert.equal(evaluateProfileDomainScopeDecision({
+  primaryDomain: "identity_documents",
+  selectedMainDomains: ["identity_documents"],
+}).passed, true);
+assert.equal(evaluateProfileDomainScopeDecision({
+  primaryDomain: "other",
+  selectedMainDomains: ["identity_documents"],
+  identityTechniqueBridgeMatched: true,
+}).passed, true);
+assert.equal(evaluateProfileDomainScopeDecision({
+  primaryDomain: "digital_identity_biometrics",
+  selectedMainDomains: ["banknotes"],
+  banknoteTechniqueBridgeMatched: true,
+}).passed, true);
 assert.ok(GENERAL_PROFILE_MODES.strict.domainThreshold > GENERAL_PROFILE_MODES.balanced.domainThreshold);
 assert.ok(GENERAL_PROFILE_MODES.balanced.domainThreshold > GENERAL_PROFILE_MODES.broad.domainThreshold);
 

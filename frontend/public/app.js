@@ -3,6 +3,7 @@ import { evaluateProfilePolicyEvidence, getProfilePolicyDefinition } from "./pro
 import { evaluateInterestRefinementGroups, evaluateUnifiedFilterDecision } from "./unified-filter-evaluator.js";
 import { evaluateSharedSecurityProfileDecision } from "./shared-security-profile-policy.js";
 import { evaluateDigitalIdentityProfileDecision } from "./digital-identity-profile-policy.js";
+import { evaluateProfileDomainScopeDecision } from "./profile-domain-scope-policy.js";
 import {
   GENERAL_PROFILE_MODES,
   IDENTITY_AUTHORITY_MODES,
@@ -561,6 +562,7 @@ function recordProfilePolicyRoute(article, selectedInterests, route, passed, rea
     sharedSecurityPolicyReject: 0,
     digitalIdentityPolicyPass: 0,
     digitalIdentityPolicyReject: 0,
+    domainScopeReject: 0,
     fallbackPass: 0,
     fallbackReject: 0,
     fallbackReasons: {},
@@ -576,6 +578,8 @@ function recordProfilePolicyRoute(article, selectedInterests, route, passed, rea
     bucket[passed ? "sharedSecurityPolicyPass" : "sharedSecurityPolicyReject"] += 1;
   } else if (route === "digital_identity_policy") {
     bucket[passed ? "digitalIdentityPolicyPass" : "digitalIdentityPolicyReject"] += 1;
+  } else if (route === "domain_scope_policy") {
+    bucket.domainScopeReject += 1;
   } else {
     bucket[passed ? "fallbackPass" : "fallbackReject"] += 1;
     const reasonKey = String(reason || "unknown");
@@ -1558,7 +1562,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "digital-identity-policy-243";
+const APP_BUILD = "profile-domain-scope-244";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -43802,16 +43806,14 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
     );
   }
   const primaryDomain = measurePersonalDashboardSegment("dominantDomain", () => getArticleDominantDomain(article));
-  if (primaryDomain === "other" && !identityTechniqueBridgeMatched && !banknoteTechniqueBridgeMatched) {
-    return finishPersonalDashboardTiming(false, "primary_domain_other");
-  }
-
-  if (selectedMainDomains.length && !selectedMainDomains.includes(primaryDomain)) {
-    const selectedIdentityBridgeMatched = identityTechniqueBridgeMatched && selectedMainDomains.includes("identity_documents");
-    const selectedBanknoteBridgeMatched = banknoteTechniqueBridgeMatched && selectedMainDomains.includes("banknotes");
-    if (!selectedIdentityBridgeMatched && !selectedBanknoteBridgeMatched) {
-      return finishPersonalDashboardTiming(false, "selected_main_domain_mismatch");
-    }
+  const domainScopeDecision = evaluateProfileDomainScopeDecision({
+    primaryDomain,
+    selectedMainDomains,
+    identityTechniqueBridgeMatched,
+    banknoteTechniqueBridgeMatched,
+  });
+  if (!domainScopeDecision.passed) {
+    return finishPersonalDashboardTiming(false, domainScopeDecision.reason, {}, "domain_scope_policy");
   }
 
   if (!isVendorsProfileActive(selectedInterests) && selectedMainDomains.includes("identity_documents") && measurePersonalDashboardSegment("identityDocumentBundleQualityGateActive", () =>
