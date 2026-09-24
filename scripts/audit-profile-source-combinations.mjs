@@ -90,11 +90,11 @@ try {
         summary: combined.summary,
       });
       if (group.id === "all") {
-        await clickDom(page, "[data-source-scope-reset]");
+        await clickDom(page, '[data-source-group="USA"]');
         await waitForSettled(page);
-        unscopedProfileCounts.set(profile.label, (await snapshot(page)).count);
         await clickDom(page, '[data-source-group="all"]');
         await waitForSettled(page);
+        unscopedProfileCounts.set(profile.label, (await snapshot(page)).count);
       }
       await clickDom(page, "#personal-dashboard-clear");
       await waitForSettled(page);
@@ -107,8 +107,10 @@ try {
 const failures = results.filter((row) => (
   (row.groupId !== "all" && row.combinedCount > row.sourceOnlyCount) ||
   !row.heading.includes(row.profile) ||
-  !row.heading.includes(row.group) ||
-  !row.summary.includes("matched your profile within selected sources")
+  (row.groupId !== "all" && !row.heading.includes(row.group)) ||
+  !row.summary.includes(row.groupId === "all"
+    ? "matched your profile across all sources"
+    : "matched your profile within selected sources")
 ));
 const centralBankVendors = results.find((row) => (
   row.profile === "Central Bank" && row.group === "Vendors"
@@ -116,7 +118,7 @@ const centralBankVendors = results.find((row) => (
 for (const profile of new Set(results.map((row) => row.profile))) {
   const allSources = results.find((row) => row.profile === profile && row.groupId === "all");
   if (allSources && allSources.combinedCount !== unscopedProfileCounts.get(profile)) {
-    failures.push({ profile, failure: "Unscoped profile and All tracked sources differ", unscoped: unscopedProfileCounts.get(profile), all: allSources.combinedCount });
+    failures.push({ profile, failure: "Returning to All sources changed the profile count", returnedAll: unscopedProfileCounts.get(profile), all: allSources.combinedCount });
   }
   for (const scoped of results.filter((row) => row.profile === profile && row.groupId !== "all")) {
     if (!allSources || allSources.combinedCount < scoped.combinedCount) {
