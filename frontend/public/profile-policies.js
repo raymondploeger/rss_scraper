@@ -129,6 +129,11 @@ function matchingTerms(text, terms = []) {
   return terms.filter((term) => text.includes(normalizeEvidenceText(term)));
 }
 
+export function getProfilePolicyAnchorTerms(profileId) {
+  const rules = CONTENT_EVIDENCE_RULES[String(profileId || "").trim()];
+  return Object.freeze(Array.isArray(rules?.anchors) ? rules.anchors.slice() : []);
+}
+
 export function evaluateProfilePolicyEvidence(article, profileId) {
   const policy = getProfilePolicyDefinition(profileId);
   const rules = CONTENT_EVIDENCE_RULES[String(profileId || "").trim()];

@@ -59,6 +59,23 @@ function buildArticleWhere(filters = {}) {
     });
   }
 
+  if (Array.isArray(filters.searchAnyTerms) && filters.searchAnyTerms.length) {
+    andConditions.push({
+      OR: filters.searchAnyTerms.map((term) => ({
+        OR: [
+          { title: { contains: term, mode: "insensitive" } },
+          { source: { contains: term, mode: "insensitive" } },
+          { feedName: { contains: term, mode: "insensitive" } },
+          { link: { contains: term, mode: "insensitive" } },
+          { canonicalLink: { contains: term, mode: "insensitive" } },
+          { summary: { contains: term, mode: "insensitive" } },
+          { summaryShort: { contains: term, mode: "insensitive" } },
+          { contentSnippet: { contains: term, mode: "insensitive" } },
+        ],
+      })),
+    });
+  }
+
   if (filters.tag) {
     where.keywords = {
       has: String(filters.tag).trim(),

@@ -66,6 +66,8 @@ The source panel has one `All sources` choice, selected by default. Choosing it 
 
 Run `npm run test:complete-candidate-pagination` to verify that complete candidate pools omit the backend `take` limit and that every paginated response is merged before the profile policy runs.
 
+Central Bank uses its explicit policy anchors (`banknote`, `bank note`, `currency note`, `counterfeit currency`, and `counterfeit deterrence`) as an OR candidate preselection in the backend. Those are the same anchors required by the Central Bank policy, so this reduces retrieval work without changing the final profile, refinement, quality, or ranking decision.
+
 Run `npm run audit:profile-mode-source-matrix` to test Identity Document Authority's Strict, Standard, and Expanded profile strictness against every source group plus IRCC and AAMVA as individual feeds. For each scope, result sets must expand monotonically (`Strict ⊆ Standard ⊆ Expanded`) and remain within the source-only result set. The same `All` superset rule applies to every level. Counts are intentionally not hard-coded because ingestion changes them over time.
 
 Run `npm run audit:profile-selected-feeds` for five representative individual-feed intersections spanning Central Bank, Identity Document Authority, Identity Verification, and Border Control. The `npm run test:filter-contract` corpus covers the policy's positive and negative content examples independently of live ingestion.

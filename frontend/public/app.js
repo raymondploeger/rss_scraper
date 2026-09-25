@@ -1,5 +1,9 @@
 import { createFilterContract, FILTER_CONTRACT_VERSION } from "./filter-contract.js";
-import { evaluateProfilePolicyEvidence, getProfilePolicyDefinition } from "./profile-policies.js";
+import {
+  evaluateProfilePolicyEvidence,
+  getProfilePolicyAnchorTerms,
+  getProfilePolicyDefinition,
+} from "./profile-policies.js";
 import { evaluateInterestRefinementGroups, evaluateUnifiedFilterDecision } from "./unified-filter-evaluator.js";
 import { evaluateSharedSecurityProfileDecision } from "./shared-security-profile-policy.js";
 import { evaluateDigitalIdentityProfileDecision } from "./digital-identity-profile-policy.js";
@@ -56682,6 +56686,15 @@ function buildPersonalDashboardBackendQueryParamsList() {
   }
 
   const sourceGroup = String(state.filters.sourceGroup || "all").trim() || "all";
+  const activeTemplateId = getMatchingPersonalDashboardTemplateId(state.personalDashboard.interests);
+  if (activeTemplateId === "central_bank") {
+    const params = applyBackendArticleQueryBaseParams({
+      limit: MAX_ARTICLES_IN_MEMORY,
+      completeCandidates: true,
+    });
+    params.set("searchAny", getProfilePolicyAnchorTerms("central_bank").join(","));
+    return [params];
+  }
   if (sourceGroup !== "all") {
     return [applyBackendArticleQueryBaseParams({
       limit: MAX_ARTICLES_IN_MEMORY,

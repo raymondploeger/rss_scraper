@@ -77,4 +77,24 @@ await listCanonicalDedupedArticles({}, {
 });
 assert.equal(limitedFindManyQuery.take, 2);
 
-process.stdout.write(`${JSON.stringify({ status: "passed", checks: 10 })}\n`);
+let centralBankCandidateQuery = null;
+await listCanonicalDedupedArticles({ searchAnyTerms: ["banknote", "currency note"] }, {
+  limit: 2,
+  offset: 0,
+  complete: true,
+  prisma: {
+    article: {
+      findMany: async (query) => {
+        centralBankCandidateQuery = query;
+        return sourceArticles;
+      },
+    },
+  },
+});
+assert.equal(centralBankCandidateQuery.where.AND[0].OR.length, 2);
+assert.deepEqual(
+  centralBankCandidateQuery.where.AND[0].OR.map((condition) => condition.OR[0].title.contains),
+  ["banknote", "currency note"]
+);
+
+process.stdout.write(`${JSON.stringify({ status: "passed", checks: 12 })}\n`);

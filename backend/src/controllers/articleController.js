@@ -135,6 +135,7 @@ function buildArticleQueryDiagnostics(request, details = {}) {
     tag: serializeArticleQuery(query.tag),
     signal: serializeArticleQuery(query.signal),
     search: serializeArticleQuery(query.search),
+    searchAny: serializeArticleQuery(query.searchAny),
     date: serializeArticleQuery(query.date),
     from: serializeArticleQuery(query.from),
     to: serializeArticleQuery(query.to),
@@ -182,6 +183,7 @@ export async function listArticles(request, response) {
       page = 1,
       limit = env.maxArticlePageSize,
       search,
+      searchAny,
       tag,
       signal,
       showDuplicates,
@@ -193,6 +195,7 @@ export async function listArticles(request, response) {
       ? String(requestedFeedId).trim()
       : await resolveFeedIdFromQuery(feed);
     const requestedFeedIds = parseArticleQueryList(feedIds);
+    const searchAnyTerms = parseArticleQueryList(searchAny);
     const signalKeywords = SIGNAL_QUERY_KEYWORDS[String(signal || "").trim()] || [];
     const dateFrom = date ? startOfDay(date) : null;
     const dateTo = date ? endOfDay(date) : null;
@@ -206,6 +209,7 @@ export async function listArticles(request, response) {
       from: dateFrom || (from ? startOfDay(from) : null),
       to: dateTo || (to ? endOfDay(to) : null),
       search,
+      searchAnyTerms,
       tag,
       signalKeywords,
       excludeDuplicates: !includeDuplicates
