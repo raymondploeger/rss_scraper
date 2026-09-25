@@ -12,7 +12,7 @@ import { evaluateProfileProfessionalGuardDecision } from "./profile-professional
 import { fetchCompleteCandidatePages } from "./complete-candidate-pagination.js";
 import {
   PROFILE_DEFAULT_LOOKBACK_DAYS,
-  getProfileHistorySinceDate,
+  getProfileHistoryDateRange,
   normalizeProfileHistoryScope,
 } from "./profile-history-scope.js";
 import {
@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "profile-history-window-252";
+const APP_BUILD = "bounded-profile-history-window-253";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -7435,6 +7435,7 @@ const runtime = {
   selectedFeedFullPoolLoadingKeys: new Set(),
   backendArticleQueryRequestId: 0,
   backendArticleQueryActiveRequestId: 0,
+  backendArticleQueryAbortController: null,
   backendArticleQueryLoading: false,
   filterPipelineRenderId: 0,
   filterDecisionTraceMap: new Map(),
@@ -27072,8 +27073,8 @@ function getPersonalDashboardHistoryScope() {
   return normalizeProfileHistoryScope(state.personalDashboard.historyScope);
 }
 
-function getPersonalDashboardHistorySinceDate() {
-  return getProfileHistorySinceDate(getPersonalDashboardHistoryScope());
+function getPersonalDashboardHistoryDateRange() {
+  return getProfileHistoryDateRange(getPersonalDashboardHistoryScope());
 }
 
 function loadPersonalDashboardPreferences() {
@@ -28088,6 +28089,7 @@ function setPersonalDashboardHistoryScope(scope) {
     return;
   }
 
+  cancelPendingBackendArticleQuery();
   state.personalDashboard.historyScope = normalizedScope;
   ensurePaginationState();
   state.pagination.page = 1;
@@ -55873,8 +55875,8 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
   const count = Math.max(0, hasExplicitCount ? Number(articleCount) || 0 : hasDisplayedCount ? displayedResultCount : 0);
   const countLabel = `${count} article${count === 1 ? "" : "s"}`;
   const historyScope = getPersonalDashboardHistoryScope();
-  const profileTimeframeLabel = historyScope === "all"
-    ? "all stored articles"
+  const profileTimeframeLabel = historyScope === "older"
+    ? `the preceding ${PROFILE_DEFAULT_LOOKBACK_DAYS}-day period`
     : `the last ${PROFILE_DEFAULT_LOOKBACK_DAYS} days`;
 
   let eyebrow = "Live Stream";
@@ -55923,11 +55925,11 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
     }
     appendIntelligenceContextChip(
       fragment,
-      historyScope === "all" ? `Show last ${PROFILE_DEFAULT_LOOKBACK_DAYS} days` : "Load older articles",
+      historyScope === "older" ? `Show last ${PROFILE_DEFAULT_LOOKBACK_DAYS} days` : "Load older articles",
       {
-        action: historyScope === "all" ? "recent-profile-history" : "older-profile-history",
+        action: historyScope === "older" ? "recent-profile-history" : "older-profile-history",
         removable: false,
-        ariaLabel: historyScope === "all"
+        ariaLabel: historyScope === "older"
           ? `Show only the last ${PROFILE_DEFAULT_LOOKBACK_DAYS} days`
           : "Load older matching articles",
       }
@@ -56582,8 +56584,11 @@ function applyBackendArticleQueryBaseParams(options = {}) {
   }
   if (state.filters.date) {
     params.set("date", state.filters.date);
-  } else if (options.profileSince) {
-    params.set("from", options.profileSince);
+  } else if (options.profileDateRange?.from) {
+    params.set("from", options.profileDateRange.from);
+    if (options.profileDateRange.to) {
+      params.set("to", options.profileDateRange.to);
+    }
   }
 
   return params;
@@ -56595,7 +56600,7 @@ function getBackendArticleQueryParams() {
 
 function buildTrackedSourcesAllBackendQueryParamsList(options = {}) {
   const completeCandidates = options.completeCandidates === true;
-  const profileSince = String(options.profileSince || "").trim();
+  const profileDateRange = options.profileDateRange || null;
   const sourceGroups = getSourceGroupLabels(state.feeds.concat(getNonUsCatalogOnlySources()));
   return sourceGroups
     .map((sourceGroup) => {
@@ -56603,7 +56608,7 @@ function buildTrackedSourcesAllBackendQueryParamsList(options = {}) {
       const params = applyBackendArticleQueryBaseParams({
         limit: MAX_ARTICLES_IN_MEMORY,
         completeCandidates,
-        profileSince,
+        profileDateRange,
       });
       params.set("feedIds", feedIds.join(","));
       return params;
@@ -56741,14 +56746,14 @@ function buildPersonalDashboardBackendQueryParamsList() {
   }
 
   const resolvedFeed = state.filters.feedId ? resolveFeedByIdentity(state.filters.feedId) : null;
-  const profileSince = getPersonalDashboardHistorySinceDate();
+  const profileDateRange = getPersonalDashboardHistoryDateRange();
   if (resolvedFeed?.id) {
-    return [applyBackendArticleQueryBaseParams({ completeCandidates: true, profileSince })];
+    return [applyBackendArticleQueryBaseParams({ completeCandidates: true, profileDateRange })];
   }
 
   const explicitSearch = String(state.filters.search || "").trim();
   if (explicitSearch) {
-    return [applyBackendArticleQueryBaseParams({ completeCandidates: true, profileSince })];
+    return [applyBackendArticleQueryBaseParams({ completeCandidates: true, profileDateRange })];
   }
 
   const sourceGroup = String(state.filters.sourceGroup || "all").trim() || "all";
@@ -56756,14 +56761,14 @@ function buildPersonalDashboardBackendQueryParamsList() {
     return [applyBackendArticleQueryBaseParams({
       limit: MAX_ARTICLES_IN_MEMORY,
       completeCandidates: true,
-      profileSince,
+      profileDateRange,
     })];
   }
 
   // A complete pool from every tracked-source group already contains every
   // candidate that a profile search or source-affinity request could return.
   // Do not issue those overlapping requests before local profile evaluation.
-  return buildTrackedSourcesAllBackendQueryParamsList({ completeCandidates: true, profileSince });
+  return buildTrackedSourcesAllBackendQueryParamsList({ completeCandidates: true, profileDateRange });
 }
 
 async function mapBackendArticleQueryParamsWithConcurrency(queryParamsList = [], mapper, limit = BACKEND_ARTICLE_QUERY_CONCURRENCY_LIMIT) {
@@ -56788,11 +56793,18 @@ async function mapBackendArticleQueryParamsWithConcurrency(queryParamsList = [],
   return results;
 }
 
-async function fetchCompleteBackendArticleQuery(params) {
+async function fetchCompleteBackendArticleQuery(params, signal) {
   return fetchCompleteCandidatePages(
     params,
-    (pageParams) => apiRequest(`/api/articles?${pageParams.toString()}`)
+    (pageParams) => apiRequest(`/api/articles?${pageParams.toString()}`, { signal })
   );
+}
+
+function cancelPendingBackendArticleQuery() {
+  runtime.backendArticleQueryActiveRequestId = ++runtime.backendArticleQueryRequestId;
+  runtime.backendArticleQueryAbortController?.abort();
+  runtime.backendArticleQueryAbortController = null;
+  runtime.backendArticleQueryLoading = false;
 }
 
 async function ensureBackendArticleQueryData() {
@@ -56819,6 +56831,8 @@ async function ensureBackendArticleQueryData() {
 
   const requestId = ++runtime.backendArticleQueryRequestId;
   runtime.backendArticleQueryActiveRequestId = requestId;
+  const abortController = new AbortController();
+  runtime.backendArticleQueryAbortController = abortController;
   runtime.backendArticleQueryLoading = true;
   renderSkeletons();
   if (elements.resultsCount) {
@@ -56841,22 +56855,34 @@ async function ensureBackendArticleQueryData() {
   markProductionLoadTiming("backendNetworkRequestsStart", {
     backendRequestCount: queryParamsList.length,
   });
-  const responseEntries = await mapBackendArticleQueryParamsWithConcurrency(
-    queryParamsList,
-    async (params, requestIndex) => {
-      const startedAt = new Date().toISOString();
-      const startedMs = getPerformanceNow();
-      const response = await fetchCompleteBackendArticleQuery(params);
-      return {
-        response,
-        startedAt,
-        durationMs: Math.round((getPerformanceNow() - startedMs) * 10) / 10,
-        requestSucceeded: true,
-        statusCode: null,
-        requestIndex,
-      };
+  let responseEntries;
+  try {
+    responseEntries = await mapBackendArticleQueryParamsWithConcurrency(
+      queryParamsList,
+      async (params, requestIndex) => {
+        const startedAt = new Date().toISOString();
+        const startedMs = getPerformanceNow();
+        const response = await fetchCompleteBackendArticleQuery(params, abortController.signal);
+        return {
+          response,
+          startedAt,
+          durationMs: Math.round((getPerformanceNow() - startedMs) * 10) / 10,
+          requestSucceeded: true,
+          statusCode: null,
+          requestIndex,
+        };
+      }
+    );
+  } catch (error) {
+    if (requestId !== runtime.backendArticleQueryActiveRequestId || error?.name === "AbortError") {
+      return null;
     }
-  );
+    throw error;
+  } finally {
+    if (requestId === runtime.backendArticleQueryActiveRequestId) {
+      runtime.backendArticleQueryAbortController = null;
+    }
+  }
   const backendRequestWallClockMs = Math.round((getPerformanceNow() - backendRequestTimingStartedMs) * 10) / 10;
   markProductionLoadTiming("backendNetworkRequestsComplete", {
     backendRequestCount: queryParamsList.length,

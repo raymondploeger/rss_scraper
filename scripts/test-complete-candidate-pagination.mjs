@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { fetchCompleteCandidatePages } from "../frontend/public/complete-candidate-pagination.js";
 import {
-  getProfileHistorySinceDate,
+  getProfileHistoryDateRange,
   normalizeProfileHistoryScope,
 } from "../frontend/public/profile-history-scope.js";
 import { listCanonicalDedupedArticles } from "../backend/src/database/articleRepository.js";
@@ -81,12 +81,35 @@ await listCanonicalDedupedArticles({}, {
 });
 assert.equal(limitedFindManyQuery.take, 2);
 
-assert.equal(normalizeProfileHistoryScope("all"), "all");
-assert.equal(normalizeProfileHistoryScope("unexpected"), "recent");
-assert.equal(
-  getProfileHistorySinceDate("recent", new Date(2026, 8, 25, 12, 0, 0)),
-  "2026-06-27"
-);
-assert.equal(getProfileHistorySinceDate("all", new Date(2026, 8, 25, 12, 0, 0)), "");
+let datedFindManyQuery = null;
+await listCanonicalDedupedArticles({
+  from: new Date("2026-03-29T00:00:00.000Z"),
+  to: new Date("2026-06-26T23:59:59.999Z"),
+}, {
+  limit: 2,
+  offset: 0,
+  complete: true,
+  prisma: {
+    article: {
+      findMany: async (query) => {
+        datedFindManyQuery = query;
+        return [];
+      },
+    },
+  },
+});
+assert.equal(datedFindManyQuery.where.pubDate.gte.toISOString(), "2026-03-29T00:00:00.000Z");
+assert.equal(datedFindManyQuery.where.pubDate.lte.toISOString(), "2026-06-26T23:59:59.999Z");
 
-process.stdout.write(`${JSON.stringify({ status: "passed", checks: 14 })}\n`);
+assert.equal(normalizeProfileHistoryScope("all"), "older");
+assert.equal(normalizeProfileHistoryScope("unexpected"), "recent");
+assert.deepEqual(
+  getProfileHistoryDateRange("recent", new Date(2026, 8, 25, 12, 0, 0)),
+  { from: "2026-06-27", to: "" }
+);
+assert.deepEqual(
+  getProfileHistoryDateRange("older", new Date(2026, 8, 25, 12, 0, 0)),
+  { from: "2026-03-29", to: "2026-06-26" }
+);
+
+process.stdout.write(`${JSON.stringify({ status: "passed", checks: 17 })}\n`);
