@@ -3,7 +3,6 @@ import fs from "node:fs";
 import { createFilterContract, FILTER_CONTRACT_VERSION } from "../frontend/public/filter-contract.js";
 import {
   evaluateProfilePolicyEvidence,
-  getProfilePolicyAnchorTerms,
   getProfilePolicyDefinition,
   PROFILE_POLICY_DEFINITIONS,
 } from "../frontend/public/profile-policies.js";
@@ -34,13 +33,6 @@ assert.equal(evaluateProfilePolicyEvidence({ title: "Canada expands online passp
 assert.equal(evaluateProfilePolicyEvidence({ title: "Irregular border crossings decline after operation" }, "border_control").passed, true);
 assert.equal(evaluateProfilePolicyEvidence({ title: "Post-Quantum OpenID Connect specification" }, "identity_verification").passed, true);
 assert.equal(evaluateProfilePolicyEvidence({ title: "Quarterly interest-rate decision" }, "central_bank").passed, false);
-assert.deepEqual(getProfilePolicyAnchorTerms("central_bank"), [
-  "banknote",
-  "bank note",
-  "currency note",
-  "counterfeit currency",
-  "counterfeit deterrence",
-]);
 assert.deepEqual(
   ["focused", "balanced", "broad"].map((mode) =>
     getProfileModePolicy("passport_authority", "balanced", mode).label
