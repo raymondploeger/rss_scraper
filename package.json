@@ -18,6 +18,7 @@
     "audit:central-bank-vendor-relevance": "node scripts/audit-central-bank-vendor-relevance.mjs",
     "test:filter-contract": "node scripts/test-filter-contract.mjs",
     "test:complete-candidate-pagination": "node scripts/test-complete-candidate-pagination.mjs",
+    "test:sarb-source-relevance": "node scripts/test-south-african-reserve-bank-relevance.mjs",
     "audit:storage": "npm --prefix backend run audit:storage",
     "audit:crane-currency": "npm --prefix backend run audit:crane-currency",
     "db:storage-diagnostics": "npm --prefix backend run db:storage-diagnostics",

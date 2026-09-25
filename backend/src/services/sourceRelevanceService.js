@@ -2029,6 +2029,46 @@ export const SOURCE_RELEVANCE_RULES = [
       "payments system board",
     ],
   },
+  {
+    name: "South African Reserve Bank News",
+    sourceKeys: [
+      "south african reserve bank news",
+      "resbank.co.za/bin/sarb/solr/publications/rss",
+    ],
+    include: [
+      "banknote",
+      "banknotes",
+      "cash",
+      "cash distribution",
+      "currency",
+      "rand",
+      "coin",
+      "coins",
+      "counterfeit",
+      "legal tender",
+      "denomination",
+      "note design",
+      "security feature",
+    ],
+    protectedInclude: [
+      "banknote",
+      "cash",
+      "currency",
+      "counterfeit",
+      "legal tender",
+      "denomination",
+      "note design",
+      "security feature",
+    ],
+    exclude: [
+      "interest rate",
+      "monetary policy",
+      "prudential authority",
+      "insurance",
+      "banking sector",
+      "foreign exchange reserves",
+    ],
+  },
 ];
 
 export function getSourceRelevanceRule(feed) {

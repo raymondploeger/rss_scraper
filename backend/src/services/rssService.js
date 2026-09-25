@@ -533,7 +533,8 @@ function shouldReplaceArticlesOnSync(feed) {
     isTsaPressReleasesFeed(feed) ||
     isEnisaNewsFeed(feed) ||
     isAamvaNewsFeed(feed) ||
-    isEuropeanCommissionDigitalIdentityNewsFeed(feed)
+    isEuropeanCommissionDigitalIdentityNewsFeed(feed) ||
+    isSouthAfricanReserveBankNewsFeed(feed)
   );
 }
 
@@ -5231,18 +5232,17 @@ async function runFeedSync(feed) {
       console.log(`[${vendorFeedLogLabel}] articles_found count=${resolvedItems.length}`);
     }
 
-    const canReplaceWebsiteArticles =
-      feed.sourceType === "website" &&
+    const canReplaceSourceArticles =
       shouldReplaceArticlesOnSync(feed) &&
       resolvedItems.some(itemHasExplicitPubDate);
 
-    if (feed.sourceType === "website" && shouldReplaceArticlesOnSync(feed) && !canReplaceWebsiteArticles) {
-      console.warn(`Skipped replacing website-source articles for ${feed.id}: extracted items have no explicit dates`);
+    if (shouldReplaceArticlesOnSync(feed) && !canReplaceSourceArticles) {
+      console.warn(`Skipped replacing source articles for ${feed.id}: extracted items have no explicit dates`);
     }
 
-    if (canReplaceWebsiteArticles) {
+    if (canReplaceSourceArticles) {
       const deletedCount = await deleteArticlesByFeedId(feed.id);
-      console.log(`Replaced existing website-source articles for ${feed.id}: deleted=${deletedCount}`);
+      console.log(`Replaced existing source articles for ${feed.id}: deleted=${deletedCount}`);
       logTrackedVendorWebsiteFeedState(feed, "post-delete-existing", {
         deletedCount,
       });
