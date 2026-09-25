@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "prominent-profile-history-control-257";
+const APP_BUILD = "south-african-reserve-bank-government-group-258";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1686,6 +1686,7 @@ const GOVERNMENT_SOURCE_PATTERNS = Object.freeze([
   "api.io.canada.ca/io-server/gc/news/en/v2",
   "bankofcanada.ca/utility/news/feed",
   "rba.gov.au/rss/rss-cb-media-releases.xml",
+  "resbank.co.za/bin/sarb/solr/publications/rss",
   "digital-strategy.ec.europa.eu/en/policies/electronic-identification",
   "migrationsverket.se/en/word-explanations/residence-permit-cards",
 ]);
