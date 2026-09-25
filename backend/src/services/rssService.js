@@ -78,6 +78,8 @@ const POLYVANTIS_PRESS_URL = "https://www.polyvantis.com/en/press";
 const LINXENS_NEWS_URL = "https://www.linxens.com/en/news-events";
 const VTT_NEWS_URL = "https://www.vttresearch.com/en/news-stories/news-and-stories";
 const SOUTH_AFRICAN_RESERVE_BANK_RSS_URL = "https://www.resbank.co.za/bin/sarb/solr/publications/rss";
+const SOUTH_AFRICAN_RESERVE_BANK_CASH_STUDY_BANNER_URL =
+  "https://www.resbank.co.za/content/dam/sarb/publications/other-publications/2026/cost-of-cash/banner-cash-study.svg";
 const SOUTH_AFRICAN_RESERVE_BANK_SITE_URL = "https://www.resbank.co.za";
 const KINEGRAM_INSIGHTS_URL = "https://www.kinegram.com/events-insights/insights";
 const KOENIG_BAUER_PRESS_RELEASES_URL = "https://www.koenig-bauer.com/en/newsroom/press-releases";
@@ -503,6 +505,15 @@ function isSouthAfricanReserveBankNewsFeed(feed) {
     urlFragments: ["resbank.co.za/bin/sarb/solr/publications/rss"],
     exactNames: ["South African Reserve Bank News"],
   });
+}
+
+function getSouthAfricanReserveBankArticleThumbnail(title) {
+  const normalizedTitle = normalizeTitle(title);
+  if (normalizedTitle === "cost of cash research study") {
+    return SOUTH_AFRICAN_RESERVE_BANK_CASH_STUDY_BANNER_URL;
+  }
+
+  return "";
 }
 
 function shouldReplaceArticlesOnSync(feed) {
@@ -4869,6 +4880,9 @@ function normalizeItem(feed, item) {
   const extractedThumbnailUrl = isLikelyGenericMetadataImage(rawExtractedThumbnailUrl)
     ? ""
     : rawExtractedThumbnailUrl;
+  const officialArticleThumbnail = isSouthAfricanReserveBankNewsFeed(feed)
+    ? getSouthAfricanReserveBankArticleThumbnail(title)
+    : "";
   const generatedSourceThumbnail =
     isSouthAfricanReserveBankNewsFeed(feed)
       ? getOfficialSourceTitleThumbnail("South African Reserve Bank", title, "006341")
@@ -4886,13 +4900,15 @@ function normalizeItem(feed, item) {
     : resolveFeedImageCandidate(link, feed.sourceFallbackImage || "");
   const thumbnail = normalizeText(
     isSouthAfricanReserveBankNewsFeed(feed)
-      ? generatedSourceThumbnail
+      ? officialArticleThumbnail || generatedSourceThumbnail
       : extractedThumbnailUrl || generatedSourceThumbnail || feedFallbackThumbnail,
     env.placeholderImage
   );
   const hasUsableThumbnail = hasUsableStoredThumbnail(thumbnail);
   const thumbnailSource = isSouthAfricanReserveBankNewsFeed(feed)
-    ? "generated-source-title-card"
+    ? officialArticleThumbnail
+      ? "official-article-banner"
+      : "generated-source-title-card"
     : extractedThumbnailUrl
     ? extractedThumbnail.source
     : generatedSourceThumbnail
