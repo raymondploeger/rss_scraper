@@ -430,6 +430,13 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase4-official-identity-and-banknote-sources",
   },
   {
+    name: "Bank of England News",
+    topic: "Banknotes",
+    rssUrl: "https://www.bankofengland.co.uk/rss/news",
+    sourceType: "rss",
+    phase: "phase4-official-identity-and-banknote-sources",
+  },
+  {
     name: "Reserve Bank of Australia Media Releases",
     topic: "Banknotes",
     rssUrl: "https://www.rba.gov.au/rss/rss-cb-media-releases.xml",
