@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "sarb-official-banner-proxy-260";
+const APP_BUILD = "manual-source-groups-and-sync-259";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -26212,18 +26212,6 @@ function isNotafiliaUrl(value) {
   }
 }
 
-function isSouthAfricanReserveBankImageUrl(value) {
-  try {
-    const url = new URL(String(value || ""));
-    return (
-      url.hostname.replace(/^www\./i, "").toLowerCase() === "resbank.co.za" &&
-      url.pathname.toLowerCase().startsWith("/content/dam/sarb/")
-    );
-  } catch {
-    return false;
-  }
-}
-
 function isKnownBrokenImageUrl(url) {
   const host = url.hostname.replace(/^www\./, "");
   const path = `${url.pathname} ${url.search}`.toLowerCase();
@@ -26429,7 +26417,7 @@ function assessArticleImageQuality(article) {
 
       return {
         score: Math.max(0, score),
-        imageSrc: isNotafiliaUrl(normalizedImageUrl) || isSouthAfricanReserveBankImageUrl(normalizedImageUrl)
+        imageSrc: isNotafiliaUrl(normalizedImageUrl)
           ? `/api/image?url=${encodeURIComponent(normalizedImageUrl)}`
           : normalizedImageUrl,
       };
