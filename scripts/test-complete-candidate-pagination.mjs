@@ -101,15 +101,15 @@ await listCanonicalDedupedArticles({
 assert.equal(datedFindManyQuery.where.pubDate.gte.toISOString(), "2026-03-29T00:00:00.000Z");
 assert.equal(datedFindManyQuery.where.pubDate.lte.toISOString(), "2026-06-26T23:59:59.999Z");
 
-assert.equal(normalizeProfileHistoryScope("all"), "older");
+assert.equal(normalizeProfileHistoryScope("all"), "extended");
 assert.equal(normalizeProfileHistoryScope("unexpected"), "recent");
 assert.deepEqual(
   getProfileHistoryDateRange("recent", new Date(2026, 8, 25, 12, 0, 0)),
   { from: "2026-06-27", to: "" }
 );
 assert.deepEqual(
-  getProfileHistoryDateRange("older", new Date(2026, 8, 25, 12, 0, 0)),
-  { from: "2026-03-29", to: "2026-06-26" }
+  getProfileHistoryDateRange("extended", new Date(2026, 8, 25, 12, 0, 0)),
+  { from: "2026-03-29", to: "" }
 );
 
 process.stdout.write(`${JSON.stringify({ status: "passed", checks: 17 })}\n`);

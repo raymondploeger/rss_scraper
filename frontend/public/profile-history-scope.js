@@ -2,7 +2,7 @@ export const PROFILE_DEFAULT_LOOKBACK_DAYS = 90;
 
 export function normalizeProfileHistoryScope(value) {
   const normalized = String(value || "").trim().toLowerCase();
-  return normalized === "older" || normalized === "all" ? "older" : "recent";
+  return normalized === "extended" || normalized === "older" || normalized === "all" ? "extended" : "recent";
 }
 
 function formatLocalDate(date) {
@@ -16,12 +16,10 @@ export function getProfileHistoryDateRange(scope, now = new Date(), days = PROFI
   const date = new Date(now);
   date.setHours(0, 0, 0, 0);
   date.setDate(date.getDate() - Math.max(1, Number(days) || PROFILE_DEFAULT_LOOKBACK_DAYS));
-  if (normalizeProfileHistoryScope(scope) !== "older") {
+  if (normalizeProfileHistoryScope(scope) !== "extended") {
     return { from: formatLocalDate(date), to: "" };
   }
 
-  const end = new Date(date);
-  end.setDate(end.getDate() - 1);
   date.setDate(date.getDate() - Math.max(1, Number(days) || PROFILE_DEFAULT_LOOKBACK_DAYS));
-  return { from: formatLocalDate(date), to: formatLocalDate(end) };
+  return { from: formatLocalDate(date), to: "" };
 }

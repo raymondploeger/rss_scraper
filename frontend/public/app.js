@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "bounded-profile-candidates-254";
+const APP_BUILD = "combined-profile-history-window-255";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -55875,8 +55875,8 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
   const count = Math.max(0, hasExplicitCount ? Number(articleCount) || 0 : hasDisplayedCount ? displayedResultCount : 0);
   const countLabel = `${count} article${count === 1 ? "" : "s"}`;
   const historyScope = getPersonalDashboardHistoryScope();
-  const profileTimeframeLabel = historyScope === "older"
-    ? `the preceding ${PROFILE_DEFAULT_LOOKBACK_DAYS}-day period`
+  const profileTimeframeLabel = historyScope === "extended"
+    ? `the last ${PROFILE_DEFAULT_LOOKBACK_DAYS * 2} days`
     : `the last ${PROFILE_DEFAULT_LOOKBACK_DAYS} days`;
 
   let eyebrow = "Live Stream";
@@ -55925,11 +55925,11 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
     }
     appendIntelligenceContextChip(
       fragment,
-      historyScope === "older" ? `Show last ${PROFILE_DEFAULT_LOOKBACK_DAYS} days` : "Load older articles",
+      historyScope === "extended" ? `Show last ${PROFILE_DEFAULT_LOOKBACK_DAYS} days` : "Load older articles",
       {
-        action: historyScope === "older" ? "recent-profile-history" : "older-profile-history",
+        action: historyScope === "extended" ? "recent-profile-history" : "older-profile-history",
         removable: false,
-        ariaLabel: historyScope === "older"
+        ariaLabel: historyScope === "extended"
           ? `Show only the last ${PROFILE_DEFAULT_LOOKBACK_DAYS} days`
           : "Load older matching articles",
       }
@@ -61703,7 +61703,7 @@ function bindEvents() {
       } else if (action === "interest") {
         setPersonalDashboardInterest(chip.dataset.interestId || "", false);
       } else if (action === "older-profile-history") {
-        setPersonalDashboardHistoryScope("all");
+        setPersonalDashboardHistoryScope("extended");
       } else if (action === "recent-profile-history") {
         setPersonalDashboardHistoryScope("recent");
       }
