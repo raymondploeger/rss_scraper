@@ -92,6 +92,7 @@ export function toFeedDto(feed) {
     dmvSourceFamily: dmvCatalogEntry ? getCatalogEntrySourceFamily(dmvCatalogEntry) : null,
     dmvMode: dmvCatalogEntry ? getCatalogEntryMode(dmvCatalogEntry) : null,
     sourceType: feed.sourceType || "rss",
+    sourceGroup: feed.sourceGroup || null,
     sourceFallbackImage: feed.sourceFallbackImage || null,
     isActive: feed.isActive !== false,
     lastFetchedAt: feed.lastFetchedAt || null,

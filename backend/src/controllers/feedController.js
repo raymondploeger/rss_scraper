@@ -52,6 +52,28 @@ function isGoogleAlertsRssUrl(value) {
   }
 }
 
+const MANUAL_SOURCE_GROUPS = new Set([
+  "USA",
+  "Canada",
+  "Vendors",
+  "Government",
+  "Google Alerts",
+  "Google RSS",
+  "Bing Alerts",
+  "Other",
+]);
+
+function normalizeManualSourceGroup(value) {
+  const group = String(value || "").trim();
+  if (!group) {
+    return null;
+  }
+  if (!MANUAL_SOURCE_GROUPS.has(group)) {
+    throw new Error("Choose a valid tracked-source group.");
+  }
+  return group;
+}
+
 async function parseFeedFromUrl(url) {
   try {
     return await parser.parseURL(url);
@@ -184,7 +206,7 @@ export async function listFeeds(request, response) {
 
 export async function createFeed(request, response) {
   try {
-    const { name, topic, rssUrl, sourceType = "rss", isActive = true } = request.body;
+    const { name, topic, rssUrl, sourceType = "rss", sourceGroup, isActive = true } = request.body;
     const normalizedSourceType = normalizeSourceType(sourceType);
 
     if (!rssUrl) {
@@ -210,6 +232,7 @@ export async function createFeed(request, response) {
       topic: topic || name || parsed?.title || "General",
       rssUrl: resolvedFeedUrl,
       sourceType: normalizedSourceType,
+      sourceGroup: normalizeManualSourceGroup(sourceGroup),
       isActive
     });
     broadcast("feed:update", { type: "feed:update", action: "created", feed: toFeedDto(feed) });
@@ -359,7 +382,7 @@ export async function batchImportGoogleAlertsFeeds(request, response) {
 export async function updateFeed(request, response) {
   try {
     const { feedId } = request.params;
-    const { name, topic, rssUrl, isActive, sourceType } = request.body;
+    const { name, topic, rssUrl, isActive, sourceType, sourceGroup } = request.body;
 
     const feed = await findFeedById(feedId);
     if (!feed) {
@@ -382,6 +405,9 @@ export async function updateFeed(request, response) {
     }
     if (typeof isActive === "boolean") nextValues.isActive = isActive;
     if (typeof sourceType === "string") nextValues.sourceType = normalizeSourceType(sourceType);
+    if (Object.prototype.hasOwnProperty.call(request.body, "sourceGroup")) {
+      nextValues.sourceGroup = normalizeManualSourceGroup(sourceGroup);
+    }
 
     const updatedFeed = await updateFeedRecord(feedId, nextValues);
     broadcast("feed:update", { type: "feed:update", action: "updated", feed: toFeedDto(updatedFeed) });

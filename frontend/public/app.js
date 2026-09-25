@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "south-african-reserve-bank-government-group-258";
+const APP_BUILD = "manual-source-groups-and-sync-259";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1611,6 +1611,7 @@ const SUMMARY_METRICS = [
   { label: "Latest articles", key: "totalArticles" },
 ];
 const DEFAULT_SOURCE_GROUPS = ["USA", "Canada", "Vendors", "Government", "Google Alerts", "Google RSS", "Bing Alerts", "Other"];
+const MANUAL_SOURCE_GROUPS = new Set(DEFAULT_SOURCE_GROUPS);
 const VENDOR_SOURCE_PATTERNS = Object.freeze([
   "regulaforensics.com/news",
   "regulaforensics.com/blog/feed",
@@ -7560,6 +7561,7 @@ const elements = {
   feedTopic: document.getElementById("feed-topic"),
   feedUrl: document.getElementById("feed-url"),
   feedSourceType: document.getElementById("feed-source-type"),
+  feedSourceGroup: document.getElementById("feed-source-group"),
   feedFormStatus: document.getElementById("feed-form-status"),
   googleAlertsBatchInput: document.getElementById("google-alerts-batch-input"),
   googleAlertsBatchSubmit: document.getElementById("google-alerts-batch-submit"),
@@ -45089,6 +45091,10 @@ function isCanadianDmvName(name) {
 }
 
 function getFeedGroupName(feed) {
+  const manualGroup = String(feed?.sourceGroup || "").trim();
+  if (MANUAL_SOURCE_GROUPS.has(manualGroup)) {
+    return manualGroup;
+  }
   const name = String(feed?.name || "").toLowerCase();
   const fingerprint = [feed?.name, feed?.rssUrl].filter(Boolean).join(" ").toLowerCase();
   const country = getFeedCountry(feed);
@@ -51860,6 +51866,9 @@ function startFeedEdit(feed) {
   if (elements.feedSourceType) {
     elements.feedSourceType.value = feed.sourceType || "rss";
   }
+  if (elements.feedSourceGroup) {
+    elements.feedSourceGroup.value = feed.sourceGroup || "";
+  }
   syncFeedFormMode();
   syncAddSourcePanel(true);
   elements.feedFormStatus.textContent = "Editing source. Update the fields and save your changes.";
@@ -51880,6 +51889,7 @@ function renderFeedItem(feed) {
   const meta = node.querySelector(".feed-item-meta");
   const status = node.querySelector(".feed-status");
   const viewButton = node.querySelector(".feed-view-button");
+  const syncButton = node.querySelector(".feed-sync-button");
   const editButton = node.querySelector(".feed-edit-button");
   const deleteButton = node.querySelector(".feed-delete-button");
   const actions = node.querySelector(".feed-item-actions");
@@ -51909,7 +51919,7 @@ function renderFeedItem(feed) {
   item.classList.toggle("is-reference-source", isReferenceOnly);
   item.classList.toggle("is-rss-backed-source", isRssBacked);
   title.textContent = feed.name || "Untitled feed";
-  const metaText = [feed.topic || "General", sourceKind, lastFetched, feed.rssUrl || ""]
+  const metaText = [feed.topic || "General", `Group: ${getFeedGroupName(feed)}`, sourceKind, lastFetched, feed.rssUrl || ""]
     .filter(Boolean)
     .join(" - ");
   meta.textContent = metaText;
@@ -51919,6 +51929,7 @@ function renderFeedItem(feed) {
 
   if (isCatalogOnly) {
     viewButton.hidden = true;
+    syncButton.hidden = true;
     editButton.hidden = true;
     deleteButton.hidden = true;
     if (feed.officialUrl && actions) {
@@ -51932,9 +51943,11 @@ function renderFeedItem(feed) {
     }
   } else {
     viewButton.dataset.feedId = feed.id;
+    syncButton.dataset.feedId = feed.id;
     editButton.dataset.feedId = feed.id;
     deleteButton.dataset.feedId = feed.id;
     viewButton.dataset.action = "view-feed-articles";
+    syncButton.dataset.action = "sync-feed";
     editButton.dataset.action = "edit-feed";
     deleteButton.dataset.action = "delete-feed";
 
@@ -61771,6 +61784,7 @@ function bindEvents() {
         topic: elements.feedTopic.value.trim(),
         rssUrl: elements.feedUrl.value.trim(),
         sourceType: selectedSourceType,
+        sourceGroup: elements.feedSourceGroup?.value || "",
       };
 
       debugIntelligenceLog("[add-source]", {
@@ -62077,12 +62091,43 @@ function bindEvents() {
 
   elements.feedList.addEventListener("click", async (event) => {
     const viewButton = event.target.closest('[data-action="view-feed-articles"]');
+    const syncButton = event.target.closest('[data-action="sync-feed"]');
     const editButton = event.target.closest('[data-action="edit-feed"]');
     const deleteButton = event.target.closest('[data-action="delete-feed"]');
 
     if (viewButton) {
       const feedId = viewButton.dataset.feedId;
       applySourceListFeedFilter(feedId);
+      return;
+    }
+
+    if (syncButton) {
+      const feedId = syncButton.dataset.feedId;
+      const feed = state.feeds.find((item) => item.id === feedId);
+      if (!feed) {
+        return;
+      }
+
+      syncButton.disabled = true;
+      syncButton.textContent = "Syncing...";
+      try {
+        const result = await apiRequest(`/api/feeds/${feedId}/refresh`, { method: "POST" });
+        await loadSnapshot();
+        showNotification({
+          title: "Source synced",
+          message: `${feed.name || "Source"}: ${Number(result?.newArticles) || 0} new article${Number(result?.newArticles) === 1 ? "" : "s"}.`,
+          type: "success",
+        });
+      } catch (error) {
+        showNotification({
+          title: "Source sync failed",
+          message: error?.message || "Could not sync this source.",
+          type: "warning",
+        });
+      } finally {
+        syncButton.disabled = false;
+        syncButton.textContent = "Sync now";
+      }
       return;
     }
 

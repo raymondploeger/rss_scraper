@@ -84,6 +84,7 @@ export async function createFeed(feed) {
       topic: feed.topic,
       rssUrl: feed.rssUrl,
       sourceType: feed.sourceType || "rss",
+      sourceGroup: feed.sourceGroup || null,
       sourceFallbackImage: feed.sourceFallbackImage || null,
       isActive: feed.isActive !== false,
       lastFetchedAt: feed.lastFetchedAt ? new Date(toIsoString(feed.lastFetchedAt, new Date().toISOString())) : null,
@@ -110,6 +111,7 @@ export async function updateFeed(id, updates) {
       ...(typeof updates.topic === "string" ? { topic: updates.topic } : {}),
       ...(typeof updates.rssUrl === "string" ? { rssUrl: updates.rssUrl } : {}),
       ...(typeof updates.sourceType === "string" ? { sourceType: updates.sourceType } : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "sourceGroup") ? { sourceGroup: updates.sourceGroup || null } : {}),
       ...(Object.prototype.hasOwnProperty.call(updates, "sourceFallbackImage")
         ? { sourceFallbackImage: updates.sourceFallbackImage || null }
         : {}),

@@ -169,6 +169,20 @@
                     <option value="website">Website</option>
                   </select>
                 </label>
+                <label class="field">
+                  <span>Tracked Sources group</span>
+                  <select id="feed-source-group">
+                    <option value="">Automatic placement</option>
+                    <option value="Government">Government</option>
+                    <option value="Vendors">Vendors</option>
+                    <option value="USA">USA</option>
+                    <option value="Canada">Canada</option>
+                    <option value="Google Alerts">Google Alerts</option>
+                    <option value="Google RSS">Google RSS</option>
+                    <option value="Bing Alerts">Bing Alerts</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </label>
                 <label class="field field-full">
                   <span>Source URL</span>
                   <input id="feed-url" type="url" placeholder="https://www.google.com/alerts/feeds/... or https://dmv.nebraska.gov" required />
@@ -434,6 +448,7 @@
           <span class="feed-status"></span>
           <div class="feed-item-actions">
             <button class="ghost-button feed-view-button" type="button">View articles</button>
+            <button class="ghost-button feed-sync-button" type="button">Sync now</button>
             <button class="ghost-button feed-edit-button" type="button">Edit</button>
             <button class="ghost-button feed-delete-button" type="button">Delete</button>
           </div>
@@ -482,6 +497,6 @@
       </article>
     </template>
 
-    <script type="module" src="/app.js?v=20260925-south-african-reserve-bank-government-group-258"></script>
+    <script type="module" src="/app.js?v=20260925-manual-source-groups-and-sync-259"></script>
   </body>
 </html>
