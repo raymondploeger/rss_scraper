@@ -505,6 +505,14 @@ function isSouthAfricanReserveBankNewsFeed(feed) {
   });
 }
 
+function isEuropeanCentralBankPressReleasesFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: ["https://www.ecb.europa.eu/rss/press.html"],
+    urlFragments: ["ecb.europa.eu/rss/press.html"],
+    exactNames: ["European Central Bank Press Releases"],
+  });
+}
+
 function shouldReplaceArticlesOnSync(feed) {
   return (
     isIndNewsFeed(feed) ||
@@ -4976,6 +4984,9 @@ async function upsertArticle(article) {
   const shouldBackfillThumbnail =
     !hasUsableStoredThumbnail(existing.thumbnail) &&
     hasUsableStoredThumbnail(article.thumbnail);
+  const shouldReplaceGenericThumbnail =
+    isLikelyGenericMetadataImage(existing.thumbnail) &&
+    article.thumbnail !== existing.thumbnail;
   const shouldBackfillSnippet = (!existing.contentSnippet || existing.contentSnippet.length < 40) && article.contentSnippet;
   const nextKeywords = Array.isArray(article.keywords) ? article.keywords : [];
   const existingKeywords = Array.isArray(existing.keywords) ? existing.keywords : [];
@@ -4999,7 +5010,13 @@ async function upsertArticle(article) {
     (article.summaryShort && article.summaryShort !== existing.summaryShort) ||
     (article.contentSnippet && article.contentSnippet !== existing.contentSnippet);
 
-  if (shouldBackfillThumbnail || shouldBackfillSnippet || shouldRefreshCoreMetadata || shouldRefreshClassification) {
+  if (
+    shouldBackfillThumbnail ||
+    shouldReplaceGenericThumbnail ||
+    shouldBackfillSnippet ||
+    shouldRefreshCoreMetadata ||
+    shouldRefreshClassification
+  ) {
     const updated = await updateArticle(existing.id, {
       topic: article.topic || existing.topic,
       title: article.title || existing.title,
@@ -5009,7 +5026,8 @@ async function upsertArticle(article) {
       source: article.source || existing.source,
       feedName: article.feedName || existing.feedName,
       pubDate: shouldUpdatePubDate ? nextPubDate.toISOString() : existing.pubDate,
-      thumbnail: shouldBackfillThumbnail ? article.thumbnail : existing.thumbnail,
+      thumbnail:
+        shouldBackfillThumbnail || shouldReplaceGenericThumbnail ? article.thumbnail : existing.thumbnail,
       contentSnippet: article.contentSnippet || existing.contentSnippet,
       summary: article.summary || existing.summary,
       summaryShort: article.summaryShort || existing.summaryShort,
@@ -5084,7 +5102,7 @@ async function enrichDirectArticleThumbnail(feed, article) {
     return article;
   }
 
-  if (!isGovUkNewsFeed(feed)) {
+  if (!isGovUkNewsFeed(feed) && !isEuropeanCentralBankPressReleasesFeed(feed)) {
     return article;
   }
 
