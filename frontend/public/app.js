@@ -52,7 +52,6 @@ const DEBUG_PERSONAL_DASHBOARD =
   localStorage.getItem("DEBUG_PERSONAL_DASHBOARD") === "true";
 const HARD_SUBINTEREST_MISMATCH_THRESHOLD = 12;
 const MAX_ARTICLES_IN_MEMORY = 300;
-const COMPLETE_CANDIDATE_PAGE_SIZE = 1000;
 const PERSONAL_DASHBOARD_TARGETED_MAX_ARTICLES = 900;
 const MAX_VISIBLE_SOURCES_IN_LIST = 100;
 const MAX_RSS_FEEDS = 300;
@@ -56690,7 +56689,7 @@ function buildPersonalDashboardBackendQueryParamsList() {
   const activeTemplateId = getMatchingPersonalDashboardTemplateId(state.personalDashboard.interests);
   if (activeTemplateId === "central_bank") {
     const params = applyBackendArticleQueryBaseParams({
-      limit: COMPLETE_CANDIDATE_PAGE_SIZE,
+      limit: MAX_ARTICLES_IN_MEMORY,
       completeCandidates: true,
     });
     params.set("searchAny", getProfilePolicyAnchorTerms("central_bank").join(","));

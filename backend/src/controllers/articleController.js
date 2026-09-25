@@ -189,11 +189,8 @@ export async function listArticles(request, response) {
       showDuplicates,
       completeCandidates,
     } = request.query;
-    const includeDuplicates = String(showDuplicates || "").trim().toLowerCase() === "true";
-    const requireCompleteCandidates = String(completeCandidates || "").trim().toLowerCase() === "true";
     const pageNumber = Math.max(1, Number(page) || 1);
-    const maximumPageSize = requireCompleteCandidates ? 1000 : env.maxArticlePageSize;
-    const pageSize = Math.min(maximumPageSize, Math.max(1, Number(limit) || env.maxArticlePageSize));
+    const pageSize = Math.min(env.maxArticlePageSize, Math.max(1, Number(limit) || env.maxArticlePageSize));
     const resolvedFeedId = requestedFeedId
       ? String(requestedFeedId).trim()
       : await resolveFeedIdFromQuery(feed);
@@ -203,6 +200,8 @@ export async function listArticles(request, response) {
     const dateFrom = date ? startOfDay(date) : null;
     const dateTo = date ? endOfDay(date) : null;
 
+    const includeDuplicates = String(showDuplicates || "").trim().toLowerCase() === "true";
+    const requireCompleteCandidates = String(completeCandidates || "").trim().toLowerCase() === "true";
     const filters = {
       topic,
       feedId: resolvedFeedId || null,
