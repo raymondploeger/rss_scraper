@@ -203,7 +203,7 @@ function getCanonicalArticleDedupeKey(article) {
 }
 
 export async function listCanonicalDedupedArticles(filters = {}, options = {}) {
-  const prisma = getDatabase();
+  const prisma = options.prisma || getDatabase();
   const pageSize = Math.min(env.maxArticlePageSize, Math.max(1, Number(options.limit || env.maxArticlePageSize)));
   const offset = Math.max(0, Number(options.offset || 0));
   const complete = options.complete === true;

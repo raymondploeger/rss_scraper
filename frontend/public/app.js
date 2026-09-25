@@ -9,6 +9,7 @@ import { evaluateSharedSecurityRefinementDecision } from "./shared-security-refi
 import { evaluateIdentityDocumentQualityGateDecision } from "./identity-document-quality-policy.js";
 import { evaluateProfileDomainScopeDecision } from "./profile-domain-scope-policy.js";
 import { evaluateProfileProfessionalGuardDecision } from "./profile-professional-guard-policy.js";
+import { fetchCompleteCandidatePages } from "./complete-candidate-pagination.js";
 import {
   GENERAL_PROFILE_MODES,
   IDENTITY_AUTHORITY_MODES,
@@ -56796,44 +56797,10 @@ async function mapBackendArticleQueryParamsWithConcurrency(queryParamsList = [],
 }
 
 async function fetchCompleteBackendArticleQuery(params) {
-  const firstResponse = await apiRequest(`/api/articles?${params.toString()}`);
-  if (params.get("completeCandidates") !== "true") {
-    return firstResponse;
-  }
-
-  const pagination = firstResponse?.pagination || {};
-  const pageSize = Math.max(1, Number(pagination.limit || firstResponse?.limit) || MAX_ARTICLES_IN_MEMORY);
-  const totalCount = Math.max(0, Number(pagination.total || firstResponse?.totalCount) || 0);
-  const totalPages = Math.max(1, Number(pagination.totalPages) || Math.ceil(totalCount / pageSize));
-  const allItems = Array.isArray(firstResponse?.items)
-    ? firstResponse.items.slice()
-    : Array.isArray(firstResponse?.articles)
-      ? firstResponse.articles.slice()
-      : [];
-
-  for (let page = 2; page <= totalPages; page += 1) {
-    const pageParams = new URLSearchParams(params);
-    pageParams.set("page", String(page));
-    const pageResponse = await apiRequest(`/api/articles?${pageParams.toString()}`);
-    const pageItems = Array.isArray(pageResponse?.items)
-      ? pageResponse.items
-      : Array.isArray(pageResponse?.articles)
-        ? pageResponse.articles
-        : [];
-    allItems.push(...pageItems);
-  }
-
-  return {
-    ...firstResponse,
-    items: allItems,
-    articles: allItems,
-    pagination: {
-      ...pagination,
-      total: totalCount,
-      totalPages,
-      loadedPages: totalPages,
-    },
-  };
+  return fetchCompleteCandidatePages(
+    params,
+    (pageParams) => apiRequest(`/api/articles?${pageParams.toString()}`)
+  );
 }
 
 async function ensureBackendArticleQueryData() {
