@@ -12,14 +12,21 @@ function formatLocalDate(date) {
   return `${year}-${month}-${day}`;
 }
 
-export function getProfileHistoryDateRange(scope, now = new Date(), days = PROFILE_DEFAULT_LOOKBACK_DAYS) {
+export function getProfileHistoryDateRanges(scope, now = new Date(), days = PROFILE_DEFAULT_LOOKBACK_DAYS) {
+  const normalizedDays = Math.max(1, Number(days) || PROFILE_DEFAULT_LOOKBACK_DAYS);
   const date = new Date(now);
   date.setHours(0, 0, 0, 0);
-  date.setDate(date.getDate() - Math.max(1, Number(days) || PROFILE_DEFAULT_LOOKBACK_DAYS));
+  date.setDate(date.getDate() - normalizedDays);
+  const recentRange = { from: formatLocalDate(date), to: "" };
   if (normalizeProfileHistoryScope(scope) !== "extended") {
-    return { from: formatLocalDate(date), to: "" };
+    return [recentRange];
   }
 
-  date.setDate(date.getDate() - Math.max(1, Number(days) || PROFILE_DEFAULT_LOOKBACK_DAYS));
-  return { from: formatLocalDate(date), to: "" };
+  const olderEnd = new Date(date);
+  olderEnd.setDate(olderEnd.getDate() - 1);
+  date.setDate(date.getDate() - normalizedDays);
+  return [
+    recentRange,
+    { from: formatLocalDate(date), to: formatLocalDate(olderEnd) },
+  ];
 }

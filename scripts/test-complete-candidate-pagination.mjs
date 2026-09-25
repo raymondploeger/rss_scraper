@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { fetchCompleteCandidatePages } from "../frontend/public/complete-candidate-pagination.js";
 import {
-  getProfileHistoryDateRange,
+  getProfileHistoryDateRanges,
   normalizeProfileHistoryScope,
 } from "../frontend/public/profile-history-scope.js";
 import { listCanonicalDedupedArticles } from "../backend/src/database/articleRepository.js";
@@ -104,12 +104,15 @@ assert.equal(datedFindManyQuery.where.pubDate.lte.toISOString(), "2026-06-26T23:
 assert.equal(normalizeProfileHistoryScope("all"), "extended");
 assert.equal(normalizeProfileHistoryScope("unexpected"), "recent");
 assert.deepEqual(
-  getProfileHistoryDateRange("recent", new Date(2026, 8, 25, 12, 0, 0)),
-  { from: "2026-06-27", to: "" }
+  getProfileHistoryDateRanges("recent", new Date(2026, 8, 25, 12, 0, 0)),
+  [{ from: "2026-06-27", to: "" }]
 );
 assert.deepEqual(
-  getProfileHistoryDateRange("extended", new Date(2026, 8, 25, 12, 0, 0)),
-  { from: "2026-03-29", to: "" }
+  getProfileHistoryDateRanges("extended", new Date(2026, 8, 25, 12, 0, 0)),
+  [
+    { from: "2026-06-27", to: "" },
+    { from: "2026-03-29", to: "2026-06-26" },
+  ]
 );
 
 process.stdout.write(`${JSON.stringify({ status: "passed", checks: 17 })}\n`);

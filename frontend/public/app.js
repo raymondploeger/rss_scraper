@@ -12,7 +12,7 @@ import { evaluateProfileProfessionalGuardDecision } from "./profile-professional
 import { fetchCompleteCandidatePages } from "./complete-candidate-pagination.js";
 import {
   PROFILE_DEFAULT_LOOKBACK_DAYS,
-  getProfileHistoryDateRange,
+  getProfileHistoryDateRanges,
   normalizeProfileHistoryScope,
 } from "./profile-history-scope.js";
 import {
@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "combined-profile-history-window-255";
+const APP_BUILD = "merged-profile-history-windows-256";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -27073,8 +27073,8 @@ function getPersonalDashboardHistoryScope() {
   return normalizeProfileHistoryScope(state.personalDashboard.historyScope);
 }
 
-function getPersonalDashboardHistoryDateRange() {
-  return getProfileHistoryDateRange(getPersonalDashboardHistoryScope());
+function getPersonalDashboardHistoryDateRanges() {
+  return getProfileHistoryDateRanges(getPersonalDashboardHistoryScope());
 }
 
 function loadPersonalDashboardPreferences() {
@@ -56746,28 +56746,30 @@ function buildPersonalDashboardBackendQueryParamsList() {
   }
 
   const resolvedFeed = state.filters.feedId ? resolveFeedByIdentity(state.filters.feedId) : null;
-  const profileDateRange = getPersonalDashboardHistoryDateRange();
+  const profileDateRanges = getPersonalDashboardHistoryDateRanges();
   if (resolvedFeed?.id) {
-    return [applyBackendArticleQueryBaseParams({ profileDateRange })];
+    return profileDateRanges.map((profileDateRange) => applyBackendArticleQueryBaseParams({ profileDateRange }));
   }
 
   const explicitSearch = String(state.filters.search || "").trim();
   if (explicitSearch) {
-    return [applyBackendArticleQueryBaseParams({ profileDateRange })];
+    return profileDateRanges.map((profileDateRange) => applyBackendArticleQueryBaseParams({ profileDateRange }));
   }
 
   const sourceGroup = String(state.filters.sourceGroup || "all").trim() || "all";
   if (sourceGroup !== "all") {
-    return [applyBackendArticleQueryBaseParams({
-      limit: MAX_ARTICLES_IN_MEMORY,
-      profileDateRange,
-    })];
+    return profileDateRanges.map((profileDateRange) => applyBackendArticleQueryBaseParams({
+        limit: MAX_ARTICLES_IN_MEMORY,
+        profileDateRange,
+      }));
   }
 
   // A profile is evaluated against the recent candidate page from every
   // tracked-source group. Do not request every historical dedupe page at once:
   // that can starve the next profile interaction before the browser can render.
-  return buildTrackedSourcesAllBackendQueryParamsList({ profileDateRange });
+  return profileDateRanges.flatMap((profileDateRange) => (
+    buildTrackedSourcesAllBackendQueryParamsList({ profileDateRange })
+  ));
 }
 
 async function mapBackendArticleQueryParamsWithConcurrency(queryParamsList = [], mapper, limit = BACKEND_ARTICLE_QUERY_CONCURRENCY_LIMIT) {
