@@ -11,6 +11,11 @@ import { evaluateProfileDomainScopeDecision } from "./profile-domain-scope-polic
 import { evaluateProfileProfessionalGuardDecision } from "./profile-professional-guard-policy.js";
 import { fetchCompleteCandidatePages } from "./complete-candidate-pagination.js";
 import {
+  PROFILE_DEFAULT_LOOKBACK_DAYS,
+  getProfileHistorySinceDate,
+  normalizeProfileHistoryScope,
+} from "./profile-history-scope.js";
+import {
   GENERAL_PROFILE_MODES,
   IDENTITY_AUTHORITY_MODES,
   getProfileModePolicy,
@@ -1583,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "identity-document-quality-policy-251";
+const APP_BUILD = "profile-history-window-252";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1693,6 +1698,7 @@ const TAG_LIST_STORAGE_KEY = "dashboardTagList";
 const KEYWORD_FILTER_STORAGE_KEY = "dashboardKeywordFilters";
 const PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY = "personalDashboardInterests";
 const PERSONAL_DASHBOARD_MODE_STORAGE_KEY = "personalDashboardMode";
+const PERSONAL_DASHBOARD_HISTORY_SCOPE_STORAGE_KEY = "personalDashboardHistoryScope";
 const PERSONAL_DASHBOARD_EXPLICITLY_CLEARED_STORAGE_KEY = "personalDashboardExplicitlyCleared";
 const IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_STORAGE_KEY = "identityDocumentAuthorityStrictness";
 const PERSONAL_DASHBOARD_LAST_SAVED_STORAGE_KEY = "personalDashboardLastSavedAt";
@@ -7355,6 +7361,7 @@ const state = {
     activeTemplateId: "",
     editing: false,
     mode: "balanced",
+    historyScope: "recent",
     identityDocumentAuthorityStrictness: "focused",
     explicitlyCleared: false,
   },
@@ -27061,6 +27068,14 @@ function getIdentityDocumentAuthorityStrictness() {
   return normalizeIdentityDocumentAuthorityStrictness(state.personalDashboard.identityDocumentAuthorityStrictness);
 }
 
+function getPersonalDashboardHistoryScope() {
+  return normalizeProfileHistoryScope(state.personalDashboard.historyScope);
+}
+
+function getPersonalDashboardHistorySinceDate() {
+  return getProfileHistorySinceDate(getPersonalDashboardHistoryScope());
+}
+
 function loadPersonalDashboardPreferences() {
   state.personalDashboard.mode = normalizePersonalDashboardMode(
     window.localStorage.getItem(PERSONAL_DASHBOARD_MODE_STORAGE_KEY) || "balanced"
@@ -27069,6 +27084,9 @@ function loadPersonalDashboardPreferences() {
     window.localStorage.getItem(PERSONAL_DASHBOARD_EXPLICITLY_CLEARED_STORAGE_KEY) === "1";
   state.personalDashboard.identityDocumentAuthorityStrictness = normalizeIdentityDocumentAuthorityStrictness(
     window.localStorage.getItem(IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_STORAGE_KEY) || "focused"
+  );
+  state.personalDashboard.historyScope = normalizeProfileHistoryScope(
+    window.localStorage.getItem(PERSONAL_DASHBOARD_HISTORY_SCOPE_STORAGE_KEY) || "recent"
   );
   try {
     state.personalDashboard.customProfiles = normalizePersonalDashboardCustomProfiles(JSON.parse(
@@ -27098,6 +27116,7 @@ function savePersonalDashboardPreferences() {
   state.personalDashboard.identityDocumentAuthorityStrictness = normalizeIdentityDocumentAuthorityStrictness(
     state.personalDashboard.identityDocumentAuthorityStrictness
   );
+  state.personalDashboard.historyScope = normalizeProfileHistoryScope(state.personalDashboard.historyScope);
   state.personalDashboard.interests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   state.personalDashboard.explicitlyCleared = Boolean(
     state.personalDashboard.explicitlyCleared && !state.personalDashboard.interests.length
@@ -27112,6 +27131,7 @@ function savePersonalDashboardPreferences() {
     IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_STORAGE_KEY,
     state.personalDashboard.identityDocumentAuthorityStrictness
   );
+  window.localStorage.setItem(PERSONAL_DASHBOARD_HISTORY_SCOPE_STORAGE_KEY, state.personalDashboard.historyScope);
   window.localStorage.setItem(
     PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY,
     JSON.stringify(state.personalDashboard.interests)
@@ -27194,11 +27214,13 @@ function clearPersonalDashboardPreferences() {
   state.filters.sourceOnly = false;
   state.personalDashboard.mode = "balanced";
   state.personalDashboard.identityDocumentAuthorityStrictness = "focused";
+  state.personalDashboard.historyScope = "recent";
   state.personalDashboard.activeCustomProfileId = "";
   state.personalDashboard.activeTemplateId = "";
   state.personalDashboard.explicitlyCleared = true;
   window.localStorage.removeItem(PERSONAL_DASHBOARD_MODE_STORAGE_KEY);
   window.localStorage.removeItem(IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_STORAGE_KEY);
+  window.localStorage.removeItem(PERSONAL_DASHBOARD_HISTORY_SCOPE_STORAGE_KEY);
   window.localStorage.removeItem(PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY);
   window.localStorage.removeItem(PERSONAL_DASHBOARD_ACTIVE_TEMPLATE_STORAGE_KEY);
   window.localStorage.removeItem(PERSONAL_DASHBOARD_LAST_SAVED_STORAGE_KEY);
@@ -28009,6 +28031,7 @@ function applyPersonalDashboardTemplate(templateId) {
   keepPersonalDashboardEditorOpenForInterests(state.personalDashboard.interests);
   state.personalDashboard.activeCustomProfileId = "";
   state.personalDashboard.activeTemplateId = templateId;
+  state.personalDashboard.historyScope = "recent";
   state.personalDashboard.explicitlyCleared = false;
   ensurePaginationState();
   state.pagination.page = 1;
@@ -28032,6 +28055,7 @@ function applyPersonalDashboardCustomProfile(profileId) {
   keepPersonalDashboardEditorOpenForInterests(state.personalDashboard.interests);
   state.personalDashboard.activeCustomProfileId = profile.id;
   state.personalDashboard.activeTemplateId = "";
+  state.personalDashboard.historyScope = "recent";
   state.personalDashboard.explicitlyCleared = false;
   ensurePaginationState();
   state.pagination.page = 1;
@@ -28056,6 +28080,23 @@ function setIdentityDocumentAuthorityStrictness(strictness) {
   renderPersonalDashboard();
   clearFeedRenderCaches({ preserveBackendArticleQueryCache: true });
   scheduleRenderArticles("identity-document-authority-strictness", { mode: "frame" });
+}
+
+function setPersonalDashboardHistoryScope(scope) {
+  const normalizedScope = normalizeProfileHistoryScope(scope);
+  if (state.personalDashboard.historyScope === normalizedScope) {
+    return;
+  }
+
+  state.personalDashboard.historyScope = normalizedScope;
+  ensurePaginationState();
+  state.pagination.page = 1;
+  savePersonalDashboardPreferences();
+  invalidateProfileTodaySummary();
+  renderPersonalDashboard();
+  renderSummary();
+  clearFeedRenderCaches();
+  scheduleRenderArticles("personal-dashboard-history-scope", { mode: "frame" });
 }
 
 function isSourceOnlyFeedViewActive() {
@@ -44590,6 +44631,7 @@ function getFeedRenderFilterSignature() {
     excludeKeywords: Array.isArray(state.keywordFilters?.exclude) ? state.keywordFilters.exclude.slice().sort() : [],
     personalDashboardInterests: Array.isArray(state.personalDashboard?.interests) ? state.personalDashboard.interests.slice().sort() : [],
     personalDashboardMode: normalizePersonalDashboardMode(state.personalDashboard?.mode),
+    personalDashboardHistoryScope: getPersonalDashboardHistoryScope(),
   });
 }
 
@@ -55780,8 +55822,9 @@ function getIntelligenceFeedModeLabel(profileDisplay) {
 }
 
 function appendIntelligenceContextChip(fragment, label, options = {}) {
-  const removable = Boolean(options.action || options.interestId);
-  const chip = document.createElement(removable ? "button" : "span");
+  const interactive = Boolean(options.action || options.interestId);
+  const removable = options.removable === undefined ? Boolean(options.interestId) : Boolean(options.removable);
+  const chip = document.createElement(interactive ? "button" : "span");
   chip.className = "intelligence-context-chip";
   chip.textContent = label;
   if (chip instanceof HTMLButtonElement) {
@@ -55790,13 +55833,15 @@ function appendIntelligenceContextChip(fragment, label, options = {}) {
     if (options.interestId) {
       chip.dataset.interestId = options.interestId;
     }
-    chip.setAttribute("aria-label", `${options.ariaLabel || `Remove ${label}`}`);
-    chip.title = options.ariaLabel || `Remove ${label}`;
-    const remove = document.createElement("span");
-    remove.className = "intelligence-context-chip-remove";
-    remove.setAttribute("aria-hidden", "true");
-    remove.textContent = "×";
-    chip.appendChild(remove);
+    chip.setAttribute("aria-label", `${options.ariaLabel || label}`);
+    chip.title = options.ariaLabel || label;
+    if (removable) {
+      const remove = document.createElement("span");
+      remove.className = "intelligence-context-chip-remove";
+      remove.setAttribute("aria-hidden", "true");
+      remove.textContent = "×";
+      chip.appendChild(remove);
+    }
   }
   fragment.appendChild(chip);
 }
@@ -55827,6 +55872,10 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
   const hasCount = !forceLoading && (hasExplicitCount || hasDisplayedCount);
   const count = Math.max(0, hasExplicitCount ? Number(articleCount) || 0 : hasDisplayedCount ? displayedResultCount : 0);
   const countLabel = `${count} article${count === 1 ? "" : "s"}`;
+  const historyScope = getPersonalDashboardHistoryScope();
+  const profileTimeframeLabel = historyScope === "all"
+    ? "all stored articles"
+    : `the last ${PROFILE_DEFAULT_LOOKBACK_DAYS} days`;
 
   let eyebrow = "Live Stream";
   let title = "Latest articles";
@@ -55842,12 +55891,14 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
     eyebrow = "Your Intelligence Feed";
     title = `${profileDisplay.label || "Custom profile"} · ${sourceLabel}`;
     summary = hasCount
-      ? `${countLabel} matched your profile within selected sources`
-      : "Loading articles matched to your profile within selected sources...";
+      ? `${countLabel} matched your profile within selected sources from ${profileTimeframeLabel}`
+      : `Loading articles matched to your profile within selected sources from ${profileTimeframeLabel}...`;
   } else if (hasProfile) {
     eyebrow = "Your Intelligence Feed";
     title = profileDisplay.label || "Custom profile";
-    summary = hasCount ? `${countLabel} matched your profile across all sources` : "Loading articles matched to your profile across all sources...";
+    summary = hasCount
+      ? `${countLabel} matched your profile across all sources from ${profileTimeframeLabel}`
+      : `Loading articles matched to your profile across all sources from ${profileTimeframeLabel}...`;
   } else if (hasSource) {
     eyebrow = "Tracked Source Feed";
     title = sourceLabel;
@@ -55864,15 +55915,28 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
   if (hasProfile) {
     appendIntelligenceContextChip(fragment, `Profile: ${profileDisplay.label || "Custom profile"}`, {
       action: "profile",
+      removable: true,
       ariaLabel: "Clear active profile",
     });
     if (profileDisplay.id === "passport_authority") {
       appendIntelligenceContextChip(fragment, `Profile strictness: ${getIntelligenceFeedModeLabel(profileDisplay)}`);
     }
+    appendIntelligenceContextChip(
+      fragment,
+      historyScope === "all" ? `Show last ${PROFILE_DEFAULT_LOOKBACK_DAYS} days` : "Load older articles",
+      {
+        action: historyScope === "all" ? "recent-profile-history" : "older-profile-history",
+        removable: false,
+        ariaLabel: historyScope === "all"
+          ? `Show only the last ${PROFILE_DEFAULT_LOOKBACK_DAYS} days`
+          : "Load older matching articles",
+      }
+    );
   }
   if (hasSource) {
     appendIntelligenceContextChip(fragment, `Source: ${sourceLabel}`, {
       action: selectedFeed ? "feed" : "source-group",
+      removable: true,
       ariaLabel: `Clear source ${sourceLabel}`,
     });
   }
@@ -56479,6 +56543,7 @@ function getBackendArticleQueryKey() {
     personalDashboardInterests: Array.isArray(state.personalDashboard?.interests) ? state.personalDashboard.interests.slice().sort() : [],
     personalDashboardMode: normalizePersonalDashboardMode(state.personalDashboard?.mode),
     personalDashboardDomain: personalDomainPlan?.domain || "",
+    personalDashboardHistoryScope: getPersonalDashboardHistoryScope(),
   });
 }
 
@@ -56517,6 +56582,8 @@ function applyBackendArticleQueryBaseParams(options = {}) {
   }
   if (state.filters.date) {
     params.set("date", state.filters.date);
+  } else if (options.profileSince) {
+    params.set("from", options.profileSince);
   }
 
   return params;
@@ -56528,6 +56595,7 @@ function getBackendArticleQueryParams() {
 
 function buildTrackedSourcesAllBackendQueryParamsList(options = {}) {
   const completeCandidates = options.completeCandidates === true;
+  const profileSince = String(options.profileSince || "").trim();
   const sourceGroups = getSourceGroupLabels(state.feeds.concat(getNonUsCatalogOnlySources()));
   return sourceGroups
     .map((sourceGroup) => {
@@ -56535,6 +56603,7 @@ function buildTrackedSourcesAllBackendQueryParamsList(options = {}) {
       const params = applyBackendArticleQueryBaseParams({
         limit: MAX_ARTICLES_IN_MEMORY,
         completeCandidates,
+        profileSince,
       });
       params.set("feedIds", feedIds.join(","));
       return params;
@@ -56672,13 +56741,14 @@ function buildPersonalDashboardBackendQueryParamsList() {
   }
 
   const resolvedFeed = state.filters.feedId ? resolveFeedByIdentity(state.filters.feedId) : null;
+  const profileSince = getPersonalDashboardHistorySinceDate();
   if (resolvedFeed?.id) {
-    return [applyBackendArticleQueryBaseParams({ completeCandidates: true })];
+    return [applyBackendArticleQueryBaseParams({ completeCandidates: true, profileSince })];
   }
 
   const explicitSearch = String(state.filters.search || "").trim();
   if (explicitSearch) {
-    return [applyBackendArticleQueryBaseParams({ completeCandidates: true })];
+    return [applyBackendArticleQueryBaseParams({ completeCandidates: true, profileSince })];
   }
 
   const sourceGroup = String(state.filters.sourceGroup || "all").trim() || "all";
@@ -56686,13 +56756,14 @@ function buildPersonalDashboardBackendQueryParamsList() {
     return [applyBackendArticleQueryBaseParams({
       limit: MAX_ARTICLES_IN_MEMORY,
       completeCandidates: true,
+      profileSince,
     })];
   }
 
   // A complete pool from every tracked-source group already contains every
   // candidate that a profile search or source-affinity request could return.
   // Do not issue those overlapping requests before local profile evaluation.
-  return buildTrackedSourcesAllBackendQueryParamsList({ completeCandidates: true });
+  return buildTrackedSourcesAllBackendQueryParamsList({ completeCandidates: true, profileSince });
 }
 
 async function mapBackendArticleQueryParamsWithConcurrency(queryParamsList = [], mapper, limit = BACKEND_ARTICLE_QUERY_CONCURRENCY_LIMIT) {
@@ -61606,6 +61677,10 @@ function bindEvents() {
         clearActiveFilter("source-group");
       } else if (action === "interest") {
         setPersonalDashboardInterest(chip.dataset.interestId || "", false);
+      } else if (action === "older-profile-history") {
+        setPersonalDashboardHistoryScope("all");
+      } else if (action === "recent-profile-history") {
+        setPersonalDashboardHistoryScope("recent");
       }
     });
   }

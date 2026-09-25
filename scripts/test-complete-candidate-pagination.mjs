@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import { fetchCompleteCandidatePages } from "../frontend/public/complete-candidate-pagination.js";
+import {
+  getProfileHistorySinceDate,
+  normalizeProfileHistoryScope,
+} from "../frontend/public/profile-history-scope.js";
 import { listCanonicalDedupedArticles } from "../backend/src/database/articleRepository.js";
 
 const requestedPages = [];
@@ -77,4 +81,12 @@ await listCanonicalDedupedArticles({}, {
 });
 assert.equal(limitedFindManyQuery.take, 2);
 
-process.stdout.write(`${JSON.stringify({ status: "passed", checks: 10 })}\n`);
+assert.equal(normalizeProfileHistoryScope("all"), "all");
+assert.equal(normalizeProfileHistoryScope("unexpected"), "recent");
+assert.equal(
+  getProfileHistorySinceDate("recent", new Date(2026, 8, 25, 12, 0, 0)),
+  "2026-06-27"
+);
+assert.equal(getProfileHistorySinceDate("all", new Date(2026, 8, 25, 12, 0, 0)), "");
+
+process.stdout.write(`${JSON.stringify({ status: "passed", checks: 14 })}\n`);
