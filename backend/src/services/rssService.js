@@ -4870,7 +4870,9 @@ function normalizeItem(feed, item) {
     ? ""
     : rawExtractedThumbnailUrl;
   const generatedSourceThumbnail =
-    isSwedishMigrationNewsFeed(feed) && !extractedThumbnailUrl
+    isSouthAfricanReserveBankNewsFeed(feed)
+      ? getOfficialSourceTitleThumbnail("South African Reserve Bank", title, "006341")
+    : isSwedishMigrationNewsFeed(feed) && !extractedThumbnailUrl
       ? getSwedishMigrationTitleThumbnail(title)
       : isInterpolNewsFeed(feed) && !extractedThumbnailUrl
         ? getOfficialSourceTitleThumbnail("INTERPOL", title, "1f3a5f")
@@ -4882,9 +4884,16 @@ function normalizeItem(feed, item) {
   const feedFallbackThumbnail = isGoogleAlertsFeed(feed)
     ? ""
     : resolveFeedImageCandidate(link, feed.sourceFallbackImage || "");
-  const thumbnail = normalizeText(extractedThumbnailUrl || generatedSourceThumbnail || feedFallbackThumbnail, env.placeholderImage);
+  const thumbnail = normalizeText(
+    isSouthAfricanReserveBankNewsFeed(feed)
+      ? generatedSourceThumbnail
+      : extractedThumbnailUrl || generatedSourceThumbnail || feedFallbackThumbnail,
+    env.placeholderImage
+  );
   const hasUsableThumbnail = hasUsableStoredThumbnail(thumbnail);
-  const thumbnailSource = extractedThumbnailUrl
+  const thumbnailSource = isSouthAfricanReserveBankNewsFeed(feed)
+    ? "generated-source-title-card"
+    : extractedThumbnailUrl
     ? extractedThumbnail.source
     : generatedSourceThumbnail
       ? "generated-source-title-card"
