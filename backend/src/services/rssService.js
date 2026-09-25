@@ -77,6 +77,8 @@ const LANDQART_NEWS_URL = "https://www.landqart.com/en/stories/news";
 const POLYVANTIS_PRESS_URL = "https://www.polyvantis.com/en/press";
 const LINXENS_NEWS_URL = "https://www.linxens.com/en/news-events";
 const VTT_NEWS_URL = "https://www.vttresearch.com/en/news-stories/news-and-stories";
+const SOUTH_AFRICAN_RESERVE_BANK_RSS_URL = "https://www.resbank.co.za/bin/sarb/solr/publications/rss";
+const SOUTH_AFRICAN_RESERVE_BANK_SITE_URL = "https://www.resbank.co.za";
 const KINEGRAM_INSIGHTS_URL = "https://www.kinegram.com/events-insights/insights";
 const KOENIG_BAUER_PRESS_RELEASES_URL = "https://www.koenig-bauer.com/en/newsroom/press-releases";
 const KOENIG_BAUER_MAX_ARCHIVE_PAGES = 4;
@@ -492,6 +494,14 @@ function isReserveBankOfAustraliaMediaReleasesFeed(feed) {
     exactUrls: ["https://www.rba.gov.au/rss/rss-cb-media-releases.xml"],
     urlFragments: ["rba.gov.au/rss/rss-cb-media-releases.xml"],
     exactNames: ["Reserve Bank of Australia Media Releases"],
+  });
+}
+
+function isSouthAfricanReserveBankNewsFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: [SOUTH_AFRICAN_RESERVE_BANK_RSS_URL],
+    urlFragments: ["resbank.co.za/bin/sarb/solr/publications/rss"],
+    exactNames: ["South African Reserve Bank News"],
   });
 }
 
@@ -4763,7 +4773,7 @@ function extractAtomLinkHref(linkValue) {
   return "";
 }
 
-function resolveItemLink(item) {
+function resolveItemLink(item, feed = null) {
   const candidates = [
     item?.link,
     item?.guid,
@@ -4777,6 +4787,9 @@ function resolveItemLink(item) {
   for (const candidate of candidates) {
     const resolved = resolveArticleLink(normalizeText(candidate));
     if (resolved) {
+      if (isSouthAfricanReserveBankNewsFeed(feed) && resolved.startsWith("/")) {
+        return new URL(resolved, SOUTH_AFRICAN_RESERVE_BANK_SITE_URL).toString();
+      }
       return resolved;
     }
   }
@@ -4832,7 +4845,7 @@ function extractItemSourceMetadata(item) {
 }
 
 function normalizeItem(feed, item) {
-  const link = resolveItemLink(item);
+  const link = resolveItemLink(item, feed);
   if (!link) {
     return null;
   }

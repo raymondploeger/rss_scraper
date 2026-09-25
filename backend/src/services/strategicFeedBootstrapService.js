@@ -436,6 +436,13 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     sourceType: "rss",
     phase: "phase4-official-identity-and-banknote-sources",
   },
+  {
+    name: "South African Reserve Bank News",
+    topic: "Banknotes",
+    rssUrl: "https://www.resbank.co.za/bin/sarb/solr/publications/rss",
+    sourceType: "rss",
+    phase: "phase4-official-identity-and-banknote-sources",
+  },
 
   {
     name: "SICPA Newsroom",
