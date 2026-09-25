@@ -56486,6 +56486,9 @@ function applyBackendArticleQueryBaseParams(options = {}) {
   params.set("includePagination", "true");
   params.set("limit", String(options.limit || MAX_ARTICLES_IN_MEMORY));
   params.set("page", "1");
+  if (options.completeCandidates) {
+    params.set("completeCandidates", "true");
+  }
 
   const resolvedFeed = state.filters.feedId ? resolveFeedByIdentity(state.filters.feedId) : null;
   if (resolvedFeed?.id) {
@@ -56527,7 +56530,10 @@ function buildTrackedSourcesAllBackendQueryParamsList() {
   return sourceGroups
     .map((sourceGroup) => {
       const feedIds = getFeedIdsForSourceGroup(sourceGroup);
-      const params = applyBackendArticleQueryBaseParams({ limit: MAX_ARTICLES_IN_MEMORY });
+      const params = applyBackendArticleQueryBaseParams({
+        limit: MAX_ARTICLES_IN_MEMORY,
+        completeCandidates: true,
+      });
       params.set("feedIds", feedIds.join(","));
       return params;
     })
@@ -56665,17 +56671,20 @@ function buildPersonalDashboardBackendQueryParamsList() {
 
   const resolvedFeed = state.filters.feedId ? resolveFeedByIdentity(state.filters.feedId) : null;
   if (resolvedFeed?.id) {
-    return [applyBackendArticleQueryBaseParams()];
+    return [applyBackendArticleQueryBaseParams({ completeCandidates: true })];
   }
 
   const explicitSearch = String(state.filters.search || "").trim();
   if (explicitSearch) {
-    return [applyBackendArticleQueryBaseParams()];
+    return [applyBackendArticleQueryBaseParams({ completeCandidates: true })];
   }
 
   const sourceGroup = String(state.filters.sourceGroup || "all").trim() || "all";
   if (sourceGroup !== "all") {
-    return [applyBackendArticleQueryBaseParams({ limit: MAX_ARTICLES_IN_MEMORY })];
+    return [applyBackendArticleQueryBaseParams({
+      limit: MAX_ARTICLES_IN_MEMORY,
+      completeCandidates: true,
+    })];
   }
 
   const requestParamsList = [];
@@ -56786,6 +56795,47 @@ async function mapBackendArticleQueryParamsWithConcurrency(queryParamsList = [],
   return results;
 }
 
+async function fetchCompleteBackendArticleQuery(params) {
+  const firstResponse = await apiRequest(`/api/articles?${params.toString()}`);
+  if (params.get("completeCandidates") !== "true") {
+    return firstResponse;
+  }
+
+  const pagination = firstResponse?.pagination || {};
+  const pageSize = Math.max(1, Number(pagination.limit || firstResponse?.limit) || MAX_ARTICLES_IN_MEMORY);
+  const totalCount = Math.max(0, Number(pagination.total || firstResponse?.totalCount) || 0);
+  const totalPages = Math.max(1, Number(pagination.totalPages) || Math.ceil(totalCount / pageSize));
+  const allItems = Array.isArray(firstResponse?.items)
+    ? firstResponse.items.slice()
+    : Array.isArray(firstResponse?.articles)
+      ? firstResponse.articles.slice()
+      : [];
+
+  for (let page = 2; page <= totalPages; page += 1) {
+    const pageParams = new URLSearchParams(params);
+    pageParams.set("page", String(page));
+    const pageResponse = await apiRequest(`/api/articles?${pageParams.toString()}`);
+    const pageItems = Array.isArray(pageResponse?.items)
+      ? pageResponse.items
+      : Array.isArray(pageResponse?.articles)
+        ? pageResponse.articles
+        : [];
+    allItems.push(...pageItems);
+  }
+
+  return {
+    ...firstResponse,
+    items: allItems,
+    articles: allItems,
+    pagination: {
+      ...pagination,
+      total: totalCount,
+      totalPages,
+      loadedPages: totalPages,
+    },
+  };
+}
+
 async function ensureBackendArticleQueryData() {
   if (!shouldUseBackendArticleQuery()) {
     runtime.backendArticleQueryLoading = false;
@@ -56837,7 +56887,7 @@ async function ensureBackendArticleQueryData() {
     async (params, requestIndex) => {
       const startedAt = new Date().toISOString();
       const startedMs = getPerformanceNow();
-      const response = await apiRequest(`/api/articles?${params.toString()}`);
+      const response = await fetchCompleteBackendArticleQuery(params);
       return {
         response,
         startedAt,

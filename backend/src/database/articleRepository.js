@@ -206,14 +206,18 @@ export async function listCanonicalDedupedArticles(filters = {}, options = {}) {
   const prisma = getDatabase();
   const pageSize = Math.min(env.maxArticlePageSize, Math.max(1, Number(options.limit || env.maxArticlePageSize)));
   const offset = Math.max(0, Number(options.offset || 0));
-  const candidateLimit = Math.min(
-    10000,
-    Math.max(pageSize + offset, Number(options.candidateLimit || env.maxArticlePageSize))
-  );
+  const complete = options.complete === true;
+  const requestedCandidateLimit = Number(options.candidateLimit);
+  const candidateLimit = complete
+    ? null
+    : Math.min(
+      10000,
+      Math.max(pageSize + offset, Number.isFinite(requestedCandidateLimit) ? requestedCandidateLimit : env.maxArticlePageSize)
+    );
   const candidates = await prisma.article.findMany({
     where: buildArticleWhere(filters),
     orderBy: [{ pubDate: "desc" }, { createdAt: "desc" }],
-    take: candidateLimit,
+    ...(candidateLimit ? { take: candidateLimit } : {}),
   });
   const seen = new Set();
   const deduped = [];
@@ -230,8 +234,8 @@ export async function listCanonicalDedupedArticles(filters = {}, options = {}) {
   return {
     items: deduped.slice(offset, offset + pageSize).map(mapArticleRecord),
     total: deduped.length,
-    candidateLimit,
-    truncated: candidates.length >= candidateLimit,
+    candidateLimit: candidateLimit || candidates.length,
+    truncated: candidateLimit ? candidates.length >= candidateLimit : false,
   };
 }
 

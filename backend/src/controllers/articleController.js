@@ -140,6 +140,7 @@ function buildArticleQueryDiagnostics(request, details = {}) {
     to: serializeArticleQuery(query.to),
     includeDuplicates: Boolean(details.includeDuplicates),
     canonicalDedupe: Boolean(details.shouldCanonicalDedupe),
+    completeCandidates: Boolean(details.requireCompleteCandidates),
     candidateLimit: Number(details.candidateLimit || 0),
     itemCount: Number(details.itemCount || 0),
     totalCount: Number(details.totalCount || 0),
@@ -184,6 +185,7 @@ export async function listArticles(request, response) {
       tag,
       signal,
       showDuplicates,
+      completeCandidates,
     } = request.query;
     const pageNumber = Math.max(1, Number(page) || 1);
     const pageSize = Math.min(env.maxArticlePageSize, Math.max(1, Number(limit) || env.maxArticlePageSize));
@@ -196,6 +198,7 @@ export async function listArticles(request, response) {
     const dateTo = date ? endOfDay(date) : null;
 
     const includeDuplicates = String(showDuplicates || "").trim().toLowerCase() === "true";
+    const requireCompleteCandidates = String(completeCandidates || "").trim().toLowerCase() === "true";
     const filters = {
       topic,
       feedId: resolvedFeedId || null,
@@ -211,13 +214,16 @@ export async function listArticles(request, response) {
     const shouldCanonicalDedupe = !includeDuplicates && Boolean(resolvedFeedId || requestedFeedIds.length);
     const offset = (pageNumber - 1) * pageSize;
     const candidateLimit = shouldCanonicalDedupe
-      ? Math.max(pageSize + offset, Math.min(env.canonicalDedupeCandidateLimit, 5000))
+      ? (requireCompleteCandidates
+        ? null
+        : Math.max(pageSize + offset, Math.min(env.canonicalDedupeCandidateLimit, 5000)))
       : 0;
     const { items, total } = shouldCanonicalDedupe
       ? await listCanonicalDedupedArticles(filters, {
         limit: pageSize,
         offset,
         candidateLimit,
+        complete: requireCompleteCandidates,
       })
       : {
         items: await listArticleRecords(filters, {
@@ -236,6 +242,7 @@ export async function listArticles(request, response) {
       resolvedFeedId,
       includeDuplicates,
       shouldCanonicalDedupe,
+      requireCompleteCandidates,
       candidateLimit,
       itemCount: Array.isArray(items) ? items.length : 0,
       totalCount: total,
