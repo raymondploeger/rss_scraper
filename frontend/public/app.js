@@ -56526,14 +56526,15 @@ function getBackendArticleQueryParams() {
   return applyBackendArticleQueryBaseParams();
 }
 
-function buildTrackedSourcesAllBackendQueryParamsList() {
+function buildTrackedSourcesAllBackendQueryParamsList(options = {}) {
+  const completeCandidates = options.completeCandidates === true;
   const sourceGroups = getSourceGroupLabels(state.feeds.concat(getNonUsCatalogOnlySources()));
   return sourceGroups
     .map((sourceGroup) => {
       const feedIds = getFeedIdsForSourceGroup(sourceGroup);
       const params = applyBackendArticleQueryBaseParams({
         limit: MAX_ARTICLES_IN_MEMORY,
-        completeCandidates: true,
+        completeCandidates,
       });
       params.set("feedIds", feedIds.join(","));
       return params;
@@ -56763,7 +56764,7 @@ function buildPersonalDashboardBackendQueryParamsList() {
   // Keep the same candidate pool for an unscoped profile and "All tracked sources".
   // The profile searches reach older relevant articles, while the per-group
   // recent baseline guarantees that All includes every group-level candidate.
-  buildTrackedSourcesAllBackendQueryParamsList().forEach((params) => {
+  buildTrackedSourcesAllBackendQueryParamsList({ completeCandidates: true }).forEach((params) => {
     const key = params.toString();
     if (!seenKeys.has(key)) {
       seenKeys.add(key);
