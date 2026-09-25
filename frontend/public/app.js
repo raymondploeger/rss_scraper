@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "merged-profile-history-windows-256";
+const APP_BUILD = "prominent-profile-history-control-257";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -7490,6 +7490,9 @@ const elements = {
   intelligenceFeedEyebrow: document.getElementById("intelligence-feed-eyebrow"),
   intelligenceFeedTitle: document.getElementById("intelligence-feed-title"),
   intelligenceFeedSummary: document.getElementById("intelligence-feed-summary"),
+  profileHistoryControl: document.getElementById("profile-history-control"),
+  profileHistoryLabel: document.getElementById("profile-history-label"),
+  profileHistoryToggle: document.getElementById("profile-history-toggle"),
   intelligenceFeedContext: document.getElementById("intelligence-feed-context"),
   paginationControls: document.getElementById("pagination-controls"),
   paginationRange: document.getElementById("pagination-range"),
@@ -55912,6 +55915,16 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
   if (elements.intelligenceFeedSummary) {
     elements.intelligenceFeedSummary.textContent = summary;
   }
+  if (elements.profileHistoryControl && elements.profileHistoryLabel && elements.profileHistoryToggle) {
+    elements.profileHistoryControl.hidden = !hasProfile || state.filters.favoritesOnly;
+    elements.profileHistoryLabel.textContent = historyScope === "extended"
+      ? `Showing the last ${PROFILE_DEFAULT_LOOKBACK_DAYS * 2} days`
+      : `Showing the last ${PROFILE_DEFAULT_LOOKBACK_DAYS} days`;
+    elements.profileHistoryToggle.textContent = historyScope === "extended"
+      ? `Show last ${PROFILE_DEFAULT_LOOKBACK_DAYS} days`
+      : "Load older articles";
+    elements.profileHistoryToggle.dataset.profileHistoryScope = historyScope === "extended" ? "recent" : "extended";
+  }
 
   const fragment = document.createDocumentFragment();
   if (hasProfile) {
@@ -55923,17 +55936,6 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
     if (profileDisplay.id === "passport_authority") {
       appendIntelligenceContextChip(fragment, `Profile strictness: ${getIntelligenceFeedModeLabel(profileDisplay)}`);
     }
-    appendIntelligenceContextChip(
-      fragment,
-      historyScope === "extended" ? `Show last ${PROFILE_DEFAULT_LOOKBACK_DAYS} days` : "Load older articles",
-      {
-        action: historyScope === "extended" ? "recent-profile-history" : "older-profile-history",
-        removable: false,
-        ariaLabel: historyScope === "extended"
-          ? `Show only the last ${PROFILE_DEFAULT_LOOKBACK_DAYS} days`
-          : "Load older matching articles",
-      }
-    );
   }
   if (hasSource) {
     appendIntelligenceContextChip(fragment, `Source: ${sourceLabel}`, {
@@ -61704,11 +61706,13 @@ function bindEvents() {
         clearActiveFilter("source-group");
       } else if (action === "interest") {
         setPersonalDashboardInterest(chip.dataset.interestId || "", false);
-      } else if (action === "older-profile-history") {
-        setPersonalDashboardHistoryScope("extended");
-      } else if (action === "recent-profile-history") {
-        setPersonalDashboardHistoryScope("recent");
       }
+    });
+  }
+
+  if (elements.profileHistoryToggle) {
+    elements.profileHistoryToggle.addEventListener("click", () => {
+      setPersonalDashboardHistoryScope(elements.profileHistoryToggle.dataset.profileHistoryScope || "recent");
     });
   }
 
