@@ -437,6 +437,13 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase4-official-identity-and-banknote-sources",
   },
   {
+    name: "European Central Bank Press Releases",
+    topic: "Banknotes",
+    rssUrl: "https://www.ecb.europa.eu/rss/press.html",
+    sourceType: "rss",
+    phase: "phase4-official-identity-and-banknote-sources",
+  },
+  {
     name: "Reserve Bank of Australia Media Releases",
     topic: "Banknotes",
     rssUrl: "https://www.rba.gov.au/rss/rss-cb-media-releases.xml",
