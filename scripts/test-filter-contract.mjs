@@ -37,7 +37,7 @@ assert.deepEqual(
   ["focused", "balanced", "broad"].map((mode) =>
     getProfileModePolicy("passport_authority", "balanced", mode).label
   ),
-  ["Focused", "Balanced", "Research mode"]
+  ["Strict", "Standard", "Expanded"]
 );
 assert.equal(getProfileModePolicy("security_printer", "balanced", "focused").userSelectable, false);
 assert.deepEqual(evaluateSharedSecurityProfileDecision({ techniqueMatched: false }), {

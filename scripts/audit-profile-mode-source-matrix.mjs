@@ -46,7 +46,7 @@ function checkModeSequence(scope, sourceOnly, byMode, failures) {
     if (!result || result.count > sourceOnly.count || !result.heading.includes("Identity Document Authority")) {
       failures.push({ scope, mode, failure: "Profile result exceeds source scope or has the wrong heading" });
     }
-    const expectedLabel = mode === "broad" ? "Research mode" : mode[0].toUpperCase() + mode.slice(1);
+    const expectedLabel = ({ focused: "Strict", balanced: "Standard", broad: "Expanded" })[mode];
     if (result?.mode !== `Profile strictness: ${expectedLabel}`) {
       failures.push({ scope, mode, failure: "Incorrect mode label", actual: result?.mode });
     }

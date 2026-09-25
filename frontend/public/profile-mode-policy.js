@@ -8,16 +8,16 @@ export const GENERAL_PROFILE_MODES = Object.freeze({
 
 export const IDENTITY_AUTHORITY_MODES = Object.freeze({
   focused: Object.freeze({
-    label: "Focused",
-    description: "Issuance, security, ID cards and passport lifecycle.",
+    label: "Strict",
+    description: "Direct identity-document authority: issuance, security and document lifecycle.",
   }),
   balanced: Object.freeze({
-    label: "Balanced",
-    description: "Also includes broader government ID document context.",
+    label: "Standard",
+    description: "Also includes relevant government identity-document context.",
   }),
   broad: Object.freeze({
-    label: "Research mode",
-    description: "Research mode for adjacent authority and civil identity context.",
+    label: "Expanded",
+    description: "Also includes adjacent civil-identity and authority context.",
   }),
 });
 

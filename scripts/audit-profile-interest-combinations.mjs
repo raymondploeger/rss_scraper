@@ -112,18 +112,18 @@ try {
 
   await clickDom(page, '[data-profile-template="passport_authority"]');
   await waitForSettled(page);
-  const focusedMode = await snapshot(page);
+  const strictMode = await snapshot(page);
   await clickDom(page, '[data-identity-document-authority-strictness="balanced"]');
   await waitForSettled(page);
-  const balancedMode = await snapshot(page);
+  const standardMode = await snapshot(page);
   await clickDom(page, '[data-identity-document-authority-strictness="broad"]');
   await waitForSettled(page);
-  const researchMode = await snapshot(page);
-  if (focusedMode.modeChip !== "Profile strictness: Focused") failures.push("Identity Document Authority Focused label is incorrect");
-  if (balancedMode.modeChip !== "Profile strictness: Balanced") failures.push("Identity Document Authority Balanced label is incorrect");
-  if (researchMode.modeChip !== "Profile strictness: Research mode") failures.push("Identity Document Authority Research label is incorrect");
-  if (!(focusedMode.count <= balancedMode.count && balancedMode.count <= researchMode.count)) {
-    failures.push("Identity Document Authority modes did not broaden results from Focused to Research");
+  const expandedMode = await snapshot(page);
+  if (strictMode.modeChip !== "Profile strictness: Strict") failures.push("Identity Document Authority Strict label is incorrect");
+  if (standardMode.modeChip !== "Profile strictness: Standard") failures.push("Identity Document Authority Standard label is incorrect");
+  if (expandedMode.modeChip !== "Profile strictness: Expanded") failures.push("Identity Document Authority Expanded label is incorrect");
+  if (!(strictMode.count <= standardMode.count && standardMode.count <= expandedMode.count)) {
+    failures.push("Identity Document Authority strictness did not expand results from Strict to Expanded");
   }
 
   process.stdout.write(`${JSON.stringify({
