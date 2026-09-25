@@ -4874,7 +4874,8 @@ function normalizeItem(feed, item) {
   const title = sanitizeFeedText(item.title, "Untitled Article");
   const extractedThumbnail = extractFeedThumbnail(link, item);
   const rawExtractedThumbnailUrl = resolveFeedImageCandidate(link, extractedThumbnail.url);
-  const extractedThumbnailUrl = isLikelyGenericMetadataImage(rawExtractedThumbnailUrl)
+  const extractedThumbnailUrl =
+    isEuropeanCentralBankPressReleasesFeed(feed) || isLikelyGenericMetadataImage(rawExtractedThumbnailUrl)
     ? ""
     : rawExtractedThumbnailUrl;
   const generatedSourceThumbnail =
@@ -5102,7 +5103,7 @@ async function enrichDirectArticleThumbnail(feed, article) {
     return article;
   }
 
-  if (!isGovUkNewsFeed(feed) && !isEuropeanCentralBankPressReleasesFeed(feed)) {
+  if (!isGovUkNewsFeed(feed)) {
     return article;
   }
 

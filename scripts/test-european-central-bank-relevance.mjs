@@ -31,5 +31,11 @@ assert.equal(
   ),
   true
 );
+assert.equal(
+  isLikelyGenericMetadataImage(
+    "https://www.ecb.europa.eu/stats/html/index/ECB_Website_StatisticsMegaMenu_95044094-01.png"
+  ),
+  true
+);
 
-process.stdout.write(`${JSON.stringify({ status: "passed", checks: 4 })}\n`);
+process.stdout.write(`${JSON.stringify({ status: "passed", checks: 5 })}\n`);
