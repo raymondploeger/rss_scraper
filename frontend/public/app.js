@@ -56689,90 +56689,10 @@ function buildPersonalDashboardBackendQueryParamsList() {
     })];
   }
 
-  const requestParamsList = [];
-  const seenKeys = new Set();
-  const planPerRequestLimit = Number(plan.perRequestLimit);
-  const perRequestLimit = Number.isFinite(planPerRequestLimit) && planPerRequestLimit > 0
-    ? Math.max(20, Math.min(250, Math.floor(planPerRequestLimit)))
-    : Math.max(100, Math.min(250, Math.floor(MAX_ARTICLES_IN_MEMORY / 6)));
-  const hasExplicitTopicFilter = Boolean(state.filters.topic);
-
-  const addParams = (mutate, options = {}) => {
-    const params = applyBackendArticleQueryBaseParams({ limit: perRequestLimit });
-    if (options.includePlanTopic && !hasExplicitTopicFilter && plan.topic) {
-      params.set("topic", plan.topic);
-    }
-    if (typeof mutate === "function") {
-      mutate(params);
-    }
-    const key = params.toString();
-    if (seenKeys.has(key)) {
-      return;
-    }
-    seenKeys.add(key);
-    requestParamsList.push(params);
-  };
-
-  if (plan.includeTopicBaseline !== false) {
-    addParams(null, { includePlanTopic: true });
-  }
-  if (Array.isArray(plan.baselineTopics)) {
-    plan.baselineTopics.forEach((topic) => {
-      const normalizedTopic = String(topic || "").trim();
-      if (!normalizedTopic || (plan.includeTopicBaseline !== false && normalizedTopic === plan.topic)) {
-        return;
-      }
-      addParams((params) => {
-        params.set("topic", normalizedTopic);
-      });
-    });
-  }
-  plan.searches.forEach((searchTerm) => {
-    addParams((params) => {
-      params.set("search", searchTerm);
-    });
-  });
-
-  if (plan.domain === "vendors") {
-    getOfficialVendorSourceFeedsFromState().forEach((feed) => {
-      if (!feed?.id) {
-        return;
-      }
-      addParams((params) => {
-        params.delete("search");
-        params.delete("topic");
-        params.delete("feedIds");
-        params.set("limit", String(MAX_ARTICLES_IN_MEMORY));
-        params.set("feedId", String(feed.id));
-      });
-    });
-  }
-
-  getSourceProfileAffinityFeedsForSelectedInterests(state.personalDashboard.interests).forEach((feed) => {
-    if (!feed?.id) {
-      return;
-    }
-    addParams((params) => {
-      params.delete("search");
-      params.delete("topic");
-      params.delete("feedIds");
-      params.set("limit", String(MAX_ARTICLES_IN_MEMORY));
-      params.set("feedId", String(feed.id));
-    });
-  });
-
-  // Keep the same candidate pool for an unscoped profile and "All tracked sources".
-  // The profile searches reach older relevant articles, while the per-group
-  // recent baseline guarantees that All includes every group-level candidate.
-  buildTrackedSourcesAllBackendQueryParamsList({ completeCandidates: true }).forEach((params) => {
-    const key = params.toString();
-    if (!seenKeys.has(key)) {
-      seenKeys.add(key);
-      requestParamsList.push(params);
-    }
-  });
-
-  return requestParamsList;
+  // A complete pool from every tracked-source group already contains every
+  // candidate that a profile search or source-affinity request could return.
+  // Do not issue those overlapping requests before local profile evaluation.
+  return buildTrackedSourcesAllBackendQueryParamsList({ completeCandidates: true });
 }
 
 async function mapBackendArticleQueryParamsWithConcurrency(queryParamsList = [], mapper, limit = BACKEND_ARTICLE_QUERY_CONCURRENCY_LIMIT) {
