@@ -169,6 +169,7 @@ export function isLikelyGenericMetadataImage(imageUrl) {
     value.includes("/sites/default/files/cbp-seal-vertical-blue_twitter-card") ||
     value.includes("ecb%20press%20conference%20place%20holder") ||
     value.includes("ecb press conference place holder") ||
+    value.includes("ecb.europa.eu/paym/financial-stability/html/index/fsr_1000x750.jpg") ||
     value.includes("hidot.hawaii.gov/wp-content/themes/hic_state_template_parent/images/design/footer/footer-seal.png") ||
     value.includes("dor.mo.gov/img/save-life-footer.png") ||
     (

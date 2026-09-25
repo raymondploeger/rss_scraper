@@ -25,5 +25,11 @@ assert.equal(
   ),
   true
 );
+assert.equal(
+  isLikelyGenericMetadataImage(
+    "https://www.ecb.europa.eu/paym/financial-stability/html/index/fsr_1000x750.jpg"
+  ),
+  true
+);
 
-process.stdout.write(`${JSON.stringify({ status: "passed", checks: 3 })}\n`);
+process.stdout.write(`${JSON.stringify({ status: "passed", checks: 4 })}\n`);
