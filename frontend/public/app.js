@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "bounded-profile-history-window-253";
+const APP_BUILD = "bounded-profile-candidates-254";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -56748,27 +56748,26 @@ function buildPersonalDashboardBackendQueryParamsList() {
   const resolvedFeed = state.filters.feedId ? resolveFeedByIdentity(state.filters.feedId) : null;
   const profileDateRange = getPersonalDashboardHistoryDateRange();
   if (resolvedFeed?.id) {
-    return [applyBackendArticleQueryBaseParams({ completeCandidates: true, profileDateRange })];
+    return [applyBackendArticleQueryBaseParams({ profileDateRange })];
   }
 
   const explicitSearch = String(state.filters.search || "").trim();
   if (explicitSearch) {
-    return [applyBackendArticleQueryBaseParams({ completeCandidates: true, profileDateRange })];
+    return [applyBackendArticleQueryBaseParams({ profileDateRange })];
   }
 
   const sourceGroup = String(state.filters.sourceGroup || "all").trim() || "all";
   if (sourceGroup !== "all") {
     return [applyBackendArticleQueryBaseParams({
       limit: MAX_ARTICLES_IN_MEMORY,
-      completeCandidates: true,
       profileDateRange,
     })];
   }
 
-  // A complete pool from every tracked-source group already contains every
-  // candidate that a profile search or source-affinity request could return.
-  // Do not issue those overlapping requests before local profile evaluation.
-  return buildTrackedSourcesAllBackendQueryParamsList({ completeCandidates: true, profileDateRange });
+  // A profile is evaluated against the recent candidate page from every
+  // tracked-source group. Do not request every historical dedupe page at once:
+  // that can starve the next profile interaction before the browser can render.
+  return buildTrackedSourcesAllBackendQueryParamsList({ profileDateRange });
 }
 
 async function mapBackendArticleQueryParamsWithConcurrency(queryParamsList = [], mapper, limit = BACKEND_ARTICLE_QUERY_CONCURRENCY_LIMIT) {
