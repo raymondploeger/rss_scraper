@@ -499,6 +499,11 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
 ];
 
 const RETIRED_STRATEGIC_FEEDS = [
+  // The public page resolves to navigation and subscription pages rather than
+  // individual Currency News articles, so it is not a reliable website feed.
+  {
+    name: "Currency News",
+  },
   {
     name: "Google News - Security Features for Documents and Banknotes",
   },
