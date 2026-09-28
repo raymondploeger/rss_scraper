@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "single-source-sync-264";
+const APP_BUILD = "mediacorp-image-proxy-265";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -26221,6 +26221,14 @@ function isNotafiliaUrl(value) {
   }
 }
 
+function isMediacorpImageUrl(value) {
+  try {
+    return new URL(String(value || "")).hostname.replace(/^www\./i, "").toLowerCase() === "dam.mediacorp.sg";
+  } catch {
+    return false;
+  }
+}
+
 function isKnownBrokenImageUrl(url) {
   const host = url.hostname.replace(/^www\./, "");
   const path = `${url.pathname} ${url.search}`.toLowerCase();
@@ -26426,7 +26434,7 @@ function assessArticleImageQuality(article) {
 
       return {
         score: Math.max(0, score),
-        imageSrc: isNotafiliaUrl(normalizedImageUrl)
+        imageSrc: isNotafiliaUrl(normalizedImageUrl) || isMediacorpImageUrl(normalizedImageUrl)
           ? `/api/image?url=${encodeURIComponent(normalizedImageUrl)}`
           : normalizedImageUrl,
       };
