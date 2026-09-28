@@ -20,7 +20,6 @@
     "test:complete-candidate-pagination": "node scripts/test-complete-candidate-pagination.mjs",
     "test:sarb-source-relevance": "node scripts/test-south-african-reserve-bank-relevance.mjs",
     "test:bank-of-england-relevance": "node scripts/test-bank-of-england-relevance.mjs",
-    "test:biometric-update-digital-identity-relevance": "node scripts/test-biometric-update-digital-identity-relevance.mjs",
     "test:european-central-bank-relevance": "node scripts/test-european-central-bank-relevance.mjs",
     "test:govtech-singapore-relevance": "node scripts/test-govtech-singapore-relevance.mjs",
     "test:hong-kong-immigration-relevance": "node scripts/test-hong-kong-immigration-relevance.mjs",
