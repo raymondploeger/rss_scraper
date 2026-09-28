@@ -473,6 +473,14 @@ function isEnisaNewsFeed(feed) {
   });
 }
 
+function isGovTechSingaporeDigitalIdentityNewsFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: ["https://www.tech.gov.sg/media/"],
+    urlFragments: ["tech.gov.sg/media"],
+    exactNames: ["GovTech Singapore Digital Identity News"],
+  });
+}
+
 function isAamvaNewsFeed(feed) {
   return matchesWebsiteFeedSignature(feed, {
     exactUrls: ["https://www.aamva.org/publications-news/aamva-news"],
@@ -548,6 +556,7 @@ function shouldReplaceArticlesOnSync(feed) {
     isInterpolNewsFeed(feed) ||
     isTsaPressReleasesFeed(feed) ||
     isEnisaNewsFeed(feed) ||
+    isGovTechSingaporeDigitalIdentityNewsFeed(feed) ||
     isAamvaNewsFeed(feed) ||
     isEuropeanCommissionDigitalIdentityNewsFeed(feed) ||
     isBankOfEnglandNewsFeed(feed) ||
@@ -4555,6 +4564,16 @@ async function extractWebsiteItems(feed) {
     console.log(`Using dedicated website extractor: enisa-news for source ${feed.id}`);
     const items = await extractStrictGovernmentListingItems(feed, $, fetchedUrl, {
       linkPattern: /enisa\.europa\.eu\/news\/[a-z0-9-]+(?:$|[?#])/,
+      maxItems: 20,
+    });
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isGovTechSingaporeDigitalIdentityNewsFeed(feed)) {
+    console.log(`Using dedicated website extractor: govtech-singapore-digital-identity for source ${feed.id}`);
+    const items = await extractStrictGovernmentListingItems(feed, $, fetchedUrl, {
+      linkPattern: /tech\.gov\.sg\/media\/[a-z0-9][a-z0-9-]*\/?(?:$|[?#])/i,
       maxItems: 20,
     });
     console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
