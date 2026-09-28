@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "govtech-singapore-source-263";
+const APP_BUILD = "single-source-sync-264";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -60765,6 +60765,36 @@ async function loadAllArticles() {
   };
 }
 
+async function refreshSingleFeedArticles(feedId) {
+  const response = await apiRequest(
+    `/api/articles?feedId=${encodeURIComponent(feedId)}&includePagination=true&limit=${MAX_ARTICLES_IN_MEMORY}&page=1`
+  );
+  const refreshedArticles = (Array.isArray(response?.items) ? response.items : [])
+    .slice(0, MAX_ARTICLES_IN_MEMORY)
+    .map(normalizeLoadedArticle);
+  const retainedArticles = (Array.isArray(state.articles) ? state.articles : []).filter(
+    (article) => article?.feedId !== feedId
+  );
+  const nextArticles = [...retainedArticles, ...refreshedArticles]
+    .sort((left, right) => new Date(right?.pubDate || 0) - new Date(left?.pubDate || 0))
+    .slice(0, MAX_ARTICLES_IN_MEMORY);
+
+  runtime.articleComputationCache.clear();
+  runtime.articlePairComputationCache.clear();
+  runtime.backendArticleQueryCache.clear();
+  state.articles = nextArticles;
+  state.articleStats = {
+    totalAvailable: Math.max(Number(state.articleStats?.totalAvailable) || 0, nextArticles.length),
+    loadedInFrontend: nextArticles.length,
+  };
+  runtime.lastSnapshotSignature = buildArticleSnapshotSignature(nextArticles);
+  runtime.articleDataRevision += 1;
+  rebuildArticleFeedIndexes();
+  clearFeedRenderCaches();
+  syncFavoriteArticlesWithLoadedArticles();
+  renderDashboard();
+}
+
 function applySnapshotPayload(snapshotPayload, options = {}) {
   const { render = true } = options;
   if (!snapshotPayload) {
@@ -62121,7 +62151,8 @@ function bindEvents() {
       syncButton.textContent = "Syncing...";
       try {
         const result = await apiRequest(`/api/feeds/${feedId}/refresh`, { method: "POST" });
-        await loadSnapshot();
+        await refreshFeedsOnly();
+        await refreshSingleFeedArticles(feedId);
         showNotification({
           title: "Source synced",
           message: `${feed.name || "Source"}: ${Number(result?.newArticles) || 0} new article${Number(result?.newArticles) === 1 ? "" : "s"}.`,
