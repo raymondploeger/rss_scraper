@@ -22,7 +22,6 @@
     "test:bank-of-england-relevance": "node scripts/test-bank-of-england-relevance.mjs",
     "test:european-central-bank-relevance": "node scripts/test-european-central-bank-relevance.mjs",
     "test:govtech-singapore-relevance": "node scripts/test-govtech-singapore-relevance.mjs",
-    "test:govuk-one-login-relevance": "node scripts/test-govuk-one-login-relevance.mjs",
     "test:hong-kong-immigration-relevance": "node scripts/test-hong-kong-immigration-relevance.mjs",
     "test:hong-kong-immigration-thumbnails": "node scripts/test-hong-kong-immigration-thumbnails.mjs",
     "audit:storage": "npm --prefix backend run audit:storage",
