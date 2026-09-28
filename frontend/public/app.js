@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "mediacorp-image-proxy-265";
+const APP_BUILD = "hong-kong-immigration-source-266";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1685,6 +1685,7 @@ const GOVERNMENT_SOURCE_PATTERNS = Object.freeze([
   "nist.gov/news-events/news/rss.xml",
   "enisa.europa.eu/news",
   "tech.gov.sg/media",
+  "immd.gov.hk/eng/press",
   "api.io.canada.ca/io-server/gc/news/en/v2",
   "bankofcanada.ca/utility/news/feed",
   "bankofengland.co.uk/rss/news",

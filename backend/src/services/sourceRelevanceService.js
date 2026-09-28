@@ -1887,6 +1887,24 @@ export const SOURCE_RELEVANCE_RULES = [
     ],
   },
   {
+    name: "Hong Kong Immigration Department News",
+    sourceKeys: ["hong kong immigration department news", "immd.gov.hk/eng/press"],
+    include: [
+      "automated passenger clearance",
+      "e-channel",
+      "e-channel service",
+      "electronic passport",
+      "hong kong identity card",
+      "hong kong identity cards",
+      "identity card",
+      "identity cards",
+      "passport",
+      "passports",
+      "travel document",
+      "travel documents",
+    ],
+  },
+  {
     name: "IRCC Passport and Digital Identity News",
     sourceKeys: [
       "ircc passport and digital identity news",

@@ -481,6 +481,14 @@ function isGovTechSingaporeDigitalIdentityNewsFeed(feed) {
   });
 }
 
+function isHongKongImmigrationDepartmentNewsFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: ["https://www.immd.gov.hk/eng/press/press_releases.html"],
+    urlFragments: ["immd.gov.hk/eng/press/press_releases.html"],
+    exactNames: ["Hong Kong Immigration Department News"],
+  });
+}
+
 function isAamvaNewsFeed(feed) {
   return matchesWebsiteFeedSignature(feed, {
     exactUrls: ["https://www.aamva.org/publications-news/aamva-news"],
@@ -557,6 +565,7 @@ function shouldReplaceArticlesOnSync(feed) {
     isTsaPressReleasesFeed(feed) ||
     isEnisaNewsFeed(feed) ||
     isGovTechSingaporeDigitalIdentityNewsFeed(feed) ||
+    isHongKongImmigrationDepartmentNewsFeed(feed) ||
     isAamvaNewsFeed(feed) ||
     isEuropeanCommissionDigitalIdentityNewsFeed(feed) ||
     isBankOfEnglandNewsFeed(feed) ||
@@ -4575,6 +4584,16 @@ async function extractWebsiteItems(feed) {
     const items = await extractStrictGovernmentListingItems(feed, $, fetchedUrl, {
       linkPattern: /tech\.gov\.sg\/media\/[a-z0-9][a-z0-9-]*\/?(?:$|[?#])/i,
       maxItems: 20,
+    });
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isHongKongImmigrationDepartmentNewsFeed(feed)) {
+    console.log(`Using dedicated website extractor: hong-kong-immigration-department for source ${feed.id}`);
+    const items = await extractStrictGovernmentListingItems(feed, $, fetchedUrl, {
+      linkPattern: /immd\.gov\.hk\/eng\/press\/press-releases\/20\d{6}\.html(?:$|[?#])/i,
+      maxItems: 40,
     });
     console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
     return items;
