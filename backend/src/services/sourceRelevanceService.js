@@ -1887,6 +1887,21 @@ export const SOURCE_RELEVANCE_RULES = [
     ],
   },
   {
+    name: "Biometric Update Digital Identity",
+    sourceKeys: ["biometric update digital identity", "biometricupdate.com/tag/digital-identity/feed"],
+    include: [
+      "biometric",
+      "biometrics",
+      "digital id",
+      "digital identity",
+      "digital wallet",
+      "eudi",
+      "identity document",
+      "identity verification",
+      "verifiable credential",
+    ],
+  },
+  {
     name: "Hong Kong Immigration Department News",
     sourceKeys: ["hong kong immigration department news", "immd.gov.hk/eng/press"],
     include: [

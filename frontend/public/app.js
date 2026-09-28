@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "remove-empty-govuk-one-login-source-268";
+const APP_BUILD = "biometric-update-digital-identity-source-269";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -2032,6 +2032,8 @@ const SOURCE_PROFILE_AFFINITY_RULES = Object.freeze([
       "digital-strategy.ec.europa.eu/en/policies/electronic-identification",
       "govtech singapore digital identity news",
       "tech.gov.sg/media",
+      "biometric update digital identity",
+      "biometricupdate.com/tag/digital-identity/feed",
     ]),
     mainDomains: Object.freeze(["digital_identity_biometrics"]),
     interests: Object.freeze([
