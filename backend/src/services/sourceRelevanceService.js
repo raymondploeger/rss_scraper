@@ -1869,6 +1869,24 @@ export const SOURCE_RELEVANCE_RULES = [
     exclude: [],
   },
   {
+    name: "GovTech Singapore Digital Identity News",
+    sourceKeys: ["govtech singapore digital identity news", "tech.gov.sg/media"],
+    include: [
+      "authentication",
+      "digital ic",
+      "digital identity",
+      "digital signing",
+      "face verification",
+      "identity verification",
+      "myinfo",
+      "national digital identity",
+      "passkey",
+      "passkeys",
+      "singpass",
+      "verifiable credential",
+    ],
+  },
+  {
     name: "IRCC Passport and Digital Identity News",
     sourceKeys: [
       "ircc passport and digital identity news",

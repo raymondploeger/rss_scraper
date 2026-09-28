@@ -423,6 +423,13 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase4-official-identity-and-banknote-sources",
   },
   {
+    name: "GovTech Singapore Digital Identity News",
+    topic: "Digital Identity & Biometrics",
+    rssUrl: "https://www.tech.gov.sg/media/",
+    sourceType: "website",
+    phase: "phase4-official-identity-and-banknote-sources",
+  },
+  {
     name: "Bank of Canada News",
     topic: "Banknotes",
     rssUrl: "https://www.bankofcanada.ca/utility/news/feed/",

@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "ecb-banknote-source-262";
+const APP_BUILD = "govtech-singapore-source-263";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1684,6 +1684,7 @@ const GOVERNMENT_SOURCE_PATTERNS = Object.freeze([
   "tsa.gov/news/press/releases",
   "nist.gov/news-events/news/rss.xml",
   "enisa.europa.eu/news",
+  "tech.gov.sg/media",
   "api.io.canada.ca/io-server/gc/news/en/v2",
   "bankofcanada.ca/utility/news/feed",
   "bankofengland.co.uk/rss/news",
@@ -2028,6 +2029,8 @@ const SOURCE_PROFILE_AFFINITY_RULES = Object.freeze([
       "openid.net/feed",
       "european commission digital identity",
       "digital-strategy.ec.europa.eu/en/policies/electronic-identification",
+      "govtech singapore digital identity news",
+      "tech.gov.sg/media",
     ]),
     mainDomains: Object.freeze(["digital_identity_biometrics"]),
     interests: Object.freeze([
