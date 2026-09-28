@@ -4934,6 +4934,8 @@ function normalizeItem(feed, item) {
         ? getOfficialSourceTitleThumbnail("INTERPOL", title, "1f3a5f")
       : isTsaPressReleasesFeed(feed) && !extractedThumbnailUrl
         ? getOfficialSourceTitleThumbnail("TSA", title, "005ea8")
+      : isHongKongImmigrationDepartmentNewsFeed(feed) && !extractedThumbnailUrl
+        ? getOfficialSourceTitleThumbnail("Hong Kong Immigration Department", title, "1d4e89")
       : isMissouriDmvFeed(feed) && !extractedThumbnailUrl
         ? getOfficialSourceTitleThumbnail("Missouri DMV", title, "17365d")
       : "";
@@ -5150,7 +5152,7 @@ async function enrichDirectArticleThumbnail(feed, article) {
     return article;
   }
 
-  if (!isGovUkNewsFeed(feed)) {
+  if (!isGovUkNewsFeed(feed) && !isHongKongImmigrationDepartmentNewsFeed(feed)) {
     return article;
   }
 

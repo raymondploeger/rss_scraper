@@ -171,6 +171,7 @@ export function isLikelyGenericMetadataImage(imageUrl) {
     value.includes("ecb press conference place holder") ||
     value.includes("ecb.europa.eu/paym/financial-stability/html/index/fsr_1000x750.jpg") ||
     value.includes("ecb.europa.eu/stats/html/index/ecb_website_statisticsmegamenu_95044094-01.png") ||
+    value.includes("immd.gov.hk/images/common/footer/top.png") ||
     value.includes("hidot.hawaii.gov/wp-content/themes/hic_state_template_parent/images/design/footer/footer-seal.png") ||
     value.includes("dor.mo.gov/img/save-life-footer.png") ||
     (
