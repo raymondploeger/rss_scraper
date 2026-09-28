@@ -265,6 +265,13 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase1",
   },
   {
+    name: "Currency News",
+    topic: "Shared Security Printing",
+    rssUrl: "https://currency-news.com/rss.xml",
+    sourceType: "rss",
+    phase: "phase1",
+  },
+  {
     name: "HID Press Releases",
     topic: "Identity Documents",
     rssUrl: "https://newsroom.hidglobal.com/press-releases",
@@ -499,11 +506,6 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
 ];
 
 const RETIRED_STRATEGIC_FEEDS = [
-  // The public page resolves to navigation and subscription pages rather than
-  // individual Currency News articles, so it is not a reliable website feed.
-  {
-    name: "Currency News",
-  },
   {
     name: "Google News - Security Features for Documents and Banknotes",
   },
