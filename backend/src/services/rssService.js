@@ -537,6 +537,14 @@ function isBankOfEnglandNewsFeed(feed) {
   });
 }
 
+function isCurrencyNewsFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: ["https://currency-news.com/rss.xml"],
+    urlFragments: ["currency-news.com/rss.xml"],
+    exactNames: ["Currency News"],
+  });
+}
+
 const CURATED_GOOGLE_NEWS_MAX_AGE_DAYS = 90;
 
 function isCuratedGoogleNewsDiscoveryFeed(feed) {
@@ -587,6 +595,7 @@ function shouldReplaceArticlesOnSync(feed) {
     isEuropeanCommissionDigitalIdentityNewsFeed(feed) ||
     isBankOfEnglandNewsFeed(feed) ||
     isSouthAfricanReserveBankNewsFeed(feed) ||
+    isCurrencyNewsFeed(feed) ||
     isCuratedGoogleNewsDiscoveryFeed(feed)
   );
 }
