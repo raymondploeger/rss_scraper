@@ -190,6 +190,30 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase1",
   },
 
+  // Curated Google News discovery feeds. These complement direct sources and
+  // remain subject to the normal profile and quality policies.
+  {
+    name: "Google News - Security Printing for Documents and Banknotes",
+    topic: "Shared Security Printing",
+    rssUrl: buildGoogleNewsRssUrl('"security printing" (passport OR banknote OR "identity document")'),
+    sourceType: "rss",
+    phase: "phase5-curated-google-news-discovery",
+  },
+  {
+    name: "Google News - Security Features for Documents and Banknotes",
+    topic: "Shared Security Printing",
+    rssUrl: buildGoogleNewsRssUrl('(hologram OR "optically variable device" OR OVD) (passport OR banknote OR "identity document")'),
+    sourceType: "rss",
+    phase: "phase5-curated-google-news-discovery",
+  },
+  {
+    name: "Google News - Document Fraud and Counterfeit Passports",
+    topic: "Identity Documents",
+    rssUrl: buildGoogleNewsRssUrl('(\"document fraud\" OR \"counterfeit passport\" OR \"forged identity document\")'),
+    sourceType: "rss",
+    phase: "phase5-curated-google-news-discovery",
+  },
+
   // Industry sources
   {
     name: "Keesing Platform",
