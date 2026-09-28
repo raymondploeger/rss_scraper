@@ -537,6 +537,14 @@ function isBankOfEnglandNewsFeed(feed) {
   });
 }
 
+function isCuratedGoogleNewsDiscoveryFeed(feed) {
+  return [
+    "Google News - Security Printing for Documents and Banknotes",
+    "Google News - Security Features for Documents and Banknotes",
+    "Google News - Document Fraud and Counterfeit Passports",
+  ].includes(String(feed?.name || "").trim());
+}
+
 function shouldReplaceArticlesOnSync(feed) {
   return (
     isIndNewsFeed(feed) ||
@@ -569,7 +577,8 @@ function shouldReplaceArticlesOnSync(feed) {
     isAamvaNewsFeed(feed) ||
     isEuropeanCommissionDigitalIdentityNewsFeed(feed) ||
     isBankOfEnglandNewsFeed(feed) ||
-    isSouthAfricanReserveBankNewsFeed(feed)
+    isSouthAfricanReserveBankNewsFeed(feed) ||
+    isCuratedGoogleNewsDiscoveryFeed(feed)
   );
 }
 
