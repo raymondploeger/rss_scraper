@@ -18,4 +18,10 @@ const rejected = getSourceRelevanceAssessment(feed, {
 });
 assert.equal(rejected.accepted, false);
 
-process.stdout.write(`${JSON.stringify({ status: "passed", checks: 2 })}\n`);
+const rejectedForeignCurrencyReserves = getSourceRelevanceAssessment(feed, {
+  title: "Foreign Currency Reserves 2026 – Market Notice",
+  contentSnippet: "A market notice about the foreign currency reserve management programme.",
+});
+assert.equal(rejectedForeignCurrencyReserves.accepted, false);
+
+process.stdout.write(`${JSON.stringify({ status: "passed", checks: 3 })}\n`);

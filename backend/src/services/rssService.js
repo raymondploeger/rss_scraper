@@ -513,6 +513,14 @@ function isEuropeanCentralBankPressReleasesFeed(feed) {
   });
 }
 
+function isBankOfEnglandNewsFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: ["https://www.bankofengland.co.uk/rss/news"],
+    urlFragments: ["bankofengland.co.uk/rss/news"],
+    exactNames: ["Bank of England News"],
+  });
+}
+
 function shouldReplaceArticlesOnSync(feed) {
   return (
     isIndNewsFeed(feed) ||
@@ -542,6 +550,7 @@ function shouldReplaceArticlesOnSync(feed) {
     isEnisaNewsFeed(feed) ||
     isAamvaNewsFeed(feed) ||
     isEuropeanCommissionDigitalIdentityNewsFeed(feed) ||
+    isBankOfEnglandNewsFeed(feed) ||
     isSouthAfricanReserveBankNewsFeed(feed)
   );
 }

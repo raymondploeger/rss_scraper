@@ -2008,7 +2008,6 @@ export const SOURCE_RELEVANCE_RULES = [
       "counterfeit",
       "counterfeit note",
       "counterfeit banknote",
-      "currency",
       "denomination",
       "legal tender",
       "note design",
