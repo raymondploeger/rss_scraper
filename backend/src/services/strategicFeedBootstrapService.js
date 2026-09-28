@@ -199,20 +199,6 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     sourceType: "rss",
     phase: "phase5-curated-google-news-discovery",
   },
-  {
-    name: "Google News - Security Features for Documents and Banknotes",
-    topic: "Shared Security Printing",
-    rssUrl: buildGoogleNewsRssUrl('(\"passport security features\" OR \"banknote security features\" OR \"passport hologram\" OR \"banknote hologram\" OR (\"optically variable device\" (passport OR banknote))) -bike -wildlife -foil'),
-    sourceType: "rss",
-    phase: "phase5-curated-google-news-discovery",
-  },
-  {
-    name: "Google News - Document Fraud and Counterfeit Passports",
-    topic: "Identity Documents",
-    rssUrl: buildGoogleNewsRssUrl('(\"counterfeit passport\" OR \"forged identity document\" OR \"identity document fraud\" OR (\"document fraud\" (passport OR visa OR \"identity card\" OR \"driver license\" OR \"travel document\")))'),
-    sourceType: "rss",
-    phase: "phase5-curated-google-news-discovery",
-  },
 
   // Industry sources
   {
@@ -513,6 +499,12 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
 ];
 
 const RETIRED_STRATEGIC_FEEDS = [
+  {
+    name: "Google News - Security Features for Documents and Banknotes",
+  },
+  {
+    name: "Google News - Document Fraud and Counterfeit Passports",
+  },
   {
     name: "Bing News - De La Rue Banknotes",
     rssUrl: buildBingNewsRssUrl('"De La Rue" banknotes'),

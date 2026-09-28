@@ -537,12 +537,21 @@ function isBankOfEnglandNewsFeed(feed) {
   });
 }
 
+const CURATED_GOOGLE_NEWS_MAX_AGE_DAYS = 90;
+
 function isCuratedGoogleNewsDiscoveryFeed(feed) {
-  return [
-    "Google News - Security Printing for Documents and Banknotes",
-    "Google News - Security Features for Documents and Banknotes",
-    "Google News - Document Fraud and Counterfeit Passports",
-  ].includes(String(feed?.name || "").trim());
+  return String(feed?.name || "").trim() === "Google News - Security Printing for Documents and Banknotes";
+}
+
+function isRecentCuratedGoogleNewsItem(item) {
+  const rawPubDate = normalizeText(item?.isoDate || item?.pubDate, "");
+  const publishedAt = new Date(rawPubDate);
+  if (!rawPubDate || Number.isNaN(publishedAt.getTime())) {
+    return false;
+  }
+
+  const maxAgeMs = CURATED_GOOGLE_NEWS_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+  return publishedAt.getTime() >= Date.now() - maxAgeMs;
 }
 
 function shouldReplaceArticlesOnSync(feed) {
@@ -5336,6 +5345,13 @@ async function runFeedSync(feed) {
 
     for (const item of resolvedItems) {
       try {
+        if (isCuratedGoogleNewsDiscoveryFeed(feed) && !isRecentCuratedGoogleNewsItem(item)) {
+          console.log(
+            `Rejected item for feed ${feed.id}: curated-google-news-stale-item title=${JSON.stringify(item?.title || "")}`
+          );
+          continue;
+        }
+
         let normalized = normalizeItem(feed, item);
         if (!normalized) {
           logTrackedVendorWebsiteFeedState(feed, "normalize-item-null", {
