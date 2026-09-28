@@ -45034,6 +45034,12 @@ function isGoogleAlertsFeed(feed) {
   const name = String(feed?.name || "").toLowerCase();
   const rssUrl = String(feed?.rssUrl || "").toLowerCase();
 
+  // Google News search feeds are RSS sources, even when their display name
+  // contains "Google". Keep them separate from user-managed Google Alerts.
+  if (isGoogleRssFeed(feed)) {
+    return false;
+  }
+
   return (
     feed?.sourceType === "google" ||
     name.includes("google") ||
