@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "remove-biometric-update-duplicate-270";
+const APP_BUILD = "google-news-rss-group-271";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
