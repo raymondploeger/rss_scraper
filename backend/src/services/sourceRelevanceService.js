@@ -1887,6 +1887,22 @@ export const SOURCE_RELEVANCE_RULES = [
     ],
   },
   {
+    name: "GOV.UK One Login Updates",
+    sourceKeys: ["gov.uk one login updates", "gds.blog.gov.uk/category/gov-uk-one-login/feed"],
+    include: [
+      "digital identity",
+      "document check",
+      "document checking",
+      "gov.uk one login",
+      "identity check",
+      "identity checking",
+      "identity verification",
+      "one login",
+      "prove your identity",
+      "proving your identity",
+    ],
+  },
+  {
     name: "Hong Kong Immigration Department News",
     sourceKeys: ["hong kong immigration department news", "immd.gov.hk/eng/press"],
     include: [

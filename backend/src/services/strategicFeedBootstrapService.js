@@ -430,6 +430,13 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase4-official-identity-and-banknote-sources",
   },
   {
+    name: "GOV.UK One Login Updates",
+    topic: "Digital Identity & Biometrics",
+    rssUrl: "https://gds.blog.gov.uk/category/gov-uk-one-login/feed/",
+    sourceType: "rss",
+    phase: "phase4-official-identity-and-banknote-sources",
+  },
+  {
     name: "Hong Kong Immigration Department News",
     topic: "Identity Documents",
     rssUrl: "https://www.immd.gov.hk/eng/press/press_releases.html",

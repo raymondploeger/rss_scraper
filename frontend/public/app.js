@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "hong-kong-immigration-source-266";
+const APP_BUILD = "govuk-one-login-source-267";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1685,6 +1685,7 @@ const GOVERNMENT_SOURCE_PATTERNS = Object.freeze([
   "nist.gov/news-events/news/rss.xml",
   "enisa.europa.eu/news",
   "tech.gov.sg/media",
+  "gds.blog.gov.uk/category/gov-uk-one-login/feed",
   "immd.gov.hk/eng/press",
   "api.io.canada.ca/io-server/gc/news/en/v2",
   "bankofcanada.ca/utility/news/feed",
@@ -2032,6 +2033,8 @@ const SOURCE_PROFILE_AFFINITY_RULES = Object.freeze([
       "digital-strategy.ec.europa.eu/en/policies/electronic-identification",
       "govtech singapore digital identity news",
       "tech.gov.sg/media",
+      "gov.uk one login updates",
+      "gds.blog.gov.uk/category/gov-uk-one-login/feed",
     ]),
     mainDomains: Object.freeze(["digital_identity_biometrics"]),
     interests: Object.freeze([
