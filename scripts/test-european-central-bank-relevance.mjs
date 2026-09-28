@@ -19,6 +19,12 @@ const rejected = getSourceRelevanceAssessment(feed, {
 });
 assert.equal(rejected.accepted, false);
 
+const acceptedWithMonetaryPolicyContext = getSourceRelevanceAssessment(feed, {
+  title: "ECB announces new euro banknote design",
+  contentSnippet: "The announcement follows the latest monetary policy discussion.",
+});
+assert.equal(acceptedWithMonetaryPolicyContext.accepted, true);
+
 assert.equal(
   isLikelyGenericMetadataImage(
     "https://www.ecb.europa.eu/press/tvservices/html/index/ECB%20press%20conference%20place%20holder%20new_2560x1440.jpg"
@@ -38,4 +44,4 @@ assert.equal(
   true
 );
 
-process.stdout.write(`${JSON.stringify({ status: "passed", checks: 5 })}\n`);
+process.stdout.write(`${JSON.stringify({ status: "passed", checks: 6 })}\n`);

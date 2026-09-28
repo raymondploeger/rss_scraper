@@ -2055,10 +2055,14 @@ export const SOURCE_RELEVANCE_RULES = [
       "banknote",
       "counterfeit",
       "counterfeiting",
+      "cash",
       "euro banknote",
+      "euro cash",
+      "legal tender",
       "note design",
       "security feature",
     ],
+    protectedIncludeOverridesExclude: true,
     exclude: [
       "interest rate",
       "monetary policy",
@@ -2261,7 +2265,10 @@ export function getSourceRelevanceAssessment(feed, article) {
     .join(" ")
     .toLowerCase();
   const protectedTerms = findSourceRuleMatches(protectedText, rule.protectedInclude || []);
-  if (protectedTerms.length && articleMatchesProtectedPagePattern(rule, article)) {
+  if (
+    protectedTerms.length &&
+    (rule.protectedIncludeOverridesExclude || articleMatchesProtectedPagePattern(rule, article))
+  ) {
     return {
       accepted: true,
       rule,
