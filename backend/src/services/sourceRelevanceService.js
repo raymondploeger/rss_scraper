@@ -1903,6 +1903,17 @@ export const SOURCE_RELEVANCE_RULES = [
       "travel document",
       "travel documents",
     ],
+    exclude: [
+      "anti-illegal worker",
+      "arrested during",
+      "conspiracy to defraud",
+      "illegal worker",
+      "illegal workers",
+      "jailed",
+      "repatriates",
+      "repatriation",
+      "unsubstantiated non-refoulement",
+    ],
   },
   {
     name: "IRCC Passport and Digital Identity News",

@@ -24,7 +24,7 @@ assert.equal(
 
 assert.equal(
   getSourceRelevanceAssessment(feed, {
-    title: "Twenty persons arrested during anti-illegal worker operation",
+    title: "Twenty persons arrested during anti-illegal worker operation involving identity cards",
     contentSnippet: "The operation targeted employers and overstayers.",
   }).accepted,
   false,
