@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "google-news-rss-group-271";
+const APP_BUILD = "security-printer-content-evidence-272";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
