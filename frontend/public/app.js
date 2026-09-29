@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "security-printer-content-evidence-276";
+const APP_BUILD = "security-printer-content-evidence-277";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -43737,6 +43737,22 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
   );
   if (!selectedInterests.length) {
     return finishPersonalDashboardTiming(true, "no_selected_interests");
+  }
+
+  // Security Printer has a strict physical-technology gate. Apply it before
+  // any broad profile policy can accept a source/topic label as a match.
+  if (isSecurityPrinterProfileActive(selectedInterests)) {
+    const securityPrinterProfileAssessment = measurePersonalDashboardSegment("securityPrinterProfileProfessionalGuard", () =>
+      getSecurityPrinterProfileProfessionalGuard(article, selectedInterests)
+    );
+    if (!securityPrinterProfileAssessment.passed) {
+      return finishPersonalDashboardTiming(
+        false,
+        securityPrinterProfileAssessment.rejectionReason || "security_printer_profile_guard_rejected",
+        {},
+        "professional_guard"
+      );
+    }
   }
 
   if (getMatchingPersonalDashboardTemplateId(selectedInterests) === "central_bank") {
