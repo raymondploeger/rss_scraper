@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "security-printer-content-evidence-274";
+const APP_BUILD = "security-printer-content-evidence-275";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -42653,6 +42653,7 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
     const matchedTitleProfileProducerContextTerms = profileProducerContextTerms.filter((term) =>
       textMatchesKeyword(articleTitleText, term)
     );
+    const hasSpecificSecurityPrintingTechnology = matchedExplicitSecurityPrintingTechnologyTerms.length > 0;
     const sourceNoiseTerms = CENTRAL_BANK_PROFILE_SOURCE_NOISE_TERMS.filter((term) =>
       textMatchesKeyword(`${context.sourceText} ${context.domainText} ${context.metadataText}`, term)
     );
@@ -42660,6 +42661,7 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       matchedTitleProfileTechnologyAnchorTerms.length === 0 &&
       matchedTitleProfileProducerContextTerms.length === 0;
     const passed = matchedProfessionalTerms.length > 0
+      && hasSpecificSecurityPrintingTechnology
       && !(matchedHardOffDomainNoiseTerms.length > 0 && matchedSecureContextTerms.length === 0)
       && !broadPolymerOnly
       && !(matchedSemiNoiseTerms.length > 0 && matchedPrintingTechnologyContextTerms.length === 0)
@@ -42689,6 +42691,7 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       strongProfessionalContextTerms: Object.freeze(matchedStrongProfessionalContextTerms.slice(0, 10)),
       printingTechnologyContextTerms: Object.freeze(matchedPrintingTechnologyContextTerms.slice(0, 10)),
       explicitSecurityPrintingTechnologyTerms: Object.freeze(matchedExplicitSecurityPrintingTechnologyTerms.slice(0, 10)),
+      hasSpecificSecurityPrintingTechnology,
       profileTechnologyAnchorTerms: Object.freeze(matchedProfileTechnologyAnchorTerms.slice(0, 10)),
       titleProfileTechnologyAnchorTerms: Object.freeze(matchedTitleProfileTechnologyAnchorTerms.slice(0, 10)),
       broadPolymerBanknoteNoiseTerms: Object.freeze(matchedBroadPolymerBanknoteNoiseTerms.slice(0, 10)),
