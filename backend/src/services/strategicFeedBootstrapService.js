@@ -265,13 +265,6 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase1",
   },
   {
-    name: "Canadian Bank Note News",
-    topic: "Shared Security Printing",
-    rssUrl: "https://www.cbnco.com/news/",
-    sourceType: "website",
-    phase: "phase2-vendor-sources",
-  },
-  {
     name: "Currency News",
     topic: "Shared Security Printing",
     rssUrl: "https://currency-news.com/rss.xml",

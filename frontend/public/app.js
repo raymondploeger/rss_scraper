@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "canadian-bank-note-source-282";
+const APP_BUILD = "security-printer-source-quality-281";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1620,7 +1620,6 @@ const VENDOR_SOURCE_PATTERNS = Object.freeze([
   "bundesdruckerei.de/en/newsroom/press-releases",
   "gi-de.com/en/about-us/press/press-releases",
   "cranecurrency.com/news-insights",
-  "cbnco.com/news",
   "newsroom.hidglobal.com/press-releases",
   "kurz-world.com/en/newsroom/press",
   "kinegram.com/events-insights/insights",
@@ -5424,7 +5423,6 @@ const OFFICIAL_VENDOR_SOURCE_FEED_NAMES = Object.freeze([
   "Atlantic Zeiser News",
   "Authentix RSS",
   "Bundesdruckerei Press Releases",
-  "Canadian Bank Note News",
   "Cetis RSS",
   "Crane Currency News & Insights",
   "Daon Resources",
@@ -5456,7 +5454,6 @@ const OFFICIAL_VENDOR_SOURCE_DOMAINS = Object.freeze([
   "atlanticzeiser.com",
   "authentix.com",
   "bundesdruckerei.de",
-  "cbnco.com",
   "cetis.si",
   "cranecurrency.com",
   "daon.com",
