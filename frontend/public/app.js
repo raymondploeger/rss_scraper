@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "security-printer-content-evidence-277";
+const APP_BUILD = "security-printer-content-evidence-278";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -42422,7 +42422,10 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       "video hosting market",
       "video hosting",
       "video platform",
+      "rabbi dovid",
     ];
+    const normalizedArticleTitle = String(context.titleText || "").trim().toLowerCase();
+    const sourceNavigationTitle = /^(technologies|certificates list)(?:\s*[-|]|$)/.test(normalizedArticleTitle);
     const secureContextTerms = [
       "security printing",
       "security printer",
@@ -42680,6 +42683,7 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
     const passed = matchedProfessionalTerms.length > 0
       && hasSpecificSecurityPrintingTechnology
       && hasSecurityPrinterTitleEvidence
+      && !sourceNavigationTitle
       && !(matchedHardOffDomainNoiseTerms.length > 0 && matchedSecureContextTerms.length === 0)
       && !broadPolymerOnly
       && !(matchedSemiNoiseTerms.length > 0 && matchedPrintingTechnologyContextTerms.length === 0)
@@ -42693,7 +42697,9 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       passed,
       rejectionReason: passed
         ? ""
-        : broadPolymerOnly
+        : sourceNavigationTitle
+          ? "security_printer_profile_navigation_title"
+          : broadPolymerOnly
           ? "security_printer_profile_broad_polymer_banknote_noise"
           : "security_printer_profile_guard_rejected",
       noiseTerms: Object.freeze([
@@ -42711,6 +42717,7 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       explicitSecurityPrintingTechnologyTerms: Object.freeze(matchedExplicitSecurityPrintingTechnologyTerms.slice(0, 10)),
       hasSpecificSecurityPrintingTechnology,
       hasSecurityPrinterTitleEvidence,
+      sourceNavigationTitle,
       profileTechnologyAnchorTerms: Object.freeze(matchedProfileTechnologyAnchorTerms.slice(0, 10)),
       titleProfileTechnologyAnchorTerms: Object.freeze(matchedTitleProfileTechnologyAnchorTerms.slice(0, 10)),
       broadPolymerBanknoteNoiseTerms: Object.freeze(matchedBroadPolymerBanknoteNoiseTerms.slice(0, 10)),
