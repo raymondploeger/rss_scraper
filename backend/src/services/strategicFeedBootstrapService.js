@@ -272,6 +272,20 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase1",
   },
   {
+    name: "Optical & Digital Document Security",
+    topic: "Shared Security Printing",
+    rssUrl: "https://opticaldigitalsecurity.com/feed/",
+    sourceType: "rss",
+    phase: "phase2-vendor-sources",
+  },
+  {
+    name: "International Optical Technologies Association",
+    topic: "Shared Security Printing",
+    rssUrl: "https://iot-association.org/feed/",
+    sourceType: "rss",
+    phase: "phase2-vendor-sources",
+  },
+  {
     name: "HID Press Releases",
     topic: "Identity Documents",
     rssUrl: "https://newsroom.hidglobal.com/press-releases",
