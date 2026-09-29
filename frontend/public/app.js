@@ -39334,6 +39334,12 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
     const contentMetadataText = sourceTextForMatching
       ? String(context.metadataText || "").split(sourceTextForMatching).join(" ")
       : String(context.metadataText || "");
+    // Topic labels from discovery feeds describe the query, not necessarily the
+    // article. They must not become self-fulfilling match evidence.
+    const contentTagText = String(context.tagText || "")
+      .replace(/\bshared security printing\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
     const metadataTextForMatching = interestId === "security_printing"
       ? contentMetadataText.replace(/\bshared security printing\b/gi, " ").replace(/\s+/g, " ").trim()
       : contentMetadataText;
@@ -39365,13 +39371,13 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       ? countSecurityInkKeywordMatches
       : countBoostKeywordMatches;
     const titleStrongHits = countStrongKeywordMatches(context.titleText, strongKeywords);
-    const tagStrongHits = countStrongKeywordMatches(context.tagText, strongKeywords);
+    const tagStrongHits = countStrongKeywordMatches(contentTagText, strongKeywords);
     const metaStrongHits = countStrongKeywordMatches(metadataTextForMatching, strongKeywords);
     const bodyStrongHits = interestId === "security_inks"
       ? countSecurityInkKeywordMatches(context.bodyText, strongKeywords, { includeStandaloneOvi: false })
       : countStrongKeywordMatches(context.bodyText, strongKeywords);
     const titleWeakHits = countBoostKeywordMatches(context.titleText, weakKeywords);
-    const tagWeakHits = countBoostKeywordMatches(context.tagText, weakKeywords);
+    const tagWeakHits = countBoostKeywordMatches(contentTagText, weakKeywords);
     const metaWeakHits = countBoostKeywordMatches(metadataTextForMatching, weakKeywords);
     const bodyWeakHits = countBoostKeywordMatches(context.bodyText, weakKeywords);
     const negativeHits =
@@ -39380,13 +39386,13 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       countBoostKeywordMatches(context.bodyText, negativeKeywords);
     const supportHits =
       countBoostKeywordMatches(context.titleText, supportKeywords) +
-      countBoostKeywordMatches(context.tagText, supportKeywords) +
+      countBoostKeywordMatches(contentTagText, supportKeywords) +
       countBoostKeywordMatches(metadataTextForMatching, supportKeywords) +
       countBoostKeywordMatches(context.bodyText, supportKeywords);
     const bridgeDocumentContextHits = interestId === "security_printing"
       ? (
         countBoostKeywordMatches(context.titleText, SECURITY_PRINTING_TECHNIQUE_BRIDGE_DOCUMENT_CONTEXT) +
-        countBoostKeywordMatches(context.tagText, SECURITY_PRINTING_TECHNIQUE_BRIDGE_DOCUMENT_CONTEXT) +
+        countBoostKeywordMatches(contentTagText, SECURITY_PRINTING_TECHNIQUE_BRIDGE_DOCUMENT_CONTEXT) +
         countBoostKeywordMatches(context.bodyText, SECURITY_PRINTING_TECHNIQUE_BRIDGE_DOCUMENT_CONTEXT)
       )
       : 0;
@@ -39394,7 +39400,7 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       ? countBoostKeywordMatches(context.titleText, SECURITY_PRINTING_TECHNIQUE_BRIDGE_KEYWORDS)
       : 0;
     const bridgeTagHits = interestId === "security_printing"
-      ? countBoostKeywordMatches(context.tagText, SECURITY_PRINTING_TECHNIQUE_BRIDGE_KEYWORDS)
+      ? countBoostKeywordMatches(contentTagText, SECURITY_PRINTING_TECHNIQUE_BRIDGE_KEYWORDS)
       : 0;
     const bridgeBodyHits = interestId === "security_printing"
       ? countBoostKeywordMatches(context.bodyText, SECURITY_PRINTING_TECHNIQUE_BRIDGE_KEYWORDS)
@@ -39487,7 +39493,7 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
     const polymerProfessionalContextHits = interestId === "polymer"
       ? (
         countBoostKeywordMatches(context.titleText, SHARED_SECURITY_POLYMER_PROFESSIONAL_CONTEXT_TERMS) +
-        countBoostKeywordMatches(context.tagText, SHARED_SECURITY_POLYMER_PROFESSIONAL_CONTEXT_TERMS) +
+        countBoostKeywordMatches(contentTagText, SHARED_SECURITY_POLYMER_PROFESSIONAL_CONTEXT_TERMS) +
         countBoostKeywordMatches(metadataTextForMatching, SHARED_SECURITY_POLYMER_PROFESSIONAL_CONTEXT_TERMS) +
         countBoostKeywordMatches(context.bodyText, SHARED_SECURITY_POLYMER_PROFESSIONAL_CONTEXT_TERMS)
       )
@@ -39495,7 +39501,7 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
     const polymerHighValueContextHits = interestId === "polymer"
       ? (
         countBoostKeywordMatches(context.titleText, SHARED_SECURITY_POLYMER_HIGH_VALUE_CONTEXT_TERMS) +
-        countBoostKeywordMatches(context.tagText, SHARED_SECURITY_POLYMER_HIGH_VALUE_CONTEXT_TERMS) +
+        countBoostKeywordMatches(contentTagText, SHARED_SECURITY_POLYMER_HIGH_VALUE_CONTEXT_TERMS) +
         countBoostKeywordMatches(metadataTextForMatching, SHARED_SECURITY_POLYMER_HIGH_VALUE_CONTEXT_TERMS) +
         countBoostKeywordMatches(context.bodyText, SHARED_SECURITY_POLYMER_HIGH_VALUE_CONTEXT_TERMS)
       )
@@ -39529,7 +39535,7 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
     const polymerTitleHighValueHits = interestId === "polymer"
       ? (
         countBoostKeywordMatches(context.titleText, SHARED_SECURITY_POLYMER_TITLE_HIGH_VALUE_TERMS) +
-        countBoostKeywordMatches(context.tagText, SHARED_SECURITY_POLYMER_TITLE_HIGH_VALUE_TERMS)
+        countBoostKeywordMatches(contentTagText, SHARED_SECURITY_POLYMER_TITLE_HIGH_VALUE_TERMS)
       )
       : 0;
     const polymerProfessionalGateRejected = interestId === "polymer" &&
@@ -42328,15 +42334,19 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
     const contentMetadataText = sourceTextForMatching
       ? String(context.metadataText || "").split(sourceTextForMatching).join(" ")
       : String(context.metadataText || "");
+    const contentTagText = String(context.tagText || "")
+      .replace(/\bshared security printing\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
     const haystack = [
       context.titleText,
-      context.tagText,
+      contentTagText,
       contentMetadataText,
       context.bodyText,
     ].filter(Boolean).join(" ");
     const articleTitleText = [
       context.titleText,
-      context.tagText,
+      contentTagText,
     ].filter(Boolean).join(" ");
     const professionalTerms = [
       "security printing",
