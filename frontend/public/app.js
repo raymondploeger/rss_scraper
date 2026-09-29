@@ -39328,9 +39328,15 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
     }
 
     const context = getPersonalBoostContext(article, "getSharedSecurityStandaloneAssessment", { interest: "shared_security" });
+    // A discovery-feed name can describe its query rather than the article.
+    // Do not let that name count as evidence for a Security Printer match.
+    const sourceTextForMatching = String(context.sourceText || "").trim();
+    const contentMetadataText = sourceTextForMatching
+      ? String(context.metadataText || "").split(sourceTextForMatching).join(" ")
+      : String(context.metadataText || "");
     const metadataTextForMatching = interestId === "security_printing"
-      ? String(context.metadataText || "").replace(/\bshared security printing\b/gi, " ").replace(/\s+/g, " ").trim()
-      : context.metadataText;
+      ? contentMetadataText.replace(/\bshared security printing\b/gi, " ").replace(/\s+/g, " ").trim()
+      : contentMetadataText;
     const tunedRule = SHARED_SECURITY_STANDALONE_RULES[interestId] || null;
     const strongKeywords = Array.from(new Set(
       []
@@ -42318,13 +42324,15 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
 
   return getCachedArticleValue(article, "securityPrinterProfileProfessionalGuard", () => {
     const context = getPersonalBoostContext(article, "getSecurityPrinterProfileProfessionalGuard", { interest: "shared_security" });
+    const sourceTextForMatching = String(context.sourceText || "").trim();
+    const contentMetadataText = sourceTextForMatching
+      ? String(context.metadataText || "").split(sourceTextForMatching).join(" ")
+      : String(context.metadataText || "");
     const haystack = [
       context.titleText,
       context.tagText,
-      context.metadataText,
+      contentMetadataText,
       context.bodyText,
-      context.sourceText,
-      context.domainText,
     ].filter(Boolean).join(" ");
     const articleTitleText = [
       context.titleText,
