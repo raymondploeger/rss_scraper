@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "security-printer-content-evidence-278";
+const APP_BUILD = "security-printer-direct-source-evidence-279";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -42674,6 +42674,8 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       (textMatchesKeyword(articleTitleText, "security feature") || textMatchesKeyword(articleTitleText, "security features")) &&
       titleDocumentOrBanknoteTerms.some((term) => textMatchesKeyword(articleTitleText, term));
     const hasSecurityPrinterTitleEvidence = hasTitlePhysicalTechnology || hasTitleDocumentSecurityFeature;
+    const isDirectSecurityIndustrySource = /(?:currency news|demax holograms|kurz press releases|id & secure document news|keesing platform|banknotenews|crane currency|landqart|g\+d|giesecke)/i
+      .test(sourceTextForMatching);
     const sourceNoiseTerms = CENTRAL_BANK_PROFILE_SOURCE_NOISE_TERMS.filter((term) =>
       textMatchesKeyword(`${context.sourceText} ${context.domainText} ${context.metadataText}`, term)
     );
@@ -42681,8 +42683,9 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       matchedTitleProfileTechnologyAnchorTerms.length === 0 &&
       matchedTitleProfileProducerContextTerms.length === 0;
     const passed = matchedProfessionalTerms.length > 0
-      && hasSpecificSecurityPrintingTechnology
-      && hasSecurityPrinterTitleEvidence
+      && (isDirectSecurityIndustrySource || (
+        hasSpecificSecurityPrintingTechnology && hasSecurityPrinterTitleEvidence
+      ))
       && !sourceNavigationTitle
       && !(matchedHardOffDomainNoiseTerms.length > 0 && matchedSecureContextTerms.length === 0)
       && !broadPolymerOnly
@@ -42717,6 +42720,7 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       explicitSecurityPrintingTechnologyTerms: Object.freeze(matchedExplicitSecurityPrintingTechnologyTerms.slice(0, 10)),
       hasSpecificSecurityPrintingTechnology,
       hasSecurityPrinterTitleEvidence,
+      isDirectSecurityIndustrySource,
       sourceNavigationTitle,
       profileTechnologyAnchorTerms: Object.freeze(matchedProfileTechnologyAnchorTerms.slice(0, 10)),
       titleProfileTechnologyAnchorTerms: Object.freeze(matchedTitleProfileTechnologyAnchorTerms.slice(0, 10)),
