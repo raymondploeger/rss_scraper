@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "security-printer-content-evidence-272";
+const APP_BUILD = "security-printer-content-evidence-273";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -39340,9 +39340,10 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
       .replace(/\bshared security printing\b/gi, " ")
       .replace(/\s+/g, " ")
       .trim();
-    const metadataTextForMatching = interestId === "security_printing"
-      ? contentMetadataText.replace(/\bshared security printing\b/gi, " ").replace(/\s+/g, " ").trim()
-      : contentMetadataText;
+    const metadataTextForMatching = contentMetadataText
+      .replace(/\bshared security printing\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
     const tunedRule = SHARED_SECURITY_STANDALONE_RULES[interestId] || null;
     const strongKeywords = Array.from(new Set(
       []
