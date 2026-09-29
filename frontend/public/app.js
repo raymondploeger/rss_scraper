@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "security-printer-content-evidence-273";
+const APP_BUILD = "security-printer-content-evidence-274";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -39331,8 +39331,9 @@ function getSharedSecurityStandaloneAssessment(article, interestId) {
     // A discovery-feed name can describe its query rather than the article.
     // Do not let that name count as evidence for a Security Printer match.
     const sourceTextForMatching = String(context.sourceText || "").trim();
+    const sourceTextPattern = sourceTextForMatching.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const contentMetadataText = sourceTextForMatching
-      ? String(context.metadataText || "").split(sourceTextForMatching).join(" ")
+      ? String(context.metadataText || "").replace(new RegExp(sourceTextPattern, "gi"), " ")
       : String(context.metadataText || "");
     // Topic labels from discovery feeds describe the query, not necessarily the
     // article. They must not become self-fulfilling match evidence.
@@ -42332,8 +42333,9 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
   return getCachedArticleValue(article, "securityPrinterProfileProfessionalGuard", () => {
     const context = getPersonalBoostContext(article, "getSecurityPrinterProfileProfessionalGuard", { interest: "shared_security" });
     const sourceTextForMatching = String(context.sourceText || "").trim();
+    const sourceTextPattern = sourceTextForMatching.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const contentMetadataText = sourceTextForMatching
-      ? String(context.metadataText || "").split(sourceTextForMatching).join(" ")
+      ? String(context.metadataText || "").replace(new RegExp(sourceTextPattern, "gi"), " ")
       : String(context.metadataText || "");
     const contentTagText = String(context.tagText || "")
       .replace(/\bshared security printing\b/gi, " ")
