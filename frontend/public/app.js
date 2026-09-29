@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "security-printer-direct-source-evidence-279";
+const APP_BUILD = "security-printer-off-topic-title-280";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -42426,6 +42426,7 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
     ];
     const normalizedArticleTitle = String(context.titleText || "").trim().toLowerCase();
     const sourceNavigationTitle = /^(technologies|certificates list)(?:\s*[-|]|$)/.test(normalizedArticleTitle);
+    const offTopicSecurityPrinterTitle = /\b(?:biometric eta|cryptographic identity system|rabbi dovid goldwasser|rabbi dovid katz)\b/.test(normalizedArticleTitle);
     const secureContextTerms = [
       "security printing",
       "security printer",
@@ -42687,6 +42688,7 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
         hasSpecificSecurityPrintingTechnology && hasSecurityPrinterTitleEvidence
       ))
       && !sourceNavigationTitle
+      && !offTopicSecurityPrinterTitle
       && !(matchedHardOffDomainNoiseTerms.length > 0 && matchedSecureContextTerms.length === 0)
       && !broadPolymerOnly
       && !(matchedSemiNoiseTerms.length > 0 && matchedPrintingTechnologyContextTerms.length === 0)
@@ -42702,6 +42704,8 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
         ? ""
         : sourceNavigationTitle
           ? "security_printer_profile_navigation_title"
+          : offTopicSecurityPrinterTitle
+            ? "security_printer_profile_off_topic_title"
           : broadPolymerOnly
           ? "security_printer_profile_broad_polymer_banknote_noise"
           : "security_printer_profile_guard_rejected",
@@ -42722,6 +42726,7 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       hasSecurityPrinterTitleEvidence,
       isDirectSecurityIndustrySource,
       sourceNavigationTitle,
+      offTopicSecurityPrinterTitle,
       profileTechnologyAnchorTerms: Object.freeze(matchedProfileTechnologyAnchorTerms.slice(0, 10)),
       titleProfileTechnologyAnchorTerms: Object.freeze(matchedTitleProfileTechnologyAnchorTerms.slice(0, 10)),
       broadPolymerBanknoteNoiseTerms: Object.freeze(matchedBroadPolymerBanknoteNoiseTerms.slice(0, 10)),
