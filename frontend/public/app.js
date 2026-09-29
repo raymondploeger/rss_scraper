@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "security-printer-off-topic-title-280";
+const APP_BUILD = "security-printer-source-quality-281";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -42677,6 +42677,12 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
     const hasSecurityPrinterTitleEvidence = hasTitlePhysicalTechnology || hasTitleDocumentSecurityFeature;
     const isDirectSecurityIndustrySource = /(?:currency news|demax holograms|kurz press releases|id & secure document news|keesing platform|banknotenews|crane currency|landqart|g\+d|giesecke)/i
       .test(sourceTextForMatching);
+    const demaxNonArticleOrLegacyTitle = /demax holograms/i.test(sourceTextForMatching) && (
+      /^eu archives\b/.test(normalizedArticleTitle) ||
+      /\bawards 2017\b/.test(normalizedArticleTitle)
+    );
+    const kurzOffTopicTitle = /kurz press releases/i.test(sourceTextForMatching) &&
+      /\b(?:premium packaging|luxe pack|power-to-heat|heat storage)\b/.test(normalizedArticleTitle);
     const sourceNoiseTerms = CENTRAL_BANK_PROFILE_SOURCE_NOISE_TERMS.filter((term) =>
       textMatchesKeyword(`${context.sourceText} ${context.domainText} ${context.metadataText}`, term)
     );
@@ -42689,6 +42695,8 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       ))
       && !sourceNavigationTitle
       && !offTopicSecurityPrinterTitle
+      && !demaxNonArticleOrLegacyTitle
+      && !kurzOffTopicTitle
       && !(matchedHardOffDomainNoiseTerms.length > 0 && matchedSecureContextTerms.length === 0)
       && !broadPolymerOnly
       && !(matchedSemiNoiseTerms.length > 0 && matchedPrintingTechnologyContextTerms.length === 0)
@@ -42706,6 +42714,10 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
           ? "security_printer_profile_navigation_title"
           : offTopicSecurityPrinterTitle
             ? "security_printer_profile_off_topic_title"
+            : demaxNonArticleOrLegacyTitle
+              ? "security_printer_profile_demax_navigation_or_legacy"
+              : kurzOffTopicTitle
+                ? "security_printer_profile_kurz_off_topic"
           : broadPolymerOnly
           ? "security_printer_profile_broad_polymer_banknote_noise"
           : "security_printer_profile_guard_rejected",
@@ -42727,6 +42739,8 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       isDirectSecurityIndustrySource,
       sourceNavigationTitle,
       offTopicSecurityPrinterTitle,
+      demaxNonArticleOrLegacyTitle,
+      kurzOffTopicTitle,
       profileTechnologyAnchorTerms: Object.freeze(matchedProfileTechnologyAnchorTerms.slice(0, 10)),
       titleProfileTechnologyAnchorTerms: Object.freeze(matchedTitleProfileTechnologyAnchorTerms.slice(0, 10)),
       broadPolymerBanknoteNoiseTerms: Object.freeze(matchedBroadPolymerBanknoteNoiseTerms.slice(0, 10)),
