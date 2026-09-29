@@ -1588,7 +1588,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "security-printer-content-evidence-275";
+const APP_BUILD = "security-printer-content-evidence-276";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -42654,6 +42654,23 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       textMatchesKeyword(articleTitleText, term)
     );
     const hasSpecificSecurityPrintingTechnology = matchedExplicitSecurityPrintingTechnologyTerms.length > 0;
+    const titlePhysicalTechnologyTerms = [
+      "security printing", "security printer", "secure printing", "banknote printing", "currency printing",
+      "security ink", "security thread", "hologram", "holographic", "dovid", "optically variable",
+      "micro optics", "polycarbonate", "security laminate", "anti-counterfeit", "counterfeit prevention",
+      "foil", "polymer banknote", "polymer",
+    ];
+    const titleDocumentOrBanknoteTerms = [
+      "banknote", "banknotes", "currency note", "passport", "passports", "id card", "identity card",
+      "identity document", "secure document", "security document",
+    ];
+    const hasTitlePhysicalTechnology = titlePhysicalTechnologyTerms.some((term) =>
+      textMatchesKeyword(articleTitleText, term)
+    );
+    const hasTitleDocumentSecurityFeature =
+      (textMatchesKeyword(articleTitleText, "security feature") || textMatchesKeyword(articleTitleText, "security features")) &&
+      titleDocumentOrBanknoteTerms.some((term) => textMatchesKeyword(articleTitleText, term));
+    const hasSecurityPrinterTitleEvidence = hasTitlePhysicalTechnology || hasTitleDocumentSecurityFeature;
     const sourceNoiseTerms = CENTRAL_BANK_PROFILE_SOURCE_NOISE_TERMS.filter((term) =>
       textMatchesKeyword(`${context.sourceText} ${context.domainText} ${context.metadataText}`, term)
     );
@@ -42662,6 +42679,7 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       matchedTitleProfileProducerContextTerms.length === 0;
     const passed = matchedProfessionalTerms.length > 0
       && hasSpecificSecurityPrintingTechnology
+      && hasSecurityPrinterTitleEvidence
       && !(matchedHardOffDomainNoiseTerms.length > 0 && matchedSecureContextTerms.length === 0)
       && !broadPolymerOnly
       && !(matchedSemiNoiseTerms.length > 0 && matchedPrintingTechnologyContextTerms.length === 0)
@@ -42692,6 +42710,7 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       printingTechnologyContextTerms: Object.freeze(matchedPrintingTechnologyContextTerms.slice(0, 10)),
       explicitSecurityPrintingTechnologyTerms: Object.freeze(matchedExplicitSecurityPrintingTechnologyTerms.slice(0, 10)),
       hasSpecificSecurityPrintingTechnology,
+      hasSecurityPrinterTitleEvidence,
       profileTechnologyAnchorTerms: Object.freeze(matchedProfileTechnologyAnchorTerms.slice(0, 10)),
       titleProfileTechnologyAnchorTerms: Object.freeze(matchedTitleProfileTechnologyAnchorTerms.slice(0, 10)),
       broadPolymerBanknoteNoiseTerms: Object.freeze(matchedBroadPolymerBanknoteNoiseTerms.slice(0, 10)),
