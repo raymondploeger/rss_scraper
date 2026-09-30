@@ -543,6 +543,30 @@ const RETIRED_STRATEGIC_FEEDS = [
     rssUrl: buildBingNewsRssUrl('"new passport"'),
   },
   {
+    name: "Bing Mirror - OVD",
+    rssUrl: buildBingNewsRssUrl('"OVD"'),
+  },
+  {
+    name: "Bing Mirror - DOVID",
+    rssUrl: buildBingNewsRssUrl('"DOVID"'),
+  },
+  {
+    name: "Bing Mirror - micro optics",
+    rssUrl: buildBingNewsRssUrl('"micro optics"'),
+  },
+  {
+    name: "Bing Mirror - secure document",
+    rssUrl: buildBingNewsRssUrl('"secure document"'),
+  },
+  {
+    name: "Bing Mirror - security printing",
+    rssUrl: buildBingNewsRssUrl('"security printing"'),
+  },
+  {
+    name: "Bing Mirror - commemorative banknote",
+    rssUrl: buildBingNewsRssUrl('"commemorative banknote"'),
+  },
+  {
     name: "Google News - Security Features for Documents and Banknotes",
   },
   {
