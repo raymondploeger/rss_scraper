@@ -468,6 +468,20 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase4-official-identity-and-banknote-sources",
   },
   {
+    name: "Google News - Driver Licence Issuance and Redesign",
+    topic: "Identity Documents",
+    rssUrl: buildGoogleNewsRssUrl('("driver license" OR "driver\'s license" OR "driving licence") (redesign OR new OR rollout OR issuance OR "security features")'),
+    sourceType: "rss",
+    phase: "phase5-identity-document-news-coverage",
+  },
+  {
+    name: "Google News - New Passports and Redesign",
+    topic: "Identity Documents",
+    rssUrl: buildGoogleNewsRssUrl('("new passport" OR "passport redesign" OR "passport rollout")'),
+    sourceType: "rss",
+    phase: "phase5-identity-document-news-coverage",
+  },
+  {
     name: "Bank of Canada News",
     topic: "Banknotes",
     rssUrl: "https://www.bankofcanada.ca/utility/news/feed/",
@@ -520,6 +534,14 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
 ];
 
 const RETIRED_STRATEGIC_FEEDS = [
+  {
+    name: "Bing Mirror - drivers license",
+    rssUrl: buildBingNewsRssUrl('"drivers license"'),
+  },
+  {
+    name: "Bing Mirror - new passport",
+    rssUrl: buildBingNewsRssUrl('"new passport"'),
+  },
   {
     name: "Google News - Security Features for Documents and Banknotes",
   },
