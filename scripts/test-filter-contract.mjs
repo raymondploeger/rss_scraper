@@ -19,6 +19,7 @@ import { evaluateSharedSecurityRefinementDecision } from "../frontend/public/sha
 import { evaluateIdentityDocumentQualityGateDecision } from "../frontend/public/identity-document-quality-policy.js";
 import { evaluateProfileDomainScopeDecision } from "../frontend/public/profile-domain-scope-policy.js";
 import { evaluateProfileProfessionalGuardDecision } from "../frontend/public/profile-professional-guard-policy.js";
+import { evaluateIdentityWeekIdentityVerificationQualityDecision } from "../frontend/public/identity-week-quality-policy.js";
 
 const corpusUrl = new URL("../tests/fixtures/filter-behavior-corpus.json", import.meta.url);
 const corpus = JSON.parse(fs.readFileSync(corpusUrl, "utf8"));
@@ -35,6 +36,27 @@ assert.equal(evaluateProfilePolicyEvidence({
 }, "passport_authority").passed, true);
 assert.equal(evaluateProfilePolicyEvidence({ title: "Irregular border crossings decline after operation" }, "border_control").passed, true);
 assert.equal(evaluateProfilePolicyEvidence({ title: "Post-Quantum OpenID Connect specification" }, "identity_verification").passed, true);
+assert.equal(evaluateIdentityWeekIdentityVerificationQualityDecision({
+  active: true,
+  article: {
+    title: "NIST guidelines for identity tokens and authentication",
+    link: "https://identityweek.net/nist-guidelines/",
+  },
+}).passed, true);
+assert.equal(evaluateIdentityWeekIdentityVerificationQualityDecision({
+  active: true,
+  article: {
+    title: "How extensive is the AI and proactive protection strategy at JP Morgan? Ryan Loftus speaks out",
+    link: "https://identityweek.net/jp-morgan-interview/",
+  },
+}).reason, "identity_week_event_or_generic_corporate_noise");
+assert.equal(evaluateIdentityWeekIdentityVerificationQualityDecision({
+  active: true,
+  article: {
+    title: "MoU for a Swiss Post-Quantum Semiconductor and Cybersecurity Center",
+    link: "https://identityweek.net/swiss-cybersecurity-center/",
+  },
+}).reason, "identity_week_missing_verification_focus");
 assert.equal(evaluateProfilePolicyEvidence({ title: "Quarterly interest-rate decision" }, "central_bank").passed, false);
 assert.deepEqual(
   ["focused", "balanced", "broad"].map((mode) =>

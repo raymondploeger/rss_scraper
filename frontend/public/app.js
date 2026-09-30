@@ -7,6 +7,7 @@ import { evaluateIdentityDocumentProfileDecision } from "./identity-document-pro
 import { evaluateBanknoteProfileDecision } from "./banknote-profile-policy.js";
 import { evaluateSharedSecurityRefinementDecision } from "./shared-security-refinement-policy.js";
 import { evaluateIdentityDocumentQualityGateDecision } from "./identity-document-quality-policy.js";
+import { evaluateIdentityWeekIdentityVerificationQualityDecision } from "./identity-week-quality-policy.js";
 import { evaluateProfileDomainScopeDecision } from "./profile-domain-scope-policy.js";
 import { evaluateProfileProfessionalGuardDecision } from "./profile-professional-guard-policy.js";
 import { fetchCompleteCandidatePages } from "./complete-candidate-pagination.js";
@@ -1588,7 +1589,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "identity-profile-policy-order-282";
+const APP_BUILD = "identity-week-quality-policy-283";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -58249,6 +58250,22 @@ function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, 
 
   const outputArticles = [];
   inputArticles.forEach((article) => {
+    const identityVerificationProfileTemplateActive =
+      getMatchingPersonalDashboardTemplateId(normalizePersonalDashboardInterests(state.personalDashboard.interests)) === "identity_verification";
+    const identityWeekQualityAssessment = evaluateIdentityWeekIdentityVerificationQualityDecision({
+      article,
+      active: identityVerificationProfileTemplateActive,
+    });
+    if (identityWeekQualityAssessment.applies && !identityWeekQualityAssessment.passed) {
+      recordFilterDecisionStage(diagnostics, article, {
+        stage: "digital_identity_professional_guard",
+        result: "rejected",
+        reason: identityWeekQualityAssessment.reason,
+        notes: ["Identity Week source-specific Identity Verification quality policy rejected article"],
+        metadata: identityWeekQualityAssessment,
+      });
+      return;
+    }
     const explicitProfilePolicyAssessment = getActiveProfilePolicyEvidenceAssessment(article);
     if (explicitProfilePolicyAssessment.passed) {
       recordFilterDecisionStage(diagnostics, article, {
@@ -58297,8 +58314,6 @@ function applyDigitalIdentityProfessionalGuardStageMeasured({ articles, branch, 
     const identityVerificationProductionDecision = identityVerificationAssessment
       ? identityVerificationAssessment.authoritativeDecision || identityVerificationAssessment
       : null;
-    const identityVerificationProfileTemplateActive =
-      getMatchingPersonalDashboardTemplateId(normalizePersonalDashboardInterests(state.personalDashboard.interests)) === "identity_verification";
     const identityVerificationBroadProfileNoiseRejected = Boolean(
       identityVerificationProfileTemplateActive &&
       identityVerificationProductionDecision?.broadProfileNoiseWithoutVerificationTitleContext
