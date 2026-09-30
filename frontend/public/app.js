@@ -6496,9 +6496,15 @@ function applyIdentityDocumentBundleQualityGateToArticles(articles = []) {
     };
   }
 
-  const passedArticles = sourceArticles.filter((article) =>
-    getIdentityDocumentBundleQualityGateAssessment(article).passed
-  );
+  const passedArticles = sourceArticles.filter((article) => {
+    // The Start Profile policy is the authoritative identity-document match.
+    // Keep an explicit policy match in the candidate pool so a Strict quality
+    // refinement cannot reject it before the profile evaluator sees it.
+    if (getActiveProfilePolicyEvidenceAssessment(article).passed) {
+      return true;
+    }
+    return getIdentityDocumentBundleQualityGateAssessment(article).passed;
+  });
 
   return {
     active: true,

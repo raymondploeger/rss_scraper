@@ -30,6 +30,9 @@ assert.equal(new Set(cases.map((entry) => entry.id)).size, cases.length, "Behavi
 assert.equal(Object.keys(PROFILE_POLICY_DEFINITIONS).length, 7, "Every Start Profile needs one explicit policy");
 assert.equal(evaluateProfilePolicyEvidence({ title: "Bank unveils new vertical $20 bank note" }, "central_bank").passed, true);
 assert.equal(evaluateProfilePolicyEvidence({ title: "Canada expands online passport renewal" }, "passport_authority").passed, true);
+assert.equal(evaluateProfilePolicyEvidence({
+  title: "Moldova to introduce new passport model with more than 100 security elements",
+}, "passport_authority").passed, true);
 assert.equal(evaluateProfilePolicyEvidence({ title: "Irregular border crossings decline after operation" }, "border_control").passed, true);
 assert.equal(evaluateProfilePolicyEvidence({ title: "Post-Quantum OpenID Connect specification" }, "identity_verification").passed, true);
 assert.equal(evaluateProfilePolicyEvidence({ title: "Quarterly interest-rate decision" }, "central_bank").passed, false);
