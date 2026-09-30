@@ -513,13 +513,6 @@ function isReserveBankOfAustraliaMediaReleasesFeed(feed) {
   });
 }
 
-function isBangkoSentralNgPilipinasMediaReleasesFeed(feed) {
-  return matchesWebsiteFeedSignature(feed, {
-    urlFragments: ["www.bsp.gov.ph/_layouts/15/listfeed.aspx"],
-    exactNames: ["Bangko Sentral ng Pilipinas Media Releases"],
-  });
-}
-
 function isSouthAfricanReserveBankNewsFeed(feed) {
   return matchesWebsiteFeedSignature(feed, {
     exactUrls: [SOUTH_AFRICAN_RESERVE_BANK_RSS_URL],
@@ -5323,10 +5316,7 @@ async function runFeedSync(feed) {
       if (rssUrl !== feed.rssUrl) {
         console.log(`[notafilia][rss] legacy FeedBurner source detected; using official RSS ${rssUrl}`);
       }
-      const parsedFeed = (
-        isReserveBankOfAustraliaMediaReleasesFeed(feed) ||
-        isBangkoSentralNgPilipinasMediaReleasesFeed(feed)
-      )
+      const parsedFeed = isReserveBankOfAustraliaMediaReleasesFeed(feed)
         ? await parser.parseString((await axios.get(rssUrl, {
             timeout: env.requestTimeoutMs,
             responseType: "text",
