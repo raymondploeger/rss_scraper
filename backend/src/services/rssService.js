@@ -5214,7 +5214,7 @@ async function enrichDirectArticleThumbnail(feed, article) {
   };
 }
 
-function queueThumbnailEnrichment(article) {
+function queueThumbnailEnrichment(article, options = {}) {
   if (!article?.id) {
     return;
   }
@@ -5223,7 +5223,9 @@ function queueThumbnailEnrichment(article) {
     return;
   }
 
+  const validatePublisherDate = options.validatePublisherDate === true;
   if (
+    !validatePublisherDate &&
     hasUsableStoredThumbnail(article.thumbnail)
   ) {
     if (isNotafiliaUrl(article.link) || isNotafiliaUrl(article.canonicalLink) || isNotafiliaUrl(article.thumbnail)) {
@@ -5248,7 +5250,7 @@ function queueThumbnailEnrichment(article) {
   }
 
   queuedThumbnailEnrichmentIds.add(articleId);
-  thumbnailEnrichmentQueue.push(articleId);
+  thumbnailEnrichmentQueue.push({ articleId, validatePublisherDate });
   drainThumbnailEnrichmentQueue();
 }
 
@@ -5257,7 +5259,8 @@ function drainThumbnailEnrichmentQueue() {
     activeThumbnailEnrichmentCount < env.thumbnailEnrichmentConcurrency &&
     thumbnailEnrichmentQueue.length
   ) {
-    const articleId = thumbnailEnrichmentQueue.shift();
+    const queuedWork = thumbnailEnrichmentQueue.shift();
+    const articleId = queuedWork?.articleId;
     if (!articleId) {
       continue;
     }
@@ -5266,7 +5269,7 @@ function drainThumbnailEnrichmentQueue() {
     activeThumbnailEnrichmentIds.add(articleId);
     activeThumbnailEnrichmentCount += 1;
 
-    void enrichArticle(articleId)
+    void enrichArticle(articleId, { validatePublisherDate: queuedWork.validatePublisherDate === true })
       .catch((enrichmentError) => {
         console.error(`Async thumbnail enrichment failed for article ${articleId}:`, enrichmentError?.stack || enrichmentError);
       })
@@ -5404,7 +5407,9 @@ async function runFeedSync(feed) {
           );
         }
 
-        queueThumbnailEnrichment(result.article);
+        queueThumbnailEnrichment(result.article, {
+          validatePublisherDate: isGoogleAlertsFeed(feed),
+        });
       } catch (itemError) {
         console.error(`Article ingestion error for feed ${feed.id}:`, itemError?.stack || itemError);
         if (vendorFeedLogLabel) {

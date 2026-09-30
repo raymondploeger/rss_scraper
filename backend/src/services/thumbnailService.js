@@ -80,6 +80,56 @@ export function isGoogleNewsPlaceholderImage(value) {
   );
 }
 
+function normalizePublisherDate(value) {
+  const rawValue = String(value || "").trim();
+  if (!rawValue) return "";
+  const parsed = new Date(rawValue);
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString();
+}
+
+function findStructuredPublishedDate(value) {
+  if (!value || typeof value !== "object") return "";
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findStructuredPublishedDate(item);
+      if (found) return found;
+    }
+    return "";
+  }
+  const direct = normalizePublisherDate(value.datePublished || value.dateCreated);
+  if (direct) return direct;
+  for (const child of Object.values(value)) {
+    const found = findStructuredPublishedDate(child);
+    if (found) return found;
+  }
+  return "";
+}
+
+export function extractPublisherPublishedAtFromHtml(html = "") {
+  const $ = cheerio.load(String(html || ""));
+  const metaSelectors = [
+    'meta[property="article:published_time"]',
+    'meta[name="article:published_time"]',
+    'meta[name="publish-date"]',
+    'meta[name="pubdate"]',
+    'meta[name="date"]',
+    'meta[itemprop="datePublished"]',
+  ];
+  for (const selector of metaSelectors) {
+    const publishedAt = normalizePublisherDate($(selector).first().attr("content"));
+    if (publishedAt) return publishedAt;
+  }
+  for (const element of $('script[type="application/ld+json"]').toArray()) {
+    try {
+      const publishedAt = findStructuredPublishedDate(JSON.parse($(element).text()));
+      if (publishedAt) return publishedAt;
+    } catch {
+      // Invalid JSON-LD is common on publisher pages; try the next signal.
+    }
+  }
+  return normalizePublisherDate($('time[datetime]').first().attr("datetime"));
+}
+
 export function isMalformedSicpaThumbnailUrl(value) {
   return /^https:\/\/(?:www\.)?sicpa\.com[^/?#]/i.test(String(value || "").trim());
 }
@@ -825,7 +875,7 @@ export async function analyzeGoogleNewsPublisherUrl(link) {
 export async function scrapeArticleMetadata(link, existingSnippet = "", articleTitle = "", options = {}) {
   const existingThumbnail = normalizeText(options.existingThumbnail, "");
   const rssThumbnailSource = normalizeText(options.rssThumbnailSource, "");
-  const cacheKey = `${canonicalizeUrl(link)}|${existingThumbnail}|${rssThumbnailSource}`;
+  const cacheKey = `${canonicalizeUrl(link)}|${existingThumbnail}|${rssThumbnailSource}|force:${options.forceMetadataFetch === true}`;
   if (scrapeCache.has(cacheKey)) {
     return scrapeCache.get(cacheKey);
   }
@@ -836,6 +886,7 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
       const fallbackGoogleNewsThumbnail =
         googleNewsPlaceholderDetected && existingThumbnail !== env.placeholderImage ? existingThumbnail : "";
       if (
+        !options.forceMetadataFetch &&
         existingThumbnail &&
         existingThumbnail !== env.placeholderImage &&
         !googleNewsPlaceholderDetected &&
@@ -868,6 +919,7 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
           canonicalLink: canonicalizeUrl(link),
           metaDescription: "",
           contentSnippet: existingSnippet,
+          publishedAt: "",
           language: "unknown",
           imageDiagnostic: diagnostic,
           thumbnailSource: diagnostic.thumbnailSource,
@@ -918,6 +970,7 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
       }
 
       const $ = cheerio.load(activeHtml);
+      const publishedAt = extractPublisherPublishedAtFromHtml(activeHtml);
       const ogImages = collectMetaImageCandidates($, 'meta[property="og:image"]', activeUrl, "og-image");
       const ogSecureImages = collectMetaImageCandidates($, 'meta[property="og:image:secure_url"]', activeUrl, "og-image");
       const twitterImages = collectMetaImageCandidates($, 'meta[name="twitter:image"]', activeUrl, "twitter-image");
@@ -1009,6 +1062,7 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
         canonicalLink: canonicalizeUrl(normalizeText(canonicalUrl, activeUrl || scrapeTargetUrl || link)),
         metaDescription: sanitizeFeedText(metaDescription, ""),
         contentSnippet: sanitizeFeedText(articleText || existingSnippet, existingSnippet),
+        publishedAt,
         language: normalizeText(htmlLang, "unknown"),
         imageDiagnostic: diagnostic,
         thumbnailSource,
@@ -1072,6 +1126,7 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
         canonicalLink: canonicalizeUrl(link),
         metaDescription: "",
         contentSnippet: existingSnippet,
+        publishedAt: "",
         language: "unknown",
         imageDiagnostic: diagnostic,
         thumbnailSource: diagnostic.thumbnailSource,
@@ -1108,7 +1163,7 @@ export async function diagnoseArticleImage(link, existingSnippet = "", articleTi
   };
 }
 
-export async function enrichArticle(articleId) {
+export async function enrichArticle(articleId, options = {}) {
   const article = await findArticleById(articleId);
   if (!article) {
     return;
@@ -1118,7 +1173,9 @@ export async function enrichArticle(articleId) {
     return article;
   }
 
+  const validatePublisherDate = options.validatePublisherDate === true;
   if (
+    !validatePublisherDate &&
     article.thumbnail &&
     article.thumbnail !== env.placeholderImage &&
     !isGoogleNewsPlaceholderImage(article.thumbnail) &&
@@ -1132,6 +1189,7 @@ export async function enrichArticle(articleId) {
     article.contentSnippet || article.summary || "",
     article.title || "",
     {
+      forceMetadataFetch: validatePublisherDate,
       existingThumbnail: article.thumbnail,
       rssThumbnailSource: article.thumbnail && article.thumbnail !== env.placeholderImage ? "article-existing" : "",
     }
@@ -1143,14 +1201,23 @@ export async function enrichArticle(articleId) {
     !isLikelyGenericMetadataImage(article.thumbnail)
       ? article.thumbnail
       : enriched.thumbnail || env.placeholderImage;
+  const publisherPublishedAt = normalizePublisherDate(enriched?.publishedAt);
+  const existingPublishedAt = normalizePublisherDate(article.pubDate);
+  const hasOlderPublisherDate = validatePublisherDate && publisherPublishedAt && existingPublishedAt &&
+    new Date(publisherPublishedAt).getTime() < new Date(existingPublishedAt).getTime() - 24 * 60 * 60 * 1000;
 
   const updatedArticle = await updateArticle(articleId, {
     thumbnail: nextThumbnail,
     canonicalLink: enriched.canonicalLink || article.canonicalLink,
     contentSnippet: enriched.contentSnippet || article.contentSnippet,
     language: enriched.language || article.language,
+    pubDate: hasOlderPublisherDate ? publisherPublishedAt : article.pubDate,
     fetchStatus: enriched.fetchStatus
   });
+
+  if (hasOlderPublisherDate) {
+    console.log(`[google-alert-date] corrected articleId=${articleId} alertDate=${existingPublishedAt} publisherDate=${publisherPublishedAt}`);
+  }
 
   if (isNotafiliaUrl(article.link) || isNotafiliaUrl(article.canonicalLink) || isNotafiliaUrl(nextThumbnail)) {
     console.log(
