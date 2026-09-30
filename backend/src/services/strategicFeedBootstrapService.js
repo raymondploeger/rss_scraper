@@ -518,15 +518,6 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase4-official-identity-and-banknote-sources",
   },
   {
-    name: "Bangko Sentral ng Pilipinas Media Releases",
-    topic: "Banknotes",
-    rssUrl: "https://www.bsp.gov.ph/_layouts/15/listfeed.aspx?List=9b0a2117-49d8-4e96-80ba-8651a0e3e17a&View=8c968884-887d-4d63-8c00-ba05ea3c2d93",
-    sourceType: "rss",
-    sourceGroup: "Government",
-    phase: "phase4-official-identity-and-banknote-sources",
-  },
-
-  {
     name: "SICPA Newsroom",
     topic: "Shared Security Printing",
     rssUrl: "https://www.sicpa.com/all-press-releases",
@@ -543,6 +534,10 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
 ];
 
 const RETIRED_STRATEGIC_FEEDS = [
+  {
+    name: "Bangko Sentral ng Pilipinas Media Releases",
+    rssUrl: "https://www.bsp.gov.ph/_layouts/15/listfeed.aspx?List=9b0a2117-49d8-4e96-80ba-8651a0e3e17a&View=8c968884-887d-4d63-8c00-ba05ea3c2d93",
+  },
   {
     name: "Bing Mirror - drivers license",
     rssUrl: buildBingNewsRssUrl('"drivers license"'),
