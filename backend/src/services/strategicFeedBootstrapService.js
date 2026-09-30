@@ -283,6 +283,7 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     topic: "Shared Security Printing",
     rssUrl: "https://iot-association.org/feed/",
     sourceType: "rss",
+    sourceGroup: "Other",
     phase: "phase2-vendor-sources",
   },
   {
@@ -717,6 +718,9 @@ export async function ensureStrategicFeeds() {
           topic: definition.topic,
           rssUrl: definition.rssUrl,
           sourceType: definition.sourceType,
+          ...(Object.prototype.hasOwnProperty.call(definition, "sourceGroup")
+            ? { sourceGroup: definition.sourceGroup }
+            : {}),
           isActive: true,
         });
         feedsNeedingInitialSync.push(createdFeed);
@@ -732,6 +736,8 @@ export async function ensureStrategicFeeds() {
         existing.topic !== definition.topic ||
         existing.rssUrl !== definition.rssUrl ||
         existing.sourceType !== definition.sourceType ||
+        (Object.prototype.hasOwnProperty.call(definition, "sourceGroup") &&
+          existing.sourceGroup !== definition.sourceGroup) ||
         existing.isActive !== true;
 
       if (!needsUpdate) {
@@ -750,6 +756,9 @@ export async function ensureStrategicFeeds() {
         topic: definition.topic,
         rssUrl: definition.rssUrl,
         sourceType: definition.sourceType,
+        ...(Object.prototype.hasOwnProperty.call(definition, "sourceGroup")
+          ? { sourceGroup: definition.sourceGroup }
+          : {}),
         isActive: true,
       });
       if (updatedFeed?.isActive !== false && !updatedFeed?.lastFetchedAt) {
