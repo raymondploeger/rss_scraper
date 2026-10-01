@@ -4808,6 +4808,11 @@ function getArticleDecisionReceipt(article) {
     articleMatchesPersonalDashboardSelection(article);
     const evaluated = runtime.articleDecisionReceiptMap.get(articleKey) || null;
     if (evaluated?.signature === signature) return evaluated;
+    return recordArticleDecisionReceipt(article, {
+      passed: true,
+      selectedInterests,
+      reason: "profile_and_source_match",
+    });
   }
   return null;
 }
