@@ -3,6 +3,7 @@ import {
   createArticleNoiseFeedback,
   deleteArticleNoiseFeedback,
   findArticleById,
+  listArticleNoiseFeedback,
   listCanonicalDedupedArticles,
   listArticles as listArticleRecords,
   listDistinctArticleTopics
@@ -354,4 +355,14 @@ export async function deleteNoiseFeedback(request, response) {
   }
   await deleteArticleNoiseFeedback({ articleId, clientId });
   response.json({ ok: true, articleId });
+}
+
+export async function listNoiseFeedback(request, response) {
+  const clientId = String(request.query?.clientId || "").trim();
+  if (!clientId || clientId.length > 160) {
+    response.status(400).json({ error: "Invalid noise feedback request." });
+    return;
+  }
+  const feedback = await listArticleNoiseFeedback(clientId);
+  response.json(feedback);
 }

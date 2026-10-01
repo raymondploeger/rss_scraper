@@ -118,6 +118,25 @@ export async function deleteArticleNoiseFeedback({ articleId, clientId }) {
   return prisma.articleNoiseFeedback.deleteMany({ where: { articleId, clientId } });
 }
 
+export async function listArticleNoiseFeedback(clientId) {
+  const prisma = getDatabase();
+  return prisma.articleNoiseFeedback.findMany({
+    where: { clientId },
+    orderBy: { createdAt: "desc" },
+    select: {
+      articleId: true,
+      reason: true,
+      profileContext: true,
+      interestIds: true,
+      articleTitle: true,
+      articleUrl: true,
+      articleSource: true,
+      articleFeedName: true,
+      createdAt: true,
+    },
+  });
+}
+
 export async function createArticle(article) {
   const prisma = getDatabase();
   const created = await prisma.article.create({

@@ -7395,6 +7395,7 @@ const state = {
     explicitlyCleared: false,
   },
   favoriteArticles: [],
+  noiseFeedbackRecords: [],
   favoritesPanelCollapsed: true,
   filters: {
     search: "",
@@ -7560,6 +7561,8 @@ const elements = {
   favoritesPanelContent: document.getElementById("favorites-panel-content"),
   favoritesList: document.getElementById("favorites-list"),
   favoritesEmptyState: document.getElementById("favorites-empty-state"),
+  noiseFeedbackList: document.getElementById("noise-feedback-list"),
+  noiseFeedbackEmpty: document.getElementById("noise-feedback-empty"),
   advancedFiltersToggle: document.getElementById("advanced-filters-toggle"),
   advancedFiltersContent: document.getElementById("advanced-filters-content"),
   feedFilter: document.getElementById("feed-filter"),
@@ -26659,6 +26662,65 @@ function getNoiseFeedbackProfileContext() {
   return String(state.personalDashboard.activeTemplateId || state.personalDashboard.mode || "").trim();
 }
 
+const NOISE_FEEDBACK_REASON_LABELS = Object.freeze({
+  wrong_topic: "Wrong topic",
+  wrong_word_meaning: "Wrong meaning of a word",
+  noisy_source: "Source produces too much noise",
+  promotion_or_navigation: "Promotion, category page, or navigation",
+  stale_or_duplicate: "Stale or duplicate article",
+});
+
+async function loadNoiseFeedbackRecords() {
+  try {
+    const response = await fetch(`/api/noise-feedback?clientId=${encodeURIComponent(getNoiseFeedbackClientId())}`);
+    if (!response.ok) throw new Error("Could not load noise feedback.");
+    state.noiseFeedbackRecords = await response.json();
+  } catch (error) {
+    console.warn("Noise feedback list failed:", error);
+    state.noiseFeedbackRecords = [];
+  }
+  renderNoiseFeedbackPanel();
+}
+
+function renderNoiseFeedbackPanel() {
+  if (!elements.noiseFeedbackList || !elements.noiseFeedbackEmpty) return;
+  const records = Array.isArray(state.noiseFeedbackRecords) ? state.noiseFeedbackRecords : [];
+  elements.noiseFeedbackList.replaceChildren();
+  elements.noiseFeedbackEmpty.hidden = records.length > 0;
+  if (!records.length) return;
+
+  const rulesByArticleId = new Map(getNoiseFeedbackRules().map((rule) => [rule.articleId, rule]));
+  const fragment = document.createDocumentFragment();
+  records.forEach((record) => {
+    const row = document.createElement("div");
+    row.className = "saved-article-item noise-feedback-item";
+    const copy = document.createElement("div");
+    copy.className = "saved-article-copy";
+    const title = document.createElement("strong");
+    title.className = "saved-article-link";
+    title.textContent = record.articleTitle || "Untitled article";
+    const details = document.createElement("div");
+    details.className = "saved-article-meta";
+    const rule = rulesByArticleId.get(record.articleId);
+    const ruleText = rule ? `Automatic rule: ${rule.terms.join(" + ")}` : "No automatic pattern";
+    details.textContent = [
+      NOISE_FEEDBACK_REASON_LABELS[record.reason] || "Noise feedback",
+      record.articleSource,
+      ruleText,
+    ].filter(Boolean).join(" • ");
+    const restoreButton = document.createElement("button");
+    restoreButton.type = "button";
+    restoreButton.className = "ghost-button noise-feedback-restore";
+    restoreButton.dataset.restoreNoiseArticleId = record.articleId;
+    restoreButton.textContent = "Restore";
+    restoreButton.setAttribute("aria-label", `Restore ${record.articleTitle || "article"}`);
+    copy.append(title, details);
+    row.append(copy, restoreButton);
+    fragment.appendChild(row);
+  });
+  elements.noiseFeedbackList.appendChild(fragment);
+}
+
 async function submitNoiseFeedback(article, reason) {
   hideNoiseArticle(article);
   const rule = addNoiseFeedbackRule(article);
@@ -26675,6 +26737,7 @@ async function submitNoiseFeedback(article, reason) {
       }),
     });
     if (!response.ok) throw new Error("Feedback could not be saved.");
+    await loadNoiseFeedbackRecords();
     showNoiseFeedbackSavedNotification(article, rule);
   } catch (error) {
     showNotification({
@@ -26697,6 +26760,7 @@ async function undoNoiseFeedback(article) {
   } catch (error) {
     console.warn("Noise feedback undo failed:", error);
   }
+  await loadNoiseFeedbackRecords();
 }
 
 function showNoiseFeedbackSavedNotification(article, rule) {
@@ -61413,6 +61477,16 @@ function bindEvents() {
     }
   });
 
+  elements.noiseFeedbackList?.addEventListener("click", async (event) => {
+    const button = event.target instanceof Element ? event.target.closest("[data-restore-noise-article-id]") : null;
+    if (!button) return;
+    const articleId = String(button.dataset.restoreNoiseArticleId || "").trim();
+    const record = state.noiseFeedbackRecords.find((entry) => entry.articleId === articleId);
+    if (!record) return;
+    await undoNoiseFeedback({ id: articleId, title: record.articleTitle || "" });
+    showNotification({ title: "Article restored", message: "Its personal noise feedback and automatic rule were removed.", type: "success" });
+  });
+
   if (elements.sidebar) {
     elements.sidebar.addEventListener("mouseenter", () => {
       runtime.sidebarHovered = true;
@@ -62586,6 +62660,7 @@ async function init() {
   renderSkeletons();
   syncNoiseKeywordVisibility();
   await loadSnapshot();
+  await loadNoiseFeedbackRecords();
   saveSourceSelectionPreferences();
   syncNoiseKeywordVisibility();
   syncFeedPanelVisibility();
