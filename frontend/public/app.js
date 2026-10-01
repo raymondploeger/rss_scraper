@@ -35,6 +35,7 @@ const FAVORITE_ARTICLES_STORAGE_KEY = "favoriteArticles";
 const HIDDEN_NOISE_ARTICLES_STORAGE_KEY = "hiddenNoiseArticles";
 const NOISE_FEEDBACK_CLIENT_ID_STORAGE_KEY = "noiseFeedbackClientId";
 const NOISE_FEEDBACK_RULES_STORAGE_KEY = "noiseFeedbackRules";
+const NOISE_FEEDBACK_RETENTION_MS = 5 * 24 * 60 * 60 * 1000;
 const SOURCE_SELECTION_STORAGE_KEY = "dashboardSourceSelection";
 const ALERT_DEDUPE_WINDOW_MS = 10 * 60 * 1000;
 const ACTIVITY_LOG_TTL_MS = 24 * 60 * 60 * 1000;
@@ -26569,32 +26570,41 @@ function getNoiseFeedbackClientId() {
   return clientId;
 }
 
-function loadHiddenNoiseArticleIds() {
+function getNoiseFeedbackExpiryCutoff() {
+  return Date.now() - NOISE_FEEDBACK_RETENTION_MS;
+}
+
+function loadHiddenNoiseArticleRecords() {
   try {
     const stored = JSON.parse(window.localStorage.getItem(HIDDEN_NOISE_ARTICLES_STORAGE_KEY) || "[]");
-    return new Set(Array.isArray(stored) ? stored.map((value) => String(value || "").trim()).filter(Boolean) : []);
+    const records = Array.isArray(stored) ? stored : [];
+    const retained = records
+      .map((value) => typeof value === "string" ? { id: value, createdAt: "" } : value)
+      .filter((record) => String(record?.id || "").trim() && new Date(record?.createdAt || 0).getTime() >= getNoiseFeedbackExpiryCutoff());
+    window.localStorage.setItem(HIDDEN_NOISE_ARTICLES_STORAGE_KEY, JSON.stringify(retained));
+    return retained;
   } catch {
-    return new Set();
+    return [];
   }
 }
 
 function isHiddenNoiseArticle(article) {
-  return loadHiddenNoiseArticleIds().has(getFavoriteArticleIdentity(article));
+  const articleId = getFavoriteArticleIdentity(article);
+  return loadHiddenNoiseArticleRecords().some((record) => record.id === articleId);
 }
 
 function hideNoiseArticle(article) {
   const articleId = getFavoriteArticleIdentity(article);
   if (!articleId) return;
-  const ids = loadHiddenNoiseArticleIds();
-  ids.add(articleId);
-  window.localStorage.setItem(HIDDEN_NOISE_ARTICLES_STORAGE_KEY, JSON.stringify([...ids]));
+  const records = loadHiddenNoiseArticleRecords().filter((record) => record.id !== articleId);
+  records.push({ id: articleId, createdAt: new Date().toISOString() });
+  window.localStorage.setItem(HIDDEN_NOISE_ARTICLES_STORAGE_KEY, JSON.stringify(records));
 }
 
 function restoreNoiseArticle(article) {
   const articleId = getFavoriteArticleIdentity(article);
-  const ids = loadHiddenNoiseArticleIds();
-  ids.delete(articleId);
-  window.localStorage.setItem(HIDDEN_NOISE_ARTICLES_STORAGE_KEY, JSON.stringify([...ids]));
+  const records = loadHiddenNoiseArticleRecords().filter((record) => record.id !== articleId);
+  window.localStorage.setItem(HIDDEN_NOISE_ARTICLES_STORAGE_KEY, JSON.stringify(records));
 }
 
 const NOISE_RULE_GENERIC_TERMS = new Set([
@@ -26605,7 +26615,11 @@ const NOISE_RULE_GENERIC_TERMS = new Set([
 function getNoiseFeedbackRules() {
   try {
     const rules = JSON.parse(window.localStorage.getItem(NOISE_FEEDBACK_RULES_STORAGE_KEY) || "[]");
-    return Array.isArray(rules) ? rules.filter((rule) => Array.isArray(rule?.terms) && rule.terms.length >= 3) : [];
+    const retained = Array.isArray(rules)
+      ? rules.filter((rule) => Array.isArray(rule?.terms) && rule.terms.length >= 3 && new Date(rule?.createdAt || 0).getTime() >= getNoiseFeedbackExpiryCutoff())
+      : [];
+    window.localStorage.setItem(NOISE_FEEDBACK_RULES_STORAGE_KEY, JSON.stringify(retained));
+    return retained;
   } catch {
     return [];
   }

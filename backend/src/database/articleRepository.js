@@ -137,6 +137,12 @@ export async function listArticleNoiseFeedback(clientId) {
   });
 }
 
+export async function deleteExpiredArticleNoiseFeedback() {
+  const prisma = getDatabase();
+  const cutoff = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+  return prisma.articleNoiseFeedback.deleteMany({ where: { createdAt: { lt: cutoff } } });
+}
+
 export async function createArticle(article) {
   const prisma = getDatabase();
   const created = await prisma.article.create({

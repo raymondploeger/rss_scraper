@@ -1,6 +1,7 @@
 import {
   countArticles,
   createArticleNoiseFeedback,
+  deleteExpiredArticleNoiseFeedback,
   deleteArticleNoiseFeedback,
   findArticleById,
   listArticleNoiseFeedback,
@@ -336,6 +337,7 @@ export async function createNoiseFeedback(request, response) {
     return;
   }
 
+  await deleteExpiredArticleNoiseFeedback();
   const article = await findArticleById(articleId);
   if (!article) {
     response.status(404).json({ error: "Article not found." });
@@ -363,6 +365,7 @@ export async function listNoiseFeedback(request, response) {
     response.status(400).json({ error: "Invalid noise feedback request." });
     return;
   }
+  await deleteExpiredArticleNoiseFeedback();
   const feedback = await listArticleNoiseFeedback(clientId);
   response.json(feedback);
 }

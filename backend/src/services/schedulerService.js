@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import { env } from "../config/env.js";
 import { syncAllFeeds } from "./rssService.js";
+import { deleteExpiredArticleNoiseFeedback } from "../database/articleRepository.js";
 
 let isRunning = false;
 
@@ -30,6 +31,11 @@ export function startScheduler() {
     } catch (error) {
       console.error("Scheduled feed refresh failed:", error?.stack || error);
     } finally {
+      try {
+        await deleteExpiredArticleNoiseFeedback();
+      } catch (error) {
+        console.error("Noise feedback retention cleanup failed:", error?.stack || error);
+      }
       isRunning = false;
     }
   });
