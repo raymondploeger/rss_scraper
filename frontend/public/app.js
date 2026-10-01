@@ -1593,7 +1593,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "identity-week-quality-policy-283";
+const APP_BUILD = "article-why-285";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -4709,6 +4709,7 @@ function getArticleDecisionReasonLabel(reason = "") {
     shared_security_technique_passed: "Security technology evidence matched your profile",
     vendors_profile_guard_passed: "A specialist industry source matched your vendor profile",
     profile_and_source_match: "Matched your profile within the selected sources",
+    active_feed_match: "Shown in the current intelligence feed",
     profile_and_interest_refinement_match: "Matched your Start Profile and selected Profile Interests",
     explicit_profile_policy_content_match: "The article's content matched your Start Profile",
     central_bank_profile_guard: "Not shown in Central Bank: the article does not meet the physical-banknote requirement",
@@ -4741,7 +4742,7 @@ function getArticleDecisionEvidenceLabel(term) {
 
 function recordArticleDecisionReceipt(article, options = {}) {
   const selectedInterests = normalizePersonalDashboardInterests(options.selectedInterests || []);
-  if (!article || !selectedInterests.length || options.passed === false) {
+  if (!article || options.passed === false) {
     return null;
   }
 
@@ -4766,7 +4767,9 @@ function recordArticleDecisionReceipt(article, options = {}) {
     ...matchedInterestLabels.slice(0, 2).map((label) => `Selected interest: ${label}`),
     sourceSignal.label,
   ].filter(Boolean).slice(0, 4);
-  const profileDisplay = getPersonalDashboardProfileDisplay(selectedInterests);
+  const profileDisplay = selectedInterests.length
+    ? getPersonalDashboardProfileDisplay(selectedInterests)
+    : { id: "", label: "Current intelligence feed" };
   const receipt = Object.freeze({
     articleId: articleKey,
     signature: getArticleDecisionReceiptSignature(selectedInterests),
@@ -4793,10 +4796,10 @@ function recordArticleDecisionReceipt(article, options = {}) {
 
 function getArticleDecisionReceipt(article) {
   const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
-  if (!selectedInterests.length) {
+  const articleKey = getArticleDecisionReceiptKey(article);
+  if (!articleKey) {
     return null;
   }
-  const articleKey = getArticleDecisionReceiptKey(article);
   const existing = runtime.articleDecisionReceiptMap.get(articleKey) || null;
   const signature = getArticleDecisionReceiptSignature(selectedInterests);
   if (existing?.signature === signature) {
@@ -4804,6 +4807,13 @@ function getArticleDecisionReceipt(article) {
   }
 
   const queryContext = getActiveArticleQueryContext();
+  if (!selectedInterests.length) {
+    return recordArticleDecisionReceipt(article, {
+      passed: true,
+      selectedInterests,
+      reason: "active_feed_match",
+    });
+  }
   if (queryContext.hasProfile) {
     articleMatchesPersonalDashboardSelection(article);
     const evaluated = runtime.articleDecisionReceiptMap.get(articleKey) || null;
