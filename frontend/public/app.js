@@ -4804,14 +4804,16 @@ function getArticleDecisionReceipt(article) {
   }
 
   const queryContext = getActiveArticleQueryContext();
-  if (queryContext.hasSelectedFeed || queryContext.hasSourceGroup) {
+  if (queryContext.hasProfile) {
     articleMatchesPersonalDashboardSelection(article);
     const evaluated = runtime.articleDecisionReceiptMap.get(articleKey) || null;
     if (evaluated?.signature === signature) return evaluated;
     return recordArticleDecisionReceipt(article, {
       passed: true,
       selectedInterests,
-      reason: "profile_and_source_match",
+      reason: queryContext.hasSelectedFeed || queryContext.hasSourceGroup
+        ? "profile_and_source_match"
+        : "profile_match",
     });
   }
   return null;
