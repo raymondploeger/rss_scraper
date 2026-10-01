@@ -43170,10 +43170,12 @@ const CENTRAL_BANK_PROFILE_EDUCATION_NOISE_TERMS = [
 
 function getCentralBankProfileHardNoiseAssessment(article) {
   const normalizedTitle = String(article?.title || "").toLowerCase().trim();
+  const normalizedTopic = String(article?.topic || "").toLowerCase().trim();
   const articleLink = String(article?.canonicalLink || article?.link || "").toLowerCase();
   const identityWeekArticle = /^https?:\/\/(?:www\.)?identityweek\.net\//.test(articleLink);
   const articleContent = [article?.title, article?.summary, article?.summaryShort, article?.description, article?.contentSnippet, article?.content]
     .filter(Boolean).join(" ").toLowerCase();
+  const hasPhysicalBanknoteContext = /\b(?:banknote|banknotes|bank note|bank notes|banknot\w*|currency note|currency notes)\b/.test(articleContent);
   return {
     coinOnlyTitle: /\b(?:coin|coins|moneta|monety|monet[ęay]|numismatic)\b/i.test(normalizedTitle) &&
       !/\b(?:banknote|banknotes|bank note|bank notes|banknot\w*|currency note|currency notes)\b/i.test(normalizedTitle),
@@ -43182,12 +43184,14 @@ function getCentralBankProfileHardNoiseAssessment(article) {
       /^https?:\/\/(?:www\.)?identityweek\.net\/category\//.test(articleLink) ||
       !/\b(?:banknote|banknotes|bank note|bank notes|banknot\w*|currency note|currency notes)\b/.test(articleContent)
     ),
+    explicitNonBanknoteTopic: /(?:identity document|digital identity|biometric|identity verification)/.test(normalizedTopic) &&
+      !hasPhysicalBanknoteContext,
   };
 }
 
 function getCentralBankProfileProfessionalAssessment(article) {
   return getCachedArticleValue(article, "centralBankProfileProfessionalAssessment", () => {
-    const { coinOnlyTitle, nonArticleTitle, identityWeekUnrelated } = getCentralBankProfileHardNoiseAssessment(article);
+    const { coinOnlyTitle, nonArticleTitle, identityWeekUnrelated, explicitNonBanknoteTopic } = getCentralBankProfileHardNoiseAssessment(article);
     const dominantDomain = getArticleDominantDomain(article);
     const signals = getBanknoteInterestSignals(article);
     const noiseAssessment = getBanknoteNoiseAssessment(article);
@@ -43249,7 +43253,7 @@ function getCentralBankProfileProfessionalAssessment(article) {
     const consumerNoise = consumerNoiseTerms.length > 0 && !professionalEventMatched;
     const digitalCurrencyNoise = digitalCurrencyNoiseTerms.length > 0 && physicalBanknoteContextTerms.length === 0;
     const educationNoise = educationNoiseTerms.length > 0;
-    const blocked = coinOnlyTitle || nonArticleTitle || identityWeekUnrelated || dominantDomain !== "banknotes" ||
+    const blocked = coinOnlyTitle || nonArticleTitle || identityWeekUnrelated || explicitNonBanknoteTopic || dominantDomain !== "banknotes" ||
       noiseAssessment.contaminated ||
       collectorOrSocialNoise ||
       digitalIdNoise ||
@@ -43272,6 +43276,8 @@ function getCentralBankProfileProfessionalAssessment(article) {
       rejectionReason = "central_bank_profile_navigation_title";
     } else if (identityWeekUnrelated) {
       rejectionReason = "central_bank_profile_identity_week_without_banknote_content";
+    } else if (explicitNonBanknoteTopic) {
+      rejectionReason = "central_bank_profile_explicit_non_banknote_topic";
     } else if (dominantDomain !== "banknotes") {
       rejectionReason = "central_bank_profile_wrong_domain";
     } else if (collectorOrSocialNoise || eventType === "banknote_auction_noise") {
@@ -43301,6 +43307,7 @@ function getCentralBankProfileProfessionalAssessment(article) {
       coinOnlyTitle,
       nonArticleTitle,
       identityWeekUnrelated,
+      explicitNonBanknoteTopic,
       eventType,
       relevanceScore: Number(relevance?.score) || 0,
       relevanceKept: Boolean(relevance?.kept),
@@ -52468,6 +52475,10 @@ function articleMatchesFilters(article, options = {}) {
   const qualityNoise = measureFilterSegment("coreQualityNoise", () => getCoreQualityNoiseAssessment(article));
   if (!qualityNoise.passed) {
     return finishFilterTiming(false, qualityNoise.reason);
+  }
+
+  if (isCentralBankProfileActive() && !getCentralBankProfileProfessionalAssessment(article).passed) {
+    return finishFilterTiming(false, "central_bank_profile_guard");
   }
 
   if (isHiddenNoiseArticle(article)) {

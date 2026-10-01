@@ -58,6 +58,10 @@ assert.equal(evaluateIdentityWeekIdentityVerificationQualityDecision({
   },
 }).reason, "identity_week_missing_verification_focus");
 assert.equal(evaluateProfilePolicyEvidence({ title: "Quarterly interest-rate decision" }, "central_bank").passed, false);
+assert.equal(evaluateProfilePolicyEvidence({
+  title: "What We Can Learn from the Massive IDScan.Net Data Breach",
+  topic: "Identity Documents",
+}, "central_bank").passed, false);
 assert.deepEqual(
   ["focused", "balanced", "broad"].map((mode) =>
     getProfileModePolicy("passport_authority", "balanced", mode).label
