@@ -484,6 +484,7 @@
         </details>
         <div class="article-card-actions">
           <button class="article-favorite-button" type="button" aria-pressed="false" title="Save article">Save</button>
+          <button class="article-noise-button" type="button" title="Mark this article as noise">Mark as noise</button>
           <details class="article-share-actions">
             <summary class="article-share-toggle" aria-label="Share this article" title="Share this article">Share this</summary>
             <div class="article-share-menu" aria-label="Share article">
@@ -497,6 +498,25 @@
       </article>
     </template>
 
-    <script type="module" src="/app.js?v=20260930-identity-week-quality-policy-283"></script>
+    <dialog id="noise-feedback-dialog" class="noise-feedback-dialog" aria-labelledby="noise-feedback-title">
+      <form id="noise-feedback-form" method="dialog">
+        <h2 id="noise-feedback-title">Mark as noise</h2>
+        <p id="noise-feedback-article" class="noise-feedback-article"></p>
+        <label for="noise-feedback-reason">Why is this not useful?</label>
+        <select id="noise-feedback-reason" required>
+          <option value="wrong_topic">Wrong topic</option>
+          <option value="wrong_word_meaning">Wrong meaning of a word</option>
+          <option value="noisy_source">Source produces too much noise</option>
+          <option value="promotion_or_navigation">Promotion, category page, or navigation</option>
+          <option value="stale_or_duplicate">Stale or duplicate article</option>
+        </select>
+        <div class="noise-feedback-actions">
+          <button type="button" id="noise-feedback-cancel" class="ghost-button">Cancel</button>
+          <button type="submit" class="article-favorite-button">Hide and send feedback</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script type="module" src="/app.js?v=20261001-noise-feedback-284"></script>
   </body>
 </html>

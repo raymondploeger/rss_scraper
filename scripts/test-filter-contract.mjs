@@ -16,7 +16,7 @@ import { evaluateDigitalIdentityProfileDecision } from "../frontend/public/digit
 import { evaluateIdentityDocumentProfileDecision } from "../frontend/public/identity-document-profile-policy.js";
 import { evaluateBanknoteProfileDecision } from "../frontend/public/banknote-profile-policy.js";
 import { evaluateSharedSecurityRefinementDecision } from "../frontend/public/shared-security-refinement-policy.js";
-import { evaluateIdentityDocumentQualityGateDecision } from "../frontend/public/identity-document-quality-policy.js";
+import { evaluateIdentityDocumentQualityGateDecision, isHondaPassportVehicleNoise } from "../frontend/public/identity-document-quality-policy.js";
 import { evaluateProfileDomainScopeDecision } from "../frontend/public/profile-domain-scope-policy.js";
 import { evaluateProfileProfessionalGuardDecision } from "../frontend/public/profile-professional-guard-policy.js";
 import { evaluateIdentityWeekIdentityVerificationQualityDecision } from "../frontend/public/identity-week-quality-policy.js";
@@ -150,6 +150,12 @@ assert.deepEqual(evaluateIdentityDocumentQualityGateDecision({ assessment: { pas
   passed: true,
   reason: "identity_document_quality_passed",
 });
+assert.deepEqual(evaluateIdentityDocumentQualityGateDecision({ assessment: { passed: true }, hondaPassportNoise: true }), {
+  passed: false,
+  reason: "identity_document_honda_passport_vehicle_noise",
+});
+assert.equal(isHondaPassportVehicleNoise("2026 Honda Passport TrailSport SUV review"), true);
+assert.equal(isHondaPassportVehicleNoise("New biometric passport issuance programme"), false);
 assert.deepEqual(evaluateDigitalIdentityProfileDecision({
   selectedInterestCount: 2,
   matchedInterestIds: ["authentication"],

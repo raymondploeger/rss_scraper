@@ -4,7 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import axios from "axios";
 import { env } from "./config/env.js";
-import { listArticles } from "./controllers/articleController.js";
+import { createNoiseFeedback, listArticles } from "./controllers/articleController.js";
 import {
   batchImportGoogleAlertsFeeds,
   createFeed,
@@ -80,6 +80,7 @@ export function createApp() {
     });
   }));
   app.get("/api/articles", asyncHandler(listArticles));
+  app.post("/api/articles/:articleId/noise-feedback", asyncHandler(createNoiseFeedback));
   app.get("/api/image", asyncHandler(async (request, response) => {
     const targetUrl = normalizeText(request.query.url, "");
     if (!targetUrl) {

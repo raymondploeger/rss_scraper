@@ -1,5 +1,7 @@
 import {
   countArticles,
+  createArticleNoiseFeedback,
+  findArticleById,
   listCanonicalDedupedArticles,
   listArticles as listArticleRecords,
   listDistinctArticleTopics
@@ -308,4 +310,36 @@ export async function getArticleFilters(request, response) {
     console.error("Article filters error:", error?.stack || error);
     response.status(500).json({ error: error?.message || "Failed to load article filters" });
   }
+}
+
+const NOISE_FEEDBACK_REASONS = new Set([
+  "wrong_topic",
+  "wrong_word_meaning",
+  "noisy_source",
+  "promotion_or_navigation",
+  "stale_or_duplicate",
+]);
+
+export async function createNoiseFeedback(request, response) {
+  const articleId = String(request.params.articleId || "").trim();
+  const clientId = String(request.body?.clientId || "").trim();
+  const reason = String(request.body?.reason || "").trim();
+  const profileContext = String(request.body?.profileContext || "").trim().slice(0, 160);
+  const interestIds = Array.isArray(request.body?.interestIds)
+    ? request.body.interestIds.map((value) => String(value || "").trim()).filter(Boolean).slice(0, 60)
+    : [];
+
+  if (!articleId || !clientId || clientId.length > 160 || !NOISE_FEEDBACK_REASONS.has(reason)) {
+    response.status(400).json({ error: "Invalid noise feedback." });
+    return;
+  }
+
+  const article = await findArticleById(articleId);
+  if (!article) {
+    response.status(404).json({ error: "Article not found." });
+    return;
+  }
+
+  await createArticleNoiseFeedback({ article, clientId, reason, profileContext, interestIds });
+  response.status(201).json({ ok: true, articleId, reason });
 }

@@ -94,6 +94,25 @@ export async function findArticleById(id) {
   return mapArticleRecord(article);
 }
 
+export async function createArticleNoiseFeedback({ article, clientId, reason, profileContext, interestIds }) {
+  const prisma = getDatabase();
+  return prisma.articleNoiseFeedback.upsert({
+    where: { articleId_clientId: { articleId: article.id, clientId } },
+    update: { reason, profileContext, interestIds },
+    create: {
+      articleId: article.id,
+      clientId,
+      reason,
+      profileContext,
+      interestIds,
+      articleTitle: article.title,
+      articleUrl: article.canonicalLink || article.link,
+      articleSource: article.source,
+      articleFeedName: article.feedName,
+    },
+  });
+}
+
 export async function createArticle(article) {
   const prisma = getDatabase();
   const created = await prisma.article.create({

@@ -6,7 +6,7 @@ import { evaluateDigitalIdentityProfileDecision } from "./digital-identity-profi
 import { evaluateIdentityDocumentProfileDecision } from "./identity-document-profile-policy.js";
 import { evaluateBanknoteProfileDecision } from "./banknote-profile-policy.js";
 import { evaluateSharedSecurityRefinementDecision } from "./shared-security-refinement-policy.js";
-import { evaluateIdentityDocumentQualityGateDecision } from "./identity-document-quality-policy.js";
+import { evaluateIdentityDocumentQualityGateDecision, isHondaPassportVehicleNoise as isHondaPassportVehicleNoisePolicy } from "./identity-document-quality-policy.js";
 import { evaluateIdentityWeekIdentityVerificationQualityDecision } from "./identity-week-quality-policy.js";
 import { evaluateProfileDomainScopeDecision } from "./profile-domain-scope-policy.js";
 import { evaluateProfileProfessionalGuardDecision } from "./profile-professional-guard-policy.js";
@@ -32,6 +32,8 @@ const ALERT_DEDUPE_STORAGE_KEY = "recentAlertKeys";
 const ALERT_ARTICLE_FILTER_STORAGE_KEY = "activeAlertArticleFilter";
 const ACTIVITY_LOG_STORAGE_KEY = "dashboardActivityLog";
 const FAVORITE_ARTICLES_STORAGE_KEY = "favoriteArticles";
+const HIDDEN_NOISE_ARTICLES_STORAGE_KEY = "hiddenNoiseArticles";
+const NOISE_FEEDBACK_CLIENT_ID_STORAGE_KEY = "noiseFeedbackClientId";
 const SOURCE_SELECTION_STORAGE_KEY = "dashboardSourceSelection";
 const ALERT_DEDUPE_WINDOW_MS = 10 * 60 * 1000;
 const ACTIVITY_LOG_TTL_MS = 24 * 60 * 60 * 1000;
@@ -5144,6 +5146,10 @@ function getIdentityDocumentBundleQualityGateAssessment(article) {
   });
 }
 
+function isHondaPassportVehicleNoise(article) {
+  return isHondaPassportVehicleNoisePolicy(getArticleSearchText(article));
+}
+
 function isSecurityPrinterProfileActive(interests = state.personalDashboard.interests) {
   const normalizedInterests = normalizePersonalDashboardInterests(interests);
   const stateTemplateId = String(state.personalDashboard.activeTemplateId || "").trim();
@@ -6498,6 +6504,9 @@ function applyIdentityDocumentBundleQualityGateToArticles(articles = []) {
   }
 
   const passedArticles = sourceArticles.filter((article) => {
+    if (isHondaPassportVehicleNoise(article)) {
+      return false;
+    }
     // The Start Profile policy is the authoritative identity-document match.
     // Keep an explicit policy match in the candidate pool so a Strict quality
     // refinement cannot reject it before the profile evaluator sees it.
@@ -7600,6 +7609,11 @@ const elements = {
   summaryCardTemplate: document.getElementById("summary-card-template"),
   feedItemTemplate: document.getElementById("feed-item-template"),
   articleCardTemplate: document.getElementById("article-card-template"),
+  noiseFeedbackDialog: document.getElementById("noise-feedback-dialog"),
+  noiseFeedbackForm: document.getElementById("noise-feedback-form"),
+  noiseFeedbackArticle: document.getElementById("noise-feedback-article"),
+  noiseFeedbackReason: document.getElementById("noise-feedback-reason"),
+  noiseFeedbackCancel: document.getElementById("noise-feedback-cancel"),
   importDmvButton: document.getElementById("import-dmv-button"),
   dmvToggleButton: document.getElementById("dmv-toggle-button"),
   canadaToggleButton: document.getElementById("canada-toggle-button"),
@@ -26529,6 +26543,72 @@ function getFavoriteArticleIdentity(article) {
   ).trim();
 }
 
+function getNoiseFeedbackClientId() {
+  let clientId = String(window.localStorage.getItem(NOISE_FEEDBACK_CLIENT_ID_STORAGE_KEY) || "").trim();
+  if (!clientId) {
+    clientId = typeof crypto?.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `browser-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    window.localStorage.setItem(NOISE_FEEDBACK_CLIENT_ID_STORAGE_KEY, clientId);
+  }
+  return clientId;
+}
+
+function loadHiddenNoiseArticleIds() {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(HIDDEN_NOISE_ARTICLES_STORAGE_KEY) || "[]");
+    return new Set(Array.isArray(stored) ? stored.map((value) => String(value || "").trim()).filter(Boolean) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function isHiddenNoiseArticle(article) {
+  return loadHiddenNoiseArticleIds().has(getFavoriteArticleIdentity(article));
+}
+
+function hideNoiseArticle(article) {
+  const articleId = getFavoriteArticleIdentity(article);
+  if (!articleId) return;
+  const ids = loadHiddenNoiseArticleIds();
+  ids.add(articleId);
+  window.localStorage.setItem(HIDDEN_NOISE_ARTICLES_STORAGE_KEY, JSON.stringify([...ids]));
+}
+
+function getNoiseFeedbackProfileContext() {
+  return String(state.personalDashboard.activeTemplateId || state.personalDashboard.mode || "").trim();
+}
+
+async function submitNoiseFeedback(article, reason) {
+  hideNoiseArticle(article);
+  scheduleRenderArticles("noise-feedback-hide", { mode: "frame" });
+  try {
+    const response = await fetch(`/api/articles/${encodeURIComponent(article.id)}/noise-feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clientId: getNoiseFeedbackClientId(),
+        reason,
+        profileContext: getNoiseFeedbackProfileContext(),
+        interestIds: normalizePersonalDashboardInterests(state.personalDashboard.interests),
+      }),
+    });
+    if (!response.ok) throw new Error("Feedback could not be saved.");
+    showNotification({ title: "Article hidden", message: "Your feedback was saved for a future rule proposal.", type: "success" });
+  } catch (error) {
+    showNotification({ title: "Article hidden", message: "It is hidden in this browser, but feedback could not be saved.", type: "warning" });
+    console.warn("Noise feedback failed:", error);
+  }
+}
+
+function openNoiseFeedbackDialog(article) {
+  if (!article?.id || !elements.noiseFeedbackDialog || !elements.noiseFeedbackArticle) return;
+  runtime.pendingNoiseFeedbackArticle = article;
+  elements.noiseFeedbackArticle.textContent = article.title || "Untitled article";
+  elements.noiseFeedbackReason.value = "wrong_topic";
+  elements.noiseFeedbackDialog.showModal();
+}
+
 function createFavoriteArticleRecord(article, savedAt = new Date().toISOString()) {
   if (!article) {
     return null;
@@ -27007,6 +27087,11 @@ function renderSavedArticleCard(article) {
     if (favoriteIdentity) {
       runtime.renderedFavoriteArticleLookup.set(favoriteIdentity, article);
     }
+  }
+  const noiseButton = node.querySelector(".article-noise-button");
+  if (noiseButton) {
+    noiseButton.dataset.noiseArticleId = getFavoriteArticleIdentity(article);
+    noiseButton.setAttribute("aria-label", `Mark as noise: ${article.title || "article"}`);
   }
   setArticleShareButtonState(shareActions, article);
   renderArticleDecisionReceipt(whyArticle, article);
@@ -43966,6 +44051,7 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
     );
     const identityDocumentQualityDecision = evaluateIdentityDocumentQualityGateDecision({
       assessment: identityDocumentBundleQualityGate,
+      hondaPassportNoise: isHondaPassportVehicleNoise(article),
     });
     if (!identityDocumentQualityDecision.passed) {
       return finishPersonalDashboardTiming(
@@ -52195,6 +52281,10 @@ function articleMatchesFilters(article, options = {}) {
     return finishFilterTiming(false, qualityNoise.reason);
   }
 
+  if (isHiddenNoiseArticle(article)) {
+    return finishFilterTiming(false, "personal_noise_feedback");
+  }
+
   const ignoreFeedId = Boolean(options.ignoreFeedId);
   const ignorePersonalDashboard = Boolean(options.ignorePersonalDashboard);
 
@@ -56417,6 +56507,11 @@ function renderArticleCard(article) {
     if (favoriteIdentity) {
       runtime.renderedFavoriteArticleLookup.set(favoriteIdentity, article);
     }
+  }
+  const noiseButton = node.querySelector(".article-noise-button");
+  if (noiseButton) {
+    noiseButton.dataset.noiseArticleId = getFavoriteArticleIdentity(article);
+    noiseButton.setAttribute("aria-label", `Mark as noise: ${article.title || "article"}`);
   }
   setArticleShareButtonState(shareActions, article);
   renderArticleDecisionReceipt(whyArticle, article);
@@ -61157,6 +61252,19 @@ function bindEvents() {
         ? event.target.closest("[data-favorite-id]")
         : null;
       if (!favoriteButton) {
+        const noiseButton = event.target instanceof Element
+          ? event.target.closest("[data-noise-article-id]")
+          : null;
+        if (!noiseButton) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        const articleId = noiseButton.dataset.noiseArticleId || "";
+        const article = state.articles.find((candidate) => getFavoriteArticleIdentity(candidate) === articleId) || null;
+        if (article) {
+          openNoiseFeedbackDialog(article);
+        }
         return;
       }
       event.preventDefault();
@@ -61177,6 +61285,18 @@ function bindEvents() {
       }
     });
   }
+
+  elements.noiseFeedbackCancel?.addEventListener("click", () => elements.noiseFeedbackDialog?.close());
+  elements.noiseFeedbackForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const article = runtime.pendingNoiseFeedbackArticle;
+    const reason = String(elements.noiseFeedbackReason?.value || "wrong_topic");
+    elements.noiseFeedbackDialog?.close();
+    runtime.pendingNoiseFeedbackArticle = null;
+    if (article) {
+      await submitNoiseFeedback(article, reason);
+    }
+  });
 
   if (elements.sidebar) {
     elements.sidebar.addEventListener("mouseenter", () => {

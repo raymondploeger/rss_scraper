@@ -57,6 +57,7 @@ model Article {
   language         String    @default("unknown")
   fetchStatus      String    @default("pending")
   feed             Feed      @relation(fields: [feedId], references: [id], onDelete: Cascade)
+  noiseFeedback    ArticleNoiseFeedback[]
 
   @@index([pubDate(sort: Desc)])
   @@index([feedId, pubDate(sort: Desc)])
@@ -64,6 +65,26 @@ model Article {
   @@index([isDuplicate, pubDate(sort: Desc)])
   @@index([fetchStatus, createdAt(sort: Desc)])
   @@map("articles")
+}
+
+model ArticleNoiseFeedback {
+  id               String   @id @default(uuid())
+  articleId        String
+  clientId         String
+  reason           String
+  profileContext   String   @default("")
+  interestIds      String[] @default([])
+  articleTitle     String
+  articleUrl       String
+  articleSource    String
+  articleFeedName  String
+  createdAt        DateTime @default(now())
+  article          Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, clientId])
+  @@index([createdAt(sort: Desc)])
+  @@index([reason, createdAt(sort: Desc)])
+  @@map("article_noise_feedback")
 }
 
 model PollLog {
