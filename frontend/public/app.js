@@ -4711,6 +4711,11 @@ function getArticleDecisionReasonLabel(reason = "") {
     profile_and_source_match: "Matched your profile within the selected sources",
     profile_and_interest_refinement_match: "Matched your Start Profile and selected Profile Interests",
     explicit_profile_policy_content_match: "The article's content matched your Start Profile",
+    central_bank_profile_guard: "Not shown in Central Bank: the article does not meet the physical-banknote requirement",
+    central_bank_profile_explicit_non_banknote_topic: "Not shown in Central Bank: Identity Documents topic without banknote context",
+    central_bank_profile_wrong_domain: "Not shown in Central Bank: article belongs to another professional domain",
+    personal_noise_feedback: "Hidden because you marked this exact article as noise",
+    personal_noise_feedback_rule: "Hidden by a profile-bound noise-feedback rule",
   };
   return labels[reason] || "Matched the active professional profile";
 }
@@ -4800,11 +4805,9 @@ function getArticleDecisionReceipt(article) {
 
   const queryContext = getActiveArticleQueryContext();
   if (queryContext.hasSelectedFeed || queryContext.hasSourceGroup) {
-    return recordArticleDecisionReceipt(article, {
-      passed: true,
-      selectedInterests,
-      reason: "profile_and_source_match",
-    });
+    articleMatchesPersonalDashboardSelection(article);
+    const evaluated = runtime.articleDecisionReceiptMap.get(articleKey) || null;
+    if (evaluated?.signature === signature) return evaluated;
   }
   return null;
 }
@@ -26616,7 +26619,15 @@ function getNoiseFeedbackRules() {
   try {
     const rules = JSON.parse(window.localStorage.getItem(NOISE_FEEDBACK_RULES_STORAGE_KEY) || "[]");
     const retained = Array.isArray(rules)
-      ? rules.filter((rule) => Array.isArray(rule?.terms) && rule.terms.length >= 3 && new Date(rule?.createdAt || 0).getTime() >= getNoiseFeedbackExpiryCutoff())
+      ? rules.filter((rule) => {
+        const supported = ["topic_pattern", "word_meaning", "navigation_url", "duplicate_cluster", "noisy_source"].includes(rule?.type || "topic_pattern");
+        const hasMatcher = rule?.type === "navigation_url"
+          ? Boolean(rule?.urlMarker)
+          : rule?.type === "noisy_source"
+            ? Boolean(rule?.source)
+            : Array.isArray(rule?.terms) && rule.terms.length >= 3;
+        return supported && hasMatcher && new Date(rule?.createdAt || 0).getTime() >= getNoiseFeedbackExpiryCutoff();
+      })
       : [];
     window.localStorage.setItem(NOISE_FEEDBACK_RULES_STORAGE_KEY, JSON.stringify(retained));
     return retained;
@@ -26631,26 +26642,50 @@ function saveNoiseFeedbackRules(rules) {
 
 function getNoiseRuleTerms(article) {
   return Array.from(new Set(
-    String(article?.title || "").toLowerCase().match(/[\\p{L}\\p{N}]{3,}/gu) || []
+    String(article?.title || "").toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) || []
   ))
     .filter((term) => !ARTICLE_FINGERPRINT_STOP_WORDS.has(term) && !NOISE_RULE_GENERIC_TERMS.has(term))
     .slice(0, 4);
 }
 
-function createNoiseFeedbackRule(article) {
+function getArticleUrlPath(article) {
+  try {
+    return new URL(article?.canonicalLink || article?.link || "").pathname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function createNoiseFeedbackRule(article, reason = "wrong_topic") {
   const terms = getNoiseRuleTerms(article);
   const profileDomains = getSelectedMainDomains(normalizePersonalDashboardInterests(state.personalDashboard.interests));
-  if (terms.length < 3 || !profileDomains.length) return null;
+  if (!profileDomains.length) return null;
+  const articleId = getFavoriteArticleIdentity(article);
+  const createdAt = new Date().toISOString();
+  if (reason === "promotion_or_navigation") {
+    const urlMarker = ["/category/", "/tag/", "/author/", "/page/", "/events/", "/media-kit/"].find((marker) =>
+      getArticleUrlPath(article).includes(marker)
+    );
+    return urlMarker ? { articleId, type: "navigation_url", urlMarker, profileDomains, createdAt } : null;
+  }
+  if (reason === "noisy_source") return null;
+  if (terms.length < 3) return null;
   return {
-    articleId: getFavoriteArticleIdentity(article),
+    articleId,
+    type: reason === "stale_or_duplicate"
+      ? "duplicate_cluster"
+      : reason === "wrong_word_meaning"
+        ? "word_meaning"
+        : "topic_pattern",
     terms,
+    canonicalUrl: String(article?.canonicalLink || article?.link || "").trim(),
     profileDomains,
-    createdAt: new Date().toISOString(),
+    createdAt,
   };
 }
 
-function addNoiseFeedbackRule(article) {
-  const rule = createNoiseFeedbackRule(article);
+function addNoiseFeedbackRule(article, reason) {
+  const rule = createNoiseFeedbackRule(article, reason);
   if (!rule) return null;
   const rules = getNoiseFeedbackRules().filter((entry) => entry.articleId !== rule.articleId);
   rules.push(rule);
@@ -26663,13 +26698,21 @@ function removeNoiseFeedbackRule(article) {
   saveNoiseFeedbackRules(getNoiseFeedbackRules().filter((rule) => rule.articleId !== articleId));
 }
 
-function isArticleBlockedByNoiseFeedbackRule(article) {
-  const selectedDomains = new Set(getSelectedMainDomains(normalizePersonalDashboardInterests(state.personalDashboard.interests)));
+function ruleAppliesToSelectedProfile(rule, selectedDomains = getSelectedMainDomains(normalizePersonalDashboardInterests(state.personalDashboard.interests))) {
+  return Array.isArray(rule?.profileDomains) && rule.profileDomains.some((domain) => selectedDomains.includes(domain));
+}
+
+function noiseRuleMatchesArticle(rule, article, selectedDomains = null) {
+  if (!ruleAppliesToSelectedProfile(rule, selectedDomains || getSelectedMainDomains(normalizePersonalDashboardInterests(state.personalDashboard.interests)))) return false;
   const text = getArticleSearchText(article);
-  return getNoiseFeedbackRules().some((rule) =>
-    rule.profileDomains.some((domain) => selectedDomains.has(domain)) &&
-    rule.terms.every((term) => text.includes(term))
-  );
+  if (rule.type === "navigation_url") return getArticleUrlPath(article).includes(rule.urlMarker);
+  if (rule.type === "noisy_source") return String(article?.source || "").trim().toLowerCase() === rule.source;
+  if (rule.type === "duplicate_cluster" && rule.canonicalUrl && String(article?.canonicalLink || article?.link || "").trim() === rule.canonicalUrl) return true;
+  return Array.isArray(rule.terms) && rule.terms.every((term) => text.includes(term));
+}
+
+function isArticleBlockedByNoiseFeedbackRule(article) {
+  return getNoiseFeedbackRules().some((rule) => noiseRuleMatchesArticle(rule, article));
 }
 
 function getNoiseFeedbackProfileContext() {
@@ -26693,7 +26736,58 @@ async function loadNoiseFeedbackRecords() {
     console.warn("Noise feedback list failed:", error);
     state.noiseFeedbackRecords = [];
   }
+  syncNoisySourceRules();
   renderNoiseFeedbackPanel();
+}
+
+function syncNoisySourceRules() {
+  const retainedRules = getNoiseFeedbackRules().filter((rule) => rule.type !== "noisy_source");
+  const groups = new Map();
+  state.noiseFeedbackRecords
+    .filter((record) => record.reason === "noisy_source" && String(record.articleSource || "").trim())
+    .forEach((record) => {
+      const source = String(record.articleSource).trim().toLowerCase();
+      const key = `${source}:${record.profileContext || ""}`;
+      const group = groups.get(key) || [];
+      group.push(record);
+      groups.set(key, group);
+    });
+  groups.forEach((records) => {
+    if (records.length < 3) return;
+    const first = records[0];
+    const profileDomains = getSelectedMainDomains(first.interestIds || []);
+    if (!profileDomains.length) return;
+    retainedRules.push({
+      articleId: first.articleId,
+      articleIds: records.map((record) => record.articleId),
+      type: "noisy_source",
+      source: String(first.articleSource).trim().toLowerCase(),
+      profileDomains,
+      createdAt: first.createdAt || new Date().toISOString(),
+    });
+  });
+  saveNoiseFeedbackRules(retainedRules);
+}
+
+function getNoiseRuleDescription(rule) {
+  if (!rule) return "No automatic pattern";
+  if (rule.type === "navigation_url") return `URL pattern: ${rule.urlMarker}`;
+  if (rule.type === "duplicate_cluster") return `Duplicate cluster: ${rule.terms.join(" + ")}`;
+  if (rule.type === "word_meaning") return `Word-meaning context: ${rule.terms.join(" + ")}`;
+  if (rule.type === "noisy_source") return `Source rule after ${rule.articleIds?.length || 3} reports`;
+  return `Topic pattern: ${rule.terms.join(" + ")}`;
+}
+
+function getNoiseRuleImpact(rule) {
+  const sourceArticles = Array.isArray(state.articles) ? state.articles : [];
+  const matched = sourceArticles.filter((article) => noiseRuleMatchesArticle(rule, article, rule.profileDomains));
+  const retainedExamples = sourceArticles
+    .filter((article) => ruleAppliesToSelectedProfile(rule, rule.profileDomains) && !noiseRuleMatchesArticle(rule, article, rule.profileDomains))
+    .filter((article) => rule.type === "noisy_source" || rule.type === "navigation_url" ||
+      (Array.isArray(rule.terms) && rule.terms.some((term) => getArticleSearchText(article).includes(term))))
+    .slice(0, 2)
+    .map((article) => article.title || "Untitled article");
+  return { matchedCount: matched.length, retainedExamples };
 }
 
 function renderNoiseFeedbackPanel() {
@@ -26703,7 +26797,10 @@ function renderNoiseFeedbackPanel() {
   elements.noiseFeedbackEmpty.hidden = records.length > 0;
   if (!records.length) return;
 
-  const rulesByArticleId = new Map(getNoiseFeedbackRules().map((rule) => [rule.articleId, rule]));
+  const rulesByArticleId = new Map();
+  getNoiseFeedbackRules().forEach((rule) => {
+    [rule.articleId, ...(rule.articleIds || [])].filter(Boolean).forEach((articleId) => rulesByArticleId.set(articleId, rule));
+  });
   const fragment = document.createDocumentFragment();
   records.forEach((record) => {
     const row = document.createElement("div");
@@ -26716,19 +26813,29 @@ function renderNoiseFeedbackPanel() {
     const details = document.createElement("div");
     details.className = "saved-article-meta";
     const rule = rulesByArticleId.get(record.articleId);
-    const ruleText = rule ? `Automatic rule: ${rule.terms.join(" + ")}` : "No automatic pattern";
+    const impact = rule ? getNoiseRuleImpact(rule) : null;
+    const ruleText = rule
+      ? `${getNoiseRuleDescription(rule)} · affects ${impact.matchedCount} loaded article${impact.matchedCount === 1 ? "" : "s"}`
+      : "No automatic pattern";
     details.textContent = [
       NOISE_FEEDBACK_REASON_LABELS[record.reason] || "Noise feedback",
       record.articleSource,
       ruleText,
     ].filter(Boolean).join(" • ");
+    if (impact?.retainedExamples.length) {
+      const retained = document.createElement("div");
+      retained.className = "saved-article-meta noise-feedback-retained";
+      retained.textContent = `Keeps: ${impact.retainedExamples.join("; ")}`;
+      copy.append(title, details, retained);
+    } else {
+      copy.append(title, details);
+    }
     const restoreButton = document.createElement("button");
     restoreButton.type = "button";
     restoreButton.className = "ghost-button noise-feedback-restore";
     restoreButton.dataset.restoreNoiseArticleId = record.articleId;
     restoreButton.textContent = "Restore";
     restoreButton.setAttribute("aria-label", `Restore ${record.articleTitle || "article"}`);
-    copy.append(title, details);
     row.append(copy, restoreButton);
     fragment.appendChild(row);
   });
@@ -26737,7 +26844,7 @@ function renderNoiseFeedbackPanel() {
 
 async function submitNoiseFeedback(article, reason) {
   hideNoiseArticle(article);
-  const rule = addNoiseFeedbackRule(article);
+  const rule = addNoiseFeedbackRule(article, reason);
   scheduleRenderArticles("noise-feedback-hide", { mode: "frame" });
   try {
     const response = await fetch(`/api/articles/${encodeURIComponent(article.id)}/noise-feedback`, {

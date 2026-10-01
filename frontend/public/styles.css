@@ -2841,6 +2841,7 @@ button.intelligence-context-chip:focus-visible .intelligence-context-chip-remove
 .noise-feedback-details[open] > summary::after { content: "↓"; }
 .noise-feedback-content { display: grid; gap: 12px; padding-top: 14px; }
 .noise-feedback-restore { align-self: start; color: var(--accent); }
+.noise-feedback-retained { color: var(--success); }
 
 .notification-action { justify-self: start; margin-top: 4px; padding: 0; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: .84rem; font-weight: 800; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 
