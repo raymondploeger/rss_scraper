@@ -1,6 +1,7 @@
 import {
   countArticles,
   createArticleNoiseFeedback,
+  deleteArticleNoiseFeedback,
   findArticleById,
   listCanonicalDedupedArticles,
   listArticles as listArticleRecords,
@@ -342,4 +343,15 @@ export async function createNoiseFeedback(request, response) {
 
   await createArticleNoiseFeedback({ article, clientId, reason, profileContext, interestIds });
   response.status(201).json({ ok: true, articleId, reason });
+}
+
+export async function deleteNoiseFeedback(request, response) {
+  const articleId = String(request.params.articleId || "").trim();
+  const clientId = String(request.query?.clientId || "").trim();
+  if (!articleId || !clientId || clientId.length > 160) {
+    response.status(400).json({ error: "Invalid noise feedback removal." });
+    return;
+  }
+  await deleteArticleNoiseFeedback({ articleId, clientId });
+  response.json({ ok: true, articleId });
 }

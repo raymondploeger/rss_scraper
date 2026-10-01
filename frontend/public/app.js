@@ -34,6 +34,7 @@ const ACTIVITY_LOG_STORAGE_KEY = "dashboardActivityLog";
 const FAVORITE_ARTICLES_STORAGE_KEY = "favoriteArticles";
 const HIDDEN_NOISE_ARTICLES_STORAGE_KEY = "hiddenNoiseArticles";
 const NOISE_FEEDBACK_CLIENT_ID_STORAGE_KEY = "noiseFeedbackClientId";
+const NOISE_FEEDBACK_RULES_STORAGE_KEY = "noiseFeedbackRules";
 const SOURCE_SELECTION_STORAGE_KEY = "dashboardSourceSelection";
 const ALERT_DEDUPE_WINDOW_MS = 10 * 60 * 1000;
 const ACTIVITY_LOG_TTL_MS = 24 * 60 * 60 * 1000;
@@ -7945,7 +7946,7 @@ function dismissNotification(notificationId) {
   notification.remove();
 }
 
-function showNotification({ title, message = "", type = "info", timeout = NOTIFICATION_TIMEOUT_MS }) {
+function showNotification({ title, message = "", type = "info", timeout = NOTIFICATION_TIMEOUT_MS, actionLabel = "", onAction = null }) {
   if (!elements.notificationRegion) {
     return;
   }
@@ -7971,6 +7972,17 @@ function showNotification({ title, message = "", type = "info", timeout = NOTIFI
   content.append(titleElement);
   if (message) {
     content.appendChild(messageElement);
+  }
+  if (actionLabel && typeof onAction === "function") {
+    const actionButton = document.createElement("button");
+    actionButton.className = "notification-action";
+    actionButton.type = "button";
+    actionButton.textContent = actionLabel;
+    actionButton.addEventListener("click", async () => {
+      dismissNotification(notificationId);
+      await onAction();
+    });
+    content.appendChild(actionButton);
   }
   notification.append(content, closeButton);
   elements.notificationRegion.appendChild(notification);
@@ -26575,12 +26587,81 @@ function hideNoiseArticle(article) {
   window.localStorage.setItem(HIDDEN_NOISE_ARTICLES_STORAGE_KEY, JSON.stringify([...ids]));
 }
 
+function restoreNoiseArticle(article) {
+  const articleId = getFavoriteArticleIdentity(article);
+  const ids = loadHiddenNoiseArticleIds();
+  ids.delete(articleId);
+  window.localStorage.setItem(HIDDEN_NOISE_ARTICLES_STORAGE_KEY, JSON.stringify([...ids]));
+}
+
+const NOISE_RULE_GENERIC_TERMS = new Set([
+  "article", "articles", "breaking", "latest", "news", "report", "reports", "review", "update", "updates",
+  "announces", "announced", "launches", "launch", "reveals", "introduces", "first", "look", "2025", "2026",
+]);
+
+function getNoiseFeedbackRules() {
+  try {
+    const rules = JSON.parse(window.localStorage.getItem(NOISE_FEEDBACK_RULES_STORAGE_KEY) || "[]");
+    return Array.isArray(rules) ? rules.filter((rule) => Array.isArray(rule?.terms) && rule.terms.length >= 3) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveNoiseFeedbackRules(rules) {
+  window.localStorage.setItem(NOISE_FEEDBACK_RULES_STORAGE_KEY, JSON.stringify(rules));
+}
+
+function getNoiseRuleTerms(article) {
+  return Array.from(new Set(
+    String(article?.title || "").toLowerCase().match(/[\\p{L}\\p{N}]{3,}/gu) || []
+  ))
+    .filter((term) => !ARTICLE_FINGERPRINT_STOP_WORDS.has(term) && !NOISE_RULE_GENERIC_TERMS.has(term))
+    .slice(0, 4);
+}
+
+function createNoiseFeedbackRule(article) {
+  const terms = getNoiseRuleTerms(article);
+  const profileDomains = getSelectedMainDomains(normalizePersonalDashboardInterests(state.personalDashboard.interests));
+  if (terms.length < 3 || !profileDomains.length) return null;
+  return {
+    articleId: getFavoriteArticleIdentity(article),
+    terms,
+    profileDomains,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function addNoiseFeedbackRule(article) {
+  const rule = createNoiseFeedbackRule(article);
+  if (!rule) return null;
+  const rules = getNoiseFeedbackRules().filter((entry) => entry.articleId !== rule.articleId);
+  rules.push(rule);
+  saveNoiseFeedbackRules(rules);
+  return rule;
+}
+
+function removeNoiseFeedbackRule(article) {
+  const articleId = getFavoriteArticleIdentity(article);
+  saveNoiseFeedbackRules(getNoiseFeedbackRules().filter((rule) => rule.articleId !== articleId));
+}
+
+function isArticleBlockedByNoiseFeedbackRule(article) {
+  const selectedDomains = new Set(getSelectedMainDomains(normalizePersonalDashboardInterests(state.personalDashboard.interests)));
+  const text = getArticleSearchText(article);
+  return getNoiseFeedbackRules().some((rule) =>
+    rule.profileDomains.some((domain) => selectedDomains.has(domain)) &&
+    rule.terms.every((term) => text.includes(term))
+  );
+}
+
 function getNoiseFeedbackProfileContext() {
   return String(state.personalDashboard.activeTemplateId || state.personalDashboard.mode || "").trim();
 }
 
 async function submitNoiseFeedback(article, reason) {
   hideNoiseArticle(article);
+  const rule = addNoiseFeedbackRule(article);
   scheduleRenderArticles("noise-feedback-hide", { mode: "frame" });
   try {
     const response = await fetch(`/api/articles/${encodeURIComponent(article.id)}/noise-feedback`, {
@@ -26594,11 +26675,41 @@ async function submitNoiseFeedback(article, reason) {
       }),
     });
     if (!response.ok) throw new Error("Feedback could not be saved.");
-    showNotification({ title: "Article hidden", message: "Your feedback was saved for a future rule proposal.", type: "success" });
+    showNoiseFeedbackSavedNotification(article, rule);
   } catch (error) {
-    showNotification({ title: "Article hidden", message: "It is hidden in this browser, but feedback could not be saved.", type: "warning" });
+    showNotification({
+      title: "Article hidden locally",
+      message: "Feedback could not be saved, but you can still undo this change.",
+      type: "warning",
+      actionLabel: "Undo",
+      onAction: () => undoNoiseFeedback(article),
+    });
     console.warn("Noise feedback failed:", error);
   }
+}
+
+async function undoNoiseFeedback(article) {
+  restoreNoiseArticle(article);
+  removeNoiseFeedbackRule(article);
+  scheduleRenderArticles("noise-feedback-undo", { mode: "frame" });
+  try {
+    await fetch(`/api/articles/${encodeURIComponent(article.id)}/noise-feedback?clientId=${encodeURIComponent(getNoiseFeedbackClientId())}`, { method: "DELETE" });
+  } catch (error) {
+    console.warn("Noise feedback undo failed:", error);
+  }
+}
+
+function showNoiseFeedbackSavedNotification(article, rule) {
+  showNotification({
+    title: "Article hidden",
+    message: rule
+      ? "A careful rule now hides future close matches in this profile."
+      : "Your feedback was saved; this article is hidden in this browser.",
+    type: "success",
+    timeout: 15000,
+    actionLabel: "Undo",
+    onAction: () => undoNoiseFeedback(article),
+  });
 }
 
 function openNoiseFeedbackDialog(article) {
@@ -52283,6 +52394,10 @@ function articleMatchesFilters(article, options = {}) {
 
   if (isHiddenNoiseArticle(article)) {
     return finishFilterTiming(false, "personal_noise_feedback");
+  }
+
+  if (isArticleBlockedByNoiseFeedbackRule(article)) {
+    return finishFilterTiming(false, "personal_noise_feedback_rule");
   }
 
   const ignoreFeedId = Boolean(options.ignoreFeedId);

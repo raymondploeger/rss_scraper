@@ -113,6 +113,11 @@ export async function createArticleNoiseFeedback({ article, clientId, reason, pr
   });
 }
 
+export async function deleteArticleNoiseFeedback({ articleId, clientId }) {
+  const prisma = getDatabase();
+  return prisma.articleNoiseFeedback.deleteMany({ where: { articleId, clientId } });
+}
+
 export async function createArticle(article) {
   const prisma = getDatabase();
   const created = await prisma.article.create({
