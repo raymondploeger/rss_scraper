@@ -33,7 +33,9 @@ export const env = {
   schedulerEnabled: toBoolean(process.env.SCHEDULER_ENABLED, true),
   bootstrapInitialSyncEnabled: toBoolean(process.env.BOOTSTRAP_INITIAL_SYNC_ENABLED, true),
   refreshAbortRssMb: Math.max(0, toNumber(process.env.REFRESH_ABORT_RSS_MB, 2800)),
+  refreshAbortHeapMb: Math.max(0, toNumber(process.env.REFRESH_ABORT_HEAP_MB, 1200)),
   requestTimeoutMs: Math.max(1000, toNumber(process.env.REQUEST_TIMEOUT_MS, 10000)),
+  sourceResponseMaxBytes: Math.max(256 * 1024, toNumber(process.env.SOURCE_RESPONSE_MAX_BYTES, 4 * 1024 * 1024)),
   maxFeeds: Math.max(MAX_RSS_FEEDS, toNumber(process.env.MAX_FEEDS, MAX_RSS_FEEDS)),
   maxArticlePageSize: Math.max(50, toNumber(process.env.MAX_ARTICLE_PAGE_SIZE, 200)),
   canonicalDedupeCandidateLimit: Math.max(200, toNumber(process.env.CANONICAL_DEDUPE_CANDIDATE_LIMIT, 1500)),
@@ -41,6 +43,8 @@ export const env = {
   scrapeRetryAttempts: Math.max(0, toNumber(process.env.SCRAPE_RETRY_ATTEMPTS, 2)),
   thumbnailEnrichmentConcurrency: Math.max(1, toNumber(process.env.THUMBNAIL_ENRICHMENT_CONCURRENCY, 2)),
   thumbnailEnrichmentMaxQueue: Math.max(10, toNumber(process.env.THUMBNAIL_ENRICHMENT_MAX_QUEUE, 150)),
+  scheduledThumbnailEnrichmentConcurrency: Math.max(1, toNumber(process.env.SCHEDULED_THUMBNAIL_ENRICHMENT_CONCURRENCY, 1)),
+  scheduledThumbnailEnrichmentMaxQueue: Math.max(10, toNumber(process.env.SCHEDULED_THUMBNAIL_ENRICHMENT_MAX_QUEUE, 30)),
   databaseUrl: process.env.DATABASE_URL || "",
   publicAppUrl: process.env.PUBLIC_APP_URL || "",
   placeholderImage: process.env.PLACEHOLDER_IMAGE || "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image"

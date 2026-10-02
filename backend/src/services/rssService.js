@@ -58,6 +58,7 @@ const thumbnailEnrichmentQueue = [];
 const queuedThumbnailEnrichmentIds = new Set();
 const activeThumbnailEnrichmentIds = new Set();
 let activeThumbnailEnrichmentCount = 0;
+let scheduledSyncActive = false;
 
 const SICPA_NEWSROOM_URL = "https://www.sicpa.com/all-press-releases";
 const SURYS_NEWSROOM_URL = "https://surys.com/surys-blog/";
@@ -3846,7 +3847,7 @@ async function extractGovUkNewsItems(feed, $, pageUrl) {
     return [];
   }
 
-  const parsedFeed = await parser.parseURL(atomUrl);
+  const parsedFeed = await fetchAndParseRss(atomUrl);
   const rawItems = Array.isArray(parsedFeed.items) ? parsedFeed.items : [];
   const seenLinks = new Set();
 
@@ -4008,7 +4009,7 @@ async function extractStrictGovernmentListingItems(feed, $, pageUrl, { linkPatte
 }
 
 async function extractEuropolNewsroomItems(feed) {
-  const parsedFeed = await parser.parseURL("https://www.europol.europa.eu/cms/api/rss/news");
+  const parsedFeed = await fetchAndParseRss("https://www.europol.europa.eu/cms/api/rss/news");
   const rawItems = Array.isArray(parsedFeed.items) ? parsedFeed.items : [];
   const items = [];
 
@@ -4804,6 +4805,8 @@ async function fetchWebsiteHtml(url, attempt = 0) {
       timeout: env.requestTimeoutMs,
       responseType: "text",
       maxRedirects: 5,
+      maxContentLength: env.sourceResponseMaxBytes,
+      maxBodyLength: env.sourceResponseMaxBytes,
       headers: {
         "User-Agent": "RSS Monitor Dashboard/2.0",
         Accept: "text/html,application/xhtml+xml"
@@ -4817,6 +4820,24 @@ async function fetchWebsiteHtml(url, attempt = 0) {
 
     throw error;
   }
+}
+
+async function fetchAndParseRss(url, headers = {}) {
+  const response = await axios.get(url, {
+    timeout: env.requestTimeoutMs,
+    responseType: "text",
+    maxRedirects: 5,
+    maxContentLength: env.sourceResponseMaxBytes,
+    maxBodyLength: env.sourceResponseMaxBytes,
+    headers: {
+      "User-Agent": "RSS Monitor Dashboard/2.0",
+      Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, text/plain;q=0.8, */*;q=0.5",
+      ...headers,
+    },
+    validateStatus: (status) => status >= 200 && status < 400,
+  });
+
+  return parser.parseString(String(response.data || ""));
 }
 
 function extractAtomLinkHref(linkValue) {
@@ -5242,9 +5263,12 @@ function queueThumbnailEnrichment(article, options = {}) {
   }
 
   const totalQueuedWork = thumbnailEnrichmentQueue.length + activeThumbnailEnrichmentCount;
-  if (totalQueuedWork >= env.thumbnailEnrichmentMaxQueue) {
+  const maxQueue = scheduledSyncActive
+    ? env.scheduledThumbnailEnrichmentMaxQueue
+    : env.thumbnailEnrichmentMaxQueue;
+  if (totalQueuedWork >= maxQueue) {
     console.warn(
-      `[thumbnail-enrichment] skipped articleId=${articleId} reason=queue_full queued=${thumbnailEnrichmentQueue.length} active=${activeThumbnailEnrichmentCount} max=${env.thumbnailEnrichmentMaxQueue}`
+      `[thumbnail-enrichment] skipped articleId=${articleId} reason=queue_full queued=${thumbnailEnrichmentQueue.length} active=${activeThumbnailEnrichmentCount} max=${maxQueue}`
     );
     return;
   }
@@ -5255,8 +5279,11 @@ function queueThumbnailEnrichment(article, options = {}) {
 }
 
 function drainThumbnailEnrichmentQueue() {
+  const concurrency = scheduledSyncActive
+    ? env.scheduledThumbnailEnrichmentConcurrency
+    : env.thumbnailEnrichmentConcurrency;
   while (
-    activeThumbnailEnrichmentCount < env.thumbnailEnrichmentConcurrency &&
+    activeThumbnailEnrichmentCount < concurrency &&
     thumbnailEnrichmentQueue.length
   ) {
     const queuedWork = thumbnailEnrichmentQueue.shift();
@@ -5316,13 +5343,10 @@ async function runFeedSync(feed) {
       if (rssUrl !== feed.rssUrl) {
         console.log(`[notafilia][rss] legacy FeedBurner source detected; using official RSS ${rssUrl}`);
       }
-      const parsedFeed = isReserveBankOfAustraliaMediaReleasesFeed(feed)
-        ? await parser.parseString((await axios.get(rssUrl, {
-            timeout: env.requestTimeoutMs,
-            responseType: "text",
-            headers: { "User-Agent": "curl/8.0" },
-          })).data)
-        : await parser.parseURL(rssUrl);
+      const parsedFeed = await fetchAndParseRss(
+        rssUrl,
+        isReserveBankOfAustraliaMediaReleasesFeed(feed) ? { "User-Agent": "curl/8.0" } : {}
+      );
       if (vendorFeedLogLabel) {
         console.log(`[${vendorFeedLogLabel}] feed_loaded feedId=${feed.id} rssUrl=${rssUrl}`);
       }
@@ -5506,6 +5530,18 @@ function getRefreshMemorySnapshot() {
   };
 }
 
+function getRefreshMemoryLimit(memory) {
+  if (env.refreshAbortHeapMb > 0 && memory.heapUsedMb >= env.refreshAbortHeapMb) {
+    return `heapUsedMb=${memory.heapUsedMb} thresholdMb=${env.refreshAbortHeapMb}`;
+  }
+
+  if (env.refreshAbortRssMb > 0 && memory.rssMb >= env.refreshAbortRssMb) {
+    return `rssMb=${memory.rssMb} thresholdMb=${env.refreshAbortRssMb}`;
+  }
+
+  return "";
+}
+
 export async function syncAllFeeds(options = {}) {
   if (allFeedsSyncPromise) {
     console.log("[syncAllFeeds] Reusing in-flight full refresh");
@@ -5529,8 +5565,9 @@ export async function syncAllFeeds(options = {}) {
         : 250
     );
 
+    scheduledSyncActive = requestedTrigger === "scheduled";
     console.log(
-      `[syncAllFeeds] starting trigger=${requestedTrigger} concurrency=${batchSize} batchDelayMs=${batchDelayMs} refreshAbortRssMb=${env.refreshAbortRssMb}`
+      `[syncAllFeeds] starting trigger=${requestedTrigger} concurrency=${batchSize} batchDelayMs=${batchDelayMs} refreshAbortRssMb=${env.refreshAbortRssMb} refreshAbortHeapMb=${env.refreshAbortHeapMb} sourceResponseMaxBytes=${env.sourceResponseMaxBytes}`
     );
     const feeds = await listFeedRecords({ activeOnly: true, order: "ASC" });
     const results = [];
@@ -5538,10 +5575,11 @@ export async function syncAllFeeds(options = {}) {
 
     for (let index = 0; index < feeds.length; index += batchSize) {
       const memoryBeforeBatch = getRefreshMemorySnapshot();
-      if (env.refreshAbortRssMb > 0 && memoryBeforeBatch.rssMb >= env.refreshAbortRssMb) {
+      const memoryLimitBeforeBatch = getRefreshMemoryLimit(memoryBeforeBatch);
+      if (memoryLimitBeforeBatch) {
         abortedForMemory = true;
         console.warn(
-          `[syncAllFeeds] aborting before batch due to memory rssMb=${memoryBeforeBatch.rssMb} thresholdMb=${env.refreshAbortRssMb} processed=${results.length}/${feeds.length} trigger=${requestedTrigger}`
+          `[syncAllFeeds] aborting before batch due to memory ${memoryLimitBeforeBatch} processed=${results.length}/${feeds.length} trigger=${requestedTrigger}`
         );
         break;
       }
@@ -5558,6 +5596,14 @@ export async function syncAllFeeds(options = {}) {
       console.log(
         `[syncAllFeeds] completed batch ${batchNumber}/${totalBatches} processed=${results.length}/${feeds.length} trigger=${requestedTrigger} rssMb=${memoryAfterBatch.rssMb} heapUsedMb=${memoryAfterBatch.heapUsedMb}`
       );
+      const memoryLimitAfterBatch = getRefreshMemoryLimit(memoryAfterBatch);
+      if (memoryLimitAfterBatch) {
+        abortedForMemory = true;
+        console.warn(
+          `[syncAllFeeds] aborting after batch due to memory ${memoryLimitAfterBatch} processed=${results.length}/${feeds.length} trigger=${requestedTrigger}`
+        );
+        break;
+      }
       if (index + batchSize < feeds.length) {
         await new Promise((resolve) => setTimeout(resolve, batchDelayMs));
       }
@@ -5565,19 +5611,22 @@ export async function syncAllFeeds(options = {}) {
 
     broadcast("refresh:complete", {
       type: "refresh:complete",
-      feedsProcessed: feeds.length,
+      feedsProcessed: results.length,
+      feedsTotal: feeds.length,
       results,
       trigger: requestedTrigger,
       abortedForMemory,
     });
 
     return {
-      feedsProcessed: feeds.length,
+      feedsProcessed: results.length,
+      feedsTotal: feeds.length,
       results,
       trigger: requestedTrigger,
       abortedForMemory,
     };
   })().finally(() => {
+    scheduledSyncActive = false;
     allFeedsSyncPromise = null;
   });
 
