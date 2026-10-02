@@ -42807,6 +42807,18 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       "security laminate",
       "anti-counterfeit",
       "counterfeit prevention",
+      "anti-falsificación",
+      "anti-fraude",
+      "documento seguro",
+      "documentos seguros",
+      "etiqueta de seguridad",
+      "etiquetas de seguridad",
+      "holograma",
+      "hologramas",
+      "impresión de seguridad",
+      "pasaporte",
+      "pasaportes",
+      "seguridad documental",
     ];
     const noiseTerms = [
       "commercial printing",
@@ -43101,7 +43113,7 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       (textMatchesKeyword(articleTitleText, "security feature") || textMatchesKeyword(articleTitleText, "security features")) &&
       titleDocumentOrBanknoteTerms.some((term) => textMatchesKeyword(articleTitleText, term));
     const hasSecurityPrinterTitleEvidence = hasTitlePhysicalTechnology || hasTitleDocumentSecurityFeature;
-    const isDirectSecurityIndustrySource = /(?:currency news|demax holograms|kurz press releases|id & secure document news|keesing platform|banknotenews|crane currency|landqart|g\+d|giesecke)/i
+    const isDirectSecurityIndustrySource = /(?:currency news|demax holograms|kurz press releases|id & secure document news|keesing platform|banknotenews|crane currency|landqart|g\+d|giesecke|signe security documents|signe\.es)/i
       .test(sourceTextForMatching);
     const demaxNonArticleOrLegacyTitle = /demax holograms/i.test(sourceTextForMatching) && (
       /^eu archives\b/.test(normalizedArticleTitle) ||
