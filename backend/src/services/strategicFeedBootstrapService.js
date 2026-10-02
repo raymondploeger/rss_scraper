@@ -531,6 +531,13 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     sourceType: "website",
     phase: "phase1",
   },
+  {
+    name: "SIGNE Security Documents",
+    topic: "Shared Security Printing",
+    rssUrl: "https://www.signe.es/feed",
+    sourceType: "rss",
+    phase: "phase2-vendor-sources",
+  },
 ];
 
 const RETIRED_STRATEGIC_FEEDS = [
