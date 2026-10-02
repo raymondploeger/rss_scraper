@@ -43124,7 +43124,7 @@ function getSecurityPrinterProfileProfessionalGuard(article, selectedInterests =
       (textMatchesKeyword(articleTitleText, "security feature") || textMatchesKeyword(articleTitleText, "security features")) &&
       titleDocumentOrBanknoteTerms.some((term) => textMatchesKeyword(articleTitleText, term));
     const hasSecurityPrinterTitleEvidence = hasTitlePhysicalTechnology || hasTitleDocumentSecurityFeature;
-    const isDirectSecurityIndustrySource = /(?:currency news|demax holograms|kurz press releases|id & secure document news|keesing platform|banknotenews|crane currency|landqart|g\+d|giesecke|signe security documents|signe\.es)/i
+    const isDirectSecurityIndustrySource = /(?:currency news|demax holograms|kurz press releases|id & secure document news|keesing platform|banknotenews|crane currency|landqart|g\+d|giesecke|signe security documents|signe\.es|ofs security printing insights|ofs\.ch|jura security printing|jura\.hu|koenig & bauer banknote solutions|banknote-solutions\.koenig-bauer\.com)/i
       .test(sourceTextForMatching);
     const demaxNonArticleOrLegacyTitle = /demax holograms/i.test(sourceTextForMatching) && (
       /^eu archives\b/.test(normalizedArticleTitle) ||
