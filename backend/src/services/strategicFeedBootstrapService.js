@@ -539,6 +539,38 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     sourceGroup: "Vendors",
     phase: "phase2-vendor-sources",
   },
+  {
+    name: "OFS Security Printing Insights",
+    topic: "Shared Security Printing",
+    rssUrl: "https://ofs.ch/en/insights",
+    sourceType: "website",
+    sourceGroup: "Vendors",
+    phase: "phase2-vendor-sources",
+  },
+  {
+    name: "Jura Security Printing",
+    topic: "Shared Security Printing",
+    rssUrl: "https://jura.hu/feed/",
+    sourceType: "rss",
+    sourceGroup: "Vendors",
+    phase: "phase2-vendor-sources",
+  },
+  {
+    name: "Koenig & Bauer Banknote Solutions",
+    topic: "Shared Security Printing",
+    rssUrl: "https://banknote-solutions.koenig-bauer.com/en/feed.rss",
+    sourceType: "rss",
+    sourceGroup: "Vendors",
+    phase: "phase2-vendor-sources",
+  },
+  {
+    name: "Austrian State Printing Office News",
+    topic: "Digital Identity & Biometrics",
+    rssUrl: "https://www.staatsdruckerei.at/en/osd-news/feed",
+    sourceType: "rss",
+    sourceGroup: "Vendors",
+    phase: "phase2-vendor-sources",
+  },
 ];
 
 const RETIRED_STRATEGIC_FEEDS = [
