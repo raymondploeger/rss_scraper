@@ -1547,6 +1547,17 @@ function extractWebsitePublishedDate($, pageUrl = "") {
       continue;
     }
 
+    // Some CMS templates emit multiple JSON-LD objects in a single script,
+    // making the whole value invalid JSON even though its article dates are
+    // usable. Keep the normal parser first, then recover those dates safely.
+    const embeddedDate = raw.match(/"datePublished"\s*:\s*"([^"]+)"/i) ||
+      raw.match(/"dateCreated"\s*:\s*"([^"]+)"/i) ||
+      raw.match(/"dateModified"\s*:\s*"([^"]+)"/i);
+    const parsedEmbeddedDate = parseWebsiteDate(embeddedDate?.[1] || "");
+    if (parsedEmbeddedDate) {
+      return parsedEmbeddedDate;
+    }
+
     try {
       const payload = JSON.parse(raw);
       const entries = Array.isArray(payload) ? payload : [payload];
