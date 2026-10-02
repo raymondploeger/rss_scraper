@@ -81,6 +81,8 @@ const VTT_NEWS_URL = "https://www.vttresearch.com/en/news-stories/news-and-stori
 const SOUTH_AFRICAN_RESERVE_BANK_RSS_URL = "https://www.resbank.co.za/bin/sarb/solr/publications/rss";
 const SOUTH_AFRICAN_RESERVE_BANK_SITE_URL = "https://www.resbank.co.za";
 const KINEGRAM_INSIGHTS_URL = "https://www.kinegram.com/events-insights/insights";
+const OFS_SECURITY_PRINTING_INSIGHTS_URL = "https://ofs.ch/en/insights";
+const OFS_SECURITY_PRINTING_MAX_CANDIDATES = 24;
 const KOENIG_BAUER_PRESS_RELEASES_URL = "https://www.koenig-bauer.com/en/newsroom/press-releases";
 const KOENIG_BAUER_MAX_ARCHIVE_PAGES = 4;
 const KOENIG_BAUER_MAX_CANDIDATES = 28;
@@ -383,6 +385,14 @@ function isKinegramInsightsFeed(feed) {
   });
 }
 
+function isOfsSecurityPrintingInsightsFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: [OFS_SECURITY_PRINTING_INSIGHTS_URL],
+    urlFragments: ["ofs.ch/en/insights"],
+    exactNames: ["OFS Security Printing Insights"],
+  });
+}
+
 function isKoenigBauerPressReleasesFeed(feed) {
   return matchesWebsiteFeedSignature(feed, {
     exactUrls: [KOENIG_BAUER_PRESS_RELEASES_URL],
@@ -578,6 +588,7 @@ function shouldReplaceArticlesOnSync(feed) {
     isLinxensNewsFeed(feed) ||
     isVttNewsFeed(feed) ||
     isKinegramInsightsFeed(feed) ||
+    isOfsSecurityPrintingInsightsFeed(feed) ||
     isKoenigBauerPressReleasesFeed(feed) ||
     isAtlanticZeiserNewsFeed(feed) ||
     isBundesdruckereiPressReleasesFeed(feed) ||
@@ -612,6 +623,7 @@ function isTrackedVendorWebsiteFeed(feed) {
     isLinxensNewsFeed(feed) ||
     isVttNewsFeed(feed) ||
     isKinegramInsightsFeed(feed) ||
+    isOfsSecurityPrintingInsightsFeed(feed) ||
     isKoenigBauerPressReleasesFeed(feed) ||
     isAtlanticZeiserNewsFeed(feed) ||
     isBundesdruckereiPressReleasesFeed(feed) ||
@@ -4475,12 +4487,93 @@ function extractIcaoTripItems() {
   return [];
 }
 
+function decodeOfsEmbeddedJsonString(value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  try {
+    return JSON.parse(`"${raw}"`);
+  } catch {
+    return raw.replace(/\\\//g, "/").replace(/\\u([0-9a-f]{4})/gi, (_, hex) =>
+      String.fromCharCode(Number.parseInt(hex, 16))
+    );
+  }
+}
+
+async function extractOfsSecurityPrintingInsightItems(feed, html) {
+  // OFS renders the listing data inside an escaped JSON payload. The generic
+  // anchor extractor only sees global navigation cards rather than Insights.
+  const payload = String(html || "").replace(/&quot;/g, '"');
+  const itemPattern = /"title":"([^"]+)","url":"([^"]+)","image":\{"url":"([^"]+)"/g;
+  const items = [];
+  const seenLinks = new Set();
+
+  for (const match of payload.matchAll(itemPattern)) {
+    const listedTitle = sanitizeFeedText(decodeOfsEmbeddedJsonString(match[1]), "");
+    const link = decodeOfsEmbeddedJsonString(match[2]);
+    const listedImage = decodeOfsEmbeddedJsonString(match[3]);
+    const canonicalLink = canonicalizeUrl(link);
+
+    if (
+      !listedTitle ||
+      !canonicalLink ||
+      seenLinks.has(canonicalLink) ||
+      !/^https:\/\/ofs\.ch\/en\/[a-z0-9_/-]+$/i.test(canonicalLink) ||
+      canonicalLink.replace(/\/$/, "") === OFS_SECURITY_PRINTING_INSIGHTS_URL
+    ) {
+      continue;
+    }
+
+    const validated = await validateWebsiteArticleCandidate(canonicalLink, listedTitle).catch((error) => {
+      console.warn(`OFS Insight validation failed for ${canonicalLink}:`, error?.message || error);
+      return null;
+    });
+    if (!validated?.accepted) {
+      continue;
+    }
+    if (!articleMatchesSourceRelevanceRule(feed, {
+      title: validated.title || listedTitle,
+      link: canonicalLink,
+      contentSnippet: validated.contentSnippet || "",
+    })) {
+      console.log(`Rejected OFS Insight ${canonicalLink}: source-relevance-filter`);
+      continue;
+    }
+
+    seenLinks.add(canonicalLink);
+    items.push({
+      title: validated.title || listedTitle,
+      link: canonicalLink,
+      isoDate: validated.isoDate || "",
+      image: validated.image || listedImage,
+      contentSnippet: validated.contentSnippet || "",
+      author: "",
+      source: "ofs.ch",
+    });
+
+    if (items.length >= OFS_SECURITY_PRINTING_MAX_CANDIDATES) {
+      break;
+    }
+  }
+
+  return items;
+}
+
 async function extractWebsiteItems(feed) {
   console.log(`Parsing website source ${feed.id} (${feed.rssUrl})`);
   const response = await fetchWebsiteHtml(feed.rssUrl);
   const html = String(response.data || "");
   const $ = cheerio.load(html);
   const fetchedUrl = response.request?.res?.responseUrl || feed.rssUrl;
+
+  if (isOfsSecurityPrintingInsightsFeed(feed)) {
+    console.log(`Using dedicated website extractor: ofs-security-printing-insights for source ${feed.id}`);
+    const items = await extractOfsSecurityPrintingInsightItems(feed, html);
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
 
   if (isSicpaNewsroomFeed(feed)) {
     const items = await extractSicpaNewsroomItems(feed, $, fetchedUrl);
