@@ -536,6 +536,7 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     topic: "Shared Security Printing",
     rssUrl: "https://www.signe.es/feed",
     sourceType: "rss",
+    sourceGroup: "Vendors",
     phase: "phase2-vendor-sources",
   },
 ];
