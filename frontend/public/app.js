@@ -5489,6 +5489,15 @@ const OFFICIAL_VENDOR_SOURCE_FEED_NAMES = Object.freeze([
   "VTT News and Stories",
 ]);
 
+// These feeds have their own server-side allowlists. Once an item has passed
+// that source-specific relevance filter, it is intentionally available in both
+// the Vendors and Security Printer profiles.
+const CURATED_SECURITY_PRINTER_SOURCE_FEED_NAMES = Object.freeze([
+  "OFS Security Printing Insights",
+  "Jura Security Printing",
+  "Koenig & Bauer Banknote Solutions",
+]);
+
 const OFFICIAL_VENDOR_SOURCE_DOMAINS = Object.freeze([
   "atlanticzeiser.com",
   "authentix.com",
@@ -5575,6 +5584,11 @@ function isOfficialVendorSourceArticle(article) {
   ].filter(Boolean).join(" ").toLowerCase();
 
   return OFFICIAL_VENDOR_SOURCE_DOMAINS.some((domain) => fingerprint.includes(domain));
+}
+
+function isCuratedSecurityPrinterSourceArticle(article) {
+  const feedName = String(getFeedName(article?.feedId) || "").trim();
+  return CURATED_SECURITY_PRINTER_SOURCE_FEED_NAMES.includes(feedName);
 }
 
 function getCuratedVendorWebsiteArticlesFromState() {
@@ -44238,6 +44252,13 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
         {},
         "professional_guard"
       );
+    }
+
+    // OFS, Jura and Koenig & Bauer Banknote Solutions are explicitly assigned
+    // to Security Printer. Their server-side source allowlists have already
+    // removed general corporate and off-topic items before this point.
+    if (isCuratedSecurityPrinterSourceArticle(article)) {
+      return finishPersonalDashboardTiming(true, "curated_security_printer_source", {}, "curated_source");
     }
   }
 
