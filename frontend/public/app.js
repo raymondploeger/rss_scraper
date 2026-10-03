@@ -1593,7 +1593,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "muehlbauer-news-286";
+const APP_BUILD = "in-groupe-logo-hidden-287";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -26330,6 +26330,13 @@ function isKnownBrokenImageUrl(url) {
   );
 }
 
+function isTemporarilyDisabledInGroupeLogoImage(url) {
+  return (
+    url.hostname.toLowerCase().replace(/^www\./, "") === "ingroupe.com" &&
+    url.pathname.toLowerCase().includes("/app/uploads/2026/04/footer-grafic.png")
+  );
+}
+
 function normalizeArticleImageUrl(value) {
   const raw = String(value || "").trim();
   if (!raw || raw === "null" || raw === "undefined" || raw.startsWith("data:")) {
@@ -26348,6 +26355,9 @@ function normalizeArticleImageUrl(value) {
       url.hostname.toLowerCase().includes("polyvantis.com") &&
       url.pathname.toLowerCase().includes("/produkte/produktfamilienbilder/")
     ) {
+      return "";
+    }
+    if (isTemporarilyDisabledInGroupeLogoImage(url)) {
       return "";
     }
     if (

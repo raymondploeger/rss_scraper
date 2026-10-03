@@ -213,6 +213,12 @@ export function isLikelyGenericMetadataImage(imageUrl) {
     return true;
   }
 
+  // IN Groupe's footer graphic is a brand mark rather than article imagery.
+  // Keep this temporary exception narrow so its editorial photos still render.
+  if (value.includes("ingroupe.com/app/uploads/2026/04/footer-grafic.png")) {
+    return true;
+  }
+
   if (
     value.includes("/profiles/cbpd8_gov/themes/custom/cbpd8_gov_theme/") ||
     value.includes("/themes/custom/cbpd8_gov_theme/") ||
