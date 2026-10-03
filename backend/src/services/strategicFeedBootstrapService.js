@@ -359,8 +359,9 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
   {
     name: "Mühlbauer Press",
     topic: "Identity Documents",
-    rssUrl: "https://www.muehlbauer.de/company/company/press/",
+    rssUrl: "https://www.muehlbauer.de/news-events/news/",
     sourceType: "website",
+    sourceGroup: "Vendors",
     phase: "phase2-vendor-sources",
   },
   {

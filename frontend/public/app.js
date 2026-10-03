@@ -1593,7 +1593,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "article-why-285";
+const APP_BUILD = "muehlbauer-news-286";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
@@ -1637,6 +1637,7 @@ const VENDOR_SOURCE_PATTERNS = Object.freeze([
   "pwpw.pl/en/rss",
   "atlanticzeiser.com/en/news",
   "muehlbauer.de/company/company/press",
+  "muehlbauer.de/news-events/news",
   "masktech.com/press/60/en",
   "daon.com/feed",
   "daon.com/resources",

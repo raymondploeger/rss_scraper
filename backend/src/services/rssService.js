@@ -83,6 +83,8 @@ const SOUTH_AFRICAN_RESERVE_BANK_SITE_URL = "https://www.resbank.co.za";
 const KINEGRAM_INSIGHTS_URL = "https://www.kinegram.com/events-insights/insights";
 const OFS_SECURITY_PRINTING_INSIGHTS_URL = "https://ofs.ch/en/insights";
 const OFS_SECURITY_PRINTING_MAX_CANDIDATES = 24;
+const MUEHLBAUER_NEWS_URL = "https://www.muehlbauer.de/news-events/news/";
+const MUEHLBAUER_NEWS_MAX_CANDIDATES = 24;
 const KOENIG_BAUER_PRESS_RELEASES_URL = "https://www.koenig-bauer.com/en/newsroom/press-releases";
 const KOENIG_BAUER_MAX_ARCHIVE_PAGES = 4;
 const KOENIG_BAUER_MAX_CANDIDATES = 28;
@@ -393,6 +395,14 @@ function isOfsSecurityPrintingInsightsFeed(feed) {
   });
 }
 
+function isMuehlbauerNewsFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: [MUEHLBAUER_NEWS_URL, "https://www.muehlbauer.de/news-events/news"],
+    urlFragments: ["muehlbauer.de/news-events/news"],
+    exactNames: ["Mühlbauer Press", "Muehlbauer Press"],
+  });
+}
+
 function isKoenigBauerPressReleasesFeed(feed) {
   return matchesWebsiteFeedSignature(feed, {
     exactUrls: [KOENIG_BAUER_PRESS_RELEASES_URL],
@@ -589,6 +599,7 @@ function shouldReplaceArticlesOnSync(feed) {
     isVttNewsFeed(feed) ||
     isKinegramInsightsFeed(feed) ||
     isOfsSecurityPrintingInsightsFeed(feed) ||
+    isMuehlbauerNewsFeed(feed) ||
     isKoenigBauerPressReleasesFeed(feed) ||
     isAtlanticZeiserNewsFeed(feed) ||
     isBundesdruckereiPressReleasesFeed(feed) ||
@@ -830,6 +841,10 @@ function matchesWebsiteSourceCandidatePolicy(feed, link) {
 
   if (isKinegramInsightsFeed(feed)) {
     return lowerLink.includes("/events-insights/details/");
+  }
+
+  if (isMuehlbauerNewsFeed(feed)) {
+    return /\/news-events\/news\/20\d{2}\/[a-z0-9-]+\/?$/i.test(lowerLink);
   }
 
   if (isKoenigBauerPressReleasesFeed(feed)) {
@@ -4572,6 +4587,78 @@ async function extractOfsSecurityPrintingInsightItems(feed, html) {
   return items;
 }
 
+function inferMuehlbauerNewsYearDate(link) {
+  const match = String(link || "").match(/\/news-events\/news\/(20\d{2})\//i);
+  return match ? new Date(`${match[1]}-01-01T12:00:00.000Z`) : null;
+}
+
+async function extractMuehlbauerNewsItems(feed, $, pageUrl) {
+  // This page also includes solution navigation. Only article-grid-link nodes
+  // represent actual news, and their URL has a four-digit publication year.
+  const candidates = [];
+  const seenLinks = new Set();
+
+  $("a.article-grid-link").toArray().forEach((anchor) => {
+    const node = $(anchor);
+    const link = resolveRelativeWebsiteLink(node.attr("href") || "", pageUrl);
+    if (!matchesWebsiteSourceCandidatePolicy(feed, link)) {
+      return;
+    }
+
+    const canonicalLink = canonicalizeUrl(link);
+    const title =
+      sanitizeFeedText(node.find("strong").first().text(), "") ||
+      sanitizeFeedText(node.text(), "");
+    if (!canonicalLink || !title || seenLinks.has(canonicalLink)) {
+      return;
+    }
+
+    seenLinks.add(canonicalLink);
+    candidates.push({
+      title,
+      link: canonicalLink,
+      date: inferMuehlbauerNewsYearDate(canonicalLink),
+    });
+  });
+
+  const items = [];
+  for (const candidate of candidates) {
+    const validated = await validateWebsiteArticleCandidate(candidate.link, candidate.title).catch((error) => {
+      console.warn(`Mühlbauer news validation failed for ${candidate.link}:`, error?.message || error);
+      return null;
+    });
+    if (!validated?.accepted) {
+      continue;
+    }
+    if (!articleMatchesSourceRelevanceRule(feed, {
+      title: validated.title || candidate.title,
+      link: candidate.link,
+      contentSnippet: validated.contentSnippet || "",
+    })) {
+      console.log(`Rejected Mühlbauer news ${candidate.link}: source-relevance-filter`);
+      continue;
+    }
+
+    items.push({
+      title: validated.title || candidate.title,
+      link: candidate.link,
+      // Mühlbauer exposes a year, but no day, on the listing or article page.
+      // Keep the year to avoid giving historic stories today's timestamp.
+      isoDate: validated.isoDate || (candidate.date ? candidate.date.toISOString() : ""),
+      image: validated.image || "",
+      contentSnippet: validated.contentSnippet || "",
+      author: "",
+      source: getSourceName(candidate.link),
+    });
+
+    if (items.length >= MUEHLBAUER_NEWS_MAX_CANDIDATES) {
+      break;
+    }
+  }
+
+  return items;
+}
+
 async function extractWebsiteItems(feed) {
   console.log(`Parsing website source ${feed.id} (${feed.rssUrl})`);
   const response = await fetchWebsiteHtml(feed.rssUrl);
@@ -4582,6 +4669,13 @@ async function extractWebsiteItems(feed) {
   if (isOfsSecurityPrintingInsightsFeed(feed)) {
     console.log(`Using dedicated website extractor: ofs-security-printing-insights for source ${feed.id}`);
     const items = await extractOfsSecurityPrintingInsightItems(feed, html);
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isMuehlbauerNewsFeed(feed)) {
+    console.log(`Using dedicated website extractor: muehlbauer-news for source ${feed.id}`);
+    const items = await extractMuehlbauerNewsItems(feed, $, fetchedUrl);
     console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
     return items;
   }

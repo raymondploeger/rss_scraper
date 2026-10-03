@@ -1046,9 +1046,15 @@ export const SOURCE_RELEVANCE_RULES = [
   },
   {
     name: "Mühlbauer Press",
-    sourceKeys: ["mühlbauer press", "muehlbauer press", "muehlbauer.de/company/company/press"],
+    sourceKeys: [
+      "mühlbauer press",
+      "muehlbauer press",
+      "muehlbauer.de/company/company/press",
+      "muehlbauer.de/news-events/news",
+    ],
     rejectExactPaths: [
       "/company/company/press",
+      "/news-events/news",
     ],
     rejectTitlePatterns: [
       "mühlbauer press",
