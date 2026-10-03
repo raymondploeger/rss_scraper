@@ -179,6 +179,10 @@ img {
   box-shadow: none;
 }
 
+.app-logo--temporarily-hidden {
+  display: none !important;
+}
+
 :root[data-theme="dark"] .app-logo {
   background: transparent;
   box-shadow: none;

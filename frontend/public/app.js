@@ -1593,7 +1593,7 @@ function normalizeFeedSourceTypeValue(value) {
   }
   return normalizedValue || "rss";
 }
-const APP_BUILD = "header-logo-hidden-287";
+const APP_BUILD = "muehlbauer-news-286";
 if (typeof window !== "undefined") {
   window.APP_BUILD = APP_BUILD;
 }
