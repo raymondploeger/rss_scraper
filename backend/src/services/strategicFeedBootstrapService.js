@@ -4,6 +4,7 @@ import {
   findFeedByRssUrl,
   updateFeed as updateFeedRecord,
 } from "../database/feedRepository.js";
+import { deleteArticlesByFeedId } from "../database/articleRepository.js";
 
 function buildGoogleNewsRssUrl(query) {
   const encodedQuery = encodeURIComponent(String(query || "").trim());
@@ -576,6 +577,14 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
 
 const RETIRED_STRATEGIC_FEEDS = [
   {
+    // securitydocumentworld.com now redirects to Identity Week and the generic
+    // website parser collects its category navigation as if it were articles.
+    // Identity Week Press Releases is the maintained, article-level source.
+    name: "Security Document World",
+    rssUrl: "https://www.securitydocumentworld.com/",
+    purgeArticles: true,
+  },
+  {
     name: "Bangko Sentral ng Pilipinas Media Releases",
     rssUrl: "https://www.bsp.gov.ph/_layouts/15/listfeed.aspx?List=9b0a2117-49d8-4e96-80ba-8651a0e3e17a&View=8c968884-887d-4d63-8c00-ba05ea3c2d93",
   },
@@ -742,6 +751,12 @@ export async function ensureStrategicFeeds() {
         lastStatus: "idle",
         lastError: null,
       });
+      if (definition.purgeArticles === true) {
+        const deletedArticles = await deleteArticlesByFeedId(existing.id);
+        console.log(
+          `[strategic-feeds] retired name=${definition.name} purgedArticles=${deletedArticles}`
+        );
+      }
       retired += 1;
     } catch (error) {
       failed += 1;
