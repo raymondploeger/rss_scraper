@@ -566,6 +566,30 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     sourceGroup: "Vendors",
     phase: "phase2-vendor-sources",
   },
+  {
+    name: "AlpVision News",
+    topic: "Shared Security Printing",
+    rssUrl: "https://alpvision.com/news/",
+    sourceType: "website",
+    sourceGroup: "Vendors",
+    phase: "phase2-vendor-sources",
+  },
+  {
+    name: "DERMALOG News",
+    topic: "Digital Identity & Biometrics",
+    rssUrl: "https://www.dermalog.com/news",
+    sourceType: "website",
+    sourceGroup: "Vendors",
+    phase: "phase2-vendor-sources",
+  },
+  {
+    name: "TOPPAN Security News",
+    topic: "Digital Identity & Biometrics",
+    rssUrl: "https://toppansecurity.com/news",
+    sourceType: "website",
+    sourceGroup: "Vendors",
+    phase: "phase2-vendor-sources",
+  },
 ];
 
 const RETIRED_STRATEGIC_FEEDS = [
