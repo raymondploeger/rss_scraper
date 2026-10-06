@@ -32,8 +32,6 @@ const ALERT_DEDUPE_STORAGE_KEY = "recentAlertKeys";
 const ALERT_ARTICLE_FILTER_STORAGE_KEY = "activeAlertArticleFilter";
 const ACTIVITY_LOG_STORAGE_KEY = "dashboardActivityLog";
 const FAVORITE_ARTICLES_STORAGE_KEY = "favoriteArticles";
-const EARLY_SIGNALS_STORAGE_KEY = "earlySignalsReviewInbox";
-const EARLY_SIGNALS_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const HIDDEN_NOISE_ARTICLES_STORAGE_KEY = "hiddenNoiseArticles";
 const NOISE_FEEDBACK_CLIENT_ID_STORAGE_KEY = "noiseFeedbackClientId";
 const NOISE_FEEDBACK_RULES_STORAGE_KEY = "noiseFeedbackRules";
@@ -65,18 +63,6 @@ const MAX_VISIBLE_SOURCES_IN_LIST = 100;
 const MAX_RSS_FEEDS = 300;
 const MAX_RSS_FEEDS_MESSAGE = `Maximum of ${MAX_RSS_FEEDS} RSS feeds reached`;
 const FEED_FORM_HELPER_TEXT = `Monitor up to ${MAX_RSS_FEEDS} RSS feeds and websites.`;
-const INITIAL_EARLY_SIGNALS = Object.freeze([
-  Object.freeze({
-    id: "reddit-banknotes-paraguay-2026-10-05",
-    title: "Banco Central del Paraguay presented its new banknotes",
-    summary: "New 2,000, 5,000 and 10,000 guaraní polymer notes; larger denominations remain paper and sizes are staggered.",
-    link: "https://mriguide.com/banco-central-del-paraguay-presented-its-new-banknotes/",
-    discoveredVia: "r/Banknotes",
-    evidence: "MRI Bankers' Guide · cites Banco Central del Paraguay",
-    discoveredAt: "2026-10-05T12:00:00.000Z",
-    status: "review",
-  }),
-]);
 
 function debugIntelligenceLog(label, payload) {
   if (DEBUG_INTELLIGENCE) {
@@ -7459,8 +7445,6 @@ const state = {
     explicitlyCleared: false,
   },
   favoriteArticles: [],
-  earlySignals: [],
-  earlySignalsShowDismissed: false,
   noiseFeedbackRecords: [],
   favoritesPanelCollapsed: true,
   filters: {
@@ -7627,10 +7611,6 @@ const elements = {
   favoritesPanelContent: document.getElementById("favorites-panel-content"),
   favoritesList: document.getElementById("favorites-list"),
   favoritesEmptyState: document.getElementById("favorites-empty-state"),
-  earlySignalsCount: document.getElementById("early-signals-count"),
-  earlySignalsList: document.getElementById("early-signals-list"),
-  earlySignalsEmpty: document.getElementById("early-signals-empty"),
-  earlySignalsShowDismissed: document.getElementById("early-signals-show-dismissed"),
   noiseFeedbackList: document.getElementById("noise-feedback-list"),
   noiseFeedbackEmpty: document.getElementById("noise-feedback-empty"),
   advancedFiltersToggle: document.getElementById("advanced-filters-toggle"),
@@ -26969,135 +26949,6 @@ function openNoiseFeedbackDialog(article) {
   elements.noiseFeedbackArticle.textContent = article.title || "Untitled article";
   elements.noiseFeedbackReason.value = "wrong_topic";
   elements.noiseFeedbackDialog.showModal();
-}
-
-function normalizeEarlySignalRecord(record) {
-  const id = String(record?.id || "").trim();
-  const title = String(record?.title || "").trim();
-  if (!id || !title) {
-    return null;
-  }
-  const discoveredAt = String(record?.discoveredAt || new Date().toISOString());
-  const discoveredAtMs = new Date(discoveredAt).getTime();
-  if (!Number.isFinite(discoveredAtMs) || Date.now() - discoveredAtMs > EARLY_SIGNALS_RETENTION_MS) {
-    return null;
-  }
-  return {
-    id,
-    title,
-    summary: String(record?.summary || "").trim(),
-    link: String(record?.link || "").trim(),
-    discoveredVia: String(record?.discoveredVia || "Reddit discovery").trim(),
-    evidence: String(record?.evidence || "External evidence required").trim(),
-    discoveredAt,
-    status: record?.status === "dismissed" || record?.status === "following_up" ? record.status : "review",
-  };
-}
-
-function saveEarlySignals() {
-  window.localStorage.setItem(EARLY_SIGNALS_STORAGE_KEY, JSON.stringify(state.earlySignals));
-}
-
-function loadEarlySignals() {
-  let stored = [];
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(EARLY_SIGNALS_STORAGE_KEY) || "[]");
-    stored = Array.isArray(parsed) ? parsed : [];
-  } catch {
-    stored = [];
-  }
-  const recordsById = new Map(
-    stored.map(normalizeEarlySignalRecord).filter(Boolean).map((record) => [record.id, record])
-  );
-  INITIAL_EARLY_SIGNALS.forEach((signal) => {
-    if (!recordsById.has(signal.id)) {
-      recordsById.set(signal.id, normalizeEarlySignalRecord(signal));
-    }
-  });
-  state.earlySignals = [...recordsById.values()]
-    .filter(Boolean)
-    .sort((left, right) => new Date(right.discoveredAt).getTime() - new Date(left.discoveredAt).getTime());
-  saveEarlySignals();
-}
-
-function setEarlySignalStatus(signalId, status) {
-  const signal = state.earlySignals.find((candidate) => candidate.id === signalId);
-  if (!signal) {
-    return;
-  }
-  signal.status = status;
-  if (status !== "dismissed" && state.earlySignalsShowDismissed) {
-    state.earlySignalsShowDismissed = false;
-  }
-  saveEarlySignals();
-  renderEarlySignalsPanel();
-}
-
-function renderEarlySignalsPanel() {
-  if (!elements.earlySignalsList || !elements.earlySignalsEmpty || !elements.earlySignalsCount || !elements.earlySignalsShowDismissed) {
-    return;
-  }
-  const dismissed = state.earlySignals.filter((signal) => signal.status === "dismissed");
-  const visibleSignals = state.earlySignals.filter((signal) =>
-    state.earlySignalsShowDismissed ? signal.status === "dismissed" : signal.status !== "dismissed"
-  );
-  const pendingCount = state.earlySignals.filter((signal) => signal.status === "review").length;
-  elements.earlySignalsCount.textContent = String(pendingCount);
-  elements.earlySignalsShowDismissed.hidden = dismissed.length === 0;
-  elements.earlySignalsShowDismissed.textContent = state.earlySignalsShowDismissed
-    ? "Show inbox"
-    : `Show dismissed (${dismissed.length})`;
-  elements.earlySignalsList.replaceChildren();
-  elements.earlySignalsList.hidden = visibleSignals.length === 0;
-  elements.earlySignalsEmpty.hidden = visibleSignals.length > 0;
-  elements.earlySignalsEmpty.textContent = state.earlySignalsShowDismissed
-    ? "No dismissed leads retained."
-    : "No early signals awaiting review.";
-  if (!visibleSignals.length) {
-    return;
-  }
-
-  const fragment = document.createDocumentFragment();
-  visibleSignals.forEach((signal) => {
-    const row = document.createElement("article");
-    row.className = "saved-article-item early-signal-item";
-
-    const copy = document.createElement("div");
-    copy.className = "saved-article-copy";
-    const label = document.createElement("span");
-    label.className = `early-signal-status early-signal-status--${signal.status}`;
-    label.textContent = signal.status === "following_up" ? "Following up" : signal.status === "dismissed" ? "Dismissed" : "Review required";
-    const link = document.createElement("a");
-    link.className = "saved-article-link";
-    link.href = signal.link || "#";
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    link.textContent = signal.title;
-    const summary = document.createElement("p");
-    summary.className = "early-signal-summary";
-    summary.textContent = signal.summary;
-    const meta = document.createElement("div");
-    meta.className = "saved-article-meta";
-    meta.textContent = [signal.discoveredVia, formatDate(signal.discoveredAt), signal.evidence].filter(Boolean).join(" • ");
-    copy.append(label, link, summary, meta);
-
-    const controls = document.createElement("div");
-    controls.className = "saved-article-controls early-signal-controls";
-    const followUp = document.createElement("button");
-    followUp.type = "button";
-    followUp.className = "ghost-button";
-    followUp.dataset.earlySignalFollowUp = signal.id;
-    followUp.textContent = signal.status === "following_up" ? "Return to review" : "Follow up";
-    const dismissOrRestore = document.createElement("button");
-    dismissOrRestore.type = "button";
-    dismissOrRestore.className = signal.status === "dismissed" ? "ghost-button" : "article-noise-button";
-    dismissOrRestore.dataset.earlySignalDismiss = signal.id;
-    dismissOrRestore.textContent = signal.status === "dismissed" ? "Restore" : "Dismiss";
-    controls.append(followUp, dismissOrRestore);
-    row.append(copy, controls);
-    fragment.appendChild(row);
-  });
-  elements.earlySignalsList.appendChild(fragment);
 }
 
 function createFavoriteArticleRecord(article, savedAt = new Date().toISOString()) {
@@ -62250,35 +62101,6 @@ function bindEvents() {
     });
   }
 
-  if (elements.earlySignalsShowDismissed) {
-    elements.earlySignalsShowDismissed.addEventListener("click", () => {
-      state.earlySignalsShowDismissed = !state.earlySignalsShowDismissed;
-      renderEarlySignalsPanel();
-    });
-  }
-
-  if (elements.earlySignalsList) {
-    elements.earlySignalsList.addEventListener("click", (event) => {
-      const target = event.target instanceof Element ? event.target : null;
-      const followUpButton = target?.closest("[data-early-signal-follow-up]");
-      if (followUpButton) {
-        const signal = state.earlySignals.find((candidate) => candidate.id === followUpButton.dataset.earlySignalFollowUp);
-        if (signal) {
-          setEarlySignalStatus(signal.id, signal.status === "following_up" ? "review" : "following_up");
-        }
-        return;
-      }
-      const dismissButton = target?.closest("[data-early-signal-dismiss]");
-      if (!dismissButton) {
-        return;
-      }
-      const signal = state.earlySignals.find((candidate) => candidate.id === dismissButton.dataset.earlySignalDismiss);
-      if (signal) {
-        setEarlySignalStatus(signal.id, signal.status === "dismissed" ? "review" : "dismissed");
-      }
-    });
-  }
-
   elements.feedFilter.addEventListener("change", (event) => {
     clearExactArticleFilter();
     const rawValue = String(event.target.value || "").trim();
@@ -63032,7 +62854,6 @@ async function init() {
   console.info("APP_BUILD", APP_BUILD);
   loadTheme();
   loadFavoriteArticles();
-  loadEarlySignals();
   state.favoritesPanelCollapsed = isFavoritesPanelCollapsed();
   loadActiveTags();
   loadKeywordFilters();
@@ -63052,7 +62873,6 @@ async function init() {
   syncFeedFormMode();
   bindEvents();
   renderSkeletons();
-  renderEarlySignalsPanel();
   syncNoiseKeywordVisibility();
   await loadSnapshot();
   await loadNoiseFeedbackRecords();
