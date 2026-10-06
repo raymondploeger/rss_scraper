@@ -2401,8 +2401,6 @@ export const SOURCE_RELEVANCE_RULES = [
     name: "AlpVision News",
     sourceKeys: ["alpvision news", "alpvision.com/news"],
     include: [
-      "anti-counterfeit",
-      "anti-counterfeiting",
       "banknote",
       "banknotes",
       "currency",
