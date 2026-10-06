@@ -40,6 +40,16 @@ Run at most once per day, with `--sort new`, `--time month`, and a limit of 10.
 - `"Muehlbauer"`
 - `"OFS" banknote`
 
+### Curated communities
+
+- `r/Banknotes` — useful for newly issued notes, reported counterfeits,
+  security-feature observations and industry prototypes.
+- `r/PassportPorn` — useful for newly issued passports, document-design
+  changes and observed security features.
+
+For these communities, collect only the newest ten posts. The same review
+gate below applies: most collection and travel posts should be rejected.
+
 ## Review gate
 
 A candidate is eligible for the review list only when all of the following
@@ -52,6 +62,9 @@ are true:
    product, technology, counterfeiting, breach, recall, regulation, or award.
 3. It is not principally a collector post, personal travel/visa question,
    legal-advice question, generic 3D-printing post, or an unsupported claim.
+   An exception is allowed when a collection post itself documents a new issue,
+   an official design change, a security feature, or a credible counterfeit
+   report that can be verified externally.
 4. A reviewer can identify an independent primary or reputable reporting
    source. That source, rather than the Reddit post, is what may later be
    added to the normal scraper.
