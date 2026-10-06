@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Security Industry Information</title>
     <link rel="icon" type="image/png" href="/images/favicon.png" />
-    <link rel="stylesheet" href="/styles.css?v=20261006-early-signals-1" />
+    <link rel="stylesheet" href="/styles.css?v=20261006-early-signals-2" />
   </head>
   <body>
     <div id="notification-region" class="notification-region" aria-live="polite" aria-label="Notifications"></div>
@@ -70,20 +70,6 @@
               <div id="favorites-empty-state" class="saved-articles-empty">Save articles to keep them handy.</div>
               <div id="favorites-list" class="saved-articles-list" aria-live="polite"></div>
             </div>
-          </section>
-
-          <section class="panel early-signals-panel" aria-label="Early signals review inbox">
-            <div class="panel-head saved-articles-head">
-              <div>
-                <p class="eyebrow">Early signals</p>
-                <h2>Review required</h2>
-                <p class="saved-articles-countline"><strong id="early-signals-count">0</strong> leads awaiting review</p>
-              </div>
-              <button id="early-signals-show-dismissed" class="ghost-button" type="button" hidden>Show dismissed</button>
-            </div>
-            <p class="early-signals-copy">Separate from Tracked sources and your intelligence feed. A lead needs external evidence before it can become a source.</p>
-            <div id="early-signals-empty" class="saved-articles-empty">No early signals awaiting review.</div>
-            <div id="early-signals-list" class="saved-articles-list" aria-live="polite"></div>
           </section>
 
           <section id="profile-builder-panel" class="panel profile-builder-panel">
@@ -256,6 +242,23 @@
               </div>
               <div id="feed-list" class="feed-list"></div>
             </div>
+          </section>
+          <section class="panel early-signals-panel" aria-label="Early signals review inbox">
+            <details class="early-signals-details">
+              <summary>
+                <span>
+                  <span class="eyebrow">Early signals</span>
+                  <strong>Review required</strong>
+                </span>
+                <span class="early-signals-summary"><strong id="early-signals-count">0</strong> to review</span>
+              </summary>
+              <div class="early-signals-content">
+                <p class="early-signals-copy">Separate from Tracked sources and your intelligence feed. A lead needs external evidence before it can become a source.</p>
+                <button id="early-signals-show-dismissed" class="ghost-button" type="button" hidden>Show dismissed</button>
+                <div id="early-signals-empty" class="saved-articles-empty">No early signals awaiting review.</div>
+                <div id="early-signals-list" class="saved-articles-list" aria-live="polite"></div>
+              </div>
+            </details>
           </section>
           <section class="panel noise-feedback-panel" aria-label="Noise feedback">
             <details class="noise-feedback-details">
@@ -546,6 +549,6 @@
       </form>
     </dialog>
 
-    <script type="module" src="/app.js?v=20261006-early-signals-1"></script>
+    <script type="module" src="/app.js?v=20261006-early-signals-2"></script>
   </body>
 </html>
