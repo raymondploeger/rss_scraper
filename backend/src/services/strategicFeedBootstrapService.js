@@ -210,13 +210,6 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase1",
   },
   {
-    name: "Security Document World",
-    topic: "Identity Documents",
-    rssUrl: "https://www.securitydocumentworld.com/",
-    sourceType: "website",
-    phase: "phase1",
-  },
-  {
     name: "ID & Secure Document News",
     topic: "Identity Documents",
     rssUrl: "https://securedocumentnews.com/news/",
