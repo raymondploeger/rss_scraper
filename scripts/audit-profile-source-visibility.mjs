@@ -103,7 +103,7 @@ try {
       }
     } while (currentPage < totalPages);
 
-    const feedChecks = await page.evaluate(async ({ feedNames, titles, requiredFeedNames }) => {
+    const feedChecks = await page.evaluate(async ({ feedNames, titles, requiredFeedNames, visibleSince }) => {
       const feeds = await fetch("/api/feeds").then((response) => response.json());
       const rendered = new Set(titles.map((title) => String(title || "").trim().toLowerCase()));
       return Promise.all(feedNames.map(async (feedName) => {
@@ -125,14 +125,25 @@ try {
         });
         const payload = await fetch(`/api/articles?${params}`).then((response) => response.json());
         const articles = payload.items || payload.articles || [];
-        const visibleTitles = articles
+        const inWindowArticles = articles.filter((article) => {
+          const publishedAt = new Date(article?.pubDate || article?.createdAt || 0).getTime();
+          return Number.isFinite(publishedAt) && publishedAt >= visibleSince;
+        });
+        const visibleTitles = inWindowArticles
           .filter((article) => rendered.has(String(article.title || "").trim().toLowerCase()))
           .map((article) => article.title);
         return {
           feedName,
           requiredVisible: requiredFeedNames.includes(feedName),
-          status: articles.length === 0 ? "no_articles" : visibleTitles.length ? "visible" : "missing_from_profile",
+          status: articles.length === 0
+            ? "no_articles"
+            : inWindowArticles.length === 0
+              ? "no_recent_articles"
+              : visibleTitles.length
+                ? "visible"
+                : "missing_from_profile",
           articleCount: articles.length,
+          inWindowArticleCount: inWindowArticles.length,
           visibleCount: visibleTitles.length,
         };
       }));
@@ -140,6 +151,7 @@ try {
       feedNames: profile.feeds,
       titles: renderedTitles,
       requiredFeedNames: Array.from(requiredVisibleFeeds),
+      visibleSince: Date.now() - (90 * 24 * 60 * 60 * 1000),
     });
 
     auditResults.push({
