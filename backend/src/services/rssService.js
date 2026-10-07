@@ -403,6 +403,14 @@ function isMuehlbauerNewsFeed(feed) {
   });
 }
 
+function isSecunetPressFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: ["https://www.secunet.com/en/about-us/press"],
+    urlFragments: ["secunet.com/en/about-us/press"],
+    exactNames: ["secunet Press"],
+  });
+}
+
 function isKoenigBauerPressReleasesFeed(feed) {
   return matchesWebsiteFeedSignature(feed, {
     exactUrls: [KOENIG_BAUER_PRESS_RELEASES_URL],
@@ -600,6 +608,7 @@ function shouldReplaceArticlesOnSync(feed) {
     isKinegramInsightsFeed(feed) ||
     isOfsSecurityPrintingInsightsFeed(feed) ||
     isMuehlbauerNewsFeed(feed) ||
+    isSecunetPressFeed(feed) ||
     isKoenigBauerPressReleasesFeed(feed) ||
     isAtlanticZeiserNewsFeed(feed) ||
     isBundesdruckereiPressReleasesFeed(feed) ||
@@ -4669,6 +4678,16 @@ async function extractWebsiteItems(feed) {
   if (isOfsSecurityPrintingInsightsFeed(feed)) {
     console.log(`Using dedicated website extractor: ofs-security-printing-insights for source ${feed.id}`);
     const items = await extractOfsSecurityPrintingInsightItems(feed, html);
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
+  if (isSecunetPressFeed(feed)) {
+    console.log(`Using dedicated website extractor: secunet-press for source ${feed.id}`);
+    const items = await extractStrictGovernmentListingItems(feed, $, fetchedUrl, {
+      linkPattern: /secunet\.com\/en\/about-us\/press\/article\/[a-z0-9-]+(?:$|[?#])/i,
+      maxItems: 20,
+    });
     console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
     return items;
   }
