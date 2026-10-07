@@ -590,6 +590,14 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     sourceGroup: "Vendors",
     phase: "phase2-vendor-sources",
   },
+  {
+    name: "secunet Press",
+    topic: "Digital Identity & Biometrics",
+    rssUrl: "https://www.secunet.com/en/about-us/press",
+    sourceType: "website",
+    sourceGroup: "Vendors",
+    phase: "phase2-vendor-sources",
+  },
 ];
 
 const RETIRED_STRATEGIC_FEEDS = [
