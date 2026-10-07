@@ -4718,7 +4718,7 @@ function getArticleDecisionReasonLabel(reason = "") {
     active_feed_match: "Shown in the current intelligence feed",
     profile_and_interest_refinement_match: "Matched your Start Profile and selected Profile Interests",
     explicit_profile_policy_content_match: "The article's content matched your Start Profile",
-    stored_profile_signal_match: "Article content and the source's profile affinity matched your Start Profile",
+    stored_profile_signal_match: "The stored backend classification matched your Start Profile after the quality checks passed",
     central_bank_profile_guard: "Not shown in Central Bank: the article does not meet the physical-banknote requirement",
     central_bank_profile_explicit_non_banknote_topic: "Not shown in Central Bank: Identity Documents topic without banknote context",
     central_bank_profile_wrong_domain: "Not shown in Central Bank: article belongs to another professional domain",
@@ -4747,6 +4747,49 @@ function getArticleDecisionEvidenceLabel(term) {
   return readableTerms[normalizedTerm] || normalizedTerm;
 }
 
+function getArticleDecisionBackendLabels(values = [], labels = {}) {
+  const uniqueValues = [...new Set(
+    (Array.isArray(values) ? values : [])
+      .map((value) => String(value || "").trim().toLowerCase())
+      .filter(Boolean)
+  )];
+  return uniqueValues
+    .map((value) => labels[value] || value.replace(/_/g, " "))
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+function getArticleDecisionBackendSignals(options = {}) {
+  const profileLabels = getArticleDecisionBackendLabels(
+    options.backendProfileSignal ? [options.backendProfileSignal] : [],
+    Object.fromEntries(Object.entries(PERSONAL_DASHBOARD_PROFILE_TEMPLATES)
+      .map(([id, template]) => [id, template.label]))
+  );
+  const domainLabels = getArticleDecisionBackendLabels(options.backendDomains, {
+    banknotes: "Banknotes",
+    identity_documents: "Identity Documents",
+    digital_identity_biometrics: "Digital Identity & Biometrics",
+    security_printing: "Security Printing",
+  });
+  const classificationLabels = getArticleDecisionBackendLabels(options.backendClassifications, {
+    banknotes: "Banknotes",
+    border_control: "Border Control",
+    identity_documents: "Identity Documents",
+    passports: "Passports",
+    id_cards: "ID Cards",
+    visas: "Visas & residence permits",
+    biometrics: "Biometrics",
+    digital_identity: "Digital identity",
+    identity_verification: "Identity verification",
+    security_features: "Security features",
+  });
+  return [
+    ...(profileLabels.length ? [`Backend profile signal: ${profileLabels.join(", ")}`] : []),
+    ...(domainLabels.length ? [`Backend domain: ${domainLabels.join(", ")}`] : []),
+    ...(classificationLabels.length ? [`Backend classification: ${classificationLabels.join(", ")}`] : []),
+  ];
+}
+
 function recordArticleDecisionReceipt(article, options = {}) {
   const selectedInterests = normalizePersonalDashboardInterests(options.selectedInterests || []);
   if (!article || options.passed === false) {
@@ -4768,12 +4811,14 @@ function recordArticleDecisionReceipt(article, options = {}) {
   const reason = String(options.reason || "profile_match");
   const policyAnchors = Array.isArray(options.matchedPolicyAnchors) ? options.matchedPolicyAnchors : [];
   const policyEvents = Array.isArray(options.matchedPolicyEvents) ? options.matchedPolicyEvents : [];
+  const backendSignals = getArticleDecisionBackendSignals(options);
   const signals = [
+    ...backendSignals,
     ...(policyAnchors[0] ? [`Profile topic: ${getArticleDecisionEvidenceLabel(policyAnchors[0])}`] : []),
     ...(policyEvents[0] ? [`Content signal: ${getArticleDecisionEvidenceLabel(policyEvents[0])}`] : []),
     ...matchedInterestLabels.slice(0, 2).map((label) => `Selected interest: ${label}`),
     sourceSignal.label,
-  ].filter(Boolean).slice(0, 4);
+  ].filter(Boolean).slice(0, 5);
   const profileDisplay = selectedInterests.length
     ? getPersonalDashboardProfileDisplay(selectedInterests)
     : { id: "", label: "Current intelligence feed" };
@@ -4789,6 +4834,9 @@ function recordArticleDecisionReceipt(article, options = {}) {
     matchedInterestIds: Object.freeze(matchedInterestIds.slice(0, 3)),
     matchedInterestLabels: Object.freeze(matchedInterestLabels),
     signals: Object.freeze(signals),
+    backendProfileSignal: String(options.backendProfileSignal || ""),
+    backendDomains: Object.freeze(Array.isArray(options.backendDomains) ? options.backendDomains.slice(0, 3) : []),
+    backendClassifications: Object.freeze(Array.isArray(options.backendClassifications) ? options.backendClassifications.slice(0, 3) : []),
     sourceName: sourceSignal.sourceName,
     sourceGroup: sourceSignal.sourceGroup,
   });
