@@ -157,4 +157,30 @@ assert.equal(getSourceRelevanceAssessment(ukviResidenceFeed, {
   contentSnippet: "Government policy for higher education sponsors.",
 }).accepted, false);
 
+const frontexFeed = {
+  name: "Frontex Newsroom",
+  rssUrl: "https://www.frontex.europa.eu/media-centre/news/news-release/feed",
+};
+assert.equal(getSourceRelevanceAssessment(frontexFeed, {
+  title: "Frontex supports border guards in detecting document fraud",
+  contentSnippet: "The operation strengthens document inspection at external borders.",
+}).accepted, true);
+assert.equal(getSourceRelevanceAssessment(frontexFeed, {
+  title: "Multipurpose Maritime Exercise in the Western Black Sea",
+  contentSnippet: "Coast guard partners took part in a maritime exercise.",
+}).accepted, false);
+
+const euLisaFeed = {
+  name: "eu-LISA Updates",
+  rssUrl: "https://www.eulisa.europa.eu/news-and-events",
+};
+assert.equal(getSourceRelevanceAssessment(euLisaFeed, {
+  title: "eu-LISA advances Entry/Exit System interoperability",
+  contentSnippet: "The EES supports biometric border management.",
+}).accepted, true);
+assert.equal(getSourceRelevanceAssessment(euLisaFeed, {
+  title: "eu-LISA Industry Roundtable puts data management in focus",
+  contentSnippet: "The Management Board discussed data management.",
+}).accepted, false);
+
 console.log("Profile classification regression checks passed.");

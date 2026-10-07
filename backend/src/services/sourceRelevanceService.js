@@ -1885,6 +1885,74 @@ export const SOURCE_RELEVANCE_RULES = [
     ],
   },
   {
+    // Frontex publishes wider institutional and maritime material alongside
+    // operational border intelligence. Require a concrete border, document or
+    // migration-enforcement signal before it can enter a profile candidate set.
+    name: "Frontex Newsroom",
+    sourceKeys: ["frontex newsroom", "frontex.europa.eu/media-centre/news"],
+    include: [
+      "border control",
+      "border guard",
+      "border guards",
+      "border management",
+      "border surveillance",
+      "document fraud",
+      "document inspection",
+      "entry/exit system",
+      "entry exit system",
+      "etias",
+      "identity check",
+      "migrant smuggling",
+      "passport",
+      "passports",
+      "travel document",
+      "travel documents",
+      "trafficking in human beings",
+    ],
+    exclude: [
+      "maritime exercise",
+      "coast guard",
+      "annual report",
+      "award ceremony",
+      "procurement notice",
+    ],
+  },
+  {
+    // eu-LISA's news page also contains governance and internal IT updates.
+    // Keep only systems and technology that underpin travel documents, border
+    // processing, visas or identity interoperability.
+    name: "eu-LISA Updates",
+    sourceKeys: ["eu-lisa updates", "eulisa.europa.eu/news-and-events"],
+    include: [
+      "biometric",
+      "biometrics",
+      "border control",
+      "border management",
+      "document inspection",
+      "entry/exit system",
+      "entry exit system",
+      "ees",
+      "etias",
+      "eurodac",
+      "identity interoperability",
+      "identity management",
+      "interoperability",
+      "passport",
+      "passports",
+      "schengen information system",
+      "travel document",
+      "travel documents",
+      "visa information system",
+    ],
+    exclude: [
+      "annual report",
+      "data management",
+      "industry roundtable",
+      "management board",
+      "procurement notice",
+    ],
+  },
+  {
     name: "VTT News and Stories",
     sourceKeys: ["vtt news and stories", "vttresearch.com/en/news-stories/news-and-stories"],
     rejectExactPaths: [
