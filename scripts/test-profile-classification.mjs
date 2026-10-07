@@ -121,6 +121,19 @@ assert.equal(getSourceRelevanceAssessment(identityWeekFeed, {
   contentSnippet: "The strategy covers cyberattacks and incident response across government systems.",
 }).accepted, false);
 
+const biometricUpdateFeed = {
+  name: "Biometric Update",
+  rssUrl: "https://www.biometricupdate.com/feed",
+};
+assert.equal(getSourceRelevanceAssessment(biometricUpdateFeed, {
+  title: "Indonesia seeks facial liveness technology for national digital ID",
+  contentSnippet: "A market consultation focuses on biometric liveness detection.",
+}).accepted, true);
+assert.equal(getSourceRelevanceAssessment(biometricUpdateFeed, {
+  title: "Consumer trust in autonomous agents sinks following security incidents",
+  contentSnippet: "A consumer survey considers AI agents and security guardrails.",
+}).accepted, false);
+
 const icaoDtcFeed = {
   name: "ICAO Digital Travel Credential",
   rssUrl: "https://news.google.com/rss/search?q=%22Digital%20Travel%20Credential%22",

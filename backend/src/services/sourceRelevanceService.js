@@ -51,6 +51,46 @@ export const SOURCE_RELEVANCE_RULES = [
     ],
   },
   {
+    // Biometric Update is a strong specialist publication, but it also covers
+    // adjacent consumer-tech, privacy and general AI stories. Require a
+    // concrete identity, credential or biometric signal rather than accepting
+    // every article from the publication.
+    name: "Biometric Update",
+    sourceKeys: ["biometric update", "biometricupdate.com"],
+    include: [
+      "age assurance",
+      "age verification",
+      "authentication",
+      "biometric",
+      "biometrics",
+      "credential",
+      "credentials",
+      "digital id",
+      "digital identity",
+      "digital wallet",
+      "document security",
+      "document verification",
+      "eidas",
+      "eudi wallet",
+      "facial recognition",
+      "identity proofing",
+      "identity verification",
+      "liveness",
+      "mobile driver license",
+      "mobile driver's license",
+      "passport",
+      "passports",
+      "verifiable credential",
+      "verifiable credentials",
+    ],
+    exclude: [
+      "autonomous agents",
+      "consumer survey",
+      "smart glasses",
+      "super app",
+    ],
+  },
+  {
     name: "ICAO Doc 9303",
     sourceKeys: ["icao doc 9303", "\"doc%209303\""],
     include: [
