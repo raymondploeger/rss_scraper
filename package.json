@@ -25,6 +25,7 @@
     "test:hong-kong-immigration-relevance": "node scripts/test-hong-kong-immigration-relevance.mjs",
     "test:hong-kong-immigration-thumbnails": "node scripts/test-hong-kong-immigration-thumbnails.mjs",
     "test:profile-classification": "node scripts/test-profile-classification.mjs",
+    "test:profile-regression": "node scripts/test-profile-regression-corpus.mjs",
     "audit:storage": "npm --prefix backend run audit:storage",
     "audit:crane-currency": "npm --prefix backend run audit:crane-currency",
     "db:storage-diagnostics": "npm --prefix backend run db:storage-diagnostics",

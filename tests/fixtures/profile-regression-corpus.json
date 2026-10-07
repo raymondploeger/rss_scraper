@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "purpose": "Known real articles used as a regression set for stored multi-label classification and profile policy evidence. They are intentionally source-specific so improvements for one profile cannot silently change another.",
+  "cases": [
+    {
+      "id": "secunet-ees-czech-border-police",
+      "article": {
+        "title": "Czech Border Police: secunet technology significantly speeds up processes after EES introduction",
+        "contentSnippet": "The Entry/Exit System supports border checks, travel-document inspection and traveller processing.",
+        "topic": "Digital Identity & Biometrics",
+        "source": "secunet.com",
+        "feedName": "secunet Press"
+      },
+      "expected": {
+        "domainsInclude": ["identity_documents"],
+        "classificationsInclude": ["border_control"],
+        "profileSignalsInclude": ["border_control", "vendors", "researcher"],
+        "profileSignalsExclude": ["central_bank", "security_printer"],
+        "profilePolicy": { "border_control": true, "central_bank": false }
+      }
+    },
+    {
+      "id": "ofs-ai-banknote-portrait",
+      "article": {
+        "title": "Can AI persuasively enhance a banknote portrait?",
+        "contentSnippet": "The method explores 3D intaglio workflows within banknote design and production.",
+        "topic": "Digital Identity & Biometrics",
+        "source": "ofs.ch",
+        "feedName": "OFS Security Printing Insights"
+      },
+      "expected": {
+        "domainsInclude": ["banknotes", "security_printing"],
+        "classificationsInclude": ["banknotes", "security_features"],
+        "profileSignalsInclude": ["central_bank", "security_printer", "vendors", "researcher"],
+        "profileSignalsExclude": ["border_control", "identity_verification"],
+        "profilePolicy": { "central_bank": true, "security_printer": true, "border_control": false }
+      }
+    },
+    {
+      "id": "identity-week-border-control-hardware",
+      "article": {
+        "title": "Automated border control hardware base to grow almost 50% by 2035",
+        "contentSnippet": "Biometric enrolment pods and eGates support EES document inspection at the border.",
+        "topic": "Identity Documents",
+        "source": "identityweek.net",
+        "feedName": "Identity Week Press Releases"
+      },
+      "expected": {
+        "domainsInclude": ["identity_documents", "digital_identity_biometrics"],
+        "classificationsInclude": ["border_control", "biometrics"],
+        "profileSignalsInclude": ["border_control", "identity_verification", "vendors", "researcher"],
+        "profileSignalsExclude": ["central_bank", "security_printer"],
+        "profilePolicy": { "border_control": true, "central_bank": false }
+      }
+    },
+    {
+      "id": "aamva-digital-trust-service",
+      "article": {
+        "title": "AAMVA Digital Trust Service Welcomes Kentucky",
+        "contentSnippet": "Kentucky joins the mobile driver license digital trust service.",
+        "topic": "Identity Documents",
+        "source": "AAMVA",
+        "feedName": "AAMVA News"
+      },
+      "expected": {
+        "domainsInclude": ["identity_documents", "digital_identity_biometrics"],
+        "classificationsInclude": ["id_cards", "digital_identity"],
+        "profileSignalsInclude": ["passport_authority", "identity_verification", "vendors", "researcher"],
+        "profileSignalsExclude": ["border_control", "central_bank", "security_printer"],
+        "profilePolicy": { "passport_authority": true, "identity_verification": true, "border_control": false }
+      }
+    },
+    {
+      "id": "european-commission-age-verification",
+      "article": {
+        "title": "Commission urges Member States to rollout EU age verification app",
+        "contentSnippet": "The service will work with European digital wallets.",
+        "topic": "Digital Identity & Biometrics",
+        "source": "European Commission",
+        "feedName": "European Commission Digital Identity News"
+      },
+      "expected": {
+        "domainsInclude": ["digital_identity_biometrics"],
+        "classificationsInclude": ["digital_identity", "identity_verification"],
+        "profileSignalsInclude": ["identity_verification", "vendors", "researcher"],
+        "profileSignalsExclude": ["border_control", "central_bank", "security_printer"],
+        "profilePolicy": { "identity_verification": true, "border_control": false }
+      }
+    },
+    {
+      "id": "bank-of-canada-vertical-bank-note",
+      "article": {
+        "title": "Bank of Canada unveils new vertical $20 bank note",
+        "contentSnippet": "The note includes a new security feature.",
+        "topic": "Banknotes",
+        "source": "Bank of Canada",
+        "feedName": "Bank of Canada News"
+      },
+      "expected": {
+        "domainsInclude": ["banknotes", "security_printing"],
+        "classificationsInclude": ["banknotes", "security_features"],
+        "profileSignalsInclude": ["central_bank", "security_printer", "vendors", "researcher"],
+        "profileSignalsExclude": ["border_control", "identity_verification"],
+        "profilePolicy": { "central_bank": true, "security_printer": false, "passport_authority": false }
+      }
+    },
+    {
+      "id": "muehlbauer-post-quantum-cryptography",
+      "article": {
+        "title": "SECURE POST-QUANTUM CRYPTOGRAPHY",
+        "contentSnippet": "A general cryptography article without a sector-specific operational claim.",
+        "topic": "Identity Documents",
+        "source": "muehlbauer.de",
+        "feedName": "Mühlbauer Press"
+      },
+      "expected": {
+        "domainsInclude": [],
+        "classificationsInclude": [],
+        "profileSignalsInclude": [],
+        "profileSignalsExclude": ["border_control", "central_bank", "identity_verification", "passport_authority", "security_printer"],
+        "profilePolicy": { "border_control": false, "identity_verification": false, "security_printer": false }
+      }
+    }
+  ]
+}
