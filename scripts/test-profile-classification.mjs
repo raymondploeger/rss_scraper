@@ -170,6 +170,41 @@ assert.equal(getSourceRelevanceAssessment(frontexFeed, {
   contentSnippet: "Coast guard partners took part in a maritime exercise.",
 }).accepted, false);
 
+const cbpFeed = {
+  name: "CBP Newsroom",
+  rssUrl: "https://www.cbp.gov/newsroom/media-releases/all",
+};
+assert.equal(getSourceRelevanceAssessment(cbpFeed, {
+  title: "CBP processes 1 billion travelers with facial biometrics",
+  contentSnippet: "The border agency verifies identity through facial biometrics.",
+}).accepted, true);
+assert.equal(getSourceRelevanceAssessment(cbpFeed, {
+  title: "Field Operations Academy seeks to maintain accreditation",
+  contentSnippet: "The academy trains officers serving at ports of entry.",
+}).accepted, false);
+
+const aamvaFeed = {
+  name: "AAMVA News",
+  rssUrl: "https://www.aamva.org/publications-news/aamva-news",
+};
+assert.equal(getSourceRelevanceAssessment(aamvaFeed, {
+  title: "AAMVA Digital Trust Service Welcomes Kentucky",
+  contentSnippet: "Kentucky joins the mobile driver license digital trust service.",
+}).accepted, true);
+assert.equal(getSourceRelevanceAssessment(aamvaFeed, {
+  title: "New Episode of TaskForce 7 Podcast",
+  contentSnippet: "AAMVA's identity management vice president hosts the latest podcast.",
+}).accepted, false);
+
+const irccFeed = {
+  name: "IRCC Passport and Digital Identity News",
+  rssUrl: "https://api.io.canada.ca/io-server/gc/news/en/v2",
+};
+assert.equal(getSourceRelevanceAssessment(irccFeed, {
+  title: "Le renouvellement de passeport devient accessible en ligne",
+  contentSnippet: "Le programme de passeport sécurisé simplifie les démarches.",
+}).accepted, true);
+
 const euLisaFeed = {
   name: "eu-LISA Updates",
   rssUrl: "https://www.eulisa.europa.eu/news-and-events",
