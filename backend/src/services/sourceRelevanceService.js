@@ -2705,6 +2705,9 @@ export const SOURCE_RELEVANCE_RULES = [
       "tobacco",
       "wine",
     ],
+    // The website parser can encounter the social-share target rather than
+    // the article URL. A LinkedIn login/share page is never an article.
+    rejectLinkPatterns: ["linkedin.com/"],
   },
   {
     name: "DERMALOG News",
@@ -2857,6 +2860,7 @@ function getArticlePath(article) {
 function findRejectedPageMatches(rule, article) {
   const articlePath = getArticlePath(article);
   const title = String(article?.title || "").trim().toLowerCase();
+  const link = String(article?.link || "").trim().toLowerCase();
   const rejectedExactPaths = (rule.rejectExactPaths || []).filter((path) =>
     articlePath === String(path || "").replace(/\/+$/, "").toLowerCase()
   );
@@ -2866,11 +2870,15 @@ function findRejectedPageMatches(rule, article) {
   const rejectedTitlePatterns = (rule.rejectTitlePatterns || []).filter((pattern) =>
     title.includes(String(pattern || "").toLowerCase())
   );
+  const rejectedLinkPatterns = (rule.rejectLinkPatterns || []).filter((pattern) =>
+    link.includes(String(pattern || "").toLowerCase())
+  );
 
   return [
     ...rejectedExactPaths.map((match) => `path:${match}`),
     ...rejectedPathPatterns.map((match) => `path-pattern:${match}`),
     ...rejectedTitlePatterns.map((match) => `title:${match}`),
+    ...rejectedLinkPatterns.map((match) => `link-pattern:${match}`),
   ];
 }
 

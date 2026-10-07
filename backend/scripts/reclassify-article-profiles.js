@@ -2,7 +2,7 @@ import { listArticles, updateArticle } from "../src/database/articleRepository.j
 import { listFeeds } from "../src/database/feedRepository.js";
 import { classifyArticleForIngest } from "../src/services/articleClassificationService.js";
 import { getSourceRelevanceAssessment } from "../src/services/sourceRelevanceService.js";
-import { resolveFeedProfileAffinities } from "../src/services/feedProfileAffinityService.js";
+import { getCuratedSourceProfileAffinities } from "../src/services/feedProfileAffinityService.js";
 
 const APPLY = process.argv.includes("--apply");
 const SOURCE_RELEVANT_ONLY = process.argv.includes("--source-relevant-only");
@@ -47,7 +47,14 @@ async function main() {
   }
   const profileAffinityFeedIds = PROFILE_AFFINITIES_ONLY && !selectedFeed
     ? feeds
-      .filter((feed) => resolveFeedProfileAffinities(feed).length)
+      // Topic-level affinities are intentionally broad. This maintenance mode
+      // is reserved for sources explicitly configured in the database or in
+      // the curated source policy, so generic discovery feeds are never
+      // included merely because they have a topic.
+      .filter((feed) =>
+        (Array.isArray(feed.profileAffinities) && feed.profileAffinities.length) ||
+        getCuratedSourceProfileAffinities(feed).length
+      )
       .map((feed) => feed.id)
     : [];
   if (PROFILE_AFFINITIES_ONLY && !selectedFeed && !profileAffinityFeedIds.length) {
