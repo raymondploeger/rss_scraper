@@ -42414,6 +42414,25 @@ function getStoredArticlePrimaryDomain(article) {
   return domains.length === 1 ? domains[0] : "";
 }
 
+function getStoredArticleProfileSignals(article) {
+  const supportedProfiles = new Set([
+    "border_control",
+    "central_bank",
+    "identity_verification",
+    "passport_authority",
+    "researcher",
+    "security_printer",
+    "vendors",
+  ]);
+  return Array.isArray(article?.profileSignals)
+    ? article.profileSignals.filter((profileId) => supportedProfiles.has(profileId))
+    : [];
+}
+
+function hasStoredArticleProfileSignal(article, profileId) {
+  return getStoredArticleProfileSignals(article).includes(profileId);
+}
+
 function getArticleDominantDomainMeasured(article) {
   return getCachedArticleValue(article, "personalDominantDomain", () => {
     const storedPrimaryDomain = getStoredArticlePrimaryDomain(article);
@@ -44394,6 +44413,9 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
   const multiDigitalIdentityProfileSelection = measurePersonalDashboardSegment("multiDigitalIdentityProfileSelection", () =>
     isMultiDigitalIdentityProfileSelection(selectedInterests)
   );
+  const profileTemplateId = measurePersonalDashboardSegment("profileTemplate", () =>
+    getMatchingPersonalDashboardTemplateId(selectedInterests)
+  );
 
   if (measurePersonalDashboardSegment("banknotesOnlySelection", () => isBanknotesOnlyPersonalSelection(selectedInterests))) {
     const decision = evaluateBanknoteProfileDecision({
@@ -44493,6 +44515,18 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
         "identity_document_quality_policy"
       );
     }
+  }
+
+  const backendProfileSignalIsAuthoritative =
+    profileBundleSelection &&
+    ["passport_authority", "border_control", "identity_verification"].includes(profileTemplateId) &&
+    hasStoredArticleProfileSignal(article, profileTemplateId);
+  if (backendProfileSignalIsAuthoritative) {
+    return finishPersonalDashboardTiming(true, "stored_profile_signal_match", {
+      backendProfileSignal: profileTemplateId,
+      backendClassifications: Array.isArray(article?.classifications) ? article.classifications : [],
+      backendDomains: Array.isArray(article?.domains) ? article.domains : [],
+    }, "backend_profile_signal");
   }
 
   // Main filters define the scope ("what document / market is this about?").
