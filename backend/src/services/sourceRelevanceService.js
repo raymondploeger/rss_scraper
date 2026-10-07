@@ -2520,8 +2520,6 @@ export const SOURCE_RELEVANCE_RULES = [
     ],
     exclude: [
       "annual report",
-      "career",
-      "careers",
       "cloud",
       "cyber resilience",
       "cyberattack",
