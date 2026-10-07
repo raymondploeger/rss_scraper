@@ -5,15 +5,34 @@ import { getSourceRelevanceAssessment } from "../src/services/sourceRelevanceSer
 
 const APPLY = process.argv.includes("--apply");
 const SOURCE_RELEVANT_ONLY = process.argv.includes("--source-relevant-only");
+const PROFILE_AFFINITIES_ONLY = process.argv.includes("--profile-affinities-only");
 const PAGE_SIZE = 100;
 const SAMPLE_LIMIT = 12;
 const FEED_ARGUMENT_INDEX = process.argv.indexOf("--feed");
-const FEED_NAME = FEED_ARGUMENT_INDEX >= 0
-  ? process.argv.slice(FEED_ARGUMENT_INDEX + 1).filter((value) => value !== "--apply").join(" ").trim()
+const FEED_ARGUMENT_VALUES = FEED_ARGUMENT_INDEX >= 0
+  ? process.argv.slice(FEED_ARGUMENT_INDEX + 1)
+  : [];
+const FEED_ARGUMENT_END_INDEX = FEED_ARGUMENT_VALUES.findIndex((value) => String(value).startsWith("--"));
+const FEED_NAME = FEED_ARGUMENT_VALUES
+  .slice(0, FEED_ARGUMENT_END_INDEX < 0 ? FEED_ARGUMENT_VALUES.length : FEED_ARGUMENT_END_INDEX)
+  .join(" ")
+  .trim();
+const SINCE_DAYS_ARGUMENT_INDEX = process.argv.indexOf("--since-days");
+const SINCE_DAYS = SINCE_DAYS_ARGUMENT_INDEX >= 0
+  ? Math.max(0, Number(process.argv[SINCE_DAYS_ARGUMENT_INDEX + 1] || 0))
+  : 0;
+const SINCE = SINCE_DAYS
+  ? new Date(Date.now() - (SINCE_DAYS * 24 * 60 * 60 * 1000)).toISOString()
   : "";
 
 function sameList(left = [], right = []) {
-  return JSON.stringify(left) === JSON.stringify(right);
+  // Domains, profile signals and classifications are multi-label sets. Their
+  // order may change when a rule receives a higher score, but that does not
+  // represent a classification change worth writing back to the database.
+  const normalize = (values) => Array.from(new Set(
+    (Array.isArray(values) ? values : []).map((value) => String(value || "").trim()).filter(Boolean)
+  )).sort();
+  return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right));
 }
 
 async function main() {
@@ -25,13 +44,26 @@ async function main() {
   if (FEED_NAME && !selectedFeed) {
     throw new Error(`No feed found named: ${FEED_NAME}`);
   }
+  const profileAffinityFeedIds = PROFILE_AFFINITIES_ONLY && !selectedFeed
+    ? feeds
+      .filter((feed) => Array.isArray(feed.profileAffinities) && feed.profileAffinities.length)
+      .map((feed) => feed.id)
+    : [];
+  if (PROFILE_AFFINITIES_ONLY && !selectedFeed && !profileAffinityFeedIds.length) {
+    throw new Error("No feeds have explicit profile affinities");
+  }
   const changes = [];
   let offset = 0;
   let inspected = 0;
   let skippedBySourceRelevance = 0;
 
   while (true) {
-    const articles = await listArticles(selectedFeed ? { feedId: selectedFeed.id } : {}, { limit: PAGE_SIZE, offset });
+    const filters = {
+      ...(selectedFeed ? { feedId: selectedFeed.id } : {}),
+      ...(!selectedFeed && PROFILE_AFFINITIES_ONLY ? { feedIds: profileAffinityFeedIds } : {}),
+      ...(SINCE ? { since: SINCE } : {}),
+    };
+    const articles = await listArticles(filters, { limit: PAGE_SIZE, offset });
     if (!articles.length) break;
     inspected += articles.length;
 
@@ -77,12 +109,18 @@ async function main() {
       }
     }
     offset += articles.length;
+    if (offset % (PAGE_SIZE * 10) === 0) {
+      console.log(`[reclassify] inspected=${inspected} changed=${changes.length} skippedBySourceRelevance=${skippedBySourceRelevance}`);
+    }
   }
 
   console.log(JSON.stringify({
     mode: APPLY ? "applied" : "dry-run",
     scope: selectedFeed?.name || "all feeds",
+    since: SINCE || null,
     sourceRelevantOnly: SOURCE_RELEVANT_ONLY,
+    profileAffinitiesOnly: PROFILE_AFFINITIES_ONLY,
+    eligibleFeedCount: profileAffinityFeedIds.length || (selectedFeed ? 1 : null),
     inspected,
     skippedBySourceRelevance,
     changed: changes.length,
