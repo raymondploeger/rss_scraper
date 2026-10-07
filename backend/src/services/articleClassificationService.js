@@ -15,7 +15,7 @@ const CLASSIFICATION_RULES = [
     tags: ["banknotes"],
     domains: ["banknotes"],
     profileSignals: ["central_bank", "vendors", "researcher"],
-    minScore: 2,
+    minScore: 1,
     sourceTerms: ["banknotenews", "notafilia"],
     terms: [
       "banknote",
@@ -246,28 +246,19 @@ function pickTopic(currentTopic, matchedRules, sourceText) {
     return "Banknotes";
   }
 
-  if (["identity_documents", "passports", "id_cards", "visas", "border_control"].some((id) => matchedIds.has(id))) {
-    return "Identity Documents";
-  }
-
-  if (["digital_identity", "biometrics", "identity_verification"].some((id) => matchedIds.has(id))) {
-    return "Digital Identity & Biometrics";
-  }
-
-  if (matchedIds.has("banknotes")) {
-    return "Banknotes";
-  }
-
-  if (matchedIds.has("security_features")) {
-    return "Shared Security Printing";
+  // Rules are ordered by their matched evidence score. Prefer that strongest
+  // classification for the card's single headline topic; the full multi-label
+  // domain set remains available for profile matching and explanation.
+  const strongestMatchedTopic = matchedRules.find((rule) => rule.topic)?.topic;
+  if (strongestMatchedTopic) {
+    return strongestMatchedTopic;
   }
 
   if (normalizedTopic && !GENERIC_SOURCE_TOPICS.has(normalizedTopic)) {
     return currentTopic;
   }
 
-  const firstMatchedTopic = matchedRules.find((rule) => rule.topic)?.topic;
-  return firstMatchedTopic || currentTopic || "General";
+  return currentTopic || "General";
 }
 
 export function classifyArticleForIngest({ title = "", contentSnippet = "", topic = "", source = "", feedName = "", link = "", keywords = [] } = {}) {

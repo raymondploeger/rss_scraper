@@ -36,6 +36,26 @@ const nonBorderDigitalIdentityArticle = classifyArticleForIngest({
 });
 assert.ok(!nonBorderDigitalIdentityArticle.profileSignals.includes("border_control"));
 
+const ofsBanknotePortrait = classifyArticleForIngest({
+  title: "Can AI persuasively enhance a banknote portrait?",
+  contentSnippet: "The method explores 3D intaglio workflows within banknote design and production.",
+  topic: "Digital Identity & Biometrics",
+  source: "ofs.ch",
+  feedName: "OFS Security Printing Insights",
+});
+assertIncludes(ofsBanknotePortrait.domains, "banknotes", "OFS banknote domain");
+assert.equal(ofsBanknotePortrait.topic, "Banknotes");
+assert.ok(!ofsBanknotePortrait.profileSignals.includes("border_control"));
+
+const muehlbauerPostQuantum = classifyArticleForIngest({
+  title: "SECURE POST-QUANTUM CRYPTOGRAPHY",
+  contentSnippet: "A Passenger Terminal World article discusses seamless travel and cryptography.",
+  topic: "Identity Documents",
+  source: "muehlbauer.de",
+  feedName: "Mühlbauer Press",
+});
+assert.ok(!muehlbauerPostQuantum.profileSignals.includes("border_control"));
+
 const printingArticle = classifyArticleForIngest({
   title: "New holographic security feature for banknote substrates",
   contentSnippet: "The security printing material improves counterfeit deterrence.",
