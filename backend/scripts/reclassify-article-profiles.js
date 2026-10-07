@@ -1,8 +1,10 @@
 import { listArticles, updateArticle } from "../src/database/articleRepository.js";
 import { listFeeds } from "../src/database/feedRepository.js";
 import { classifyArticleForIngest } from "../src/services/articleClassificationService.js";
+import { getSourceRelevanceAssessment } from "../src/services/sourceRelevanceService.js";
 
 const APPLY = process.argv.includes("--apply");
+const SOURCE_RELEVANT_ONLY = process.argv.includes("--source-relevant-only");
 const PAGE_SIZE = 100;
 const SAMPLE_LIMIT = 12;
 const FEED_ARGUMENT_INDEX = process.argv.indexOf("--feed");
@@ -26,6 +28,7 @@ async function main() {
   const changes = [];
   let offset = 0;
   let inspected = 0;
+  let skippedBySourceRelevance = 0;
 
   while (true) {
     const articles = await listArticles(selectedFeed ? { feedId: selectedFeed.id } : {}, { limit: PAGE_SIZE, offset });
@@ -34,6 +37,11 @@ async function main() {
 
     for (const article of articles) {
       const feed = feedsById.get(String(article.feedId));
+      const sourceRelevance = getSourceRelevanceAssessment(feed, article);
+      if (SOURCE_RELEVANT_ONLY && !sourceRelevance.accepted) {
+        skippedBySourceRelevance += 1;
+        continue;
+      }
       const classification = classifyArticleForIngest({
         title: article.title,
         contentSnippet: article.contentSnippet || article.summary,
@@ -74,7 +82,9 @@ async function main() {
   console.log(JSON.stringify({
     mode: APPLY ? "applied" : "dry-run",
     scope: selectedFeed?.name || "all feeds",
+    sourceRelevantOnly: SOURCE_RELEVANT_ONLY,
     inspected,
+    skippedBySourceRelevance,
     changed: changes.length,
     examples: changes.slice(0, SAMPLE_LIMIT),
   }, null, 2));

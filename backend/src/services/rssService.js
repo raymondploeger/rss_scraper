@@ -5287,6 +5287,24 @@ function normalizeItem(feed, item) {
   };
 }
 
+function logSourceClassificationAudit(feed, article, sourceRelevance) {
+  if (
+    !sourceRelevance?.rule ||
+    (Array.isArray(article?.classifications) && article.classifications.length > 0)
+  ) {
+    return;
+  }
+
+  // This runs within the existing scheduled refresh. It highlights the small
+  // class of accepted source-specific items that need a new classifier rule,
+  // without scanning the full historical article database on every poll.
+  console.warn(
+    `[classification-audit] accepted item has no profile classification ` +
+    `feed=${JSON.stringify(feed?.name || "")} rule=${JSON.stringify(sourceRelevance.rule.name || "")} ` +
+    `title=${JSON.stringify(article?.title || "")}`
+  );
+}
+
 async function upsertArticle(article) {
   const existing = await findArticleById(article.id);
   if (!existing) {
@@ -5633,6 +5651,8 @@ async function runFeedSync(feed) {
           );
           continue;
         }
+
+        logSourceClassificationAudit(feed, normalized, sourceRelevance);
 
         normalized = await enrichGoogleNewsThumbnailFromSourceUrl(normalized);
         normalized = await enrichDirectArticleThumbnail(feed, normalized);

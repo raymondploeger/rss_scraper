@@ -121,4 +121,30 @@ assert.equal(getSourceRelevanceAssessment(identityWeekFeed, {
   contentSnippet: "The strategy covers cyberattacks and incident response across government systems.",
 }).accepted, false);
 
+const icaoDtcFeed = {
+  name: "ICAO Digital Travel Credential",
+  rssUrl: "https://news.google.com/rss/search?q=%22Digital%20Travel%20Credential%22",
+};
+assert.equal(getSourceRelevanceAssessment(icaoDtcFeed, {
+  title: "Digital travel credentials to top 1.2B users by 2035",
+  contentSnippet: "The ICAO DTC standard supports digital travel credentials.",
+}).accepted, true);
+assert.equal(getSourceRelevanceAssessment(icaoDtcFeed, {
+  title: "Major overhaul in air travel as airports adopt facial recognition",
+  contentSnippet: "Airlines are changing check-in processes.",
+}).accepted, false);
+
+const ukviResidenceFeed = {
+  name: "UKVI BRP and BRC Guidance",
+  rssUrl: "https://www.gov.uk/search/news-and-communications?keywords=biometric+residence+permit",
+};
+assert.equal(getSourceRelevanceAssessment(ukviResidenceFeed, {
+  title: "Visa holders should switch to an eVisa now",
+  contentSnippet: "The eVisa replaces a biometric residence permit.",
+}).accepted, true);
+assert.equal(getSourceRelevanceAssessment(ukviResidenceFeed, {
+  title: "New measures to tackle student visa abuse",
+  contentSnippet: "Government policy for higher education sponsors.",
+}).accepted, false);
+
 console.log("Profile classification regression checks passed.");
