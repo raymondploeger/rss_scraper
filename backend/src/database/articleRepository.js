@@ -161,6 +161,9 @@ export async function createArticle(article) {
       summary: article.summary || "",
       summaryShort: article.summaryShort || "",
       keywords: Array.isArray(article.keywords) ? article.keywords : [],
+      domains: Array.isArray(article.domains) ? article.domains : [],
+      profileSignals: Array.isArray(article.profileSignals) ? article.profileSignals : [],
+      classifications: Array.isArray(article.classifications) ? article.classifications : [],
       contentSnippet: article.contentSnippet || "",
       author: article.author || "",
       clusterId: article.clusterId || null,
@@ -206,6 +209,15 @@ export async function updateArticle(id, updates) {
         : {}),
       ...(Object.prototype.hasOwnProperty.call(updates, "keywords")
         ? { keywords: Array.isArray(updates.keywords) ? updates.keywords : [] }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "domains")
+        ? { domains: Array.isArray(updates.domains) ? updates.domains : [] }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "profileSignals")
+        ? { profileSignals: Array.isArray(updates.profileSignals) ? updates.profileSignals : [] }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "classifications")
+        ? { classifications: Array.isArray(updates.classifications) ? updates.classifications : [] }
         : {}),
       ...(Object.prototype.hasOwnProperty.call(updates, "contentSnippet")
         ? { contentSnippet: updates.contentSnippet || "" }

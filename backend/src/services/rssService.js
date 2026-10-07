@@ -5270,6 +5270,9 @@ function normalizeItem(feed, item) {
     summaryShort: summaryShortFromArticle({ title, contentSnippet }),
     keywords,
     tags,
+    domains: classification.domains,
+    profileSignals: classification.profileSignals,
+    classifications: classification.classifications,
     contentSnippet,
     author: sanitizeFeedText(item.creator || item.author, ""),
     clusterId: null,
@@ -5310,6 +5313,9 @@ async function upsertArticle(article) {
   const existingKeywords = Array.isArray(existing.keywords) ? existing.keywords : [];
   const shouldRefreshClassification =
     (article.topic && article.topic !== existing.topic) ||
+    JSON.stringify(article.domains || []) !== JSON.stringify(existing.domains || []) ||
+    JSON.stringify(article.profileSignals || []) !== JSON.stringify(existing.profileSignals || []) ||
+    JSON.stringify(article.classifications || []) !== JSON.stringify(existing.classifications || []) ||
     (
       nextKeywords.length > 0 &&
       (
@@ -5350,6 +5356,9 @@ async function upsertArticle(article) {
       summary: article.summary || existing.summary,
       summaryShort: article.summaryShort || existing.summaryShort,
       keywords: nextKeywords.length ? nextKeywords : existing.keywords,
+      domains: article.domains?.length ? article.domains : existing.domains,
+      profileSignals: article.profileSignals?.length ? article.profileSignals : existing.profileSignals,
+      classifications: article.classifications?.length ? article.classifications : existing.classifications,
       fetchStatus: article.fetchStatus
     });
     broadcast("article:update", { type: "article:update", article: updated });
@@ -5889,6 +5898,15 @@ export async function processArticleBacklog(limit = 20) {
               : "",
         }
       );
+      const classification = classifyArticleForIngest({
+        title: article.title,
+        contentSnippet: enriched.contentSnippet || article.contentSnippet || article.summary,
+        topic: article.topic,
+        source: article.source,
+        feedName: article.feedName,
+        link: enriched.canonicalLink || article.canonicalLink || article.link,
+        keywords: article.keywords,
+      });
       const updatedArticle = await updateArticle(article.id, {
         thumbnail:
           article.thumbnail !== env.placeholderImage && !isGoogleNewsPlaceholderImage(article.thumbnail)
@@ -5898,7 +5916,14 @@ export async function processArticleBacklog(limit = 20) {
         contentSnippet: enriched.contentSnippet || article.contentSnippet,
         summary: article.summary || enriched.metaDescription || article.contentSnippet,
         summaryShort: article.summaryShort || summaryShortFromArticle(article),
-        keywords: article.keywords?.length ? article.keywords : inferKeywords([article.title, article.contentSnippet, article.topic], 6),
+        topic: classification.topic,
+        keywords: Array.from(new Set([
+          ...(article.keywords?.length ? article.keywords : inferKeywords([article.title, article.contentSnippet, article.topic], 6)),
+          ...classification.semanticTags,
+        ])),
+        domains: classification.domains,
+        profileSignals: classification.profileSignals,
+        classifications: classification.classifications,
         language: enriched.language || article.language,
         fetchStatus: enriched.fetchStatus
       });

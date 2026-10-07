@@ -10,6 +10,42 @@ const DEBUG_IMAGE_EXTRACTION =
   process.env.NODE_ENV !== "production" &&
   String(process.env.DEBUG_IMAGE_EXTRACTION || "").trim().toLowerCase() === "true";
 const IMAGE_SCRAPE_FAIL_FAST_STATUSES = new Set([401, 403, 406, 429, 503]);
+const ARTICLE_BOILERPLATE_PATTERNS = [
+  /we are looking for committed experts/i,
+  /all our offers and services/i,
+  /whether industry-specific or cross-industry/i,
+  /our portfolio ranges from specific products to general consulting services/i,
+  /projects at a glance we have already successfully implemented/i,
+  /cookie settings/i,
+  /privacy policy/i,
+  /subscribe to (our )?newsletter/i,
+];
+
+function extractCleanArticleSnippet($, fallback = "") {
+  const selectors = [
+    "article p",
+    "[class*='article'] p",
+    "[class*='press'] p",
+    "[class*='detail'] p",
+    ".entry-content p",
+    ".post-content p",
+    "main p",
+  ];
+
+  for (const selector of selectors) {
+    const paragraphs = $(selector)
+      .map((_, element) => sanitizeFeedText($(element).text(), ""))
+      .get()
+      .filter((paragraph) => paragraph.length >= 35)
+      .filter((paragraph) => !ARTICLE_BOILERPLATE_PATTERNS.some((pattern) => pattern.test(paragraph)));
+    const snippet = sanitizeFeedText(paragraphs.slice(0, 5).join(" "), "");
+    if (snippet.length >= 80) {
+      return snippet;
+    }
+  }
+
+  return sanitizeFeedText(fallback, fallback);
+}
 
 function isNotafiliaUrl(value) {
   try {
@@ -982,11 +1018,7 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
         $('meta[property="og:description"]').attr("content") ||
         $('meta[name="description"]').attr("content") ||
         "";
-      const articleText = $("article p")
-        .slice(0, 4)
-        .map((_, element) => $(element).text())
-        .get()
-        .join(" ");
+      const articleText = extractCleanArticleSnippet($, existingSnippet);
       const htmlLang = $("html").attr("lang") || "";
       const rejectedReasons = [];
       const metadataCandidates = [
@@ -1061,7 +1093,7 @@ export async function scrapeArticleMetadata(link, existingSnippet = "", articleT
         thumbnail: resolvedThumbnail,
         canonicalLink: canonicalizeUrl(normalizeText(canonicalUrl, activeUrl || scrapeTargetUrl || link)),
         metaDescription: sanitizeFeedText(metaDescription, ""),
-        contentSnippet: sanitizeFeedText(articleText || existingSnippet, existingSnippet),
+        contentSnippet: articleText,
         publishedAt,
         language: normalizeText(htmlLang, "unknown"),
         imageDiagnostic: diagnostic,

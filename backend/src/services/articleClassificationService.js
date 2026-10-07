@@ -13,6 +13,8 @@ const CLASSIFICATION_RULES = [
     id: "banknotes",
     topic: "Banknotes",
     tags: ["banknotes"],
+    domains: ["banknotes"],
+    profileSignals: ["central_bank", "vendors", "researcher"],
     minScore: 2,
     sourceTerms: ["banknotenews", "notafilia"],
     terms: [
@@ -34,6 +36,8 @@ const CLASSIFICATION_RULES = [
     id: "border_control",
     topic: "Identity Documents",
     tags: ["border control", "travel documents"],
+    domains: ["identity_documents"],
+    profileSignals: ["border_control", "vendors", "researcher"],
     terms: [
       "border control",
       "border crossing",
@@ -42,6 +46,20 @@ const CLASSIFICATION_RULES = [
       "preclearance",
       "entry/exit",
       "entry-exit",
+      "entry exit system",
+      "ees",
+      "etias",
+      "border police",
+      "grenzpolizei",
+      "grenzkontrolle",
+      "grenzschutz",
+      "grenzübergang",
+      "grenzuebergang",
+      "einreise ausreise system",
+      "einreise-ausreise-system",
+      "reisedokumentenkontrolle",
+      "document inspection",
+      "traveller processing",
       "eta",
       "electronic travel authorisation",
       "electronic travel authorization",
@@ -59,6 +77,8 @@ const CLASSIFICATION_RULES = [
     id: "identity_documents",
     topic: "Identity Documents",
     tags: ["identity documents", "secure documents"],
+    domains: ["identity_documents"],
+    profileSignals: ["passport_authority", "vendors", "researcher"],
     terms: [
       "identity document",
       "identity documents",
@@ -76,24 +96,32 @@ const CLASSIFICATION_RULES = [
     id: "passports",
     topic: "Identity Documents",
     tags: ["passports"],
+    domains: ["identity_documents"],
+    profileSignals: ["passport_authority", "border_control", "vendors", "researcher"],
     terms: ["passport", "passports", "travel document", "travel documents"],
   },
   {
     id: "id_cards",
     topic: "Identity Documents",
     tags: ["id cards"],
+    domains: ["identity_documents"],
+    profileSignals: ["passport_authority", "vendors", "researcher"],
     terms: ["id card", "id cards", "identity card", "identity cards", "national id"],
   },
   {
     id: "visas",
     topic: "Identity Documents",
     tags: ["visas"],
+    domains: ["identity_documents"],
+    profileSignals: ["passport_authority", "border_control", "vendors", "researcher"],
     terms: ["visa", "visas", "evisa", "e-visa", "residence permit", "residence permits"],
   },
   {
     id: "biometrics",
     topic: "Digital Identity & Biometrics",
     tags: ["biometrics", "biometric verification"],
+    domains: ["digital_identity_biometrics"],
+    profileSignals: ["identity_verification", "vendors", "researcher"],
     terms: [
       "biometric",
       "biometrics",
@@ -110,6 +138,8 @@ const CLASSIFICATION_RULES = [
     id: "digital_identity",
     topic: "Digital Identity & Biometrics",
     tags: ["digital identity"],
+    domains: ["digital_identity_biometrics"],
+    profileSignals: ["identity_verification", "vendors", "researcher"],
     terms: [
       "digital identity",
       "mobile id",
@@ -128,6 +158,8 @@ const CLASSIFICATION_RULES = [
     id: "identity_verification",
     topic: "Digital Identity & Biometrics",
     tags: ["identity verification", "authentication"],
+    domains: ["digital_identity_biometrics"],
+    profileSignals: ["identity_verification", "vendors", "researcher"],
     terms: [
       "identity verification",
       "id verification",
@@ -143,6 +175,8 @@ const CLASSIFICATION_RULES = [
     id: "security_features",
     topic: "Shared Security Printing",
     tags: ["security features"],
+    domains: ["security_printing"],
+    profileSignals: ["security_printer", "vendors", "researcher"],
     terms: [
       "security feature",
       "security features",
@@ -239,10 +273,14 @@ export function classifyArticleForIngest({ title = "", contentSnippet = "", topi
     .map((entry) => entry.rule);
 
   const semanticTags = Array.from(new Set(matchedRules.flatMap((rule) => rule.tags)));
+  const domains = Array.from(new Set(matchedRules.flatMap((rule) => rule.domains || [])));
+  const profileSignals = Array.from(new Set(matchedRules.flatMap((rule) => rule.profileSignals || [])));
 
   return {
     topic: pickTopic(topic, matchedRules, sourceText),
     semanticTags,
+    domains,
+    profileSignals,
     classifications: matchedRules.map((rule) => rule.id),
   };
 }

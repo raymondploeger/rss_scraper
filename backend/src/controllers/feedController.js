@@ -74,6 +74,25 @@ function normalizeManualSourceGroup(value) {
   return group;
 }
 
+const PROFILE_AFFINITY_IDS = new Set([
+  "central_bank",
+  "passport_authority",
+  "border_control",
+  "security_printer",
+  "vendors",
+  "identity_verification",
+  "researcher",
+]);
+
+function normalizeProfileAffinities(value) {
+  const values = Array.isArray(value) ? value : [];
+  const normalized = Array.from(new Set(values.map((entry) => String(entry || "").trim()).filter(Boolean)));
+  if (normalized.some((profileId) => !PROFILE_AFFINITY_IDS.has(profileId))) {
+    throw new Error("Choose valid profile affinities.");
+  }
+  return normalized;
+}
+
 async function parseFeedFromUrl(url) {
   try {
     return await parser.parseURL(url);
@@ -206,7 +225,7 @@ export async function listFeeds(request, response) {
 
 export async function createFeed(request, response) {
   try {
-    const { name, topic, rssUrl, sourceType = "rss", sourceGroup, isActive = true } = request.body;
+    const { name, topic, rssUrl, sourceType = "rss", sourceGroup, profileAffinities, isActive = true } = request.body;
     const normalizedSourceType = normalizeSourceType(sourceType);
 
     if (!rssUrl) {
@@ -233,6 +252,7 @@ export async function createFeed(request, response) {
       rssUrl: resolvedFeedUrl,
       sourceType: normalizedSourceType,
       sourceGroup: normalizeManualSourceGroup(sourceGroup),
+      profileAffinities: normalizeProfileAffinities(profileAffinities),
       isActive
     });
     broadcast("feed:update", { type: "feed:update", action: "created", feed: toFeedDto(feed) });
@@ -382,7 +402,7 @@ export async function batchImportGoogleAlertsFeeds(request, response) {
 export async function updateFeed(request, response) {
   try {
     const { feedId } = request.params;
-    const { name, topic, rssUrl, isActive, sourceType, sourceGroup } = request.body;
+    const { name, topic, rssUrl, isActive, sourceType, sourceGroup, profileAffinities } = request.body;
 
     const feed = await findFeedById(feedId);
     if (!feed) {
@@ -407,6 +427,9 @@ export async function updateFeed(request, response) {
     if (typeof sourceType === "string") nextValues.sourceType = normalizeSourceType(sourceType);
     if (Object.prototype.hasOwnProperty.call(request.body, "sourceGroup")) {
       nextValues.sourceGroup = normalizeManualSourceGroup(sourceGroup);
+    }
+    if (Object.prototype.hasOwnProperty.call(request.body, "profileAffinities")) {
+      nextValues.profileAffinities = normalizeProfileAffinities(profileAffinities);
     }
 
     const updatedFeed = await updateFeedRecord(feedId, nextValues);

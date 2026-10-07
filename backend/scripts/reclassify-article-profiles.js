@@ -1,0 +1,75 @@
+import { listArticles, updateArticle } from "../src/database/articleRepository.js";
+import { listFeeds } from "../src/database/feedRepository.js";
+import { classifyArticleForIngest } from "../src/services/articleClassificationService.js";
+
+const APPLY = process.argv.includes("--apply");
+const PAGE_SIZE = 100;
+const SAMPLE_LIMIT = 12;
+
+function sameList(left = [], right = []) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+async function main() {
+  const feeds = await listFeeds();
+  const feedsById = new Map(feeds.map((feed) => [String(feed.id), feed]));
+  const changes = [];
+  let offset = 0;
+  let inspected = 0;
+
+  while (true) {
+    const articles = await listArticles({}, { limit: PAGE_SIZE, offset });
+    if (!articles.length) break;
+    inspected += articles.length;
+
+    for (const article of articles) {
+      const feed = feedsById.get(String(article.feedId));
+      const classification = classifyArticleForIngest({
+        title: article.title,
+        contentSnippet: article.contentSnippet || article.summary,
+        topic: feed?.topic || article.topic,
+        source: article.source,
+        feedName: article.feedName,
+        link: article.canonicalLink || article.link,
+        keywords: article.keywords,
+      });
+      const changed =
+        article.topic !== classification.topic ||
+        !sameList(article.domains, classification.domains) ||
+        !sameList(article.profileSignals, classification.profileSignals) ||
+        !sameList(article.classifications, classification.classifications);
+      if (!changed) continue;
+
+      changes.push({
+        id: article.id,
+        title: article.title,
+        from: {
+          topic: article.topic,
+          domains: article.domains || [],
+          profileSignals: article.profileSignals || [],
+        },
+        to: {
+          topic: classification.topic,
+          domains: classification.domains,
+          profileSignals: classification.profileSignals,
+        },
+      });
+      if (APPLY) {
+        await updateArticle(article.id, classification);
+      }
+    }
+    offset += articles.length;
+  }
+
+  console.log(JSON.stringify({
+    mode: APPLY ? "applied" : "dry-run",
+    inspected,
+    changed: changes.length,
+    examples: changes.slice(0, SAMPLE_LIMIT),
+  }, null, 2));
+}
+
+main().catch((error) => {
+  console.error(error?.stack || error);
+  process.exitCode = 1;
+});

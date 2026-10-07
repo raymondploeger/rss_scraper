@@ -4718,6 +4718,7 @@ function getArticleDecisionReasonLabel(reason = "") {
     active_feed_match: "Shown in the current intelligence feed",
     profile_and_interest_refinement_match: "Matched your Start Profile and selected Profile Interests",
     explicit_profile_policy_content_match: "The article's content matched your Start Profile",
+    stored_profile_signal_match: "Article content and the source's profile affinity matched your Start Profile",
     central_bank_profile_guard: "Not shown in Central Bank: the article does not meet the physical-banknote requirement",
     central_bank_profile_explicit_non_banknote_topic: "Not shown in Central Bank: Identity Documents topic without banknote context",
     central_bank_profile_wrong_domain: "Not shown in Central Bank: article belongs to another professional domain",
@@ -5886,6 +5887,29 @@ function getActiveProfilePolicyEvidenceAssessment(
     article,
     getMatchingPersonalDashboardTemplateId(selectedInterests)
   );
+}
+
+function getStoredProfileSignalAssessment(
+  article,
+  selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)
+) {
+  const profileId = getMatchingPersonalDashboardTemplateId(selectedInterests);
+  if (!profileId) {
+    return { applies: false, passed: false, profileId: "" };
+  }
+  const feed = resolveFeedByIdentity(article?.feedId);
+  const profileSignals = Array.isArray(article?.profileSignals) ? article.profileSignals : [];
+  const sourceAffinities = Array.isArray(feed?.profileAffinities) ? feed.profileAffinities : [];
+  const articleMatched = profileSignals.includes(profileId);
+  const sourceMatched = sourceAffinities.includes(profileId);
+  return {
+    applies: articleMatched || sourceMatched,
+    passed: articleMatched && sourceMatched,
+    profileId,
+    articleMatched,
+    sourceMatched,
+    matchedSignals: articleMatched ? [profileId] : [],
+  };
 }
 
 function getSourceProfileAffinityFeedsForSelectedInterests(selectedInterests) {
@@ -44296,6 +44320,16 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
   }
   if (vendorsProfileAssessment.applies && vendorsProfileAssessment.passed) {
     return finishPersonalDashboardTiming(true, "vendors_profile_guard_passed", {}, "professional_guard");
+  }
+
+  const storedProfileSignalAssessment = measurePersonalDashboardSegment("storedProfileSignalEvidence", () =>
+    getStoredProfileSignalAssessment(article, selectedInterests)
+  );
+  if (storedProfileSignalAssessment.passed) {
+    return finishPersonalDashboardTiming(true, "stored_profile_signal_match", {
+      matchedPolicyAnchors: [`Classified for ${getProfilePolicyDefinition(storedProfileSignalAssessment.profileId)?.label || storedProfileSignalAssessment.profileId}`],
+      matchedPolicyEvents: ["Article content and source affinity agreed"],
+    }, "stored_profile_signal");
   }
 
   if (measurePersonalDashboardSegment("sharedSecurityOnlySelection", () => isSharedSecurityOnlyPersonalSelection(selectedInterests))) {

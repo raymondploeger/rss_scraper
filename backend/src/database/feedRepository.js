@@ -85,6 +85,7 @@ export async function createFeed(feed) {
       rssUrl: feed.rssUrl,
       sourceType: feed.sourceType || "rss",
       sourceGroup: feed.sourceGroup || null,
+      profileAffinities: Array.isArray(feed.profileAffinities) ? feed.profileAffinities : [],
       sourceFallbackImage: feed.sourceFallbackImage || null,
       isActive: feed.isActive !== false,
       lastFetchedAt: feed.lastFetchedAt ? new Date(toIsoString(feed.lastFetchedAt, new Date().toISOString())) : null,
@@ -112,6 +113,9 @@ export async function updateFeed(id, updates) {
       ...(typeof updates.rssUrl === "string" ? { rssUrl: updates.rssUrl } : {}),
       ...(typeof updates.sourceType === "string" ? { sourceType: updates.sourceType } : {}),
       ...(Object.prototype.hasOwnProperty.call(updates, "sourceGroup") ? { sourceGroup: updates.sourceGroup || null } : {}),
+      ...(Object.prototype.hasOwnProperty.call(updates, "profileAffinities")
+        ? { profileAffinities: Array.isArray(updates.profileAffinities) ? updates.profileAffinities : [] }
+        : {}),
       ...(Object.prototype.hasOwnProperty.call(updates, "sourceFallbackImage")
         ? { sourceFallbackImage: updates.sourceFallbackImage || null }
         : {}),

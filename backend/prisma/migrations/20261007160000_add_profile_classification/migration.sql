@@ -1,0 +1,7 @@
+ALTER TABLE "feeds"
+  ADD COLUMN "profileAffinities" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];
+
+ALTER TABLE "articles"
+  ADD COLUMN "domains" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  ADD COLUMN "profileSignals" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  ADD COLUMN "classifications" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];

@@ -14,6 +14,7 @@ model Feed {
   topic             String
   sourceType        String    @default("rss")
   sourceGroup       String?
+  profileAffinities String[]  @default([])
   sourceFallbackImage String?
   isActive          Boolean   @default(true)
   lastFetchedAt     DateTime?
@@ -47,6 +48,9 @@ model Article {
   contentSnippet   String    @default("")
   author           String    @default("")
   keywords         String[]  @default([])
+  domains          String[]  @default([])
+  profileSignals   String[]  @default([])
+  classifications  String[]  @default([])
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   hash             String    @unique

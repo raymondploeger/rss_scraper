@@ -356,6 +356,7 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     rssUrl: "https://www.muehlbauer.de/news-events/news/",
     sourceType: "website",
     sourceGroup: "Vendors",
+    profileAffinities: ["vendors", "passport_authority", "border_control", "security_printer"],
     phase: "phase2-vendor-sources",
   },
   {
@@ -532,6 +533,7 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     rssUrl: "https://www.signe.es/feed",
     sourceType: "rss",
     sourceGroup: "Vendors",
+    profileAffinities: ["vendors", "security_printer", "passport_authority"],
     phase: "phase2-vendor-sources",
   },
   {
@@ -540,6 +542,7 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     rssUrl: "https://ofs.ch/en/insights",
     sourceType: "website",
     sourceGroup: "Vendors",
+    profileAffinities: ["vendors", "security_printer", "central_bank", "passport_authority"],
     phase: "phase2-vendor-sources",
   },
   {
@@ -548,6 +551,7 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     rssUrl: "https://jura.hu/feed/",
     sourceType: "rss",
     sourceGroup: "Vendors",
+    profileAffinities: ["vendors", "security_printer"],
     phase: "phase2-vendor-sources",
   },
   {
@@ -556,6 +560,7 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     rssUrl: "https://banknote-solutions.koenig-bauer.com/en/feed.rss",
     sourceType: "rss",
     sourceGroup: "Vendors",
+    profileAffinities: ["vendors", "security_printer", "central_bank"],
     phase: "phase2-vendor-sources",
   },
   {
@@ -564,6 +569,7 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     rssUrl: "https://www.staatsdruckerei.at/en/osd-news/feed",
     sourceType: "rss",
     sourceGroup: "Vendors",
+    profileAffinities: ["vendors", "passport_authority", "identity_verification"],
     phase: "phase2-vendor-sources",
   },
   {
@@ -572,6 +578,7 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     rssUrl: "https://alpvision.com/news/",
     sourceType: "website",
     sourceGroup: "Vendors",
+    profileAffinities: ["vendors", "security_printer", "identity_verification"],
     phase: "phase2-vendor-sources",
   },
   {
@@ -580,6 +587,7 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     rssUrl: "https://www.dermalog.com/news",
     sourceType: "website",
     sourceGroup: "Vendors",
+    profileAffinities: ["vendors", "identity_verification", "border_control"],
     phase: "phase2-vendor-sources",
   },
   {
@@ -588,6 +596,7 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     rssUrl: "https://toppansecurity.com/news",
     sourceType: "website",
     sourceGroup: "Vendors",
+    profileAffinities: ["vendors", "passport_authority", "security_printer", "identity_verification"],
     phase: "phase2-vendor-sources",
   },
   {
@@ -596,6 +605,7 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     rssUrl: "https://www.secunet.com/en/about-us/press",
     sourceType: "website",
     sourceGroup: "Vendors",
+    profileAffinities: ["vendors", "border_control", "identity_verification"],
     phase: "phase2-vendor-sources",
   },
 ];
@@ -805,6 +815,9 @@ export async function ensureStrategicFeeds() {
           ...(Object.prototype.hasOwnProperty.call(definition, "sourceGroup")
             ? { sourceGroup: definition.sourceGroup }
             : {}),
+          ...(Object.prototype.hasOwnProperty.call(definition, "profileAffinities")
+            ? { profileAffinities: definition.profileAffinities }
+            : {}),
           isActive: true,
         });
         feedsNeedingInitialSync.push(createdFeed);
@@ -822,6 +835,8 @@ export async function ensureStrategicFeeds() {
         existing.sourceType !== definition.sourceType ||
         (Object.prototype.hasOwnProperty.call(definition, "sourceGroup") &&
           existing.sourceGroup !== definition.sourceGroup) ||
+        (Object.prototype.hasOwnProperty.call(definition, "profileAffinities") &&
+          JSON.stringify(existing.profileAffinities || []) !== JSON.stringify(definition.profileAffinities)) ||
         existing.isActive !== true;
 
       if (!needsUpdate) {
@@ -842,6 +857,9 @@ export async function ensureStrategicFeeds() {
         sourceType: definition.sourceType,
         ...(Object.prototype.hasOwnProperty.call(definition, "sourceGroup")
           ? { sourceGroup: definition.sourceGroup }
+          : {}),
+        ...(Object.prototype.hasOwnProperty.call(definition, "profileAffinities")
+          ? { profileAffinities: definition.profileAffinities }
           : {}),
         isActive: true,
       });

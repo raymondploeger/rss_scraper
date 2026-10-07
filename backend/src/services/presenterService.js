@@ -1,4 +1,5 @@
 import { env } from "../config/env.js";
+import { resolveFeedProfileAffinities } from "./feedProfileAffinityService.js";
 import {
   getCatalogEntryCountry,
   getCatalogEntryMode,
@@ -93,6 +94,7 @@ export function toFeedDto(feed) {
     dmvMode: dmvCatalogEntry ? getCatalogEntryMode(dmvCatalogEntry) : null,
     sourceType: feed.sourceType || "rss",
     sourceGroup: feed.sourceGroup || null,
+    profileAffinities: resolveFeedProfileAffinities(feed),
     sourceFallbackImage: feed.sourceFallbackImage || null,
     isActive: feed.isActive !== false,
     lastFetchedAt: feed.lastFetchedAt || null,
@@ -119,6 +121,9 @@ export function toArticleDto(article) {
     summary: article.summary || "",
     summaryShort: article.summaryShort || "",
     keywords: Array.isArray(article.keywords) ? article.keywords : [],
+    domains: Array.isArray(article.domains) ? article.domains : [],
+    profileSignals: Array.isArray(article.profileSignals) ? article.profileSignals : [],
+    classifications: Array.isArray(article.classifications) ? article.classifications : [],
     tags: Array.isArray(article.tags)
       ? article.tags
       : Array.isArray(article.keywords)
