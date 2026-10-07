@@ -2,6 +2,7 @@ import { listArticles, updateArticle } from "../src/database/articleRepository.j
 import { listFeeds } from "../src/database/feedRepository.js";
 import { classifyArticleForIngest } from "../src/services/articleClassificationService.js";
 import { getSourceRelevanceAssessment } from "../src/services/sourceRelevanceService.js";
+import { resolveFeedProfileAffinities } from "../src/services/feedProfileAffinityService.js";
 
 const APPLY = process.argv.includes("--apply");
 const SOURCE_RELEVANT_ONLY = process.argv.includes("--source-relevant-only");
@@ -46,11 +47,11 @@ async function main() {
   }
   const profileAffinityFeedIds = PROFILE_AFFINITIES_ONLY && !selectedFeed
     ? feeds
-      .filter((feed) => Array.isArray(feed.profileAffinities) && feed.profileAffinities.length)
+      .filter((feed) => resolveFeedProfileAffinities(feed).length)
       .map((feed) => feed.id)
     : [];
   if (PROFILE_AFFINITIES_ONLY && !selectedFeed && !profileAffinityFeedIds.length) {
-    throw new Error("No feeds have explicit profile affinities");
+    throw new Error("No feeds have profile affinities");
   }
   const changes = [];
   let offset = 0;
