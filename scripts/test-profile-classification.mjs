@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { classifyArticleForIngest } from "../backend/src/services/articleClassificationService.js";
+import { getSourceRelevanceAssessment } from "../backend/src/services/sourceRelevanceService.js";
 import { evaluateProfilePolicyEvidence } from "../frontend/public/profile-policies.js";
 
 function assertIncludes(values, expected, label) {
@@ -71,5 +72,22 @@ const borderPolicy = evaluateProfilePolicyEvidence({
   tags: ["border control", "travel documents"],
 }, "border_control");
 assert.equal(borderPolicy.passed, true);
+
+const identityWeekFeed = {
+  name: "Identity Week Press Releases",
+  rssUrl: "https://identityweek.net/category/press-releases/feed/",
+};
+assert.equal(getSourceRelevanceAssessment(identityWeekFeed, {
+  title: "Automated border control hardware base to grow almost 50% by 2035",
+  contentSnippet: "Biometric enrolment pods and eGates support document checks at the border.",
+}).accepted, true);
+assert.equal(getSourceRelevanceAssessment(identityWeekFeed, {
+  title: "Bionomad: Live enrollments all show. Meet them on booth 626! #IDWA2026",
+  contentSnippet: "Fingerprint, iris and face credentials are demonstrated at the show.",
+}).accepted, false);
+assert.equal(getSourceRelevanceAssessment(identityWeekFeed, {
+  title: "California launches next phase of state cybersecurity plan as AI changes threat landscape",
+  contentSnippet: "The strategy covers cyberattacks and incident response across government systems.",
+}).accepted, false);
 
 console.log("Profile classification regression checks passed.");

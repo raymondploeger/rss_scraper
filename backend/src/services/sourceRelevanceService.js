@@ -1,5 +1,56 @@
 export const SOURCE_RELEVANCE_RULES = [
   {
+    name: "Identity Week Press Releases",
+    sourceKeys: [
+      "identity week press releases",
+      "identityweek.net/category/press-releases",
+    ],
+    // Identity Week also publishes general cyber-security and event promotion.
+    // This feed is intentionally limited to articles with a concrete identity,
+    // credential, document, biometric, verification or border-control focus.
+    include: [
+      "age verification",
+      "authentication",
+      "biometric",
+      "biometrics",
+      "border control",
+      "credential",
+      "credentials",
+      "deepfake",
+      "digital id",
+      "digital identity",
+      "document clearing",
+      "document fraud",
+      "document processing",
+      "e-gate",
+      "egate",
+      "eidas",
+      "electronic identity",
+      "facial recognition",
+      "fraud prevention",
+      "identity",
+      "identity document",
+      "identity verification",
+      "id scanner",
+      "liveness",
+      "passport",
+      "passports",
+      "secure document",
+      "travel document",
+      "travel documents",
+      "verification",
+    ],
+    // A booth invitation is a sales promotion, even when it mentions a genuine
+    // biometric product.  Keep the terms narrow so substantive event reporting
+    // remains eligible when it has one of the identity terms above.
+    exclude: [
+      "booth",
+      "idwa",
+      "meet them on",
+      "meet us at",
+    ],
+  },
+  {
     name: "SIGNE Security Documents",
     sourceKeys: ["signe security documents", "signe.es/feed"],
     include: [
