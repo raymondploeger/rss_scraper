@@ -2485,7 +2485,7 @@ export const SOURCE_RELEVANCE_RULES = [
     sourceKeys: ["secunet press", "secunet.com/en/about-us/press"],
     rejectExactPaths: ["/en/about-us/press", "/en/about-us/news-events"],
     rejectPagePatterns: ["/en/industries/"],
-    rejectTitlePatterns: ["news & events"],
+    rejectTitlePatterns: ["change in management", "news & events"],
     include: [
       "biometric",
       "biometrics",
@@ -2529,7 +2529,6 @@ export const SOURCE_RELEVANCE_RULES = [
       "dividend",
       "earnings",
       "financial",
-      "management",
       "order intake",
       "quarter",
     ],
