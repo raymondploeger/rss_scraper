@@ -36,6 +36,12 @@ assert.equal(evaluateProfilePolicyEvidence({
 }, "passport_authority").passed, true);
 assert.equal(evaluateProfilePolicyEvidence({ title: "Irregular border crossings decline after operation" }, "border_control").passed, true);
 assert.equal(evaluateProfilePolicyEvidence({ title: "Post-Quantum OpenID Connect specification" }, "identity_verification").passed, true);
+assert.equal(evaluateProfilePolicyEvidence({
+  title: "Commission urges Member States to rollout EU age verification app",
+}, "identity_verification").passed, true);
+assert.equal(evaluateProfilePolicyEvidence({
+  title: "AAMVA Welcomes Iowa to the Digital Trust Service",
+}, "identity_verification").passed, true);
 assert.equal(evaluateIdentityWeekIdentityVerificationQualityDecision({
   active: true,
   article: {
