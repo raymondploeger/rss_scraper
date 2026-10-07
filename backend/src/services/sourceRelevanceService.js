@@ -65,6 +65,7 @@ export const SOURCE_RELEVANCE_RULES = [
       "passport standards",
     ],
     exclude: ["hotel", "holiday", "tourism", "travel deals"],
+    excludeSources: ["news.google.com", "bing.com", "head topics", "msn"],
   },
   {
     name: "ICAO Digital Travel Credential",
@@ -78,6 +79,17 @@ export const SOURCE_RELEVANCE_RULES = [
       "digital travel documents",
     ],
     exclude: ["hotel", "holiday", "tourism", "travel deals"],
+    excludeSources: [
+      "news.google.com",
+      "bing.com",
+      "applemagazine",
+      "head topics",
+      "msn",
+      "outlook traveller",
+      "travel and tour world",
+      "travel daily media",
+      "travel wires",
+    ],
   },
   {
     name: "ICAO PKD",
@@ -91,6 +103,7 @@ export const SOURCE_RELEVANCE_RULES = [
       "csca",
     ],
     exclude: ["hotel", "holiday", "tourism", "travel deals"],
+    excludeSources: ["news.google.com", "bing.com", "head topics", "msn"],
   },
   {
     name: "ICAO Traveller Identification Programme",
@@ -103,6 +116,7 @@ export const SOURCE_RELEVANCE_RULES = [
       "traveler identification",
     ],
     exclude: ["hotel", "holiday", "tourism", "travel deals"],
+    excludeSources: ["news.google.com", "bing.com", "head topics", "msn"],
   },
   {
     name: "Dutch IND Residence Updates",
@@ -2773,6 +2787,7 @@ export function getSourceRelevanceAssessment(feed, article) {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+  const publisher = String(article?.source || article?.sourceName || "").toLowerCase();
   const rejectedPageMatches = findRejectedPageMatches(rule, article);
   if (rejectedPageMatches.length) {
     return {
@@ -2782,6 +2797,18 @@ export function getSourceRelevanceAssessment(feed, article) {
       excludedTerms: findSourceRuleMatches(articleText, rule.exclude),
       rejectedPageMatches,
       reason: `rejected-page:${rejectedPageMatches.join(", ")}`,
+    };
+  }
+
+  const excludedSources = findSourceRuleMatches(publisher, rule.excludeSources || []);
+  if (excludedSources.length) {
+    return {
+      accepted: false,
+      rule,
+      includedTerms: findSourceRuleMatches(articleText, rule.include),
+      excludedTerms: [],
+      excludedSources,
+      reason: `excluded-publisher:${excludedSources.join(", ")}`,
     };
   }
 

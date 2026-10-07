@@ -133,6 +133,16 @@ assert.equal(getSourceRelevanceAssessment(icaoDtcFeed, {
   title: "Major overhaul in air travel as airports adopt facial recognition",
   contentSnippet: "Airlines are changing check-in processes.",
 }).accepted, false);
+assert.equal(getSourceRelevanceAssessment(icaoDtcFeed, {
+  title: "Digital travel credential pilot launches",
+  contentSnippet: "The ICAO DTC pilot supports secure travel documents.",
+  source: "bing.com",
+}).accepted, false);
+assert.equal(getSourceRelevanceAssessment(icaoDtcFeed, {
+  title: "Digital travel credential pilot launches",
+  contentSnippet: "The ICAO DTC pilot supports secure travel documents.",
+  source: "Biometric Update",
+}).accepted, true);
 
 const ukviResidenceFeed = {
   name: "UKVI BRP and BRC Guidance",
