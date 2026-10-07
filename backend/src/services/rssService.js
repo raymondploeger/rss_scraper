@@ -4033,7 +4033,10 @@ async function extractStrictGovernmentListingItems(feed, $, pageUrl, { linkPatte
     };
     const sourceRelevance = getSourceRelevanceAssessment(feed, article);
     if (!sourceRelevance.accepted) {
-      console.log(`Rejected website candidate ${candidate.link}: source-relevance-filter`);
+      console.log(
+        `Rejected website candidate ${candidate.link}: source-relevance-filter (${sourceRelevance.reason}) ` +
+          `title=${JSON.stringify(article.title || "")}`
+      );
       continue;
     }
 
