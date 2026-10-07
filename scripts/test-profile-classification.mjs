@@ -27,6 +27,15 @@ const germanBorderArticle = classifyArticleForIngest({
 assert.equal(germanBorderArticle.topic, "Identity Documents");
 assertIncludes(germanBorderArticle.profileSignals, "border_control", "German border profile signal");
 
+const nonBorderDigitalIdentityArticle = classifyArticleForIngest({
+  title: "Government-backed eID verification supports regulated onboarding",
+  contentSnippet: "The publisher navigation also mentions immigration services.",
+  topic: "Digital Identity & Biometrics",
+  source: "identityweek.net",
+  feedName: "Identity Week Press Releases",
+});
+assert.ok(!nonBorderDigitalIdentityArticle.profileSignals.includes("border_control"));
+
 const printingArticle = classifyArticleForIngest({
   title: "New holographic security feature for banknote substrates",
   contentSnippet: "The security printing material improves counterfeit deterrence.",

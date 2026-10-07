@@ -38,6 +38,19 @@ const CLASSIFICATION_RULES = [
     tags: ["border control", "travel documents"],
     domains: ["identity_documents"],
     profileSignals: ["border_control", "vendors", "researcher"],
+    profileSignalTitleTerms: [
+      "border",
+      "ees",
+      "etias",
+      "entry exit",
+      "entry/exit",
+      "entry-exit",
+      "border police",
+      "grenzpolizei",
+      "grenzkontrolle",
+      "grenzschutz",
+      "document inspection",
+    ],
     terms: [
       "border control",
       "border crossing",
@@ -60,7 +73,6 @@ const CLASSIFICATION_RULES = [
       "reisedokumentenkontrolle",
       "document inspection",
       "traveller processing",
-      "eta",
       "electronic travel authorisation",
       "electronic travel authorization",
       "travel authorisation",
@@ -97,7 +109,7 @@ const CLASSIFICATION_RULES = [
     topic: "Identity Documents",
     tags: ["passports"],
     domains: ["identity_documents"],
-    profileSignals: ["passport_authority", "border_control", "vendors", "researcher"],
+    profileSignals: ["passport_authority", "vendors", "researcher"],
     terms: ["passport", "passports", "travel document", "travel documents"],
   },
   {
@@ -113,7 +125,7 @@ const CLASSIFICATION_RULES = [
     topic: "Identity Documents",
     tags: ["visas"],
     domains: ["identity_documents"],
-    profileSignals: ["passport_authority", "border_control", "vendors", "researcher"],
+    profileSignals: ["passport_authority", "vendors", "researcher"],
     terms: ["visa", "visas", "evisa", "e-visa", "residence permit", "residence permits"],
   },
   {
@@ -259,6 +271,7 @@ function pickTopic(currentTopic, matchedRules, sourceText) {
 }
 
 export function classifyArticleForIngest({ title = "", contentSnippet = "", topic = "", source = "", feedName = "", link = "", keywords = [] } = {}) {
+  const titleText = normalize(title);
   const text = normalize([
     title,
     contentSnippet,
@@ -274,7 +287,14 @@ export function classifyArticleForIngest({ title = "", contentSnippet = "", topi
 
   const semanticTags = Array.from(new Set(matchedRules.flatMap((rule) => rule.tags)));
   const domains = Array.from(new Set(matchedRules.flatMap((rule) => rule.domains || [])));
-  const profileSignals = Array.from(new Set(matchedRules.flatMap((rule) => rule.profileSignals || [])));
+  const profileSignals = Array.from(new Set(matchedRules.flatMap((rule) => {
+    if (Array.isArray(rule.profileSignalTitleTerms) && rule.profileSignalTitleTerms.length) {
+      return rule.profileSignalTitleTerms.some((term) => matchesTerm(titleText, term))
+        ? rule.profileSignals || []
+        : (rule.profileSignals || []).filter((profileId) => profileId !== "border_control");
+    }
+    return rule.profileSignals || [];
+  })));
 
   return {
     topic: pickTopic(topic, matchedRules, sourceText),

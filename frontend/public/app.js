@@ -5889,29 +5889,6 @@ function getActiveProfilePolicyEvidenceAssessment(
   );
 }
 
-function getStoredProfileSignalAssessment(
-  article,
-  selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests)
-) {
-  const profileId = getMatchingPersonalDashboardTemplateId(selectedInterests);
-  if (!profileId) {
-    return { applies: false, passed: false, profileId: "" };
-  }
-  const feed = resolveFeedByIdentity(article?.feedId);
-  const profileSignals = Array.isArray(article?.profileSignals) ? article.profileSignals : [];
-  const sourceAffinities = Array.isArray(feed?.profileAffinities) ? feed.profileAffinities : [];
-  const articleMatched = profileSignals.includes(profileId);
-  const sourceMatched = sourceAffinities.includes(profileId);
-  return {
-    applies: articleMatched || sourceMatched,
-    passed: articleMatched && sourceMatched,
-    profileId,
-    articleMatched,
-    sourceMatched,
-    matchedSignals: articleMatched ? [profileId] : [],
-  };
-}
-
 function getSourceProfileAffinityFeedsForSelectedInterests(selectedInterests) {
   const normalizedInterests = normalizePersonalDashboardInterests(selectedInterests);
   if (!normalizedInterests.length) {
@@ -28649,6 +28626,10 @@ function getSelectedFeedProfileScope(selectedInterests = normalizePersonalDashbo
   const hasFeedTerm = (term) => textMatchesKeyword(feedFingerprint, term);
   const hasAnyFeedTerm = (terms) => terms.some(hasFeedTerm);
 
+  if (templateId && Array.isArray(feed.profileAffinities) && feed.profileAffinities.includes(templateId)) {
+    return { compatible: true, reason: "explicit_profile_affinity" };
+  }
+
   if (templateId === "vendors" && feedGroupName === "Vendors") {
     return { compatible: true, reason: "vendors_profile_source_group" };
   }
@@ -44320,16 +44301,6 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
   }
   if (vendorsProfileAssessment.applies && vendorsProfileAssessment.passed) {
     return finishPersonalDashboardTiming(true, "vendors_profile_guard_passed", {}, "professional_guard");
-  }
-
-  const storedProfileSignalAssessment = measurePersonalDashboardSegment("storedProfileSignalEvidence", () =>
-    getStoredProfileSignalAssessment(article, selectedInterests)
-  );
-  if (storedProfileSignalAssessment.passed) {
-    return finishPersonalDashboardTiming(true, "stored_profile_signal_match", {
-      matchedPolicyAnchors: [`Classified for ${getProfilePolicyDefinition(storedProfileSignalAssessment.profileId)?.label || storedProfileSignalAssessment.profileId}`],
-      matchedPolicyEvents: ["Article content and source affinity agreed"],
-    }, "stored_profile_signal");
   }
 
   if (measurePersonalDashboardSegment("sharedSecurityOnlySelection", () => isSharedSecurityOnlyPersonalSelection(selectedInterests))) {

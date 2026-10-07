@@ -85,8 +85,8 @@ const CONTENT_EVIDENCE_RULES = freezeDefinition({
     events: ["renew", "issu", "launch", "standard", "guideline", "security", "fraud", "digital", "biometric", "requirement", "trust service", "implementation", "joins"],
   },
   border_control: {
-    anchors: ["border", "frontex", "customs", "migration"],
-    events: ["border check", "entry exit system", "crossing", "operation", "smuggling", "trafficking", "arrest", "seized", "surveillance", "coordination", "document inspection", "identity check"],
+    anchors: ["border", "frontex", "customs", "migration", "ees", "etias", "border police", "grenzpolizei"],
+    events: ["border check", "entry exit system", "ees", "etias", "crossing", "operation", "smuggling", "trafficking", "arrest", "seized", "surveillance", "coordination", "document inspection", "identity check"],
   },
   security_printer: {
     anchors: ["security print", "banknote", "passport", "identity document", "secure document"],
