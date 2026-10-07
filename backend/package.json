@@ -65,6 +65,7 @@
     "google-news:thumbnail-backfill:execute": "node scripts/google-news-thumbnail-backfill.js --execute",
     "articles:reclassify": "node scripts/reclassify-article-profiles.js",
     "articles:reclassify:apply": "node scripts/reclassify-article-profiles.js --apply",
+    "articles:reclassify:secunet": "node scripts/reclassify-article-profiles.js --feed secunet Press",
     "sources:bing-mirror-google-alerts": "node scripts/bing-mirror-google-alerts.js",
     "sources:bing-mirror-google-alerts:apply": "node scripts/bing-mirror-google-alerts.js --apply",
     "prisma:generate": "prisma generate",

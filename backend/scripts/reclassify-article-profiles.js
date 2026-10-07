@@ -5,6 +5,10 @@ import { classifyArticleForIngest } from "../src/services/articleClassificationS
 const APPLY = process.argv.includes("--apply");
 const PAGE_SIZE = 100;
 const SAMPLE_LIMIT = 12;
+const FEED_ARGUMENT_INDEX = process.argv.indexOf("--feed");
+const FEED_NAME = FEED_ARGUMENT_INDEX >= 0
+  ? process.argv.slice(FEED_ARGUMENT_INDEX + 1).filter((value) => value !== "--apply").join(" ").trim()
+  : "";
 
 function sameList(left = [], right = []) {
   return JSON.stringify(left) === JSON.stringify(right);
@@ -13,12 +17,18 @@ function sameList(left = [], right = []) {
 async function main() {
   const feeds = await listFeeds();
   const feedsById = new Map(feeds.map((feed) => [String(feed.id), feed]));
+  const selectedFeed = FEED_NAME
+    ? feeds.find((feed) => String(feed.name || "").trim().toLowerCase() === FEED_NAME.toLowerCase())
+    : null;
+  if (FEED_NAME && !selectedFeed) {
+    throw new Error(`No feed found named: ${FEED_NAME}`);
+  }
   const changes = [];
   let offset = 0;
   let inspected = 0;
 
   while (true) {
-    const articles = await listArticles({}, { limit: PAGE_SIZE, offset });
+    const articles = await listArticles(selectedFeed ? { feedId: selectedFeed.id } : {}, { limit: PAGE_SIZE, offset });
     if (!articles.length) break;
     inspected += articles.length;
 
@@ -63,6 +73,7 @@ async function main() {
 
   console.log(JSON.stringify({
     mode: APPLY ? "applied" : "dry-run",
+    scope: selectedFeed?.name || "all feeds",
     inspected,
     changed: changes.length,
     examples: changes.slice(0, SAMPLE_LIMIT),
