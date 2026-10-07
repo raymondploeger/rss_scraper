@@ -48,9 +48,29 @@
       "expected": {
         "domainsInclude": ["identity_documents", "digital_identity_biometrics"],
         "classificationsInclude": ["border_control", "biometrics"],
+        "classificationsExclude": ["passports"],
         "profileSignalsInclude": ["border_control", "identity_verification", "vendors", "researcher"],
         "profileSignalsExclude": ["central_bank", "security_printer"],
         "profilePolicy": { "border_control": true, "central_bank": false }
+      }
+    },
+    {
+      "id": "identity-week-static-category-tags-do-not-create-passport-evidence",
+      "article": {
+        "title": "Commission concludes eligibility checks for two European Citizens’ Initiatives on digital ID and age-verification",
+        "contentSnippet": "The European Commission registered initiatives concerning digital ID and age verification.",
+        "topic": "Digital Identity & Biometrics",
+        "source": "identityweek.net",
+        "feedName": "Identity Week Press Releases",
+        "keywords": ["border control", "travel documents", "biometrics"]
+      },
+      "expected": {
+        "domainsInclude": ["digital_identity_biometrics"],
+        "classificationsInclude": ["digital_identity", "identity_verification"],
+        "classificationsExclude": ["border_control", "passports"],
+        "profileSignalsInclude": ["identity_verification", "vendors", "researcher"],
+        "profileSignalsExclude": ["border_control", "passport_authority"],
+        "profilePolicy": { "identity_verification": false, "passport_authority": false, "border_control": false }
       }
     },
     {

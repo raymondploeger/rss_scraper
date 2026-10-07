@@ -32,6 +32,7 @@ cases.forEach((entry) => {
 
   assertContainsAll(classification.domains, expected.domainsInclude || [], `${entry.id} domains`);
   assertContainsAll(classification.classifications, expected.classificationsInclude || [], `${entry.id} classifications`);
+  assertContainsNone(classification.classifications, expected.classificationsExclude || [], `${entry.id} classifications`);
   assertContainsAll(classification.profileSignals, expected.profileSignalsInclude || [], `${entry.id} profile signals`);
   assertContainsNone(classification.profileSignals, expected.profileSignalsExclude || [], `${entry.id} profile signals`);
 

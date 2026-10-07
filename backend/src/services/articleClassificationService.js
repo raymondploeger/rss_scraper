@@ -284,13 +284,12 @@ function pickTopic(currentTopic, matchedRules, sourceText) {
   return currentTopic || "General";
 }
 
-export function classifyArticleForIngest({ title = "", contentSnippet = "", topic = "", source = "", feedName = "", link = "", keywords = [] } = {}) {
+export function classifyArticleForIngest({ title = "", contentSnippet = "", topic = "", source = "", feedName = "", link = "" } = {}) {
   const titleText = normalize(title);
   const text = normalize([
     title,
     contentSnippet,
     link,
-    Array.isArray(keywords) ? keywords.join(" ") : "",
   ].join(" "));
   const sourceText = normalize([source, feedName].join(" "));
   const matchedRules = CLASSIFICATION_RULES
