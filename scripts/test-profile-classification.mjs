@@ -67,6 +67,37 @@ const printingArticle = classifyArticleForIngest({
 assertIncludes(printingArticle.domains, "security_printing", "security printing domain");
 assertIncludes(printingArticle.profileSignals, "security_printer", "security printer profile signal");
 
+const aamvaDigitalTrustArticle = classifyArticleForIngest({
+  title: "AAMVA Digital Trust Service Welcomes Kentucky",
+  contentSnippet: "Kentucky joins the mobile driver license digital trust service.",
+  topic: "Identity Documents",
+  source: "AAMVA",
+  feedName: "AAMVA News",
+});
+assertIncludes(aamvaDigitalTrustArticle.domains, "identity_documents", "AAMVA driver licence domain");
+assertIncludes(aamvaDigitalTrustArticle.domains, "digital_identity_biometrics", "AAMVA digital trust domain");
+assertIncludes(aamvaDigitalTrustArticle.profileSignals, "identity_verification", "AAMVA verification profile signal");
+
+const europeanAgeVerificationArticle = classifyArticleForIngest({
+  title: "Commission urges Member States to rollout EU age verification app",
+  contentSnippet: "The service will work with European digital wallets.",
+  topic: "Digital Identity & Biometrics",
+  source: "European Commission",
+  feedName: "European Commission Digital Identity News",
+});
+assertIncludes(europeanAgeVerificationArticle.domains, "digital_identity_biometrics", "EU age verification domain");
+assertIncludes(europeanAgeVerificationArticle.profileSignals, "identity_verification", "EU age verification profile signal");
+
+const bankOfCanadaArticle = classifyArticleForIngest({
+  title: "Bank of Canada unveils new vertical $20 bank note",
+  contentSnippet: "The note includes a new security feature.",
+  topic: "Banknotes",
+  source: "Bank of Canada",
+  feedName: "Bank of Canada News",
+});
+assertIncludes(bankOfCanadaArticle.domains, "banknotes", "Bank of Canada banknote domain");
+assertIncludes(bankOfCanadaArticle.profileSignals, "central_bank", "Bank of Canada profile signal");
+
 const borderPolicy = evaluateProfilePolicyEvidence({
   title: "EU Entry/Exit System goes live at Zurich Airport",
   tags: ["border control", "travel documents"],

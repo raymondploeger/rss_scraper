@@ -42380,8 +42380,49 @@ function getArticleDominantDomain(article) {
     });
 }
 
+function getStoredArticlePrimaryDomain(article) {
+  const supportedDomains = new Set([
+    "banknotes",
+    "identity_documents",
+    "digital_identity_biometrics",
+    "security_printing",
+  ]);
+  const classifications = Array.isArray(article?.classifications)
+    ? article.classifications.filter(Boolean)
+    : [];
+  const domains = Array.isArray(article?.domains)
+    ? article.domains.filter((domain) => supportedDomains.has(domain))
+    : [];
+
+  // Older records have no classification metadata, so they deliberately keep
+  // the established browser-side fallback below.  Newer records were
+  // classified during ingestion or a scoped reclassification run.
+  if (!classifications.length || !domains.length) {
+    return "";
+  }
+
+  const topicDomain = {
+    "banknotes": "banknotes",
+    "identity documents": "identity_documents",
+    "digital identity & biometrics": "digital_identity_biometrics",
+    "shared security printing": "security_printing",
+  }[normalizeFilterTag(article?.topic || "")];
+  if (topicDomain && domains.includes(topicDomain)) {
+    return topicDomain;
+  }
+
+  return domains.length === 1 ? domains[0] : "";
+}
+
 function getArticleDominantDomainMeasured(article) {
   return getCachedArticleValue(article, "personalDominantDomain", () => {
+    const storedPrimaryDomain = getStoredArticlePrimaryDomain(article);
+    if (storedPrimaryDomain) {
+      // This only chooses the initial domain.  The usual professional, source,
+      // interest and profile-quality gates still run after this function and
+      // therefore cannot be bypassed by stored classification metadata.
+      return storedPrimaryDomain;
+    }
     const context = getPersonalBoostContext(article, "getArticleDominantDomain", { interest: "cross_domain" });
     const banknoteSignals = getPersonalDomainContextProfile(context, "banknote_intelligence");
     const identitySignals = getPersonalDomainContextProfile(context, "identity_documents");
