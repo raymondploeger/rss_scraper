@@ -57,6 +57,32 @@ const germanBorderArticle = classifyArticleForIngest({
 assert.equal(germanBorderArticle.topic, "Identity Documents");
 assertIncludes(germanBorderArticle.profileSignals, "border_control", "German border profile signal");
 
+const frenchBorderArticle = classifyArticleForIngest({
+  title: "La police aux frontières teste le système entrée/sortie",
+  contentSnippet: "Le contrôle de documents accélère le traitement des voyageurs.",
+  topic: "General",
+  source: "official source",
+});
+assertIncludes(frenchBorderArticle.profileSignals, "border_control", "French border profile signal");
+
+const spanishSecurePassportArticle = classifyArticleForIngest({
+  title: "Nuevo pasaporte con tinta de seguridad y hologramas",
+  contentSnippet: "El documento de viaje incorpora nuevas características de seguridad.",
+  topic: "General",
+  source: "Signe",
+});
+assertIncludes(spanishSecurePassportArticle.profileSignals, "passport_authority", "Spanish passport profile signal");
+assertIncludes(spanishSecurePassportArticle.profileSignals, "security_printer", "Spanish security-printing profile signal");
+
+const germanBanknoteArticle = classifyArticleForIngest({
+  title: "Neue Banknoten mit Sicherheitsmerkmalen der Zentralbank",
+  contentSnippet: "Der Sicherheitsdruck schützt die neuen Banknoten vor Fälschungen.",
+  topic: "General",
+  source: "official source",
+});
+assertIncludes(germanBanknoteArticle.profileSignals, "central_bank", "German banknote profile signal");
+assertIncludes(germanBanknoteArticle.profileSignals, "security_printer", "German security-printing profile signal");
+
 const nonBorderDigitalIdentityArticle = classifyArticleForIngest({
   title: "Government-backed eID verification supports regulated onboarding",
   contentSnippet: "The publisher navigation also mentions immigration services.",
