@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { classifyArticleForIngest } from "../backend/src/services/articleClassificationService.js";
 import { resolveFeedProfileAffinities } from "../backend/src/services/feedProfileAffinityService.js";
+import { getArticleProfileDecision } from "../backend/src/services/profileDecisionService.js";
 import { getSourceRelevanceAssessment } from "../backend/src/services/sourceRelevanceService.js";
 import { evaluateProfilePolicyEvidence } from "../frontend/public/profile-policies.js";
 
@@ -35,6 +36,13 @@ const topicAndGroupAffinities = resolveFeedProfileAffinities({
 });
 assertIncludes(topicAndGroupAffinities, "vendors", "vendor group affinity");
 assertIncludes(topicAndGroupAffinities, "security_printer", "topic affinity");
+
+assert.equal(getArticleProfileDecision({
+  domains: ["security_printing"], profileSignals: ["security_printer"], classifications: ["security_features"],
+}, { name: "Jura Security Printing" }, "security_printer").matched, true);
+assert.equal(getArticleProfileDecision({
+  title: "Careers at a secure-documents company", domains: ["security_printing"], classifications: ["security_features"],
+}, { name: "Jura Security Printing" }, "vendors").matched, false);
 
 const secunetBorderArticle = classifyArticleForIngest({
   title: "Czech Border Police: secunet technology significantly speeds up processes after EES introduction",
