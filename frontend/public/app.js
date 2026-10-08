@@ -4784,6 +4784,9 @@ function getArticleDecisionBackendSignals(options = {}) {
     security_features: "Security features",
   });
   return [
+    ...(options.backendProfileDecision?.reason
+      ? [`Backend decision: ${String(options.backendProfileDecision.reason).replace(/_/g, " ")}`]
+      : []),
     ...(profileLabels.length ? [`Backend profile signal: ${profileLabels.join(", ")}`] : []),
     ...(domainLabels.length ? [`Backend domain: ${domainLabels.join(", ")}`] : []),
     ...(classificationLabels.length ? [`Backend classification: ${classificationLabels.join(", ")}`] : []),
@@ -4835,6 +4838,7 @@ function recordArticleDecisionReceipt(article, options = {}) {
     matchedInterestLabels: Object.freeze(matchedInterestLabels),
     signals: Object.freeze(signals),
     backendProfileSignal: String(options.backendProfileSignal || ""),
+    backendProfileDecision: options.backendProfileDecision || null,
     backendDomains: Object.freeze(Array.isArray(options.backendDomains) ? options.backendDomains.slice(0, 3) : []),
     backendClassifications: Object.freeze(Array.isArray(options.backendClassifications) ? options.backendClassifications.slice(0, 3) : []),
     sourceName: sourceSignal.sourceName,
@@ -44425,6 +44429,16 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
       backendVendorsDecision.matched === true,
       backendVendorsDecision.reason || "backend_vendor_profile_decision",
       { backendProfileDecision: backendVendorsDecision },
+      "backend_profile_decision"
+    );
+  }
+
+  const backendResearchDecision = getBackendArticleProfileDecision(article, "researcher");
+  if (getMatchingPersonalDashboardTemplateId(selectedInterests) === "researcher" && backendResearchDecision) {
+    return finishPersonalDashboardTiming(
+      backendResearchDecision.matched === true,
+      backendResearchDecision.reason || "backend_research_profile_decision",
+      { backendProfileDecision: backendResearchDecision },
       "backend_profile_decision"
     );
   }
