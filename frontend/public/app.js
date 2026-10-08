@@ -5631,8 +5631,10 @@ function isCuratedSecurityPrinterSourceArticle(article) {
   // A source may be a credible Security Printer source without every one of
   // its articles being relevant.  Replace the old three-feed allowlist with
   // the shared model: source affinity plus server-side article evidence.
-  return hasArticleFeedProfileAffinity(article, "security_printer") &&
-    hasStoredArticleProfileSignal(article, "security_printer");
+  return hasBackendArticleProfileMatch(article, "security_printer") || (
+    hasArticleFeedProfileAffinity(article, "security_printer") &&
+    hasStoredArticleProfileSignal(article, "security_printer")
+  );
 }
 
 function getCuratedVendorWebsiteArticlesFromState() {
@@ -42475,6 +42477,11 @@ function hasStoredArticleProfileSignal(article, profileId) {
   return getStoredArticleProfileSignals(article).includes(profileId);
 }
 
+function hasBackendArticleProfileMatch(article, profileId) {
+  const decisions = Array.isArray(article?.profileDecisions) ? article.profileDecisions : [];
+  return decisions.some((decision) => decision?.profileId === profileId && decision?.matched === true);
+}
+
 function getArticleFeedProfileAffinities(article) {
   const feedId = String(article?.feedId || "").trim();
   if (!feedId) {
@@ -44575,8 +44582,10 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
   const backendProfileSignalIsAuthoritative =
     profileBundleSelection &&
     ["passport_authority", "border_control", "identity_verification"].includes(profileTemplateId) &&
-    hasStoredArticleProfileSignal(article, profileTemplateId) &&
-    hasArticleFeedProfileAffinity(article, profileTemplateId);
+    (hasBackendArticleProfileMatch(article, profileTemplateId) || (
+      hasStoredArticleProfileSignal(article, profileTemplateId) &&
+      hasArticleFeedProfileAffinity(article, profileTemplateId)
+    ));
   if (backendProfileSignalIsAuthoritative) {
     return finishPersonalDashboardTiming(true, "stored_profile_signal_match", {
       backendProfileSignal: profileTemplateId,

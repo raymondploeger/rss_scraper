@@ -1,5 +1,6 @@
 import { env } from "../config/env.js";
 import { resolveFeedProfileAffinities } from "./feedProfileAffinityService.js";
+import { getArticleProfileDecisions } from "./profileDecisionService.js";
 import {
   getCatalogEntryCountry,
   getCatalogEntryMode,
@@ -106,7 +107,7 @@ export function toFeedDto(feed) {
   };
 }
 
-export function toArticleDto(article) {
+export function toArticleDto(article, feed = {}) {
   const dto = {
     id: String(article.id || article._id),
     title: article.title,
@@ -123,6 +124,7 @@ export function toArticleDto(article) {
     keywords: Array.isArray(article.keywords) ? article.keywords : [],
     domains: Array.isArray(article.domains) ? article.domains : [],
     profileSignals: Array.isArray(article.profileSignals) ? article.profileSignals : [],
+    profileDecisions: getArticleProfileDecisions(article, feed),
     classifications: Array.isArray(article.classifications) ? article.classifications : [],
     tags: Array.isArray(article.tags)
       ? article.tags

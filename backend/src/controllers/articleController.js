@@ -264,8 +264,10 @@ export async function listArticles(request, response) {
       logArticleQuery("completed", diagnostics);
     }
 
+    const feedsById = new Map((await listFeeds()).map((feed) => [String(feed.id), feed]));
+    const toDto = (article) => toArticleDto(article, feedsById.get(String(article.feedId)) || {});
     if (request.query.includePagination === "true") {
-      const articleDtos = items.map(toArticleDto);
+      const articleDtos = items.map(toDto);
       response.json({
         items: articleDtos,
         articles: articleDtos,
@@ -282,7 +284,7 @@ export async function listArticles(request, response) {
       return;
     }
 
-    response.json(items.map(toArticleDto));
+    response.json(items.map(toDto));
   } catch (error) {
     logArticleQuery("failed", buildArticleQueryDiagnostics(request, {
       requestId,
