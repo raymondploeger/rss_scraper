@@ -1,11 +1,40 @@
 import assert from "node:assert/strict";
 import { classifyArticleForIngest } from "../backend/src/services/articleClassificationService.js";
+import { resolveFeedProfileAffinities } from "../backend/src/services/feedProfileAffinityService.js";
 import { getSourceRelevanceAssessment } from "../backend/src/services/sourceRelevanceService.js";
 import { evaluateProfilePolicyEvidence } from "../frontend/public/profile-policies.js";
 
 function assertIncludes(values, expected, label) {
   assert.ok(values.includes(expected), `${label}: expected ${expected}, got ${JSON.stringify(values)}`);
 }
+
+// Source affinities are candidate roles only. The classifier still requires
+// article-level evidence before using one of these roles in a profile result.
+const secunetAffinities = resolveFeedProfileAffinities({ name: "secunet Press" });
+assertIncludes(secunetAffinities, "vendors", "secunet vendor affinity");
+assertIncludes(secunetAffinities, "border_control", "secunet border affinity");
+assertIncludes(secunetAffinities, "identity_verification", "secunet verification affinity");
+
+const ofsAffinities = resolveFeedProfileAffinities({ name: "OFS Security Printing Insights" });
+assertIncludes(ofsAffinities, "vendors", "OFS vendor affinity");
+assertIncludes(ofsAffinities, "security_printer", "OFS printing affinity");
+assertIncludes(ofsAffinities, "central_bank", "OFS central-bank affinity");
+
+const identityWeekAffinities = resolveFeedProfileAffinities({ name: "Identity Week Press Releases" });
+assertIncludes(identityWeekAffinities, "vendors", "Identity Week vendor affinity");
+assertIncludes(identityWeekAffinities, "passport_authority", "Identity Week authority affinity");
+assertIncludes(identityWeekAffinities, "identity_verification", "Identity Week verification affinity");
+
+const juraAffinities = resolveFeedProfileAffinities({ name: "Jura Security Printing" });
+assert.deepEqual(juraAffinities, ["vendors", "security_printer"]);
+
+const topicAndGroupAffinities = resolveFeedProfileAffinities({
+  name: "Test vendor feed",
+  topic: "Shared Security Printing",
+  sourceGroup: "Vendors",
+});
+assertIncludes(topicAndGroupAffinities, "vendors", "vendor group affinity");
+assertIncludes(topicAndGroupAffinities, "security_printer", "topic affinity");
 
 const secunetBorderArticle = classifyArticleForIngest({
   title: "Czech Border Police: secunet technology significantly speeds up processes after EES introduction",
