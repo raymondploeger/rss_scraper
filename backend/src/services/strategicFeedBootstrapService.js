@@ -608,6 +608,24 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     profileAffinities: ["vendors", "border_control", "identity_verification"],
     phase: "phase2-vendor-sources",
   },
+  {
+    name: "Foster + Freeman News",
+    topic: "Identity Documents",
+    rssUrl: "https://fosterfreeman.com/feed/",
+    sourceType: "rss",
+    sourceGroup: "Vendors",
+    profileAffinities: ["vendors"],
+    phase: "phase2-vendor-sources",
+  },
+  {
+    name: "Seprinto & Partners News",
+    topic: "Shared Security Printing",
+    rssUrl: "https://seprinto-partners.com/feed/",
+    sourceType: "rss",
+    sourceGroup: "Vendors",
+    profileAffinities: ["vendors"],
+    phase: "phase2-vendor-sources",
+  },
 ];
 
 const RETIRED_STRATEGIC_FEEDS = [

@@ -294,4 +294,30 @@ assert.equal(getSourceRelevanceAssessment(euLisaFeed, {
   contentSnippet: "The Management Board discussed data management.",
 }).accepted, false);
 
+const fosterFreemanFeed = {
+  name: "Foster + Freeman News",
+  rssUrl: "https://fosterfreeman.com/feed/",
+};
+assert.equal(getSourceRelevanceAssessment(fosterFreemanFeed, {
+  title: "Border officers use a video spectral comparator to examine passports",
+  contentSnippet: "The questioned-document workflow identifies counterfeit travel documents.",
+}).accepted, true);
+assert.equal(getSourceRelevanceAssessment(fosterFreemanFeed, {
+  title: "Merseyside Police validates rapid cannabinoid screening",
+  contentSnippet: "The frontline drug detection tool supports forensic teams.",
+}).accepted, false);
+
+const seprintoFeed = {
+  name: "Seprinto & Partners News",
+  rssUrl: "https://seprinto-partners.com/feed/",
+};
+assert.equal(getSourceRelevanceAssessment(seprintoFeed, {
+  title: "New security printing feature for banknotes",
+  contentSnippet: "The anti-counterfeit solution protects currency production.",
+}).accepted, true);
+assert.equal(getSourceRelevanceAssessment(seprintoFeed, {
+  title: "Seprinto & Partners at Intergraf 2022 in Lyon",
+  contentSnippet: "The group met customers at the exhibition.",
+}).accepted, false);
+
 console.log("Profile classification regression checks passed.");
