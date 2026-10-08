@@ -1,3 +1,17 @@
+// These URL targets are created by social-share widgets, not by publishers as
+// article permalinks. Reject them globally so a parser mistake cannot make a
+// login or share page look like content from an otherwise good source.
+const NON_ARTICLE_LINK_PATTERNS = Object.freeze([
+  "linkedin.com/sharearticle",
+  "linkedin.com/login",
+  "linkedin.com/authwall",
+  "facebook.com/sharer",
+  "x.com/intent/",
+  "twitter.com/intent/",
+  "wa.me/",
+  "api.whatsapp.com/send",
+]);
+
 export const SOURCE_RELEVANCE_RULES = [
   {
     name: "Identity Week Press Releases",
@@ -2894,8 +2908,24 @@ function articleMatchesProtectedPagePattern(rule, article) {
   );
 }
 
+function findGlobalNonArticleLinkMatches(article) {
+  const link = String(article?.link || "").trim().toLowerCase();
+  return NON_ARTICLE_LINK_PATTERNS.filter((pattern) => link.includes(pattern));
+}
+
 export function getSourceRelevanceAssessment(feed, article) {
   const rule = getSourceRelevanceRule(feed);
+  const globalNonArticleLinkMatches = findGlobalNonArticleLinkMatches(article);
+  if (globalNonArticleLinkMatches.length) {
+    return {
+      accepted: false,
+      rule,
+      includedTerms: [],
+      excludedTerms: [],
+      rejectedPageMatches: globalNonArticleLinkMatches.map((match) => `global-link-pattern:${match}`),
+      reason: `rejected-non-article-link:${globalNonArticleLinkMatches.join(", ")}`,
+    };
+  }
   if (!rule) {
     return {
       accepted: true,
