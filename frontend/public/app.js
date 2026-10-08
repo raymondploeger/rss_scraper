@@ -42477,9 +42477,13 @@ function hasStoredArticleProfileSignal(article, profileId) {
   return getStoredArticleProfileSignals(article).includes(profileId);
 }
 
-function hasBackendArticleProfileMatch(article, profileId) {
+function getBackendArticleProfileDecision(article, profileId) {
   const decisions = Array.isArray(article?.profileDecisions) ? article.profileDecisions : [];
-  return decisions.some((decision) => decision?.profileId === profileId && decision?.matched === true);
+  return decisions.find((decision) => decision?.profileId === profileId) || null;
+}
+
+function hasBackendArticleProfileMatch(article, profileId) {
+  return getBackendArticleProfileDecision(article, profileId)?.matched === true;
 }
 
 function getArticleFeedProfileAffinities(article) {
@@ -44413,6 +44417,16 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
       matchedPolicyAnchors: explicitProfilePolicyAssessment.matchedAnchors,
       matchedPolicyEvents: explicitProfilePolicyAssessment.matchedEvents,
     }, "explicit_policy");
+  }
+
+  const backendVendorsDecision = getBackendArticleProfileDecision(article, "vendors");
+  if (isVendorsProfileActive(selectedInterests) && backendVendorsDecision) {
+    return finishPersonalDashboardTiming(
+      backendVendorsDecision.matched === true,
+      backendVendorsDecision.reason || "backend_vendor_profile_decision",
+      { backendProfileDecision: backendVendorsDecision },
+      "backend_profile_decision"
+    );
   }
 
   const vendorsProfileAssessment = measurePersonalDashboardSegment("vendorsProfileProfessionalGuard", () =>
