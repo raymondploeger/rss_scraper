@@ -4719,6 +4719,8 @@ function getArticleDecisionReasonLabel(reason = "") {
     profile_and_interest_refinement_match: "Matched your Start Profile and selected Profile Interests",
     explicit_profile_policy_content_match: "The article's content matched your Start Profile",
     stored_profile_signal_match: "The stored backend classification matched your Start Profile after the quality checks passed",
+    source_affinity_and_article_evidence: "The backend confirmed both the source role and article evidence for this profile",
+    source_affinity_and_industry_evidence: "The backend confirmed this as relevant industry evidence from an affiliated source",
     central_bank_profile_guard: "Not shown in Central Bank: the article does not meet the physical-banknote requirement",
     central_bank_profile_explicit_non_banknote_topic: "Not shown in Central Bank: Identity Documents topic without banknote context",
     central_bank_profile_wrong_domain: "Not shown in Central Bank: article belongs to another professional domain",
@@ -4785,7 +4787,7 @@ function getArticleDecisionBackendSignals(options = {}) {
   });
   return [
     ...(options.backendProfileDecision?.reason
-      ? [`Backend decision: ${String(options.backendProfileDecision.reason).replace(/_/g, " ")}`]
+      ? [`Backend decision: ${getArticleDecisionReasonLabel(options.backendProfileDecision.reason)}`]
       : []),
     ...(profileLabels.length ? [`Backend profile signal: ${profileLabels.join(", ")}`] : []),
     ...(domainLabels.length ? [`Backend domain: ${domainLabels.join(", ")}`] : []),
@@ -44375,6 +44377,15 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
     return finishPersonalDashboardTiming(true, "no_selected_interests");
   }
 
+  // Keep the profile identity when its base interests are refined in the UI.
+  // A refined Vendors profile, for example, is still Vendors rather than an
+  // unrelated custom selection. The browser must ask the backend for that
+  // profile's decision instead of silently falling back to local heuristics.
+  const selectedProfileTemplateId = String(state.personalDashboard.activeTemplateId || "").trim();
+  const activeBackendProfileId = PERSONAL_DASHBOARD_PROFILE_TEMPLATES[selectedProfileTemplateId]
+    ? selectedProfileTemplateId
+    : getMatchingPersonalDashboardTemplateId(selectedInterests);
+
   // Security Printer has a strict physical-technology gate. Apply it before
   // any broad profile policy can accept a source/topic label as a match.
   if (isSecurityPrinterProfileActive(selectedInterests)) {
@@ -44398,7 +44409,7 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
     }
   }
 
-  if (getMatchingPersonalDashboardTemplateId(selectedInterests) === "central_bank") {
+  if (activeBackendProfileId === "central_bank") {
     const hardNoise = measurePersonalDashboardSegment("centralBankProfileHardNoiseGuard", () =>
       getCentralBankProfileHardNoiseAssessment(article)
     );
@@ -44412,6 +44423,37 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
     }
   }
 
+  // Standard profiles are decided by the backend contract.  The frontend
+  // retains only the narrow hard guards above (which protect the view from
+  // known navigation and coin-only noise); it no longer recalculates whether
+  // a source, domain and stored article signal belong to a profile.
+  const backendProfileTemplateId = activeBackendProfileId;
+  const backendProfileDecision = [
+    "central_bank",
+    "passport_authority",
+    "border_control",
+    "security_printer",
+    "identity_verification",
+    "vendors",
+    "researcher",
+  ].includes(backendProfileTemplateId)
+    ? getBackendArticleProfileDecision(article, backendProfileTemplateId)
+    : null;
+  if (backendProfileDecision) {
+    return finishPersonalDashboardTiming(
+      backendProfileDecision.matched === true,
+      backendProfileDecision.reason || "backend_profile_decision",
+      {
+        backendProfileDecision,
+        backendProfileSignal: backendProfileTemplateId,
+        backendSourceAffinity: backendProfileTemplateId,
+        backendClassifications: Array.isArray(article?.classifications) ? article.classifications : [],
+        backendDomains: Array.isArray(article?.domains) ? article.domains : [],
+      },
+      "backend_profile_decision"
+    );
+  }
+
   const explicitProfilePolicyAssessment = measurePersonalDashboardSegment("explicitProfilePolicyEvidence", () =>
     getActiveProfilePolicyEvidenceAssessment(article, selectedInterests)
   );
@@ -44421,26 +44463,6 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
       matchedPolicyAnchors: explicitProfilePolicyAssessment.matchedAnchors,
       matchedPolicyEvents: explicitProfilePolicyAssessment.matchedEvents,
     }, "explicit_policy");
-  }
-
-  const backendVendorsDecision = getBackendArticleProfileDecision(article, "vendors");
-  if (isVendorsProfileActive(selectedInterests) && backendVendorsDecision) {
-    return finishPersonalDashboardTiming(
-      backendVendorsDecision.matched === true,
-      backendVendorsDecision.reason || "backend_vendor_profile_decision",
-      { backendProfileDecision: backendVendorsDecision },
-      "backend_profile_decision"
-    );
-  }
-
-  const backendResearchDecision = getBackendArticleProfileDecision(article, "researcher");
-  if (getMatchingPersonalDashboardTemplateId(selectedInterests) === "researcher" && backendResearchDecision) {
-    return finishPersonalDashboardTiming(
-      backendResearchDecision.matched === true,
-      backendResearchDecision.reason || "backend_research_profile_decision",
-      { backendProfileDecision: backendResearchDecision },
-      "backend_profile_decision"
-    );
   }
 
   const vendorsProfileAssessment = measurePersonalDashboardSegment("vendorsProfileProfessionalGuard", () =>
