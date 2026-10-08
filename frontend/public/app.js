@@ -5539,15 +5539,6 @@ const OFFICIAL_VENDOR_SOURCE_FEED_NAMES = Object.freeze([
   "VTT News and Stories",
 ]);
 
-// These feeds have their own server-side allowlists. Once an item has passed
-// that source-specific relevance filter, it is intentionally available in both
-// the Vendors and Security Printer profiles.
-const CURATED_SECURITY_PRINTER_SOURCE_FEED_NAMES = Object.freeze([
-  "OFS Security Printing Insights",
-  "Jura Security Printing",
-  "Koenig & Bauer Banknote Solutions",
-]);
-
 const OFFICIAL_VENDOR_SOURCE_DOMAINS = Object.freeze([
   "atlanticzeiser.com",
   "authentix.com",
@@ -5637,8 +5628,11 @@ function isOfficialVendorSourceArticle(article) {
 }
 
 function isCuratedSecurityPrinterSourceArticle(article) {
-  const feedName = String(getFeedName(article?.feedId) || "").trim();
-  return CURATED_SECURITY_PRINTER_SOURCE_FEED_NAMES.includes(feedName);
+  // A source may be a credible Security Printer source without every one of
+  // its articles being relevant.  Replace the old three-feed allowlist with
+  // the shared model: source affinity plus server-side article evidence.
+  return hasArticleFeedProfileAffinity(article, "security_printer") &&
+    hasStoredArticleProfileSignal(article, "security_printer");
 }
 
 function getCuratedVendorWebsiteArticlesFromState() {
@@ -44381,9 +44375,9 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
       );
     }
 
-    // OFS, Jura and Koenig & Bauer Banknote Solutions are explicitly assigned
-    // to Security Printer. Their server-side source allowlists have already
-    // removed general corporate and off-topic items before this point.
+    // A fast path is allowed only after both parts of the shared model agree:
+    // the feed is assigned to Security Printer and ingestion stored physical
+    // security-printing evidence on this specific article.
     if (isCuratedSecurityPrinterSourceArticle(article)) {
       return finishPersonalDashboardTiming(true, "curated_security_printer_source", {}, "curated_source");
     }
