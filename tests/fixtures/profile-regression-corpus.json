@@ -14,7 +14,7 @@
       "expected": {
         "domainsInclude": ["identity_documents"],
         "classificationsInclude": ["border_control"],
-        "profileSignalsInclude": ["border_control", "vendors", "researcher"],
+        "profileSignalsInclude": ["border_control"],
         "profileSignalsExclude": ["central_bank", "security_printer"],
         "profilePolicy": { "border_control": true, "central_bank": false }
       }
@@ -31,7 +31,7 @@
       "expected": {
         "domainsInclude": ["banknotes", "security_printing"],
         "classificationsInclude": ["banknotes", "security_features"],
-        "profileSignalsInclude": ["central_bank", "security_printer", "vendors", "researcher"],
+        "profileSignalsInclude": ["central_bank", "security_printer"],
         "profileSignalsExclude": ["border_control", "identity_verification"],
         "profilePolicy": { "central_bank": true, "security_printer": true, "border_control": false }
       }
@@ -49,7 +49,7 @@
         "domainsInclude": ["identity_documents", "digital_identity_biometrics"],
         "classificationsInclude": ["border_control", "biometrics"],
         "classificationsExclude": ["passports"],
-        "profileSignalsInclude": ["border_control", "identity_verification", "vendors", "researcher"],
+        "profileSignalsInclude": ["border_control", "identity_verification"],
         "profileSignalsExclude": ["central_bank", "security_printer"],
         "profilePolicy": { "border_control": true, "central_bank": false }
       }
@@ -68,7 +68,7 @@
         "domainsInclude": ["digital_identity_biometrics"],
         "classificationsInclude": ["digital_identity", "identity_verification"],
         "classificationsExclude": ["border_control", "passports"],
-        "profileSignalsInclude": ["identity_verification", "vendors", "researcher"],
+        "profileSignalsInclude": ["identity_verification"],
         "profileSignalsExclude": ["border_control", "passport_authority"],
         "profilePolicy": { "identity_verification": false, "passport_authority": false, "border_control": false }
       }
@@ -85,7 +85,7 @@
       "expected": {
         "domainsInclude": ["identity_documents", "digital_identity_biometrics"],
         "classificationsInclude": ["id_cards", "digital_identity"],
-        "profileSignalsInclude": ["passport_authority", "identity_verification", "vendors", "researcher"],
+        "profileSignalsInclude": ["passport_authority", "identity_verification"],
         "profileSignalsExclude": ["border_control", "central_bank", "security_printer"],
         "profilePolicy": { "passport_authority": true, "identity_verification": true, "border_control": false }
       }
@@ -102,7 +102,7 @@
       "expected": {
         "domainsInclude": ["digital_identity_biometrics"],
         "classificationsInclude": ["digital_identity", "identity_verification"],
-        "profileSignalsInclude": ["identity_verification", "vendors", "researcher"],
+        "profileSignalsInclude": ["identity_verification"],
         "profileSignalsExclude": ["border_control", "central_bank", "security_printer"],
         "profilePolicy": { "identity_verification": true, "border_control": false }
       }
@@ -119,7 +119,7 @@
       "expected": {
         "domainsInclude": ["banknotes", "security_printing"],
         "classificationsInclude": ["banknotes", "security_features"],
-        "profileSignalsInclude": ["central_bank", "security_printer", "vendors", "researcher"],
+        "profileSignalsInclude": ["central_bank", "security_printer"],
         "profileSignalsExclude": ["border_control", "identity_verification"],
         "profilePolicy": { "central_bank": true, "security_printer": false, "passport_authority": false }
       }

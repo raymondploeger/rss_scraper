@@ -14,7 +14,7 @@ const CLASSIFICATION_RULES = [
     topic: "Banknotes",
     tags: ["banknotes"],
     domains: ["banknotes"],
-    profileSignals: ["central_bank", "vendors", "researcher"],
+    profileSignals: ["central_bank"],
     minScore: 1,
     sourceTerms: ["banknotenews", "notafilia"],
     terms: [
@@ -40,7 +40,7 @@ const CLASSIFICATION_RULES = [
     topic: "Identity Documents",
     tags: ["border control", "travel documents"],
     domains: ["identity_documents"],
-    profileSignals: ["border_control", "vendors", "researcher"],
+    profileSignals: ["border_control"],
     profileSignalTitleTerms: [
       "border",
       "ees",
@@ -93,7 +93,7 @@ const CLASSIFICATION_RULES = [
     topic: "Identity Documents",
     tags: ["identity documents", "secure documents"],
     domains: ["identity_documents"],
-    profileSignals: ["passport_authority", "vendors", "researcher"],
+    profileSignals: ["passport_authority"],
     terms: [
       "identity document",
       "identity documents",
@@ -112,7 +112,7 @@ const CLASSIFICATION_RULES = [
     topic: "Identity Documents",
     tags: ["passports"],
     domains: ["identity_documents"],
-    profileSignals: ["passport_authority", "vendors", "researcher"],
+    profileSignals: ["passport_authority"],
     terms: ["passport", "passports", "travel document", "travel documents"],
   },
   {
@@ -120,7 +120,7 @@ const CLASSIFICATION_RULES = [
     topic: "Identity Documents",
     tags: ["id cards"],
     domains: ["identity_documents"],
-    profileSignals: ["passport_authority", "vendors", "researcher"],
+    profileSignals: ["passport_authority"],
     terms: [
       "id card",
       "id cards",
@@ -144,7 +144,7 @@ const CLASSIFICATION_RULES = [
     topic: "Identity Documents",
     tags: ["visas"],
     domains: ["identity_documents"],
-    profileSignals: ["passport_authority", "vendors", "researcher"],
+    profileSignals: ["passport_authority"],
     terms: ["visa", "visas", "evisa", "e-visa", "residence permit", "residence permits"],
   },
   {
@@ -152,7 +152,7 @@ const CLASSIFICATION_RULES = [
     topic: "Digital Identity & Biometrics",
     tags: ["biometrics", "biometric verification"],
     domains: ["digital_identity_biometrics"],
-    profileSignals: ["identity_verification", "vendors", "researcher"],
+    profileSignals: ["identity_verification"],
     terms: [
       "biometric",
       "biometrics",
@@ -170,7 +170,7 @@ const CLASSIFICATION_RULES = [
     topic: "Digital Identity & Biometrics",
     tags: ["digital identity"],
     domains: ["digital_identity_biometrics"],
-    profileSignals: ["identity_verification", "vendors", "researcher"],
+    profileSignals: ["identity_verification"],
     terms: [
       "digital identity",
       "digital trust service",
@@ -193,7 +193,7 @@ const CLASSIFICATION_RULES = [
     topic: "Digital Identity & Biometrics",
     tags: ["identity verification", "authentication"],
     domains: ["digital_identity_biometrics"],
-    profileSignals: ["identity_verification", "vendors", "researcher"],
+    profileSignals: ["identity_verification"],
     terms: [
       "identity verification",
       "id verification",
@@ -211,7 +211,7 @@ const CLASSIFICATION_RULES = [
     topic: "Shared Security Printing",
     tags: ["security features"],
     domains: ["security_printing"],
-    profileSignals: ["security_printer", "vendors", "researcher"],
+    profileSignals: ["security_printer"],
     terms: [
       "security feature",
       "security features",

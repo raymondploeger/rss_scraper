@@ -61,6 +61,7 @@ async function main() {
     throw new Error("No feeds have profile affinities");
   }
   const changes = [];
+  const changesByFeed = new Map();
   let offset = 0;
   let inspected = 0;
   let skippedBySourceRelevance = 0;
@@ -98,6 +99,9 @@ async function main() {
         !sameList(article.classifications, classification.classifications);
       if (!changed) continue;
 
+      const feedName = String(feed?.name || article.feedName || "Unknown source");
+      changesByFeed.set(feedName, (changesByFeed.get(feedName) || 0) + 1);
+
       changes.push({
         id: article.id,
         title: article.title,
@@ -132,6 +136,9 @@ async function main() {
     inspected,
     skippedBySourceRelevance,
     changed: changes.length,
+    changedByFeed: Array.from(changesByFeed.entries())
+      .map(([feed, count]) => ({ feed, count }))
+      .sort((left, right) => right.count - left.count || left.feed.localeCompare(right.feed)),
     examples: changes.slice(0, SAMPLE_LIMIT),
   }, null, 2));
 }
