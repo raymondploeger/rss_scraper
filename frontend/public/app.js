@@ -42481,6 +42481,19 @@ function hasStoredArticleProfileSignal(article, profileId) {
   return getStoredArticleProfileSignals(article).includes(profileId);
 }
 
+function getArticleFeedProfileAffinities(article) {
+  const feedId = String(article?.feedId || "").trim();
+  if (!feedId) {
+    return [];
+  }
+  const feed = state.feeds.find((item) => String(item?.id || "") === feedId);
+  return Array.isArray(feed?.profileAffinities) ? feed.profileAffinities : [];
+}
+
+function hasArticleFeedProfileAffinity(article, profileId) {
+  return getArticleFeedProfileAffinities(article).includes(profileId);
+}
+
 function getArticleDominantDomainMeasured(article) {
   return getCachedArticleValue(article, "personalDominantDomain", () => {
     const storedPrimaryDomain = getStoredArticlePrimaryDomain(article);
@@ -44568,10 +44581,12 @@ function articleMatchesPersonalDashboardSelectionMeasured(article, options = {})
   const backendProfileSignalIsAuthoritative =
     profileBundleSelection &&
     ["passport_authority", "border_control", "identity_verification"].includes(profileTemplateId) &&
-    hasStoredArticleProfileSignal(article, profileTemplateId);
+    hasStoredArticleProfileSignal(article, profileTemplateId) &&
+    hasArticleFeedProfileAffinity(article, profileTemplateId);
   if (backendProfileSignalIsAuthoritative) {
     return finishPersonalDashboardTiming(true, "stored_profile_signal_match", {
       backendProfileSignal: profileTemplateId,
+      backendSourceAffinity: profileTemplateId,
       backendClassifications: Array.isArray(article?.classifications) ? article.classifications : [],
       backendDomains: Array.isArray(article?.domains) ? article.domains : [],
     }, "backend_profile_signal");
