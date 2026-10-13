@@ -26,6 +26,7 @@
           </div>
         </div>
         <div class="header-actions">
+          <button id="welcome-help-button" class="ghost-button" type="button">How it works</button>
           <button id="theme-toggle" class="ghost-button" type="button">Dark mode</button>
           <button id="refresh-button" class="primary-button" type="button">Refresh sources</button>
           <button id="dmv-toggle-button" class="ghost-button" type="button" hidden>Show USA feeds</button>
@@ -421,6 +422,19 @@
               <p id="intelligence-feed-summary" class="intelligence-feed-summary"></p>
               <div id="profile-history-control" class="profile-history-control" hidden>
                 <span id="profile-history-label" class="profile-history-label"></span>
+                <label class="sr-only" for="profile-history-select">Article period</label>
+                <select id="profile-history-select" class="profile-history-select">
+                  <option value="7">Last 7 days</option>
+                  <option value="30">Last 30 days</option>
+                  <option value="recent">Last 90 days</option>
+                  <option value="extended">Last 180 days</option>
+                </select>
+                <label class="sr-only" for="article-read-filter">Read status</label>
+                <select id="article-read-filter" class="profile-history-select">
+                  <option value="all">All articles</option>
+                  <option value="unread">Unread</option>
+                  <option value="read">Read</option>
+                </select>
                 <button id="profile-history-toggle" class="profile-history-toggle" type="button"></button>
               </div>
               <div id="intelligence-feed-context" class="intelligence-feed-context" aria-label="Active feed context"></div>
@@ -499,6 +513,7 @@
         </details>
         <div class="article-card-actions">
           <button class="article-favorite-button" type="button" aria-pressed="false" title="Save article">Save</button>
+          <button class="article-read-button" type="button" aria-pressed="false" title="Mark as read">Mark read</button>
           <button class="article-noise-button" type="button" title="Mark this article as noise">Mark as noise</button>
           <details class="article-share-actions">
             <summary class="article-share-toggle" aria-label="Share this article" title="Share this article">Share this</summary>
@@ -512,6 +527,20 @@
         </div>
       </article>
     </template>
+
+    <dialog id="welcome-dialog" class="welcome-dialog" aria-labelledby="welcome-title">
+      <form method="dialog" class="welcome-dialog-content">
+        <p class="eyebrow">Welcome</p>
+        <h2 id="welcome-title">Build your intelligence feed</h2>
+        <p>Choose a professional profile, refine its interests, then review the articles that match it.</p>
+        <ol>
+          <li><strong>Choose a profile</strong> to set your starting scope.</li>
+          <li><strong>Refine interests</strong> when you need a narrower focus.</li>
+          <li><strong>Save</strong> useful articles, mark routine items as read, and use <strong>Mark as noise</strong> for irrelevant content.</li>
+        </ol>
+        <button id="welcome-start-button" class="primary-button" value="start" type="submit">Choose a profile</button>
+      </form>
+    </dialog>
 
     <dialog id="noise-feedback-dialog" class="noise-feedback-dialog" aria-labelledby="noise-feedback-title">
       <form id="noise-feedback-form" method="dialog">

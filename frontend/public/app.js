@@ -13,6 +13,7 @@ import { evaluateProfileProfessionalGuardDecision } from "./profile-professional
 import { fetchCompleteCandidatePages } from "./complete-candidate-pagination.js";
 import {
   PROFILE_DEFAULT_LOOKBACK_DAYS,
+  getProfileHistoryLookbackDays,
   getProfileHistoryDateRanges,
   normalizeProfileHistoryScope,
 } from "./profile-history-scope.js";
@@ -32,6 +33,8 @@ const ALERT_DEDUPE_STORAGE_KEY = "recentAlertKeys";
 const ALERT_ARTICLE_FILTER_STORAGE_KEY = "activeAlertArticleFilter";
 const ACTIVITY_LOG_STORAGE_KEY = "dashboardActivityLog";
 const FAVORITE_ARTICLES_STORAGE_KEY = "favoriteArticles";
+const READ_ARTICLE_IDS_STORAGE_KEY = "readArticleIds";
+const WELCOME_DISMISSED_STORAGE_KEY = "welcomeDialogDismissed";
 const HIDDEN_NOISE_ARTICLES_STORAGE_KEY = "hiddenNoiseArticles";
 const NOISE_FEEDBACK_CLIENT_ID_STORAGE_KEY = "noiseFeedbackClientId";
 const NOISE_FEEDBACK_RULES_STORAGE_KEY = "noiseFeedbackRules";
@@ -7496,6 +7499,7 @@ const state = {
     explicitlyCleared: false,
   },
   favoriteArticles: [],
+  readArticleIds: [],
   noiseFeedbackRecords: [],
   favoritesPanelCollapsed: true,
   filters: {
@@ -7512,6 +7516,7 @@ const state = {
     trackedSourcesAll: true,
     date: "",
     favoritesOnly: false,
+    readState: "all",
     articleIds: [],
     alertLabel: "",
   },
@@ -7623,7 +7628,12 @@ const elements = {
   intelligenceFeedSummary: document.getElementById("intelligence-feed-summary"),
   profileHistoryControl: document.getElementById("profile-history-control"),
   profileHistoryLabel: document.getElementById("profile-history-label"),
+  profileHistorySelect: document.getElementById("profile-history-select"),
+  articleReadFilter: document.getElementById("article-read-filter"),
   profileHistoryToggle: document.getElementById("profile-history-toggle"),
+  welcomeDialog: document.getElementById("welcome-dialog"),
+  welcomeStartButton: document.getElementById("welcome-start-button"),
+  welcomeHelpButton: document.getElementById("welcome-help-button"),
   intelligenceFeedContext: document.getElementById("intelligence-feed-context"),
   paginationControls: document.getElementById("pagination-controls"),
   paginationRange: document.getElementById("pagination-range"),
@@ -27043,6 +27053,31 @@ function loadFavoriteArticles() {
   }
 }
 
+function loadReadArticleIds() {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(READ_ARTICLE_IDS_STORAGE_KEY) || "[]");
+    state.readArticleIds = Array.isArray(stored) ? [...new Set(stored.map(String).filter(Boolean))].slice(0, 5000) : [];
+  } catch {
+    state.readArticleIds = [];
+  }
+}
+
+function isArticleRead(article) {
+  const id = getFavoriteArticleIdentity(article);
+  return Boolean(id && state.readArticleIds.includes(id));
+}
+
+function toggleArticleRead(article) {
+  const id = getFavoriteArticleIdentity(article);
+  if (!id) return false;
+  const existing = state.readArticleIds.includes(id);
+  state.readArticleIds = existing
+    ? state.readArticleIds.filter((candidate) => candidate !== id)
+    : [id, ...state.readArticleIds].slice(0, 5000);
+  window.localStorage.setItem(READ_ARTICLE_IDS_STORAGE_KEY, JSON.stringify(state.readArticleIds));
+  return !existing;
+}
+
 function isFavoritesPanelCollapsed() {
   return true;
 }
@@ -27291,6 +27326,19 @@ function handleFavoriteArticleButton(button) {
   return true;
 }
 
+function handleArticleReadButton(button) {
+  const articleId = button?.dataset?.readArticleId || "";
+  const article = state.articles.find((candidate) => getFavoriteArticleIdentity(candidate) === articleId) || null;
+  if (!article) return false;
+  const read = toggleArticleRead(article);
+  button.setAttribute("aria-pressed", String(read));
+  button.setAttribute("aria-label", read ? "Mark as unread" : "Mark as read");
+  button.textContent = read ? "Read" : "Mark read";
+  button.closest(".article-card")?.classList.toggle("article-card--read", read);
+  if (state.filters.readState !== "all") scheduleRenderArticles("read-state", { mode: "frame" });
+  return true;
+}
+
 function setFavoritesOnlyFilter(enabled) {
   state.filters.favoritesOnly = Boolean(enabled);
   renderSummary();
@@ -27455,6 +27503,7 @@ function renderSavedArticleCard(article) {
   const node = elements.articleCardTemplate.content.cloneNode(true);
   const card = node.querySelector(".article-card");
   const favoriteButton = node.querySelector(".article-favorite-button");
+  node.querySelector(".article-read-button")?.remove();
   const shareActions = node.querySelector(".article-share-actions");
   const whyArticle = node.querySelector(".article-why");
   const link = node.querySelector(".article-link");
@@ -52889,6 +52938,13 @@ function articleMatchesFilters(article, options = {}) {
     return finishFilterTiming(true, "favorites_only_match");
   }
 
+  if (state.filters.readState === "read" && !isArticleRead(article)) {
+    return finishFilterTiming(false, "read_state");
+  }
+  if (state.filters.readState === "unread" && isArticleRead(article)) {
+    return finishFilterTiming(false, "read_state");
+  }
+
   const exactArticleIds = Array.isArray(state.filters.articleIds) ? state.filters.articleIds : [];
   if (exactArticleIds.length) {
     return finishFilterTiming(
@@ -56692,9 +56748,8 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
   const count = Math.max(0, hasExplicitCount ? Number(articleCount) || 0 : hasDisplayedCount ? displayedResultCount : 0);
   const countLabel = `${count} article${count === 1 ? "" : "s"}`;
   const historyScope = getPersonalDashboardHistoryScope();
-  const profileTimeframeLabel = historyScope === "extended"
-    ? `the last ${PROFILE_DEFAULT_LOOKBACK_DAYS * 2} days`
-    : `the last ${PROFILE_DEFAULT_LOOKBACK_DAYS} days`;
+  const profileLookbackDays = getProfileHistoryLookbackDays(historyScope);
+  const profileTimeframeLabel = `the last ${profileLookbackDays} days`;
 
   let eyebrow = "Live Stream";
   let title = "Latest articles";
@@ -56731,9 +56786,9 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
   }
   if (elements.profileHistoryControl && elements.profileHistoryLabel && elements.profileHistoryToggle) {
     elements.profileHistoryControl.hidden = !hasProfile || state.filters.favoritesOnly;
-    elements.profileHistoryLabel.textContent = historyScope === "extended"
-      ? `Showing the last ${PROFILE_DEFAULT_LOOKBACK_DAYS * 2} days`
-      : `Showing the last ${PROFILE_DEFAULT_LOOKBACK_DAYS} days`;
+    elements.profileHistoryLabel.textContent = `Showing the last ${profileLookbackDays} days`;
+    if (elements.profileHistorySelect) elements.profileHistorySelect.value = historyScope;
+    if (elements.articleReadFilter) elements.articleReadFilter.value = state.filters.readState || "all";
     elements.profileHistoryToggle.textContent = historyScope === "extended"
       ? `Show last ${PROFILE_DEFAULT_LOOKBACK_DAYS} days`
       : "Load older articles";
@@ -57065,6 +57120,7 @@ function renderArticleCard(article) {
   const node = elements.articleCardTemplate.content.cloneNode(true);
   const card = node.querySelector(".article-card");
   const favoriteButton = node.querySelector(".article-favorite-button");
+  const readButton = node.querySelector(".article-read-button");
   const shareActions = node.querySelector(".article-share-actions");
   const whyArticle = node.querySelector(".article-why");
   const link = node.querySelector(".article-link");
@@ -57085,6 +57141,7 @@ function renderArticleCard(article) {
   card.dataset.articleStateKey = articleStateKey;
   card.dataset.articleRenderSignature = articleRenderSignature;
   card.classList.toggle("article-card--grouped", groupedSources.length > 0);
+  card.classList.toggle("article-card--read", isArticleRead(article));
 
   if (favoriteButton) {
     const saved = isFavoriteArticle(article);
@@ -57097,6 +57154,13 @@ function renderArticleCard(article) {
     if (favoriteIdentity) {
       runtime.renderedFavoriteArticleLookup.set(favoriteIdentity, article);
     }
+  }
+  if (readButton) {
+    const read = isArticleRead(article);
+    readButton.dataset.readArticleId = getFavoriteArticleIdentity(article);
+    readButton.setAttribute("aria-pressed", String(read));
+    readButton.setAttribute("aria-label", read ? "Mark as unread" : "Mark as read");
+    readButton.textContent = read ? "Read" : "Mark read";
   }
   const noiseButton = node.querySelector(".article-noise-button");
   if (noiseButton) {
@@ -61793,6 +61857,25 @@ async function importDmvFeeds() {
 }
 
 function bindEvents() {
+  if (elements.welcomeDialog) {
+    elements.welcomeDialog.addEventListener("close", () => {
+      window.localStorage.setItem(WELCOME_DISMISSED_STORAGE_KEY, "1");
+    });
+  }
+  if (elements.welcomeStartButton) {
+    elements.welcomeStartButton.addEventListener("click", () => {
+      state.personalDashboard.editing = true;
+      renderPersonalDashboard();
+      document.getElementById("personal-dashboard")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+  if (elements.welcomeHelpButton) {
+    elements.welcomeHelpButton.addEventListener("click", () => {
+      if (!elements.welcomeDialog?.open) {
+        elements.welcomeDialog?.showModal();
+      }
+    });
+  }
   document.addEventListener("click", (event) => {
     const favoriteButton = event.target instanceof Element
       ? event.target.closest("[data-favorite-id]")
@@ -61824,6 +61907,15 @@ function bindEvents() {
 
   if (elements.articlesGrid) {
     elements.articlesGrid.addEventListener("click", (event) => {
+      const readButton = event.target instanceof Element
+        ? event.target.closest("[data-read-article-id]")
+        : null;
+      if (readButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleArticleReadButton(readButton);
+        return;
+      }
       const shareButton = event.target instanceof Element
         ? event.target.closest("[data-share-channel][data-share-article-id]")
         : null;
@@ -62533,6 +62625,7 @@ function bindEvents() {
       trackedSourcesAll: true,
       date: "",
       favoritesOnly: false,
+      readState: "all",
       articleIds: [],
       alertLabel: "",
     };
@@ -62556,6 +62649,9 @@ function bindEvents() {
       elements.canadaDmvFilter.value = "";
     }
     elements.dateFilter.value = "";
+    if (elements.articleReadFilter) {
+      elements.articleReadFilter.value = "all";
+    }
     if (elements.feedPanelSearch) {
       elements.feedPanelSearch.value = "";
     }
@@ -62611,6 +62707,18 @@ function bindEvents() {
   if (elements.profileHistoryToggle) {
     elements.profileHistoryToggle.addEventListener("click", () => {
       setPersonalDashboardHistoryScope(elements.profileHistoryToggle.dataset.profileHistoryScope || "recent");
+    });
+  }
+  if (elements.profileHistorySelect) {
+    elements.profileHistorySelect.addEventListener("change", () => {
+      setPersonalDashboardHistoryScope(elements.profileHistorySelect.value);
+    });
+  }
+  if (elements.articleReadFilter) {
+    elements.articleReadFilter.addEventListener("change", () => {
+      state.filters.readState = ["read", "unread"].includes(elements.articleReadFilter.value) ? elements.articleReadFilter.value : "all";
+      state.pagination.page = 1;
+      scheduleRenderArticles("read-filter", { mode: "frame" });
     });
   }
 
@@ -63050,6 +63158,7 @@ async function init() {
   console.info("APP_BUILD", APP_BUILD);
   loadTheme();
   loadFavoriteArticles();
+  loadReadArticleIds();
   state.favoritesPanelCollapsed = isFavoritesPanelCollapsed();
   loadActiveTags();
   loadKeywordFilters();
@@ -63068,6 +63177,9 @@ async function init() {
   runtime.sourceSelectionPersistenceReady = true;
   syncFeedFormMode();
   bindEvents();
+  if (elements.welcomeDialog && window.localStorage.getItem(WELCOME_DISMISSED_STORAGE_KEY) !== "1") {
+    elements.welcomeDialog.showModal();
+  }
   renderSkeletons();
   syncNoiseKeywordVisibility();
   await loadSnapshot();

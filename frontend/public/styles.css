@@ -1351,6 +1351,47 @@ h3 {
   outline-offset: 2px;
 }
 
+.profile-history-select {
+  min-height: 32px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.article-card--read {
+  opacity: 0.72;
+}
+
+.article-card--read .article-title::after {
+  content: "Read";
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--line);
+  color: var(--muted);
+  font-size: 0.65rem;
+  vertical-align: middle;
+}
+
+.welcome-dialog {
+  width: min(520px, calc(100vw - 32px));
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+}
+
+.welcome-dialog::backdrop { background: rgba(3, 12, 24, 0.7); }
+.welcome-dialog-content { display: grid; gap: 13px; padding: 10px; }
+.welcome-dialog-content h2, .welcome-dialog-content p { margin: 0; }
+.welcome-dialog-content ol { margin: 0; padding-left: 22px; color: var(--muted); line-height: 1.55; }
+
 .intelligence-feed-context {
   display: flex;
   flex-wrap: wrap;
