@@ -1363,19 +1363,27 @@ h3 {
 }
 
 .article-card--read {
-  opacity: 0.72;
+  opacity: 0.82;
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--line));
+  box-shadow: inset 4px 0 0 var(--accent);
 }
 
 .article-card--read .article-title::after {
-  content: "Read";
+  content: "✓ Read";
   display: inline-block;
   margin-left: 8px;
   padding: 2px 6px;
   border-radius: 999px;
-  background: var(--line);
-  color: var(--muted);
+  background: color-mix(in srgb, var(--accent) 20%, var(--bg-elevated));
+  color: var(--accent);
   font-size: 0.65rem;
   vertical-align: middle;
+}
+
+.article-read-button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg-elevated));
+  color: var(--accent);
 }
 
 .welcome-dialog {
