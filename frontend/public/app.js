@@ -61948,7 +61948,10 @@ function bindEvents() {
         event.preventDefault();
         event.stopPropagation();
         const articleId = noiseButton.dataset.noiseArticleId || "";
-        const article = state.articles.find((candidate) => getFavoriteArticleIdentity(candidate) === articleId) || null;
+        const article =
+          state.articles.find((candidate) => getFavoriteArticleIdentity(candidate) === articleId) ||
+          runtime.renderedFavoriteArticleLookup.get(articleId) ||
+          null;
         if (article) {
           openNoiseFeedbackDialog(article);
         }
