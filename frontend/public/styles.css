@@ -1363,27 +1363,46 @@ h3 {
 }
 
 .article-card--read {
-  opacity: 0.82;
   border-color: color-mix(in srgb, var(--accent) 48%, var(--line));
   box-shadow: inset 4px 0 0 var(--accent);
 }
 
-.article-card--read .article-title::after {
-  content: "✓ Read";
-  display: inline-block;
-  margin-left: 8px;
-  padding: 2px 6px;
+.article-read-button {
+  position: absolute;
+  z-index: 2;
+  top: 14px;
+  right: 14px;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.64);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 20%, var(--bg-elevated));
-  color: var(--accent);
-  font-size: 0.65rem;
-  vertical-align: middle;
+  background: rgba(7, 17, 26, 0.78);
+  color: rgba(255, 255, 255, 0.7);
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 900;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
 }
 
 .article-read-button[aria-pressed="true"] {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 18%, var(--bg-elevated));
-  color: var(--accent);
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.article-read-button:hover {
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+.article-read-button:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
 }
 
 .welcome-dialog {
@@ -2816,6 +2835,7 @@ button.intelligence-context-chip:focus-visible .intelligence-context-chip-remove
 .article-card {
   display: flex;
   flex-direction: column;
+  position: relative;
   width: 100%;
   overflow: hidden;
   min-height: 100%;

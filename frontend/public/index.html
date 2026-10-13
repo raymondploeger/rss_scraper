@@ -487,6 +487,7 @@
 
     <template id="article-card-template">
       <article class="article-card">
+        <button class="article-read-button" type="button" aria-pressed="false" aria-label="Mark as read" title="Mark as read">✓</button>
         <a class="article-link" target="_blank" rel="noopener noreferrer">
           <div class="article-media">
             <img class="article-image" alt="" loading="lazy" />
@@ -513,7 +514,6 @@
         </details>
         <div class="article-card-actions">
           <button class="article-favorite-button" type="button" aria-pressed="false" title="Save article">Save</button>
-          <button class="article-read-button" type="button" aria-pressed="false" title="Mark as read">Mark read</button>
           <button class="article-noise-button" type="button" title="Mark this article as noise">Mark as noise</button>
           <details class="article-share-actions">
             <summary class="article-share-toggle" aria-label="Share this article" title="Share this article">Share this</summary>
