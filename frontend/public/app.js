@@ -27328,7 +27328,10 @@ function handleFavoriteArticleButton(button) {
 
 function handleArticleReadButton(button) {
   const articleId = button?.dataset?.readArticleId || "";
-  const article = state.articles.find((candidate) => getFavoriteArticleIdentity(candidate) === articleId) || null;
+  const article =
+    state.articles.find((candidate) => getFavoriteArticleIdentity(candidate) === articleId) ||
+    runtime.renderedFavoriteArticleLookup.get(articleId) ||
+    null;
   if (!article) return false;
   const read = toggleArticleRead(article);
   button.setAttribute("aria-pressed", String(read));
