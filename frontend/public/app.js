@@ -27334,7 +27334,7 @@ function handleArticleReadButton(button) {
   button.setAttribute("aria-pressed", String(read));
   button.setAttribute("aria-label", read ? "Mark as unread" : "Mark as read");
   button.title = read ? "Mark as unread" : "Mark as read";
-  button.textContent = "✓";
+  button.textContent = read ? "✓" : "○";
   button.closest(".article-card")?.classList.toggle("article-card--read", read);
   if (state.filters.readState !== "all") scheduleRenderArticles("read-state", { mode: "frame" });
   return true;
@@ -57162,7 +57162,7 @@ function renderArticleCard(article) {
     readButton.setAttribute("aria-pressed", String(read));
     readButton.setAttribute("aria-label", read ? "Mark as unread" : "Mark as read");
     readButton.title = read ? "Mark as unread" : "Mark as read";
-    readButton.textContent = "✓";
+    readButton.textContent = read ? "✓" : "○";
   }
   const noiseButton = node.querySelector(".article-noise-button");
   if (noiseButton) {
