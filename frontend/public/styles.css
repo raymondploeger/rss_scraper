@@ -1406,7 +1406,8 @@ h3 {
 }
 
 .welcome-dialog {
-  width: min(520px, calc(100vw - 32px));
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(780px, calc(100vh - 32px));
   border: 1px solid var(--line);
   border-radius: 16px;
   background: var(--bg-elevated);
@@ -1415,9 +1416,46 @@ h3 {
 }
 
 .welcome-dialog::backdrop { background: rgba(3, 12, 24, 0.7); }
-.welcome-dialog-content { display: grid; gap: 13px; padding: 10px; }
+.welcome-dialog-content { display: grid; gap: 18px; padding: 14px; }
 .welcome-dialog-content h2, .welcome-dialog-content p { margin: 0; }
-.welcome-dialog-content ol { margin: 0; padding-left: 22px; color: var(--muted); line-height: 1.55; }
+.welcome-dialog-header,
+.welcome-wizard-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.welcome-dismiss-button { flex: 0 0 auto; }
+.welcome-wizard-progress { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.welcome-wizard-step { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--muted); font-size: 0.78rem; font-weight: 700; }
+.welcome-wizard-step b { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; border: 1px solid var(--line); border-radius: 999px; font-size: 0.75rem; }
+.welcome-wizard-step.is-current,
+.welcome-wizard-step.is-complete { color: var(--accent); }
+.welcome-wizard-step.is-current b { border-color: var(--accent); background: var(--accent); color: var(--bg-elevated); }
+.welcome-wizard-step.is-complete b { border-color: var(--accent); }
+.welcome-wizard-content { min-height: 310px; overflow: auto; padding-right: 4px; }
+.welcome-wizard-copy { color: var(--muted); line-height: 1.5; }
+.welcome-profile-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+.welcome-profile-option { display: grid; gap: 6px; min-height: 100px; padding: 15px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg-elevated); color: var(--text); text-align: left; cursor: pointer; }
+.welcome-profile-option span { color: var(--muted); font-size: 0.84rem; line-height: 1.35; }
+.welcome-profile-option:hover,
+.welcome-profile-option:focus-visible,
+.welcome-profile-option[data-selected="true"] { border-color: var(--accent); background: var(--accent-soft); outline: none; }
+.welcome-interest-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+.welcome-interest-group { padding: 14px; border: 1px solid var(--line); border-radius: 12px; }
+.welcome-interest-group h3 { margin: 0; font-size: 0.95rem; }
+.welcome-interest-group p { margin: 5px 0 11px; color: var(--muted); font-size: 0.78rem; line-height: 1.35; }
+.welcome-interest-group > div { display: flex; flex-wrap: wrap; gap: 7px; }
+.welcome-interest-option { display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 7px; background: var(--bg-soft); font-size: 0.82rem; cursor: pointer; }
+.welcome-interest-option input { accent-color: var(--accent); }
+.welcome-review { display: grid; align-content: start; gap: 13px; min-height: 100%; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--accent-soft); }
+.welcome-review h3 { margin: 0; font-size: 1.35rem; }
+.welcome-review-kicker { color: var(--accent); font-size: 0.8rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+.welcome-review-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.welcome-review-chips span { padding: 6px 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg-elevated); font-size: 0.8rem; }
+.welcome-next-steps { display: flex; gap: 8px; padding-top: 8px; color: var(--muted); font-size: 0.88rem; line-height: 1.45; }
+@media (max-width: 620px) {
+  .welcome-dialog { width: min(100vw - 20px, 760px); }
+  .welcome-wizard-progress { grid-template-columns: 1fr; }
+  .welcome-profile-options,
+  .welcome-interest-groups { grid-template-columns: 1fr; }
+  .welcome-wizard-content { min-height: 260px; }
+}
 
 .intelligence-feed-context {
   display: flex;

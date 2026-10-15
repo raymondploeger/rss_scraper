@@ -7632,7 +7632,11 @@ const elements = {
   articleReadFilter: document.getElementById("article-read-filter"),
   profileHistoryToggle: document.getElementById("profile-history-toggle"),
   welcomeDialog: document.getElementById("welcome-dialog"),
-  welcomeStartButton: document.getElementById("welcome-start-button"),
+  welcomeDismissButton: document.getElementById("welcome-dismiss-button"),
+  welcomeWizardProgress: document.getElementById("welcome-wizard-progress"),
+  welcomeWizardContent: document.getElementById("welcome-wizard-content"),
+  welcomeBackButton: document.getElementById("welcome-back-button"),
+  welcomeNextButton: document.getElementById("welcome-next-button"),
   welcomeHelpButton: document.getElementById("welcome-help-button"),
   intelligenceFeedContext: document.getElementById("intelligence-feed-context"),
   paginationControls: document.getElementById("pagination-controls"),
@@ -61861,24 +61865,155 @@ async function importDmvFeeds() {
   }
 }
 
+const welcomeWizard = {
+  step: 1,
+  templateId: "",
+  interests: [],
+};
+
+function resetWelcomeWizard() {
+  const currentInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const currentTemplateId = String(state.personalDashboard.activeTemplateId || "").trim();
+  welcomeWizard.step = currentInterests.length ? 2 : 1;
+  welcomeWizard.templateId = PERSONAL_DASHBOARD_PROFILE_TEMPLATES[currentTemplateId] ? currentTemplateId : "";
+  welcomeWizard.interests = currentInterests;
+}
+
+function renderWelcomeWizard() {
+  if (!elements.welcomeWizardContent || !elements.welcomeWizardProgress || !elements.welcomeNextButton) {
+    return;
+  }
+
+  const stepLabels = ["Choose a starting point", "Refine your interests", "Review your feed"];
+  elements.welcomeWizardProgress.innerHTML = stepLabels.map((label, index) => {
+    const step = index + 1;
+    const stateLabel = step === welcomeWizard.step ? "current" : step < welcomeWizard.step ? "complete" : "upcoming";
+    return `<span class="welcome-wizard-step is-${stateLabel}" ${step === welcomeWizard.step ? 'aria-current="step"' : ""}><b>${step}</b>${escapeHtml(label)}</span>`;
+  }).join("");
+
+  if (welcomeWizard.step === 1) {
+    const profiles = Object.entries(PERSONAL_DASHBOARD_PROFILE_TEMPLATES).map(([id, template]) => `
+      <button type="button" class="welcome-profile-option" data-welcome-template="${escapeHtml(id)}" data-selected="${welcomeWizard.templateId === id ? "true" : "false"}">
+        <strong>${escapeHtml(template.label)}</strong>
+        <span>${escapeHtml(template.description)}</span>
+      </button>
+    `).join("");
+    elements.welcomeWizardContent.innerHTML = `
+      <div class="welcome-wizard-copy"><p>Start with the role closest to your work. You can tailor every topic in the next step.</p></div>
+      <div class="welcome-profile-options">${profiles}
+        <button type="button" class="welcome-profile-option" data-welcome-template="custom" data-selected="${welcomeWizard.templateId === "custom" ? "true" : "false"}">
+          <strong>Build from scratch</strong><span>Choose individual topics without a starting profile.</span>
+        </button>
+      </div>`;
+    elements.welcomeNextButton.textContent = "Continue";
+    elements.welcomeNextButton.disabled = !welcomeWizard.templateId;
+  } else if (welcomeWizard.step === 2) {
+    const selected = new Set(welcomeWizard.interests);
+    const groups = PERSONAL_DASHBOARD_GROUPS.map((group) => {
+      const options = group.interests.filter((interest) => !interest.hidden).map((interest) => `
+        <label class="welcome-interest-option"><input type="checkbox" data-welcome-interest="${escapeHtml(interest.id)}" ${selected.has(interest.id) ? "checked" : ""} /><span>${escapeHtml(interest.label)}</span></label>
+      `).join("");
+      return `<section class="welcome-interest-group"><h3>${escapeHtml(group.label)}</h3><p>${escapeHtml(group.description)}</p><div>${options}</div></section>`;
+    }).join("");
+    elements.welcomeWizardContent.innerHTML = `
+      <div class="welcome-wizard-copy"><p>Select the topics you want to see. Your starting profile is preselected; add or remove anything to make it yours.</p></div>
+      <div class="welcome-interest-groups">${groups}</div>`;
+    elements.welcomeNextButton.textContent = "Review profile";
+    elements.welcomeNextButton.disabled = !welcomeWizard.interests.length;
+  } else {
+    const selectedInterests = welcomeWizard.interests.map((id) => PERSONAL_DASHBOARD_INTEREST_MAP.get(id)).filter(Boolean);
+    const profile = PERSONAL_DASHBOARD_PROFILE_TEMPLATES[welcomeWizard.templateId];
+    elements.welcomeWizardContent.innerHTML = `
+      <div class="welcome-review">
+        <p class="welcome-review-kicker">Your intelligence feed is ready</p>
+        <h3>${escapeHtml(profile?.label || "Custom profile")}</h3>
+        <p>${selectedInterests.length} topic${selectedInterests.length === 1 ? "" : "s"} selected. You can change these at any time from <strong>Show profile</strong> in the sidebar.</p>
+        <div class="welcome-review-chips">${selectedInterests.map((interest) => `<span>${escapeHtml(interest.label)}</span>`).join("")}</div>
+        <div class="welcome-next-steps"><strong>Next:</strong><span>Read the matched articles, save the important ones, and mark unrelated results as noise.</span></div>
+      </div>`;
+    elements.welcomeNextButton.textContent = "Start my feed";
+    elements.welcomeNextButton.disabled = false;
+  }
+  if (elements.welcomeBackButton) {
+    elements.welcomeBackButton.hidden = welcomeWizard.step === 1;
+  }
+}
+
+function openWelcomeWizard() {
+  resetWelcomeWizard();
+  renderWelcomeWizard();
+  if (!elements.welcomeDialog?.open) {
+    elements.welcomeDialog?.showModal();
+  }
+}
+
+function applyWelcomeWizardProfile() {
+  const interests = normalizePersonalDashboardInterests(welcomeWizard.interests);
+  if (!interests.length) return;
+  const template = PERSONAL_DASHBOARD_PROFILE_TEMPLATES[welcomeWizard.templateId];
+  state.personalDashboard.interests = interests;
+  state.personalDashboard.activeTemplateId = template && normalizePersonalDashboardInterests(template.interests)
+    .every((interestId) => interests.includes(interestId)) ? welcomeWizard.templateId : "";
+  state.personalDashboard.activeCustomProfileId = "";
+  state.personalDashboard.editing = false;
+  state.personalDashboard.expandedGroups = [];
+  state.personalDashboard.historyScope = "recent";
+  state.personalDashboard.explicitlyCleared = false;
+  state.filters.sourceOnly = false;
+  ensurePaginationState();
+  state.pagination.page = 1;
+  savePersonalDashboardPreferences();
+  invalidateProfileTodaySummary();
+  renderPersonalDashboard();
+  renderSummary();
+  clearFeedRenderCaches({ preserveBackendArticleQueryCache: true });
+  scheduleRenderArticles("welcome-wizard-profile", { mode: "frame" });
+  showNotification({ title: "Profile ready", message: "Your intelligence feed now reflects the topics you selected.", type: "success" });
+  elements.welcomeDialog?.close("complete");
+}
+
 function bindEvents() {
   if (elements.welcomeDialog) {
     elements.welcomeDialog.addEventListener("close", () => {
       window.localStorage.setItem(WELCOME_DISMISSED_STORAGE_KEY, "1");
     });
   }
-  if (elements.welcomeStartButton) {
-    elements.welcomeStartButton.addEventListener("click", () => {
-      state.personalDashboard.editing = true;
-      renderPersonalDashboard();
-      document.getElementById("personal-dashboard")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-  }
+  elements.welcomeDismissButton?.addEventListener("click", () => elements.welcomeDialog?.close("dismissed"));
+  elements.welcomeBackButton?.addEventListener("click", () => {
+    welcomeWizard.step = Math.max(1, welcomeWizard.step - 1);
+    renderWelcomeWizard();
+  });
+  elements.welcomeNextButton?.addEventListener("click", () => {
+    if (welcomeWizard.step === 3) {
+      applyWelcomeWizardProfile();
+      return;
+    }
+    welcomeWizard.step += 1;
+    renderWelcomeWizard();
+  });
+  elements.welcomeWizardContent?.addEventListener("click", (event) => {
+    const option = event.target instanceof Element ? event.target.closest("[data-welcome-template]") : null;
+    if (!option) return;
+    const templateId = String(option.dataset.welcomeTemplate || "");
+    welcomeWizard.templateId = templateId;
+    welcomeWizard.interests = templateId === "custom"
+      ? []
+      : normalizePersonalDashboardInterests(PERSONAL_DASHBOARD_PROFILE_TEMPLATES[templateId]?.interests || []);
+    renderWelcomeWizard();
+  });
+  elements.welcomeWizardContent?.addEventListener("change", (event) => {
+    const checkbox = event.target instanceof HTMLInputElement ? event.target.closest("[data-welcome-interest]") : null;
+    if (!(checkbox instanceof HTMLInputElement)) return;
+    const interestId = normalizePersonalDashboardInterestId(checkbox.dataset.welcomeInterest || "");
+    const nextInterests = new Set(welcomeWizard.interests);
+    if (checkbox.checked) nextInterests.add(interestId);
+    else nextInterests.delete(interestId);
+    welcomeWizard.interests = normalizePersonalDashboardInterests(Array.from(nextInterests));
+    renderWelcomeWizard();
+  });
   if (elements.welcomeHelpButton) {
     elements.welcomeHelpButton.addEventListener("click", () => {
-      if (!elements.welcomeDialog?.open) {
-        elements.welcomeDialog?.showModal();
-      }
+      openWelcomeWizard();
     });
   }
   document.addEventListener("click", (event) => {
@@ -63186,7 +63321,7 @@ async function init() {
   syncFeedFormMode();
   bindEvents();
   if (elements.welcomeDialog && window.localStorage.getItem(WELCOME_DISMISSED_STORAGE_KEY) !== "1") {
-    elements.welcomeDialog.showModal();
+    openWelcomeWizard();
   }
   renderSkeletons();
   syncNoiseKeywordVisibility();

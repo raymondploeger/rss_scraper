@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Security Industry Information</title>
     <link rel="icon" type="image/png" href="/images/favicon.png" />
-    <link rel="stylesheet" href="/styles.css?v=20261013-read-status-297" />
+    <link rel="stylesheet" href="/styles.css?v=20261015-welcome-wizard-001" />
   </head>
   <body>
     <div id="notification-region" class="notification-region" aria-live="polite" aria-label="Notifications"></div>
@@ -529,17 +529,21 @@
     </template>
 
     <dialog id="welcome-dialog" class="welcome-dialog" aria-labelledby="welcome-title">
-      <form method="dialog" class="welcome-dialog-content">
-        <p class="eyebrow">Welcome</p>
-        <h2 id="welcome-title">Build your intelligence feed</h2>
-        <p>Choose a professional profile, refine its interests, then review the articles that match it.</p>
-        <ol>
-          <li><strong>Choose a profile</strong> to set your starting scope.</li>
-          <li><strong>Refine interests</strong> when you need a narrower focus.</li>
-          <li><strong>Save</strong> useful articles, mark routine items as read, and use <strong>Mark as noise</strong> for irrelevant content.</li>
-        </ol>
-        <button id="welcome-start-button" class="primary-button" value="start" type="submit">Choose a profile</button>
-      </form>
+      <div class="welcome-dialog-content">
+        <div class="welcome-dialog-header">
+          <div>
+            <p class="eyebrow">Welcome</p>
+            <h2 id="welcome-title">Build your intelligence feed</h2>
+          </div>
+          <button id="welcome-dismiss-button" class="ghost-button welcome-dismiss-button" type="button" aria-label="Close welcome wizard">Not now</button>
+        </div>
+        <div id="welcome-wizard-progress" class="welcome-wizard-progress" aria-label="Profile setup progress"></div>
+        <div id="welcome-wizard-content" class="welcome-wizard-content" aria-live="polite"></div>
+        <div class="welcome-wizard-actions">
+          <button id="welcome-back-button" class="ghost-button" type="button" hidden>Back</button>
+          <button id="welcome-next-button" class="primary-button" type="button">Get started</button>
+        </div>
+      </div>
     </dialog>
 
     <dialog id="noise-feedback-dialog" class="noise-feedback-dialog" aria-labelledby="noise-feedback-title">
@@ -561,6 +565,6 @@
       </form>
     </dialog>
 
-    <script type="module" src="/app.js?v=20261013-read-status-297"></script>
+    <script type="module" src="/app.js?v=20261015-welcome-wizard-001"></script>
   </body>
 </html>
