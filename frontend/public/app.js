@@ -61867,7 +61867,8 @@ async function importDmvFeeds() {
 
 const welcomeWizard = {
   step: 1,
-  templateId: "",
+  templateIds: [],
+  isCustom: false,
   interests: [],
 };
 
@@ -61875,7 +61876,8 @@ function resetWelcomeWizard() {
   const currentInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const currentTemplateId = String(state.personalDashboard.activeTemplateId || "").trim();
   welcomeWizard.step = currentInterests.length ? 2 : 1;
-  welcomeWizard.templateId = PERSONAL_DASHBOARD_PROFILE_TEMPLATES[currentTemplateId] ? currentTemplateId : "";
+  welcomeWizard.templateIds = PERSONAL_DASHBOARD_PROFILE_TEMPLATES[currentTemplateId] ? [currentTemplateId] : [];
+  welcomeWizard.isCustom = !welcomeWizard.templateIds.length;
   welcomeWizard.interests = currentInterests;
 }
 
@@ -61893,20 +61895,20 @@ function renderWelcomeWizard() {
 
   if (welcomeWizard.step === 1) {
     const profiles = Object.entries(PERSONAL_DASHBOARD_PROFILE_TEMPLATES).map(([id, template]) => `
-      <button type="button" class="welcome-profile-option" data-welcome-template="${escapeHtml(id)}" data-selected="${welcomeWizard.templateId === id ? "true" : "false"}">
+      <button type="button" class="welcome-profile-option" data-welcome-template="${escapeHtml(id)}" data-selected="${welcomeWizard.templateIds.includes(id) ? "true" : "false"}" aria-pressed="${welcomeWizard.templateIds.includes(id) ? "true" : "false"}">
         <strong>${escapeHtml(template.label)}</strong>
         <span>${escapeHtml(template.description)}</span>
       </button>
     `).join("");
     elements.welcomeWizardContent.innerHTML = `
-      <div class="welcome-wizard-copy"><p>Start with the role closest to your work. You can tailor every topic in the next step.</p></div>
+      <div class="welcome-wizard-copy"><p>Choose one or more roles that match your work. Their topics are combined, and you can tailor every topic in the next step.</p></div>
       <div class="welcome-profile-options">${profiles}
-        <button type="button" class="welcome-profile-option" data-welcome-template="custom" data-selected="${welcomeWizard.templateId === "custom" ? "true" : "false"}">
+        <button type="button" class="welcome-profile-option" data-welcome-template="custom" data-selected="${welcomeWizard.isCustom ? "true" : "false"}" aria-pressed="${welcomeWizard.isCustom ? "true" : "false"}">
           <strong>Build from scratch</strong><span>Choose individual topics without a starting profile.</span>
         </button>
       </div>`;
     elements.welcomeNextButton.textContent = "Continue";
-    elements.welcomeNextButton.disabled = !welcomeWizard.templateId;
+    elements.welcomeNextButton.disabled = !welcomeWizard.templateIds.length && !welcomeWizard.isCustom;
   } else if (welcomeWizard.step === 2) {
     const selected = new Set(welcomeWizard.interests);
     const groups = PERSONAL_DASHBOARD_GROUPS.map((group) => {
@@ -61922,11 +61924,13 @@ function renderWelcomeWizard() {
     elements.welcomeNextButton.disabled = !welcomeWizard.interests.length;
   } else {
     const selectedInterests = welcomeWizard.interests.map((id) => PERSONAL_DASHBOARD_INTEREST_MAP.get(id)).filter(Boolean);
-    const profile = PERSONAL_DASHBOARD_PROFILE_TEMPLATES[welcomeWizard.templateId];
+    const profileLabels = welcomeWizard.templateIds
+      .map((id) => PERSONAL_DASHBOARD_PROFILE_TEMPLATES[id]?.label)
+      .filter(Boolean);
     elements.welcomeWizardContent.innerHTML = `
       <div class="welcome-review">
         <p class="welcome-review-kicker">Your intelligence feed is ready</p>
-        <h3>${escapeHtml(profile?.label || "Custom profile")}</h3>
+        <h3>${escapeHtml(profileLabels.join(" + ") || "Custom profile")}</h3>
         <p>${selectedInterests.length} topic${selectedInterests.length === 1 ? "" : "s"} selected. You can change these at any time from <strong>Show profile</strong> in the sidebar.</p>
         <div class="welcome-review-chips">${selectedInterests.map((interest) => `<span>${escapeHtml(interest.label)}</span>`).join("")}</div>
         <div class="welcome-next-steps"><strong>Next:</strong><span>Read the matched articles, save the important ones, and mark unrelated results as noise.</span></div>
@@ -61950,10 +61954,11 @@ function openWelcomeWizard() {
 function applyWelcomeWizardProfile() {
   const interests = normalizePersonalDashboardInterests(welcomeWizard.interests);
   if (!interests.length) return;
-  const template = PERSONAL_DASHBOARD_PROFILE_TEMPLATES[welcomeWizard.templateId];
+  const selectedTemplateId = welcomeWizard.templateIds.length === 1 ? welcomeWizard.templateIds[0] : "";
+  const template = PERSONAL_DASHBOARD_PROFILE_TEMPLATES[selectedTemplateId];
   state.personalDashboard.interests = interests;
   state.personalDashboard.activeTemplateId = template && normalizePersonalDashboardInterests(template.interests)
-    .every((interestId) => interests.includes(interestId)) ? welcomeWizard.templateId : "";
+    .every((interestId) => interests.includes(interestId)) ? selectedTemplateId : "";
   state.personalDashboard.activeCustomProfileId = "";
   state.personalDashboard.editing = false;
   state.personalDashboard.expandedGroups = [];
@@ -61995,10 +62000,19 @@ function bindEvents() {
     const option = event.target instanceof Element ? event.target.closest("[data-welcome-template]") : null;
     if (!option) return;
     const templateId = String(option.dataset.welcomeTemplate || "");
-    welcomeWizard.templateId = templateId;
-    welcomeWizard.interests = templateId === "custom"
-      ? []
-      : normalizePersonalDashboardInterests(PERSONAL_DASHBOARD_PROFILE_TEMPLATES[templateId]?.interests || []);
+    if (templateId === "custom") {
+      welcomeWizard.templateIds = [];
+      welcomeWizard.isCustom = true;
+      welcomeWizard.interests = [];
+    } else {
+      welcomeWizard.isCustom = false;
+      welcomeWizard.templateIds = welcomeWizard.templateIds.includes(templateId)
+        ? welcomeWizard.templateIds.filter((id) => id !== templateId)
+        : [...welcomeWizard.templateIds, templateId];
+      welcomeWizard.interests = normalizePersonalDashboardInterests(
+        welcomeWizard.templateIds.flatMap((id) => PERSONAL_DASHBOARD_PROFILE_TEMPLATES[id]?.interests || [])
+      );
+    }
     renderWelcomeWizard();
   });
   elements.welcomeWizardContent?.addEventListener("change", (event) => {
