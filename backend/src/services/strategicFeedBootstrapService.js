@@ -626,6 +626,17 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     profileAffinities: ["vendors"],
     phase: "phase2-vendor-sources",
   },
+  {
+    name: "PPG TESLIN Newsroom",
+    topic: "Shared Security Printing",
+    // This public newsroom page is backed by PPG's Q4 press-release API. The
+    // dedicated extractor keeps only TESLIN document-security announcements.
+    rssUrl: "https://news.ppg.com/home/default.aspx",
+    sourceType: "website",
+    sourceGroup: "Vendors",
+    profileAffinities: ["vendors", "security_printer", "passport_authority"],
+    phase: "phase2-vendor-sources",
+  },
 ];
 
 const RETIRED_STRATEGIC_FEEDS = [

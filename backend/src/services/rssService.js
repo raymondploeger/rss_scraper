@@ -83,6 +83,10 @@ const SOUTH_AFRICAN_RESERVE_BANK_SITE_URL = "https://www.resbank.co.za";
 const KINEGRAM_INSIGHTS_URL = "https://www.kinegram.com/events-insights/insights";
 const OFS_SECURITY_PRINTING_INSIGHTS_URL = "https://ofs.ch/en/insights";
 const OFS_SECURITY_PRINTING_MAX_CANDIDATES = 24;
+const PPG_TESLIN_NEWSROOM_URL = "https://news.ppg.com/home/default.aspx";
+const PPG_TESLIN_PRESS_RELEASE_API_URL =
+  "https://news.ppg.com/feed/PressRelease.svc/GetPressReleaseList";
+const PPG_TESLIN_NEWSROOM_MAX_CANDIDATES = 100;
 const MUEHLBAUER_NEWS_URL = "https://www.muehlbauer.de/news-events/news/";
 const MUEHLBAUER_NEWS_MAX_CANDIDATES = 24;
 const KOENIG_BAUER_PRESS_RELEASES_URL = "https://www.koenig-bauer.com/en/newsroom/press-releases";
@@ -395,6 +399,14 @@ function isOfsSecurityPrintingInsightsFeed(feed) {
   });
 }
 
+function isPpgTeslinNewsroomFeed(feed) {
+  return matchesWebsiteFeedSignature(feed, {
+    exactUrls: [PPG_TESLIN_NEWSROOM_URL],
+    urlFragments: ["news.ppg.com/home/default.aspx"],
+    exactNames: ["PPG TESLIN Newsroom"],
+  });
+}
+
 function isMuehlbauerNewsFeed(feed) {
   return matchesWebsiteFeedSignature(feed, {
     exactUrls: [MUEHLBAUER_NEWS_URL, "https://www.muehlbauer.de/news-events/news"],
@@ -607,6 +619,7 @@ function shouldReplaceArticlesOnSync(feed) {
     isVttNewsFeed(feed) ||
     isKinegramInsightsFeed(feed) ||
     isOfsSecurityPrintingInsightsFeed(feed) ||
+    isPpgTeslinNewsroomFeed(feed) ||
     isMuehlbauerNewsFeed(feed) ||
     isSecunetPressFeed(feed) ||
     isKoenigBauerPressReleasesFeed(feed) ||
@@ -644,6 +657,7 @@ function isTrackedVendorWebsiteFeed(feed) {
     isVttNewsFeed(feed) ||
     isKinegramInsightsFeed(feed) ||
     isOfsSecurityPrintingInsightsFeed(feed) ||
+    isPpgTeslinNewsroomFeed(feed) ||
     isKoenigBauerPressReleasesFeed(feed) ||
     isAtlanticZeiserNewsFeed(feed) ||
     isBundesdruckereiPressReleasesFeed(feed) ||
@@ -4599,6 +4613,91 @@ async function extractOfsSecurityPrintingInsightItems(feed, html) {
   return items;
 }
 
+function toAbsolutePpgNewsroomUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  try {
+    return new URL(raw, PPG_TESLIN_NEWSROOM_URL).toString();
+  } catch {
+    return "";
+  }
+}
+
+function getPpgNewsroomImage(item) {
+  const media = Array.isArray(item?.MediaCollection) ? item.MediaCollection : [];
+  const mediaFiles = Array.isArray(item?.MediaFiles) ? item.MediaFiles : [];
+  return (
+    toAbsolutePpgNewsroomUrl(media.find((entry) => entry?.SourceUrl)?.SourceUrl) ||
+    toAbsolutePpgNewsroomUrl(mediaFiles.find((entry) => entry?.ThumbnailPath)?.ThumbnailPath) ||
+    toAbsolutePpgNewsroomUrl(mediaFiles.find((entry) => entry?.Path)?.Path)
+  );
+}
+
+async function extractPpgTeslinNewsroomItems(feed) {
+  // PPG's public Q4 endpoint is the structured data source behind its
+  // Cloudflare-protected newsroom.  It gives us dated press-release metadata
+  // without scraping a browser-rendered page.
+  const response = await axios.get(PPG_TESLIN_PRESS_RELEASE_API_URL, {
+    timeout: env.requestTimeoutMs,
+    maxContentLength: env.sourceResponseMaxBytes,
+    maxBodyLength: env.sourceResponseMaxBytes,
+    headers: {
+      "User-Agent": "RSS Monitor Dashboard/2.0",
+      Accept: "application/json",
+    },
+    params: {
+      LanguageId: 1,
+      pageSize: PPG_TESLIN_NEWSROOM_MAX_CANDIDATES,
+      pageNumber: 0,
+      tagList: "",
+      includeTags: true,
+      year: -1,
+      excludeSelection: 1,
+      // Includes the release body so the relevance rule can make a cautious
+      // decision when a headline alone does not mention TESLIN or credentials.
+      bodyType: 2,
+      pressReleaseDateFilter: 3,
+      categoryId: "1cb807d2-208f-4bc3-9133-6a9ad45ac3b0",
+    },
+    validateStatus: (status) => status >= 200 && status < 400,
+  });
+
+  const releases = Array.isArray(response.data?.GetPressReleaseListResult)
+    ? response.data.GetPressReleaseListResult
+    : [];
+  const items = [];
+  const seenLinks = new Set();
+
+  for (const release of releases) {
+    const title = sanitizeFeedText(release?.Headline || "", "");
+    const link = canonicalizeUrl(toAbsolutePpgNewsroomUrl(release?.LinkToDetailPage));
+    const contentSnippet = sanitizeFeedText(release?.Body || release?.ShortBody || "", "");
+    if (!title || !link || seenLinks.has(link)) {
+      continue;
+    }
+
+    if (!articleMatchesSourceRelevanceRule(feed, { title, link, contentSnippet })) {
+      continue;
+    }
+
+    seenLinks.add(link);
+    items.push({
+      title,
+      link,
+      isoDate: release?.PressReleaseDate || "",
+      image: getPpgNewsroomImage(release),
+      contentSnippet,
+      author: "",
+      source: "PPG",
+    });
+  }
+
+  return items;
+}
+
 function inferMuehlbauerNewsYearDate(link) {
   const match = String(link || "").match(/\/news-events\/news\/(20\d{2})\//i);
   return match ? new Date(`${match[1]}-01-01T12:00:00.000Z`) : null;
@@ -4673,6 +4772,14 @@ async function extractMuehlbauerNewsItems(feed, $, pageUrl) {
 
 async function extractWebsiteItems(feed) {
   console.log(`Parsing website source ${feed.id} (${feed.rssUrl})`);
+
+  if (isPpgTeslinNewsroomFeed(feed)) {
+    console.log(`Using dedicated website extractor: ppg-teslin-newsroom for source ${feed.id}`);
+    const items = await extractPpgTeslinNewsroomItems(feed);
+    console.log(`Extracted ${items.length} candidate website items for source ${feed.id}`);
+    return items;
+  }
+
   const response = await fetchWebsiteHtml(feed.rssUrl);
   const html = String(response.data || "");
   const $ = cheerio.load(html);

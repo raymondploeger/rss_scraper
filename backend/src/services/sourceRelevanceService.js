@@ -345,6 +345,41 @@ export const SOURCE_RELEVANCE_RULES = [
     exclude: ["career", "careers", "job", "jobs", "sustainability", "webinar"],
   },
   {
+    // The corporate PPG newsroom is mainly about paints and coatings. Only
+    // TESLIN announcements with an explicit credential/document-security
+    // connection belong in this vendor feed.
+    name: "PPG TESLIN Newsroom",
+    sourceKeys: ["ppg teslin newsroom", "news.ppg.com/home/default.aspx"],
+    include: [
+      "anti-counterfeit",
+      "credential",
+      "credentials",
+      "e-passport",
+      "e-passports",
+      "identity card",
+      "identity cards",
+      "identity document",
+      "identity documents",
+      "passport",
+      "passports",
+      "secure credential",
+      "secure credentials",
+      "secure document",
+      "secure documents",
+      "security printing",
+      "teslin",
+    ],
+    exclude: [
+      "aerospace",
+      "architectural coatings",
+      "automotive",
+      "colorful communities",
+      "colourful communities",
+      "marine coatings",
+      "paint store",
+    ],
+  },
+  {
     name: "Jura Security Printing",
     sourceKeys: ["jura security printing", "jura.hu/feed"],
     include: [
