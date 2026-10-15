@@ -4580,6 +4580,44 @@ function getActivePersonalDashboardTemplateIds(interests = state.personalDashboa
   );
 }
 
+function inferLegacyCombinedProfileTemplateIds(interests = state.personalDashboard.interests) {
+  const selectedInterests = normalizePersonalDashboardInterests(interests).slice().sort();
+  if (!selectedInterests.length) {
+    return [];
+  }
+  const templateIds = Object.keys(PERSONAL_DASHBOARD_PROFILE_TEMPLATES);
+  let bestMatch = [];
+  for (let mask = 1; mask < (1 << templateIds.length); mask += 1) {
+    const candidateIds = templateIds.filter((_, index) => (mask & (1 << index)) !== 0);
+    if (candidateIds.length < 2) {
+      continue;
+    }
+    const hasOnlyContributingProfiles = candidateIds.every((templateId) => {
+      const otherInterests = new Set(normalizePersonalDashboardInterests(
+        candidateIds
+          .filter((otherTemplateId) => otherTemplateId !== templateId)
+          .flatMap((otherTemplateId) => PERSONAL_DASHBOARD_PROFILE_TEMPLATES[otherTemplateId].interests)
+      ));
+      return normalizePersonalDashboardInterests(PERSONAL_DASHBOARD_PROFILE_TEMPLATES[templateId].interests)
+        .some((interestId) => !otherInterests.has(interestId));
+    });
+    if (!hasOnlyContributingProfiles) {
+      continue;
+    }
+    const candidateInterests = normalizePersonalDashboardInterests(candidateIds.flatMap((templateId) =>
+      PERSONAL_DASHBOARD_PROFILE_TEMPLATES[templateId].interests
+    )).slice().sort();
+    if (
+      candidateInterests.length === selectedInterests.length &&
+      candidateInterests.every((interestId, index) => interestId === selectedInterests[index]) &&
+      candidateIds.length > bestMatch.length
+    ) {
+      bestMatch = candidateIds;
+    }
+  }
+  return bestMatch;
+}
+
 const PERSONAL_DASHBOARD_LEGACY_VENDOR_TEMPLATE_INTERESTS = Object.freeze([
   "security_features",
   "security_printing",
@@ -27728,6 +27766,11 @@ function loadPersonalDashboardPreferences() {
   }
   if (!state.personalDashboard.activeTemplateIds.length && state.personalDashboard.activeTemplateId) {
     state.personalDashboard.activeTemplateIds = [state.personalDashboard.activeTemplateId];
+  }
+  if (!state.personalDashboard.activeTemplateIds.length) {
+    state.personalDashboard.activeTemplateIds = inferLegacyCombinedProfileTemplateIds(
+      state.personalDashboard.interests
+    );
   }
 }
 
