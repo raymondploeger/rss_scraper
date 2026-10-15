@@ -1724,6 +1724,7 @@ const IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_STORAGE_KEY = "identityDocumentAuth
 const PERSONAL_DASHBOARD_LAST_SAVED_STORAGE_KEY = "personalDashboardLastSavedAt";
 const PERSONAL_DASHBOARD_CUSTOM_PROFILES_STORAGE_KEY = "personalDashboardCustomProfiles";
 const PERSONAL_DASHBOARD_ACTIVE_TEMPLATE_STORAGE_KEY = "personalDashboardActiveTemplate";
+const PERSONAL_DASHBOARD_ACTIVE_TEMPLATE_IDS_STORAGE_KEY = "personalDashboardActiveTemplateIds";
 const DEFAULT_PERSONAL_DASHBOARD_SORT = "newest";
 const NOISE_KEYWORDS_EXPANDED_STORAGE_KEY = "noiseKeywordsExpanded";
 const IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_OPTIONS = IDENTITY_AUTHORITY_MODES;
@@ -4561,6 +4562,24 @@ const PERSONAL_DASHBOARD_PROFILE_TEMPLATES = Object.freeze({
   }),
 });
 
+function normalizePersonalDashboardActiveTemplateIds(templateIds, interests = state.personalDashboard?.interests || []) {
+  const normalizedInterests = normalizePersonalDashboardInterests(interests);
+  return Array.from(new Set(Array.isArray(templateIds) ? templateIds : []))
+    .map((templateId) => String(templateId || "").trim())
+    .filter((templateId) => {
+      const template = PERSONAL_DASHBOARD_PROFILE_TEMPLATES[templateId];
+      return template && normalizePersonalDashboardInterests(template.interests)
+        .every((interestId) => normalizedInterests.includes(interestId));
+    });
+}
+
+function getActivePersonalDashboardTemplateIds(interests = state.personalDashboard.interests) {
+  return normalizePersonalDashboardActiveTemplateIds(
+    state.personalDashboard.activeTemplateIds,
+    interests
+  );
+}
+
 const PERSONAL_DASHBOARD_LEGACY_VENDOR_TEMPLATE_INTERESTS = Object.freeze([
   "security_features",
   "security_printing",
@@ -4599,6 +4618,13 @@ function getMatchingPersonalDashboardTemplateId(interests = state.personalDashbo
 
 function getPersonalDashboardRefinementInterests(interests = state.personalDashboard.interests) {
   const normalizedInterests = normalizePersonalDashboardInterests(interests);
+  const activeTemplateIds = getActivePersonalDashboardTemplateIds(normalizedInterests);
+  if (activeTemplateIds.length) {
+    const baseInterests = new Set(activeTemplateIds.flatMap((templateId) =>
+      normalizePersonalDashboardInterests(PERSONAL_DASHBOARD_PROFILE_TEMPLATES[templateId].interests)
+    ));
+    return normalizedInterests.filter((interestId) => !baseInterests.has(interestId));
+  }
   const activeTemplateId = String(state.personalDashboard.activeTemplateId || "").trim();
   const template = PERSONAL_DASHBOARD_PROFILE_TEMPLATES[activeTemplateId];
   if (!template) {
@@ -4665,6 +4691,17 @@ function getMatchingPersonalDashboardCustomProfile(interests = state.personalDas
 }
 
 function getPersonalDashboardProfileDisplay(interests = state.personalDashboard.interests) {
+  const activeTemplateIds = getActivePersonalDashboardTemplateIds(interests);
+  if (activeTemplateIds.length > 1) {
+    return {
+      id: activeTemplateIds.join("+"),
+      type: "template-combination",
+      label: activeTemplateIds
+        .map((templateId) => PERSONAL_DASHBOARD_PROFILE_TEMPLATES[templateId]?.label)
+        .filter(Boolean)
+        .join(" + "),
+    };
+  }
   const templateId = getMatchingPersonalDashboardTemplateId(interests);
   if (templateId && templateId !== "custom") {
     return {
@@ -4696,6 +4733,7 @@ function getArticleDecisionReceiptSignature(interests = state.personalDashboard.
   return JSON.stringify({
     interests: normalizePersonalDashboardInterests(interests).slice().sort(),
     activeTemplateId: String(state.personalDashboard?.activeTemplateId || ""),
+    activeTemplateIds: getActivePersonalDashboardTemplateIds(interests).slice().sort(),
     mode: normalizePersonalDashboardMode(state.personalDashboard?.mode),
     strictness: normalizeIdentityDocumentAuthorityStrictness(
       state.personalDashboard?.identityDocumentAuthorityStrictness
@@ -4894,6 +4932,9 @@ function getArticleDecisionReceipt(article) {
 }
 
 function isPersonalDashboardProfileBundleSelection(interests = state.personalDashboard.interests) {
+  if (getActivePersonalDashboardTemplateIds(interests).length) {
+    return true;
+  }
   const templateId = getMatchingPersonalDashboardTemplateId(interests);
   return Boolean(templateId && templateId !== "custom");
 }
@@ -7492,6 +7533,7 @@ const state = {
     customProfiles: [],
     activeCustomProfileId: "",
     activeTemplateId: "",
+    activeTemplateIds: [],
     editing: false,
     mode: "balanced",
     historyScope: "recent",
@@ -27676,6 +27718,17 @@ function loadPersonalDashboardPreferences() {
     normalizePersonalDashboardInterests(PERSONAL_DASHBOARD_PROFILE_TEMPLATES[storedTemplateId].interests)
       .every((interestId) => state.personalDashboard.interests.includes(interestId))
   ) ? storedTemplateId : "";
+  try {
+    state.personalDashboard.activeTemplateIds = normalizePersonalDashboardActiveTemplateIds(
+      JSON.parse(window.localStorage.getItem(PERSONAL_DASHBOARD_ACTIVE_TEMPLATE_IDS_STORAGE_KEY) || "[]"),
+      state.personalDashboard.interests
+    );
+  } catch {
+    state.personalDashboard.activeTemplateIds = [];
+  }
+  if (!state.personalDashboard.activeTemplateIds.length && state.personalDashboard.activeTemplateId) {
+    state.personalDashboard.activeTemplateIds = [state.personalDashboard.activeTemplateId];
+  }
 }
 
 function savePersonalDashboardPreferences() {
@@ -27702,6 +27755,14 @@ function savePersonalDashboardPreferences() {
   window.localStorage.setItem(
     PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY,
     JSON.stringify(state.personalDashboard.interests)
+  );
+  state.personalDashboard.activeTemplateIds = normalizePersonalDashboardActiveTemplateIds(
+    state.personalDashboard.activeTemplateIds,
+    state.personalDashboard.interests
+  );
+  window.localStorage.setItem(
+    PERSONAL_DASHBOARD_ACTIVE_TEMPLATE_IDS_STORAGE_KEY,
+    JSON.stringify(state.personalDashboard.activeTemplateIds)
   );
   const activeTemplateId = String(state.personalDashboard.activeTemplateId || "").trim();
   if (
@@ -27784,12 +27845,14 @@ function clearPersonalDashboardPreferences() {
   state.personalDashboard.historyScope = "recent";
   state.personalDashboard.activeCustomProfileId = "";
   state.personalDashboard.activeTemplateId = "";
+  state.personalDashboard.activeTemplateIds = [];
   state.personalDashboard.explicitlyCleared = true;
   window.localStorage.removeItem(PERSONAL_DASHBOARD_MODE_STORAGE_KEY);
   window.localStorage.removeItem(IDENTITY_DOCUMENT_AUTHORITY_STRICTNESS_STORAGE_KEY);
   window.localStorage.removeItem(PERSONAL_DASHBOARD_HISTORY_SCOPE_STORAGE_KEY);
   window.localStorage.removeItem(PERSONAL_DASHBOARD_INTERESTS_STORAGE_KEY);
   window.localStorage.removeItem(PERSONAL_DASHBOARD_ACTIVE_TEMPLATE_STORAGE_KEY);
+  window.localStorage.removeItem(PERSONAL_DASHBOARD_ACTIVE_TEMPLATE_IDS_STORAGE_KEY);
   window.localStorage.removeItem(PERSONAL_DASHBOARD_LAST_SAVED_STORAGE_KEY);
   window.localStorage.setItem(PERSONAL_DASHBOARD_EXPLICITLY_CLEARED_STORAGE_KEY, "1");
 }
@@ -27824,6 +27887,7 @@ function createPersonalDashboardCustomProfile() {
   }
   state.personalDashboard.activeCustomProfileId = profile.id;
   state.personalDashboard.activeTemplateId = "";
+  state.personalDashboard.activeTemplateIds = [];
   savePersonalDashboardCustomProfiles();
   updatePersonalDashboardTemplateSelection(interests);
   renderPersonalDashboard();
@@ -28575,6 +28639,10 @@ function setPersonalDashboardInterest(interestId, enabled) {
     state.personalDashboard.activeTemplateId = "";
   }
   state.personalDashboard.activeCustomProfileId = "";
+  state.personalDashboard.activeTemplateIds = normalizePersonalDashboardActiveTemplateIds(
+    state.personalDashboard.activeTemplateIds,
+    state.personalDashboard.interests
+  );
   state.personalDashboard.explicitlyCleared = false;
   updatePersonalDashboardTemplateSelection(state.personalDashboard.interests);
   ensurePaginationState();
@@ -28598,6 +28666,7 @@ function applyPersonalDashboardTemplate(templateId) {
   keepPersonalDashboardEditorOpenForInterests(state.personalDashboard.interests);
   state.personalDashboard.activeCustomProfileId = "";
   state.personalDashboard.activeTemplateId = templateId;
+  state.personalDashboard.activeTemplateIds = [templateId];
   state.personalDashboard.historyScope = "recent";
   state.personalDashboard.explicitlyCleared = false;
   ensurePaginationState();
@@ -28622,6 +28691,7 @@ function applyPersonalDashboardCustomProfile(profileId) {
   keepPersonalDashboardEditorOpenForInterests(state.personalDashboard.interests);
   state.personalDashboard.activeCustomProfileId = profile.id;
   state.personalDashboard.activeTemplateId = "";
+  state.personalDashboard.activeTemplateIds = [];
   state.personalDashboard.historyScope = "recent";
   state.personalDashboard.explicitlyCleared = false;
   ensurePaginationState();
@@ -61876,7 +61946,10 @@ function resetWelcomeWizard() {
   const currentInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const currentTemplateId = String(state.personalDashboard.activeTemplateId || "").trim();
   welcomeWizard.step = currentInterests.length ? 2 : 1;
-  welcomeWizard.templateIds = PERSONAL_DASHBOARD_PROFILE_TEMPLATES[currentTemplateId] ? [currentTemplateId] : [];
+  welcomeWizard.templateIds = getActivePersonalDashboardTemplateIds(currentInterests);
+  if (!welcomeWizard.templateIds.length && PERSONAL_DASHBOARD_PROFILE_TEMPLATES[currentTemplateId]) {
+    welcomeWizard.templateIds = [currentTemplateId];
+  }
   welcomeWizard.isCustom = !welcomeWizard.templateIds.length;
   welcomeWizard.interests = currentInterests;
 }
@@ -61959,6 +62032,10 @@ function applyWelcomeWizardProfile() {
   state.personalDashboard.interests = interests;
   state.personalDashboard.activeTemplateId = template && normalizePersonalDashboardInterests(template.interests)
     .every((interestId) => interests.includes(interestId)) ? selectedTemplateId : "";
+  state.personalDashboard.activeTemplateIds = normalizePersonalDashboardActiveTemplateIds(
+    welcomeWizard.templateIds,
+    interests
+  );
   state.personalDashboard.activeCustomProfileId = "";
   state.personalDashboard.editing = false;
   state.personalDashboard.expandedGroups = [];
