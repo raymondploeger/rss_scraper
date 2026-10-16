@@ -155,7 +155,10 @@ export async function getArticleRetentionCounts({ defaultBefore, extendedBefore,
     pubDate: { lt: defaultBefore },
     ...(extendedArticleScope.OR.length ? { NOT: extendedArticleScope } : {}),
   };
-  const extendedWhere = { pubDate: { lt: extendedBefore } };
+  const extendedWhere = {
+    pubDate: { lt: extendedBefore },
+    ...(extendedArticleScope.OR.length ? extendedArticleScope : {}),
+  };
   const [standard, extended] = await Promise.all([
     prisma.article.count({ where: standardWhere }),
     prisma.article.count({ where: extendedWhere }),
@@ -175,7 +178,10 @@ export async function deleteExpiredArticlesByRetention({ defaultBefore, extended
     pubDate: { lt: defaultBefore },
     ...(extendedArticleScope.OR.length ? { NOT: extendedArticleScope } : {}),
   };
-  const extendedWhere = { pubDate: { lt: extendedBefore } };
+  const extendedWhere = {
+    pubDate: { lt: extendedBefore },
+    ...(extendedArticleScope.OR.length ? extendedArticleScope : {}),
+  };
   const [standard, extended] = await prisma.$transaction([
     prisma.article.deleteMany({ where: standardWhere }),
     prisma.article.deleteMany({ where: extendedWhere }),
