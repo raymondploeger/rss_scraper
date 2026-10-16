@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Security Industry Information</title>
     <link rel="icon" type="image/png" href="/images/favicon.png" />
-    <link rel="stylesheet" href="/styles.css?v=20261015-profile-union-migration-004" />
+    <link rel="stylesheet" href="/styles.css?v=20261016-profile-interests-sidebar-005" />
   </head>
   <body>
     <div id="notification-region" class="notification-region" aria-live="polite" aria-label="Notifications"></div>
@@ -39,6 +39,17 @@
         <aside class="sidebar">
           <section class="panel profile-summary-panel" aria-label="Selected intelligence profile">
             <div id="personal-dashboard-summary" class="personal-dashboard-summary" aria-live="polite"></div>
+          </section>
+
+          <section id="profile-interests-panel" class="panel profile-interests-panel" aria-label="Selected profile interests" hidden>
+            <div class="profile-interests-panel-head">
+              <div>
+                <p class="eyebrow">Selected interests</p>
+                <h2>Your focus</h2>
+              </div>
+              <span id="profile-interests-count" class="pill">0</span>
+            </div>
+            <div id="profile-interests-list" class="profile-interests-list" aria-live="polite"></div>
           </section>
 
           <section class="panel saved-articles-panel" aria-label="Saved articles">
@@ -565,6 +576,6 @@
       </form>
     </dialog>
 
-    <script type="module" src="/app.js?v=20261015-profile-union-migration-004"></script>
+    <script type="module" src="/app.js?v=20261016-profile-interests-sidebar-005"></script>
   </body>
 </html>

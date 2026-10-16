@@ -7745,6 +7745,9 @@ const elements = {
   personalDashboardImportCustom: document.getElementById("personal-dashboard-import-custom"),
   personalDashboardImportFile: document.getElementById("personal-dashboard-import-file"),
   personalDashboardSummary: document.getElementById("personal-dashboard-summary"),
+  profileInterestsPanel: document.getElementById("profile-interests-panel"),
+  profileInterestsCount: document.getElementById("profile-interests-count"),
+  profileInterestsList: document.getElementById("profile-interests-list"),
   personalDashboardGroups: document.getElementById("personal-dashboard-groups"),
   personalDashboardInterests: document.getElementById("personal-dashboard-interests"),
   personalDashboardClear: document.getElementById("personal-dashboard-clear"),
@@ -28559,6 +28562,17 @@ function renderPersonalDashboard() {
         </div>
       `;
     }
+  }
+
+  if (elements.profileInterestsPanel && elements.profileInterestsList && elements.profileInterestsCount) {
+    const selectedInterestItems = Array.from(activeInterests)
+      .map((interestId) => PERSONAL_DASHBOARD_INTEREST_MAP.get(interestId))
+      .filter(Boolean);
+    elements.profileInterestsPanel.hidden = !selectedInterestItems.length;
+    elements.profileInterestsCount.textContent = String(selectedInterestItems.length);
+    elements.profileInterestsList.innerHTML = selectedInterestItems
+      .map((interest) => `<span class="profile-interests-chip">${escapeHtml(interest.label)}</span>`)
+      .join("");
   }
 
   if (elements.personalDashboardCustomProfiles) {
