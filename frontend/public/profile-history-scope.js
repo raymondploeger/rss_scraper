@@ -21,21 +21,11 @@ function formatLocalDate(date) {
 }
 
 export function getProfileHistoryDateRanges(scope, now = new Date(), days = getProfileHistoryLookbackDays(scope)) {
-  const normalizedScope = normalizeProfileHistoryScope(scope);
   const normalizedDays = Math.max(1, Number(days) || PROFILE_DEFAULT_LOOKBACK_DAYS);
   const date = new Date(now);
   date.setHours(0, 0, 0, 0);
   date.setDate(date.getDate() - normalizedDays);
-  const recentRange = { from: formatLocalDate(date), to: "" };
-  if (normalizedScope !== "extended") {
-    return [recentRange];
-  }
-
-  const olderEnd = new Date(date);
-  olderEnd.setDate(olderEnd.getDate() - 1);
-  date.setDate(date.getDate() - normalizedDays);
-  return [
-    recentRange,
-    { from: formatLocalDate(date), to: formatLocalDate(olderEnd) },
-  ];
+  // The selector promises an exact lookback window. Returning a second, older
+  // range here made "Last 180 days" silently include up to 360 days of data.
+  return [{ from: formatLocalDate(date), to: "" }];
 }
