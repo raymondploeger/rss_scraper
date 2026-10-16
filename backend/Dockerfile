@@ -7,6 +7,7 @@ COPY backend/prisma ./backend/prisma
 RUN cd backend && npm ci --omit=dev --no-audit --no-fund
 
 COPY backend/src ./backend/src
+COPY backend/scripts ./backend/scripts
 COPY backend/data ./backend/data
 COPY frontend/public ./frontend/public
 
