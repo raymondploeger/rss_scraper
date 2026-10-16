@@ -1108,11 +1108,11 @@ h3 {
 }
 
 #profile-builder-panel {
-  order: 1;
+  order: 2;
 }
 
 .profile-summary-panel {
-  order: 2;
+  order: 1;
 }
 
 .saved-articles-panel {
@@ -1121,6 +1121,10 @@ h3 {
 
 #feed-panel {
   order: 4;
+}
+
+.noise-feedback-panel {
+  order: 5;
 }
 
 .saved-articles-content {
