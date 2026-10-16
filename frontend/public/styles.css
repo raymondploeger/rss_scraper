@@ -640,46 +640,6 @@ img {
   color: var(--muted);
 }
 
-.profile-interests-panel {
-  display: grid;
-  gap: 10px;
-}
-
-.profile-interests-panel[hidden] {
-  display: none;
-}
-
-.profile-interests-panel-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.profile-interests-panel-head h2 {
-  margin: 3px 0 0;
-  font-size: 1rem;
-}
-
-.profile-interests-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.profile-interests-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 5px 8px;
-  border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line));
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--text);
-  font-size: 0.76rem;
-  font-weight: 700;
-  line-height: 1.2;
-}
-
 :root[data-theme="dark"] .personal-dashboard-summary-chip.is-interest,
 :root[data-theme="dark"] .personal-dashboard-summary-more {
   background: rgba(255, 255, 255, 0.08);
