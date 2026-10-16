@@ -57754,6 +57754,40 @@ function buildPersonalDashboardBackendQueryParamsList() {
 
   const resolvedFeed = state.filters.feedId ? resolveFeedByIdentity(state.filters.feedId) : null;
   const profileDateRanges = getPersonalDashboardHistoryDateRanges();
+  const searches = Array.from(new Set((Array.isArray(plan.searches) ? plan.searches : [])
+    .map((search) => String(search || "").trim())
+    .filter(Boolean)));
+  const perRequestLimit = Math.max(
+    25,
+    Math.min(MAX_ARTICLES_IN_MEMORY, Number(plan.perRequestLimit) || Math.floor(MAX_ARTICLES_IN_MEMORY / 3))
+  );
+  const includeTopicBaseline = plan.includeTopicBaseline !== false && Boolean(plan.topic);
+
+  const buildTargetedRequests = (profileDateRange) => {
+    const requests = [];
+    const seenKeys = new Set();
+    const addRequest = (mutate) => {
+      const params = applyBackendArticleQueryBaseParams({
+        limit: perRequestLimit,
+        profileDateRange,
+      });
+      if (typeof mutate === "function") {
+        mutate(params);
+      }
+      const key = params.toString();
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        requests.push(params);
+      }
+    };
+
+    if (includeTopicBaseline) {
+      addRequest((params) => params.set("topic", plan.topic));
+    }
+    searches.forEach((search) => addRequest((params) => params.set("search", search)));
+    return requests;
+  };
+
   if (resolvedFeed?.id) {
     return profileDateRanges.map((profileDateRange) => applyBackendArticleQueryBaseParams({ profileDateRange }));
   }
@@ -57771,12 +57805,17 @@ function buildPersonalDashboardBackendQueryParamsList() {
       }));
   }
 
-  // A profile is evaluated against the recent candidate page from every
-  // tracked-source group. Do not request every historical dedupe page at once:
-  // that can starve the next profile interaction before the browser can render.
-  return profileDateRanges.flatMap((profileDateRange) => (
+  // Profile plans deliberately contain the focused retrieval terms for their
+  // domain. Running those terms across all sources finds older and lower-volume
+  // specialist articles that a generic "latest page per source group" misses.
+  const targetedRequests = profileDateRanges.flatMap(buildTargetedRequests);
+  if (targetedRequests.length) {
+    return targetedRequests;
+  }
+
+  return profileDateRanges.flatMap((profileDateRange) =>
     buildTrackedSourcesAllBackendQueryParamsList({ profileDateRange })
-  ));
+  );
 }
 
 async function mapBackendArticleQueryParamsWithConcurrency(queryParamsList = [], mapper, limit = BACKEND_ARTICLE_QUERY_CONCURRENCY_LIMIT) {
@@ -62084,7 +62123,19 @@ function applyWelcomeWizardProfile() {
   state.personalDashboard.expandedGroups = [];
   state.personalDashboard.historyScope = "recent";
   state.personalDashboard.explicitlyCleared = false;
+  // The wizard creates a whole intelligence feed. A remembered single-source
+  // view would otherwise silently constrain every newly selected profile.
+  state.filters.feedId = "";
   state.filters.sourceOnly = false;
+  state.filters.dmvFeedId = "";
+  state.filters.canadaDmvFeedPath = "";
+  state.filters.canadaDmvAll = false;
+  state.filters.sourceGroup = "all";
+  state.filters.trackedSourcesAll = true;
+  state.dashboardMode = "normal";
+  if (elements.feedFilter) elements.feedFilter.value = "";
+  if (elements.dmvFeedFilter) elements.dmvFeedFilter.value = "";
+  if (elements.canadaDmvFilter) elements.canadaDmvFilter.value = "";
   ensurePaginationState();
   state.pagination.page = 1;
   savePersonalDashboardPreferences();

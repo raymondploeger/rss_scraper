@@ -53,7 +53,7 @@ const CLASSIFICATION_RULES = [
     tags: ["border control", "travel documents"],
     domains: ["identity_documents"],
     profileSignals: ["border_control"],
-    profileSignalTitleTerms: [
+    profileSignalTerms: [
       "border",
       "ees",
       "etias",
@@ -69,6 +69,11 @@ const CLASSIFICATION_RULES = [
       "controle frontalier",
       "control fronterizo",
       "policía fronteriza",
+      "passport control",
+      "e-gate",
+      "egate",
+      "automated border control",
+      "immigration control",
     ],
     terms: [
       "border control",
@@ -414,7 +419,6 @@ function pickTopic(currentTopic, matchedRules, sourceText) {
 }
 
 export function classifyArticleForIngest({ title = "", contentSnippet = "", topic = "", source = "", feedName = "", link = "" } = {}) {
-  const titleText = normalize(title);
   const text = normalize([
     title,
     contentSnippet,
@@ -430,8 +434,8 @@ export function classifyArticleForIngest({ title = "", contentSnippet = "", topi
   const semanticTags = Array.from(new Set(matchedRules.flatMap((rule) => rule.tags)));
   const domains = Array.from(new Set(matchedRules.flatMap((rule) => rule.domains || [])));
   const profileSignals = Array.from(new Set(matchedRules.flatMap((rule) => {
-    if (Array.isArray(rule.profileSignalTitleTerms) && rule.profileSignalTitleTerms.length) {
-      return rule.profileSignalTitleTerms.some((term) => matchesTerm(titleText, term))
+    if (Array.isArray(rule.profileSignalTerms) && rule.profileSignalTerms.length) {
+      return rule.profileSignalTerms.some((term) => matchesTerm(text, term))
         ? rule.profileSignals || []
         : (rule.profileSignals || []).filter((profileId) => profileId !== "border_control");
     }
