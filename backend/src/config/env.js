@@ -31,6 +31,8 @@ export const env = {
   scheduledPollConcurrency: Math.max(1, toNumber(process.env.SCHEDULED_POLL_CONCURRENCY, 2)),
   scheduledBatchDelayMs: Math.max(0, toNumber(process.env.SCHEDULED_BATCH_DELAY_MS, 1500)),
   schedulerEnabled: toBoolean(process.env.SCHEDULER_ENABLED, true),
+  articleRetentionEnabled: toBoolean(process.env.ARTICLE_RETENTION_ENABLED, true),
+  articleRetentionCron: process.env.ARTICLE_RETENTION_CRON || "15 3 * * *",
   bootstrapInitialSyncEnabled: toBoolean(process.env.BOOTSTRAP_INITIAL_SYNC_ENABLED, true),
   refreshAbortRssMb: Math.max(0, toNumber(process.env.REFRESH_ABORT_RSS_MB, 2800)),
   refreshAbortHeapMb: Math.max(0, toNumber(process.env.REFRESH_ABORT_HEAP_MB, 1200)),

@@ -143,6 +143,46 @@ export async function deleteExpiredArticleNoiseFeedback() {
   return prisma.articleNoiseFeedback.deleteMany({ where: { createdAt: { lt: cutoff } } });
 }
 
+export async function getArticleRetentionCounts({ defaultBefore, extendedBefore, extendedFeedIds = [], extendedProfileIds = [] }) {
+  const prisma = getDatabase();
+  const extendedArticleScope = {
+    OR: [
+      ...(extendedFeedIds.length ? [{ feedId: { in: extendedFeedIds } }] : []),
+      ...(extendedProfileIds.length ? [{ profileSignals: { hasSome: extendedProfileIds } }] : []),
+    ],
+  };
+  const standardWhere = {
+    pubDate: { lt: defaultBefore },
+    ...(extendedArticleScope.OR.length ? { NOT: extendedArticleScope } : {}),
+  };
+  const extendedWhere = { pubDate: { lt: extendedBefore } };
+  const [standard, extended] = await Promise.all([
+    prisma.article.count({ where: standardWhere }),
+    prisma.article.count({ where: extendedWhere }),
+  ]);
+  return { standard, extended, total: standard + extended };
+}
+
+export async function deleteExpiredArticlesByRetention({ defaultBefore, extendedBefore, extendedFeedIds = [], extendedProfileIds = [] }) {
+  const prisma = getDatabase();
+  const extendedArticleScope = {
+    OR: [
+      ...(extendedFeedIds.length ? [{ feedId: { in: extendedFeedIds } }] : []),
+      ...(extendedProfileIds.length ? [{ profileSignals: { hasSome: extendedProfileIds } }] : []),
+    ],
+  };
+  const standardWhere = {
+    pubDate: { lt: defaultBefore },
+    ...(extendedArticleScope.OR.length ? { NOT: extendedArticleScope } : {}),
+  };
+  const extendedWhere = { pubDate: { lt: extendedBefore } };
+  const [standard, extended] = await prisma.$transaction([
+    prisma.article.deleteMany({ where: standardWhere }),
+    prisma.article.deleteMany({ where: extendedWhere }),
+  ]);
+  return { standard: Number(standard.count || 0), extended: Number(extended.count || 0), total: Number(standard.count || 0) + Number(extended.count || 0) };
+}
+
 export async function createArticle(article) {
   const prisma = getDatabase();
   const created = await prisma.article.create({
