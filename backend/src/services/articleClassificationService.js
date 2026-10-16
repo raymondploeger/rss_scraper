@@ -53,7 +53,10 @@ const CLASSIFICATION_RULES = [
     tags: ["border control", "travel documents"],
     domains: ["identity_documents"],
     profileSignals: ["border_control"],
-    profileSignalTerms: [
+    // A broad title match is useful for short press-release headlines, but feed
+    // snippets often include site navigation and tag clouds. Keep the generic
+    // terms title-only and allow snippet matches only for unambiguous phrases.
+    profileSignalTitleTerms: [
       "border",
       "ees",
       "etias",
@@ -73,6 +76,20 @@ const CLASSIFICATION_RULES = [
       "e-gate",
       "egate",
       "automated border control",
+      "immigration control",
+    ],
+    profileSignalContentTerms: [
+      "border control",
+      "border crossing",
+      "border police",
+      "passport control",
+      "automated border control",
+      "entry exit system",
+      "electronic travel authorization",
+      "electronic travel authorisation",
+      "document inspection",
+      "traveller processing",
+      "airport preclearance",
       "immigration control",
     ],
     terms: [
@@ -419,6 +436,7 @@ function pickTopic(currentTopic, matchedRules, sourceText) {
 }
 
 export function classifyArticleForIngest({ title = "", contentSnippet = "", topic = "", source = "", feedName = "", link = "" } = {}) {
+  const titleText = normalize(title);
   const text = normalize([
     title,
     contentSnippet,
@@ -434,8 +452,11 @@ export function classifyArticleForIngest({ title = "", contentSnippet = "", topi
   const semanticTags = Array.from(new Set(matchedRules.flatMap((rule) => rule.tags)));
   const domains = Array.from(new Set(matchedRules.flatMap((rule) => rule.domains || [])));
   const profileSignals = Array.from(new Set(matchedRules.flatMap((rule) => {
-    if (Array.isArray(rule.profileSignalTerms) && rule.profileSignalTerms.length) {
-      return rule.profileSignalTerms.some((term) => matchesTerm(text, term))
+    if (Array.isArray(rule.profileSignalTitleTerms) && rule.profileSignalTitleTerms.length) {
+      const matchesTitle = rule.profileSignalTitleTerms.some((term) => matchesTerm(titleText, term));
+      const matchesContent = (rule.profileSignalContentTerms || [])
+        .some((term) => matchesTerm(text, term));
+      return matchesTitle || matchesContent
         ? rule.profileSignals || []
         : (rule.profileSignals || []).filter((profileId) => profileId !== "border_control");
     }
