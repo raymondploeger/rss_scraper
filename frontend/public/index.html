@@ -35,13 +35,20 @@
         </div>
       </header>
 
+      <nav id="app-navigation" class="app-navigation" aria-label="Primary navigation">
+        <button class="app-navigation-link is-active" type="button" data-app-view="feed" aria-current="page">Feed</button>
+        <button class="app-navigation-link" type="button" data-app-view="profiles">Profiles</button>
+        <button class="app-navigation-link" type="button" data-app-view="sources">Sources</button>
+        <button class="app-navigation-link" type="button" data-app-view="admin">Admin</button>
+      </nav>
+
       <section class="dashboard-layout">
         <aside class="sidebar">
-          <section class="panel profile-summary-panel" aria-label="Selected intelligence profile">
+          <section class="panel profile-summary-panel" data-app-section="feed" aria-label="Selected intelligence profile">
             <div id="personal-dashboard-summary" class="personal-dashboard-summary" aria-live="polite"></div>
           </section>
 
-          <section class="panel saved-articles-panel" aria-label="Saved articles">
+          <section class="panel saved-articles-panel" data-app-section="feed" aria-label="Saved articles">
             <div class="panel-head saved-articles-head">
               <div>
                 <p class="eyebrow">Saved Articles</p>
@@ -73,7 +80,7 @@
             </div>
           </section>
 
-          <section id="profile-builder-panel" class="panel profile-builder-panel">
+          <section id="profile-builder-panel" class="panel profile-builder-panel" data-app-section="profiles">
             <div class="panel-head">
               <div>
                 <p class="eyebrow">Profile Builder</p>
@@ -141,7 +148,7 @@
 
           </section>
 
-          <section id="feed-panel" class="panel is-collapsed" data-collapsed="true">
+          <section id="feed-panel" class="panel is-collapsed" data-app-section="sources" data-collapsed="true">
             <div class="panel-head">
               <div>
                 <p class="eyebrow">Sources</p>
@@ -244,7 +251,18 @@
               <div id="feed-list" class="feed-list"></div>
             </div>
           </section>
-          <section class="panel noise-feedback-panel" aria-label="Noise feedback">
+          <section id="admin-workspace" class="panel admin-workspace" data-app-section="admin" aria-label="Administration workspace">
+            <p class="eyebrow">Administration</p>
+            <h2>Operational workspace</h2>
+            <p class="admin-workspace-copy">Source health, diagnostics and system settings will be gathered here. Role-based access is pending Microsoft Entra integration; this screen is not an access boundary.</p>
+            <ul class="admin-workspace-list">
+              <li>Review source status and sync actions in Sources.</li>
+              <li>Review personal noise feedback below.</li>
+              <li>System diagnostics remain available only through the existing operational tooling for now.</li>
+            </ul>
+          </section>
+
+          <section class="panel noise-feedback-panel" data-app-section="admin" aria-label="Noise feedback">
             <details class="noise-feedback-details">
               <summary>
                 <span>
@@ -261,7 +279,7 @@
           </section>
         </aside>
 
-        <main class="main-content">
+        <main class="main-content" data-app-section="feed">
           <section class="panel advanced-search-panel" aria-label="Advanced search">
             <div class="panel-subhead">
               <div>

@@ -166,6 +166,39 @@ img {
   margin-bottom: 18px;
 }
 
+.app-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 24px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+
+.app-navigation-link {
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-weight: 700;
+  padding: 9px 14px;
+}
+
+.app-navigation-link:hover,
+.app-navigation-link:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent);
+  outline: none;
+}
+
+.app-navigation-link.is-active {
+  background: var(--accent);
+  color: #fff;
+}
+
 .app-logo {
   width: clamp(120px, 12vw, 168px);
   height: auto;
@@ -223,6 +256,48 @@ img {
   display: block;
   border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
   box-shadow: none;
+}
+
+body[data-app-view="feed"] [data-app-section]:not([data-app-section="feed"]),
+body[data-app-view="profiles"] [data-app-section]:not([data-app-section="profiles"]),
+body[data-app-view="sources"] [data-app-section]:not([data-app-section="sources"]),
+body[data-app-view="admin"] [data-app-section]:not([data-app-section="admin"]) {
+  display: none !important;
+}
+
+body[data-app-view="profiles"] .profile-builder-panel {
+  display: block;
+}
+
+body[data-app-view="profiles"] .dashboard-layout,
+body[data-app-view="sources"] .dashboard-layout,
+body[data-app-view="admin"] .dashboard-layout {
+  grid-template-columns: minmax(0, 820px);
+  justify-content: start;
+}
+
+.admin-workspace {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-workspace h2,
+.admin-workspace-copy {
+  margin: 0;
+}
+
+.admin-workspace-copy {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.admin-workspace-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 :root[data-theme="dark"] .profile-builder-panel[data-editing="true"] {
@@ -3591,6 +3666,15 @@ button.grouped-sources-more {
   .panel-head-actions {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .app-navigation {
+    margin-bottom: 18px;
+  }
+
+  .app-navigation-link {
+    flex: 1 1 calc(50% - 6px);
+    text-align: center;
   }
 
   .app-logo {

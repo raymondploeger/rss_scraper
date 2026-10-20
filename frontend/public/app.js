@@ -44,6 +44,8 @@ const ALERT_DEDUPE_WINDOW_MS = 10 * 60 * 1000;
 const ACTIVITY_LOG_TTL_MS = 24 * 60 * 60 * 1000;
 const POLLING_INTERVAL_MS = 60 * 60 * 1000;
 const AUTO_REFRESH_MODE_STORAGE_KEY = "dashboardAutoRefreshMode";
+const APP_VIEW_STORAGE_KEY = "rssScraperAppView";
+const APP_VIEWS = new Set(["feed", "profiles", "sources", "admin"]);
 const AUTO_REFRESH_MODE =
   typeof localStorage !== "undefined" &&
   localStorage.getItem(AUTO_REFRESH_MODE_STORAGE_KEY) === "off"
@@ -7548,6 +7550,7 @@ const SIGNAL_NOISE_CONTEXT_KEYWORDS = [
 ];
 
 const state = {
+  appView: "feed",
   feeds: [],
   dmvCatalog: [],
   articles: [],
@@ -7698,6 +7701,7 @@ const runtime = {
 };
 
 const elements = {
+  appNavigation: document.getElementById("app-navigation"),
   notificationRegion: document.getElementById("notification-region"),
   summaryGrid: document.getElementById("summary-grid"),
   articlesGrid: document.getElementById("articles-grid"),
@@ -7817,6 +7821,54 @@ const elements = {
   dmvToggleButton: document.getElementById("dmv-toggle-button"),
   canadaToggleButton: document.getElementById("canada-toggle-button"),
 };
+
+function normalizeAppView(value) {
+  const view = String(value || "").trim().toLowerCase();
+  return APP_VIEWS.has(view) ? view : "feed";
+}
+
+function getInitialAppView() {
+  const hashView = String(window.location.hash || "").replace(/^#\/?/, "");
+  if (APP_VIEWS.has(hashView)) {
+    return hashView;
+  }
+  try {
+    return normalizeAppView(window.localStorage.getItem(APP_VIEW_STORAGE_KEY));
+  } catch {
+    return "feed";
+  }
+}
+
+function syncAppView() {
+  const view = normalizeAppView(state.appView);
+  state.appView = view;
+  document.body.dataset.appView = view;
+  elements.appNavigation?.querySelectorAll("[data-app-view]").forEach((button) => {
+    const active = button.dataset.appView === view;
+    button.classList.toggle("is-active", active);
+    if (active) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  });
+
+  if (view === "sources") {
+    state.feedPanelCollapsed = false;
+    syncFeedPanelVisibility();
+  }
+}
+
+function setAppView(view, { updateLocation = true } = {}) {
+  const nextView = normalizeAppView(view);
+  state.appView = nextView;
+  try {
+    window.localStorage.setItem(APP_VIEW_STORAGE_KEY, nextView);
+  } catch {
+    // Navigation remains functional when browser storage is unavailable.
+  }
+  if (updateLocation && window.location.hash !== `#${nextView}`) {
+    window.history.replaceState(null, "", `#${nextView}`);
+  }
+  syncAppView();
+}
 
 function debounce(callback, wait = 250) {
   let timeout;
@@ -62149,6 +62201,14 @@ function applyWelcomeWizardProfile() {
 }
 
 function bindEvents() {
+  elements.appNavigation?.addEventListener("click", (event) => {
+    const button = event.target instanceof Element ? event.target.closest("[data-app-view]") : null;
+    if (!button) return;
+    setAppView(button.dataset.appView || "feed");
+  });
+  window.addEventListener("hashchange", () => {
+    setAppView(getInitialAppView(), { updateLocation: false });
+  });
   if (elements.welcomeDialog) {
     elements.welcomeDialog.addEventListener("close", () => {
       window.localStorage.setItem(WELCOME_DISMISSED_STORAGE_KEY, "1");
@@ -63484,6 +63544,8 @@ function bindEvents() {
 
 async function init() {
   console.info("APP_BUILD", APP_BUILD);
+  state.appView = getInitialAppView();
+  syncAppView();
   loadTheme();
   loadFavoriteArticles();
   loadReadArticleIds();
