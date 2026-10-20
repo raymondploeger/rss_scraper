@@ -17,6 +17,7 @@ const appSource = fs.readFileSync(new URL("../frontend/public/app.js", import.me
 // The Feed summary uses one shared route for both the empty-state Start Profile
 // action and the populated-state Show profile action.
 assert.match(appSource, /function openFirstSelectedPersonalDashboardGroup\(\) \{[\s\S]*?getProfileEditorTransition\(\);[\s\S]*?setAppView\(transition\.view\);/);
+assert.match(appSource, /data-admin-source-status-filter[\s\S]*?setAppView\("sources"\)[\s\S]*?renderFeedList\(\)/);
 assert.deepEqual(getProfileEditorTransition(), {
   view: "profiles",
   focusSelector: "[data-personal-group-toggle]",
@@ -122,5 +123,6 @@ process.stdout.write(JSON.stringify({
     "Back/Forward and duplicate history protection",
     "profile and article state preservation",
     "shared source health classification",
+    "Admin source-status shortcuts",
   ],
 }, null, 2) + "\n");

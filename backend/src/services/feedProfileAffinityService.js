@@ -49,6 +49,7 @@ const CURATED_SOURCE_AFFINITIES = Object.freeze({
   "joh. enschede": ["vendors", "security_printer", "central_bank"],
   "jura security printing": ["vendors", "security_printer"],
   "keesing platform": ["passport_authority", "identity_verification", "researcher"],
+  "komori america news": ["vendors"],
   "koenig & bauer banknote solutions": ["vendors", "security_printer", "central_bank"],
   "koenig & bauer newsroom": ["vendors", "security_printer", "central_bank"],
   "louisenthal press releases": ["vendors", "security_printer", "central_bank", "researcher"],

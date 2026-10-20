@@ -360,6 +360,18 @@ const PHASE_ONE_STRATEGIC_FEEDS = [
     phase: "phase2-vendor-sources",
   },
   {
+    name: "Komori America News",
+    // The publisher's official RSS includes both commercial-printing and
+    // security-printing announcements. Article-level classification decides
+    // which industry stories reach the Vendors profile.
+    topic: "Commercial & Security Printing",
+    rssUrl: "https://www.komori-america.us/komori-in-the-news/rss.xml",
+    sourceType: "rss",
+    sourceGroup: "Vendors",
+    profileAffinities: ["vendors"],
+    phase: "phase2-vendor-sources",
+  },
+  {
     name: "MaskTech Press",
     topic: "Digital Identity & Biometrics",
     rssUrl: "https://www.masktech.com/Press/60/en",

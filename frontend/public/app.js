@@ -27121,11 +27121,16 @@ function renderAdminWorkspace() {
 
   elements.adminHealthSummary.replaceChildren();
   [
-    ["Active sources", activeCount],
-    ["Needs attention", attentionCount],
-    ["Noise feedback", feedbackCount],
-  ].forEach(([label, value]) => {
-    const metric = document.createElement("div");
+    ["Active sources", activeCount, "active"],
+    ["Needs attention", attentionCount, "inactive"],
+    ["Noise feedback", feedbackCount, ""],
+  ].forEach(([label, value, sourceStatusFilter]) => {
+    const metric = document.createElement(sourceStatusFilter ? "button" : "div");
+    if (sourceStatusFilter) {
+      metric.type = "button";
+      metric.dataset.adminSourceStatusFilter = sourceStatusFilter;
+      metric.setAttribute("aria-label", `Open ${label.toLowerCase()} in Sources`);
+    }
     metric.className = "admin-health-metric";
     const metricValue = document.createElement("strong");
     metricValue.textContent = String(value);
@@ -62327,6 +62332,14 @@ function bindEvents() {
   });
   window.addEventListener("hashchange", syncAppViewFromLocation);
   window.addEventListener("popstate", syncAppViewFromLocation);
+  elements.adminHealthSummary?.addEventListener("click", (event) => {
+    const metric = event.target instanceof Element ? event.target.closest("[data-admin-source-status-filter]") : null;
+    const filter = String(metric?.dataset.adminSourceStatusFilter || "");
+    if (!metric || !["active", "inactive"].includes(filter) || !elements.feedVisibilityFilter) return;
+    setAppView("sources");
+    elements.feedVisibilityFilter.value = filter;
+    renderFeedList();
+  });
   elements.adminSourceHealthList?.addEventListener("click", (event) => {
     const source = event.target instanceof Element ? event.target.closest("[data-admin-source-id]") : null;
     const feedId = String(source?.dataset.adminSourceId || "").trim();
