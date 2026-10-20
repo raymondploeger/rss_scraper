@@ -7799,6 +7799,7 @@ const elements = {
   googleAlertsBatchStatus: document.getElementById("google-alerts-batch-status"),
   feedCount: document.getElementById("feed-count"),
   feedList: document.getElementById("feed-list"),
+  sourceManagementSummary: document.getElementById("source-management-summary"),
   feedPanelSearch: document.getElementById("feed-panel-search"),
   feedVisibilityFilter: document.getElementById("feed-visibility-filter"),
   feedGroupTabs: document.getElementById("feed-group-tabs"),
@@ -53050,7 +53051,34 @@ function renderFeedItem(feed) {
   return node;
 }
 
+function renderSourceManagementSummary() {
+  if (!elements.sourceManagementSummary) return;
+  const feeds = Array.isArray(state.feeds) ? state.feeds : [];
+  const active = feeds.filter((feed) => feed?.isActive !== false && feed?.lastStatus !== "error").length;
+  const needsAttention = feeds.filter((feed) => feed?.isActive === false || feed?.lastStatus === "error").length;
+  const metrics = [
+    { label: "All sources", value: feeds.length, filter: "all" },
+    { label: "Active", value: active, filter: "active" },
+    { label: "Needs attention", value: needsAttention, filter: "inactive" },
+  ];
+  elements.sourceManagementSummary.replaceChildren();
+  metrics.forEach((metric) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "source-management-metric";
+    button.dataset.sourceStatusFilter = metric.filter;
+    button.setAttribute("aria-pressed", String((elements.feedVisibilityFilter?.value || "all") === metric.filter));
+    const value = document.createElement("strong");
+    value.textContent = String(metric.value);
+    const label = document.createElement("span");
+    label.textContent = metric.label;
+    button.append(value, label);
+    elements.sourceManagementSummary.appendChild(button);
+  });
+}
+
 function renderFeedList() {
+  renderSourceManagementSummary();
   syncSourceGroupTabs();
   syncSourcePanelContextActions();
   saveSourceSelectionPreferences();
@@ -63471,6 +63499,14 @@ function bindEvents() {
       renderFeedList();
     });
   }
+
+  elements.sourceManagementSummary?.addEventListener("click", (event) => {
+    const button = event.target instanceof Element ? event.target.closest("[data-source-status-filter]") : null;
+    const filter = String(button?.dataset.sourceStatusFilter || "");
+    if (!button || !["all", "active", "inactive"].includes(filter) || !elements.feedVisibilityFilter) return;
+    elements.feedVisibilityFilter.value = filter;
+    renderFeedList();
+  });
 
   if (elements.feedGroupTabs) {
     elements.feedGroupTabs.addEventListener("click", (event) => {

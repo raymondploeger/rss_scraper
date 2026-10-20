@@ -2194,6 +2194,45 @@ button.intelligence-context-chip:focus-visible .intelligence-context-chip-remove
   gap: 13px;
 }
 
+.source-management-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.source-management-metric {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.source-management-metric strong {
+  color: var(--accent);
+  font-size: 1.05rem;
+}
+
+.source-management-metric span {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.25;
+}
+
+.source-management-metric:hover,
+.source-management-metric:focus-visible,
+.source-management-metric[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  outline: none;
+}
+
 #advanced-filters-content[hidden] {
   display: none !important;
 }
@@ -3750,6 +3789,10 @@ button.grouped-sources-more {
   }
 
   .admin-health-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .source-management-summary {
     grid-template-columns: 1fr;
   }
 
