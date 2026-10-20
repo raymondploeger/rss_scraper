@@ -24,6 +24,14 @@ import {
   normalizeGeneralProfileMode,
   normalizeIdentityAuthorityMode,
 } from "./profile-mode-policy.js";
+import {
+  getProfileEditorTransition,
+  getWorkspaceInitializationTransition,
+  getWorkspaceNavigationTransition,
+  getWorkspaceViewFromHash,
+  normalizeWorkspaceView,
+} from "./workspace-navigation.js";
+import { getSourceHealth, sourceMatchesHealthFilter } from "./source-health.js";
 
 const PLACEHOLDER_IMAGE = "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image";
 const THEME_STORAGE_KEY = "rss-monitor-theme";
@@ -45,7 +53,6 @@ const ACTIVITY_LOG_TTL_MS = 24 * 60 * 60 * 1000;
 const POLLING_INTERVAL_MS = 60 * 60 * 1000;
 const AUTO_REFRESH_MODE_STORAGE_KEY = "dashboardAutoRefreshMode";
 const APP_VIEW_STORAGE_KEY = "rssScraperAppView";
-const APP_VIEWS = new Set(["feed", "profiles", "sources", "admin"]);
 const AUTO_REFRESH_MODE =
   typeof localStorage !== "undefined" &&
   localStorage.getItem(AUTO_REFRESH_MODE_STORAGE_KEY) === "off"
@@ -7825,25 +7832,16 @@ const elements = {
   canadaToggleButton: document.getElementById("canada-toggle-button"),
 };
 
-function normalizeAppView(value) {
-  const view = String(value || "").trim().toLowerCase();
-  return APP_VIEWS.has(view) ? view : "feed";
-}
-
 function getInitialAppView() {
-  const hashView = String(window.location.hash || "").replace(/^#\/?/, "");
-  if (APP_VIEWS.has(hashView)) {
-    return hashView;
-  }
   try {
-    return normalizeAppView(window.localStorage.getItem(APP_VIEW_STORAGE_KEY));
+    return getWorkspaceViewFromHash(window.location.hash, window.localStorage.getItem(APP_VIEW_STORAGE_KEY));
   } catch {
-    return "feed";
+    return getWorkspaceViewFromHash(window.location.hash);
   }
 }
 
 function syncAppView() {
-  const view = normalizeAppView(state.appView);
+  const view = normalizeWorkspaceView(state.appView);
   state.appView = view;
   document.body.dataset.appView = view;
   elements.appNavigation?.querySelectorAll("[data-app-view]").forEach((button) => {
@@ -7859,18 +7857,39 @@ function syncAppView() {
   }
 }
 
-function setAppView(view, { updateLocation = true } = {}) {
-  const nextView = normalizeAppView(view);
+function setAppView(view, { updateLocation = true, explicitNavigation = true } = {}) {
+  const transition = getWorkspaceNavigationTransition({
+    currentHash: window.location.hash,
+    targetView: view,
+    explicit: explicitNavigation,
+  });
+  const nextView = transition.view;
   state.appView = nextView;
   try {
     window.localStorage.setItem(APP_VIEW_STORAGE_KEY, nextView);
   } catch {
     // Navigation remains functional when browser storage is unavailable.
   }
-  if (updateLocation && window.location.hash !== `#${nextView}`) {
-    window.history.replaceState(null, "", `#${nextView}`);
+  if (updateLocation && transition.historyAction === "push") {
+    window.history.pushState(null, "", transition.hash);
   }
   syncAppView();
+}
+
+function syncAppViewFromLocation() {
+  const nextView = getInitialAppView();
+  if (state.appView === nextView) return;
+  setAppView(nextView, { updateLocation: false, explicitNavigation: false });
+}
+
+function normalizeInitialAppViewLocation() {
+  const transition = getWorkspaceInitializationTransition({
+    currentHash: window.location.hash,
+    fallbackView: state.appView,
+  });
+  if (transition.historyAction === "replace") {
+    window.history.replaceState(null, "", transition.hash);
+  }
 }
 
 function debounce(callback, wait = 250) {
@@ -27089,25 +27108,15 @@ function renderNoiseFeedbackPanel() {
   elements.noiseFeedbackList.appendChild(fragment);
 }
 
-function getAdminSourceHealth(feed) {
-  if (feed?.lastStatus === "error" || feed?.lastError) {
-    return { label: "Needs attention", priority: 0 };
-  }
-  if (feed?.isActive === false) {
-    return { label: "Inactive", priority: 1 };
-  }
-  if (feed?.lastStatus === "success") {
-    return { label: "Healthy", priority: 2 };
-  }
-  return { label: "Awaiting sync", priority: 3 };
-}
-
 function renderAdminWorkspace() {
   if (!elements.adminHealthSummary || !elements.adminSourceHealthList) return;
   const feeds = Array.isArray(state.feeds) ? state.feeds : [];
-  const healthRows = feeds.map((feed) => ({ feed, health: getAdminSourceHealth(feed) }));
-  const attentionCount = healthRows.filter((row) => row.health.priority === 0).length;
-  const activeCount = feeds.filter((feed) => feed?.isActive !== false).length;
+  const healthRows = feeds.map((feed) => ({
+    feed,
+    health: getSourceHealth(feed, { isLinkOnlySource: isLinkOnlyDmvSource(feed) }),
+  }));
+  const attentionCount = healthRows.filter((row) => row.health.needsAttention).length;
+  const activeCount = healthRows.filter((row) => row.health.isActive).length;
   const feedbackCount = Array.isArray(state.noiseFeedbackRecords) ? state.noiseFeedbackRecords.length : 0;
 
   elements.adminHealthSummary.replaceChildren();
@@ -28549,13 +28558,17 @@ function renderPersonalDashboardCustomProfileOptions() {
 }
 
 function openFirstSelectedPersonalDashboardGroup() {
+  const transition = getProfileEditorTransition();
+  setAppView(transition.view);
   state.personalDashboard.editing = true;
   state.personalDashboard.expandedGroups = [];
   renderPersonalDashboard();
-  elements.profileBuilderPanel?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  elements.personalDashboardGroups
-    ?.querySelector("[data-personal-group-toggle]")
-    ?.focus();
+  window.requestAnimationFrame(() => {
+    elements.profileBuilderPanel?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    elements.personalDashboardGroups
+      ?.querySelector(transition.focusSelector)
+      ?.focus({ preventScroll: true });
+  });
 }
 
 function keepPersonalDashboardEditorOpenForInterests(interests) {
@@ -52502,15 +52515,15 @@ function getVisibleFeeds() {
   }
 
   if (visibilityFilter === "active") {
-    feeds = feeds.filter(
-      (feed) => feed.isActive !== false && (isLinkOnlyDmvSource(feed) || feed.lastStatus !== "error")
-    );
+    feeds = feeds.filter((feed) => sourceMatchesHealthFilter(feed, "active", {
+      isLinkOnlySource: isLinkOnlyDmvSource(feed),
+    }));
   }
 
   if (visibilityFilter === "inactive") {
-    feeds = feeds.filter(
-      (feed) => feed.isActive === false || (!isLinkOnlyDmvSource(feed) && feed.lastStatus === "error")
-    );
+    feeds = feeds.filter((feed) => sourceMatchesHealthFilter(feed, "inactive", {
+      isLinkOnlySource: isLinkOnlyDmvSource(feed),
+    }));
   }
 
   if (feedPanelSearch) {
@@ -53054,8 +53067,11 @@ function renderFeedItem(feed) {
 function renderSourceManagementSummary() {
   if (!elements.sourceManagementSummary) return;
   const feeds = Array.isArray(state.feeds) ? state.feeds : [];
-  const active = feeds.filter((feed) => feed?.isActive !== false && feed?.lastStatus !== "error").length;
-  const needsAttention = feeds.filter((feed) => feed?.isActive === false || feed?.lastStatus === "error").length;
+  const sourceHealth = feeds.map((feed) => getSourceHealth(feed, {
+    isLinkOnlySource: isLinkOnlyDmvSource(feed),
+  }));
+  const active = sourceHealth.filter((health) => health.isActive).length;
+  const needsAttention = sourceHealth.filter((health) => health.needsAttention).length;
   const metrics = [
     { label: "All sources", value: feeds.length, filter: "all" },
     { label: "Active", value: active, filter: "active" },
@@ -62309,9 +62325,8 @@ function bindEvents() {
     if (!button) return;
     setAppView(button.dataset.appView || "feed");
   });
-  window.addEventListener("hashchange", () => {
-    setAppView(getInitialAppView(), { updateLocation: false });
-  });
+  window.addEventListener("hashchange", syncAppViewFromLocation);
+  window.addEventListener("popstate", syncAppViewFromLocation);
   elements.adminSourceHealthList?.addEventListener("click", (event) => {
     const source = event.target instanceof Element ? event.target.closest("[data-admin-source-id]") : null;
     const feedId = String(source?.dataset.adminSourceId || "").trim();
@@ -63663,6 +63678,7 @@ function bindEvents() {
 async function init() {
   console.info("APP_BUILD", APP_BUILD);
   state.appView = getInitialAppView();
+  normalizeInitialAppViewLocation();
   syncAppView();
   loadTheme();
   loadFavoriteArticles();
