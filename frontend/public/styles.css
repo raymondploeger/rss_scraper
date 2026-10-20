@@ -319,6 +319,12 @@ body[data-app-view="admin"] .dashboard-layout {
   line-height: 1.35;
 }
 
+.admin-source-health-action {
+  margin-top: 3px;
+  color: var(--accent) !important;
+  font-weight: 700;
+}
+
 .admin-workspace-section {
   display: grid;
   gap: 10px;

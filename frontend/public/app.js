@@ -27150,7 +27150,10 @@ function renderAdminWorkspace() {
       const detail = document.createElement("span");
       const lastFetch = feed?.lastFetchedAt ? `Last sync ${formatDate(feed.lastFetchedAt)}` : "No sync recorded";
       detail.textContent = `${health.label} · ${lastFetch}`;
-      row.append(source, detail);
+      const action = document.createElement("span");
+      action.className = "admin-source-health-action";
+      action.textContent = "Open in Sources →";
+      row.append(source, detail, action);
       fragment.appendChild(row);
     });
   elements.adminSourceHealthList.appendChild(fragment);
