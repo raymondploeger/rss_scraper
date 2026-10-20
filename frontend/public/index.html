@@ -255,8 +255,16 @@
             <p class="eyebrow">Administration</p>
             <h2>Operational workspace</h2>
             <p class="admin-workspace-copy">Source health, diagnostics and system settings will be gathered here. Role-based access is pending Microsoft Entra integration; this screen is not an access boundary.</p>
+            <div id="admin-health-summary" class="admin-health-summary" aria-live="polite"></div>
+            <div class="admin-workspace-section">
+              <div class="admin-workspace-section-head">
+                <span>Source health</span>
+                <small>Sources needing attention appear first.</small>
+              </div>
+              <div id="admin-source-health-list" class="admin-source-health-list" aria-live="polite"></div>
+            </div>
             <ul class="admin-workspace-list">
-              <li>Review source status and sync actions in Sources.</li>
+              <li>Manage source status and sync actions in Sources.</li>
               <li>Review personal noise feedback below.</li>
               <li>System diagnostics remain available only through the existing operational tooling for now.</li>
             </ul>

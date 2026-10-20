@@ -7762,6 +7762,8 @@ const elements = {
   favoritesEmptyState: document.getElementById("favorites-empty-state"),
   noiseFeedbackList: document.getElementById("noise-feedback-list"),
   noiseFeedbackEmpty: document.getElementById("noise-feedback-empty"),
+  adminHealthSummary: document.getElementById("admin-health-summary"),
+  adminSourceHealthList: document.getElementById("admin-source-health-list"),
   advancedFiltersToggle: document.getElementById("advanced-filters-toggle"),
   advancedFiltersContent: document.getElementById("advanced-filters-content"),
   feedFilter: document.getElementById("feed-filter"),
@@ -26981,6 +26983,7 @@ async function loadNoiseFeedbackRecords() {
   }
   syncNoisySourceRules();
   renderNoiseFeedbackPanel();
+  renderAdminWorkspace();
 }
 
 function syncNoisySourceRules() {
@@ -27083,6 +27086,71 @@ function renderNoiseFeedbackPanel() {
     fragment.appendChild(row);
   });
   elements.noiseFeedbackList.appendChild(fragment);
+}
+
+function getAdminSourceHealth(feed) {
+  if (feed?.lastStatus === "error" || feed?.lastError) {
+    return { label: "Needs attention", priority: 0 };
+  }
+  if (feed?.isActive === false) {
+    return { label: "Inactive", priority: 1 };
+  }
+  if (feed?.lastStatus === "success") {
+    return { label: "Healthy", priority: 2 };
+  }
+  return { label: "Awaiting sync", priority: 3 };
+}
+
+function renderAdminWorkspace() {
+  if (!elements.adminHealthSummary || !elements.adminSourceHealthList) return;
+  const feeds = Array.isArray(state.feeds) ? state.feeds : [];
+  const healthRows = feeds.map((feed) => ({ feed, health: getAdminSourceHealth(feed) }));
+  const attentionCount = healthRows.filter((row) => row.health.priority === 0).length;
+  const activeCount = feeds.filter((feed) => feed?.isActive !== false).length;
+  const feedbackCount = Array.isArray(state.noiseFeedbackRecords) ? state.noiseFeedbackRecords.length : 0;
+
+  elements.adminHealthSummary.replaceChildren();
+  [
+    ["Active sources", activeCount],
+    ["Needs attention", attentionCount],
+    ["Noise feedback", feedbackCount],
+  ].forEach(([label, value]) => {
+    const metric = document.createElement("div");
+    metric.className = "admin-health-metric";
+    const metricValue = document.createElement("strong");
+    metricValue.textContent = String(value);
+    const metricLabel = document.createElement("span");
+    metricLabel.textContent = label;
+    metric.append(metricValue, metricLabel);
+    elements.adminHealthSummary.appendChild(metric);
+  });
+
+  elements.adminSourceHealthList.replaceChildren();
+  if (!healthRows.length) {
+    elements.adminSourceHealthList.textContent = "No sources loaded yet.";
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  healthRows
+    .sort((left, right) => {
+      const priorityDifference = left.health.priority - right.health.priority;
+      if (priorityDifference) return priorityDifference;
+      return String(left.feed?.name || "").localeCompare(String(right.feed?.name || ""));
+    })
+    .slice(0, 8)
+    .forEach(({ feed, health }) => {
+      const row = document.createElement("div");
+      row.className = "admin-source-health-row";
+      const source = document.createElement("strong");
+      source.textContent = feed?.name || "Untitled source";
+      const detail = document.createElement("span");
+      const lastFetch = feed?.lastFetchedAt ? `Last sync ${formatDate(feed.lastFetchedAt)}` : "No sync recorded";
+      detail.textContent = `${health.label} · ${lastFetch}`;
+      row.append(source, detail);
+      fragment.appendChild(row);
+    });
+  elements.adminSourceHealthList.appendChild(fragment);
 }
 
 async function submitNoiseFeedback(article, reason) {
@@ -61805,6 +61873,7 @@ function renderArticles() {
 
 function renderDashboard() {
   renderSummary();
+  renderAdminWorkspace();
   renderFavoritesPanel();
   renderPersonalDashboard();
   renderFeedOptions();

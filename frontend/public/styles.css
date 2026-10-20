@@ -291,6 +291,61 @@ body[data-app-view="admin"] .dashboard-layout {
   line-height: 1.5;
 }
 
+.admin-health-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.admin-health-metric {
+  display: grid;
+  gap: 3px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.admin-health-metric strong {
+  color: var(--accent);
+  font-size: 1.25rem;
+}
+
+.admin-health-metric span,
+.admin-workspace-section-head small,
+.admin-source-health-row span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.admin-workspace-section {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-workspace-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-weight: 700;
+}
+
+.admin-source-health-list {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-source-health-row {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
 .admin-workspace-list {
   display: grid;
   gap: 8px;
@@ -3675,6 +3730,15 @@ button.grouped-sources-more {
   .app-navigation-link {
     flex: 1 1 calc(50% - 6px);
     text-align: center;
+  }
+
+  .admin-health-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-workspace-section-head {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .app-logo {
