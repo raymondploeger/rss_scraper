@@ -28,7 +28,7 @@
         <div class="header-actions">
           <button id="welcome-help-button" class="ghost-button" type="button">How it works</button>
           <button id="theme-toggle" class="ghost-button" type="button">Dark mode</button>
-          <button id="refresh-button" class="primary-button" type="button">Refresh sources</button>
+          <button id="refresh-button" class="primary-button" type="button" data-app-section="sources">Refresh sources</button>
           <button id="dmv-toggle-button" class="ghost-button" type="button" hidden>Show USA feeds</button>
           <button id="canada-toggle-button" class="ghost-button" type="button" hidden>Show Canada feeds</button>
           <button id="import-dmv-button" class="ghost-button" type="button" hidden>Import DMV feeds</button>
@@ -484,7 +484,7 @@
         </main>
       </section>
 
-      <section class="summary-grid summary-grid--secondary" id="summary-grid" aria-live="polite"></section>
+      <section class="summary-grid summary-grid--secondary" id="summary-grid" data-app-section="feed" aria-live="polite"></section>
     </div>
 
     <template id="summary-card-template">
