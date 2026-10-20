@@ -27140,8 +27140,11 @@ function renderAdminWorkspace() {
     })
     .slice(0, 8)
     .forEach(({ feed, health }) => {
-      const row = document.createElement("div");
+      const row = document.createElement("button");
+      row.type = "button";
       row.className = "admin-source-health-row";
+      row.dataset.adminSourceId = String(feed?.id || "");
+      row.setAttribute("aria-label", `Open ${feed?.name || "source"} in Sources`);
       const source = document.createElement("strong");
       source.textContent = feed?.name || "Untitled source";
       const detail = document.createElement("span");
@@ -62277,6 +62280,13 @@ function bindEvents() {
   });
   window.addEventListener("hashchange", () => {
     setAppView(getInitialAppView(), { updateLocation: false });
+  });
+  elements.adminSourceHealthList?.addEventListener("click", (event) => {
+    const source = event.target instanceof Element ? event.target.closest("[data-admin-source-id]") : null;
+    const feedId = String(source?.dataset.adminSourceId || "").trim();
+    if (!feedId) return;
+    setAppView("sources");
+    applySourceListFeedFilter(feedId);
   });
   if (elements.welcomeDialog) {
     elements.welcomeDialog.addEventListener("close", () => {

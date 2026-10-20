@@ -340,10 +340,21 @@ body[data-app-view="admin"] .dashboard-layout {
 .admin-source-health-row {
   display: grid;
   gap: 3px;
+  width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.admin-source-health-row:hover,
+.admin-source-health-row:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  outline: none;
 }
 
 .admin-workspace-list {
