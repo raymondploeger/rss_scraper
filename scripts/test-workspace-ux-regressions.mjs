@@ -8,16 +8,34 @@ import {
 } from "../frontend/public/workspace-navigation.js";
 import {
   getSourceHealth,
+  getSourceStatusPresentation,
   SOURCE_HEALTH_STATUS,
   sourceMatchesHealthFilter,
 } from "../frontend/public/source-health.js";
 
 const appSource = fs.readFileSync(new URL("../frontend/public/app.js", import.meta.url), "utf8");
+const indexSource = fs.readFileSync(new URL("../frontend/public/index.html", import.meta.url), "utf8");
 
 // The Feed summary uses one shared route for both the empty-state Start Profile
 // action and the populated-state Show profile action.
 assert.match(appSource, /function openFirstSelectedPersonalDashboardGroup\(\) \{[\s\S]*?getProfileEditorTransition\(\);[\s\S]*?setAppView\(transition\.view\);/);
 assert.match(appSource, /data-admin-source-status-filter[\s\S]*?setAppView\("sources"\)[\s\S]*?renderFeedList\(\)/);
+assert.match(
+  appSource,
+  /if \(viewButton\) \{[\s\S]*?applySourceListFeedFilter\(feedId\);[\s\S]*?setAppView\("feed"\);/,
+  "opening a regular source must retain its filter and navigate to Feed"
+);
+assert.match(indexSource, />Open feed<\/button>/, "ordinary sources expose an explicit Open feed action");
+assert.match(
+  appSource,
+  /Showing \$\{renderedCount\} of \$\{totalCount\} sources[\s\S]*?Show \$\{nextBatch\} more source/,
+  "the source-list cap must remain visible and recoverable"
+);
+assert.doesNotMatch(
+  indexSource,
+  /personal-dashboard-template-select/,
+  "profile selection must expose one accessible control path"
+);
 assert.deepEqual(getProfileEditorTransition(), {
   view: "profiles",
   focusSelector: "[data-personal-group-toggle]",
@@ -94,6 +112,26 @@ assert.equal(healthById.error.status, SOURCE_HEALTH_STATUS.ERROR);
 assert.equal(healthById["last-error"].status, SOURCE_HEALTH_STATUS.ERROR);
 assert.equal(healthById.awaiting.status, SOURCE_HEALTH_STATUS.AWAITING_SYNC);
 assert.equal(getSourceHealth({ isActive: true, lastStatus: "error" }, { isLinkOnlySource: true }).status, SOURCE_HEALTH_STATUS.AWAITING_SYNC);
+assert.deepEqual(
+  getSourceStatusPresentation({ isActive: true, lastStatus: "success" }),
+  { status: SOURCE_HEALTH_STATUS.HEALTHY, label: "Healthy", priority: 2, isActive: true, needsAttention: false, tone: "is-success" },
+  "Sources display the same healthy classification that powers filtering"
+);
+assert.deepEqual(
+  getSourceStatusPresentation({ isActive: false, lastStatus: "success" }),
+  { status: SOURCE_HEALTH_STATUS.INACTIVE, label: "Inactive", priority: 1, isActive: false, needsAttention: true, tone: "is-idle" },
+  "a deliberately disabled source remains visibly inactive"
+);
+assert.deepEqual(
+  getSourceStatusPresentation({ isActive: true }, { isLinkOnlySource: true }),
+  { status: "official-link", label: "Official link", tone: "is-idle" },
+  "official-link sources do not imply a failed sync"
+);
+assert.deepEqual(
+  getSourceStatusPresentation({ isActive: true }, { isReferenceOnlySource: true }),
+  { status: "reference", label: "Reference source", tone: "is-reference" },
+  "reference sources remain distinct from RSS health"
+);
 
 const activeIds = sourceFixtures
   .filter((feed) => sourceMatchesHealthFilter(feed, "active"))
@@ -116,13 +154,16 @@ assert.equal(
 
 process.stdout.write(JSON.stringify({
   status: "passed",
-  checks: 24,
+  checks: 33,
   covered: [
     "Feed Start Profile and Show profile route",
     "direct workspace hashes",
     "Back/Forward and duplicate history protection",
     "profile and article state preservation",
     "shared source health classification",
+    "source status presentation and source-type labels",
+    "Source Open feed route and visible source-list continuation",
+    "single accessible profile-template control",
     "Admin source-status shortcuts",
   ],
 }, null, 2) + "\n");

@@ -31,7 +31,7 @@ import {
   getWorkspaceViewFromHash,
   normalizeWorkspaceView,
 } from "./workspace-navigation.js";
-import { getSourceHealth, sourceMatchesHealthFilter } from "./source-health.js";
+import { getSourceHealth, getSourceStatusPresentation, sourceMatchesHealthFilter } from "./source-health.js";
 
 const PLACEHOLDER_IMAGE = "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image";
 const THEME_STORAGE_KEY = "rss-monitor-theme";
@@ -6718,12 +6718,8 @@ function applyIdentityDocumentBundleQualityGateToArticles(articles = []) {
 
 function updatePersonalDashboardTemplateSelection(interests = state.personalDashboard.interests) {
   const matchingTemplateId = getMatchingPersonalDashboardTemplateId(interests);
-  if (!elements.personalDashboardTemplateSelect) {
-    if (!elements.personalDashboardTemplateOptions) {
-      return;
-    }
-  } else {
-    elements.personalDashboardTemplateSelect.value = matchingTemplateId;
+  if (!elements.personalDashboardTemplateOptions) {
+    return;
   }
   if (elements.personalDashboardTemplateOptions) {
     elements.personalDashboardTemplateOptions
@@ -7567,6 +7563,7 @@ const state = {
   addSourceExpanded: false,
   analyticsScope: "all",
   analyticsQualityFilter: "all",
+  sourceListLimit: MAX_VISIBLE_SOURCES_IN_LIST,
   tagManagerExpanded: false,
   noiseKeywordsExpanded: false,
   keywordFilters: {
@@ -7645,6 +7642,7 @@ const runtime = {
   articleComputationCache: new Map(),
   articlePairComputationCache: new Map(),
   feedLookupKey: "",
+  sourceListVisibilitySignature: "",
   feedByUniqueIdentity: new Map(),
   feedById: new Map(),
   feedBySourceId: new Map(),
@@ -7747,7 +7745,6 @@ const elements = {
   profileBuilderPanel: document.getElementById("profile-builder-panel"),
   profileBuilderDone: document.getElementById("profile-builder-done"),
   personalDashboard: document.getElementById("personal-dashboard"),
-  personalDashboardTemplateSelect: document.getElementById("personal-dashboard-template-select"),
   personalDashboardTemplateOptions: document.getElementById("personal-dashboard-template-options"),
   identityDocumentAuthorityStrictnessEditor: document.getElementById("identity-document-authority-strictness-editor"),
   personalDashboardCustomProfiles: document.getElementById("personal-dashboard-custom-profiles"),
@@ -7806,6 +7803,9 @@ const elements = {
   googleAlertsBatchStatus: document.getElementById("google-alerts-batch-status"),
   feedCount: document.getElementById("feed-count"),
   feedList: document.getElementById("feed-list"),
+  sourceListLoadMore: document.getElementById("source-list-load-more"),
+  sourceListLoadMoreStatus: document.getElementById("source-list-load-more-status"),
+  sourceListLoadMoreButton: document.getElementById("source-list-load-more-button"),
   sourceManagementSummary: document.getElementById("source-management-summary"),
   feedPanelSearch: document.getElementById("feed-panel-search"),
   feedVisibilityFilter: document.getElementById("feed-visibility-filter"),
@@ -46433,38 +46433,11 @@ function isOfficialFallbackArticle(article) {
 }
 
 function getFeedStatusPresentation(feed) {
-  if (isReferenceOnlySource(feed)) {
-    return {
-      text: "reference",
-      tone: "is-reference",
-    };
-  }
-
-  if (isLinkOnlyDmvSource(feed)) {
-    return {
-      text: "No RSS",
-      tone: "is-idle",
-    };
-  }
-
-  if (feed?.isActive === false) {
-    return {
-      text: "inactive",
-      tone: "is-idle",
-    };
-  }
-
-  const tone =
-    feed.lastStatus === "error"
-      ? "is-error"
-      : feed.lastStatus === "success"
-        ? "is-success"
-        : "is-idle";
-
-  return {
-    text: feed.lastStatus || "idle",
-    tone,
-  };
+  const presentation = getSourceStatusPresentation(feed, {
+    isLinkOnlySource: isLinkOnlyDmvSource(feed),
+    isReferenceOnlySource: isReferenceOnlySource(feed),
+  });
+  return { text: presentation.label, tone: presentation.tone };
 }
 
 function isFeedError(feed) {
@@ -52491,9 +52464,8 @@ function renderDmvModeIndicator() {
 function getVisibleFeeds() {
   ensureFeedLookupCaches();
   const sourceListMode = getSourceListMode();
-  let feeds = state.feeds.slice();
+  let feeds = getAllListedSources();
   const canadaCatalogOnlySources = getCanadaCatalogOnlySources();
-  const nonUsCatalogOnlySources = getNonUsCatalogOnlySources();
   const feedPanelSearch = String(elements.feedPanelSearch?.value || "").trim().toLowerCase();
   const visibilityFilter = elements.feedVisibilityFilter?.value || "all";
   const groupFilter = state.filters.sourceGroup || "all";
@@ -52515,8 +52487,6 @@ function getVisibleFeeds() {
     feeds = selectedUsFeed ? feeds.filter((feed) => feed.id === selectedUsFeed.id) : [];
   } else if (sourceListMode === "canada-all") {
     feeds = getCanadaImportedDmvFeeds().concat(canadaCatalogOnlySources);
-  } else {
-    feeds = feeds.concat(nonUsCatalogOnlySources);
   }
 
   if (visibilityFilter === "active") {
@@ -52553,6 +52523,10 @@ function getVisibleFeeds() {
   return feeds.sort((left, right) =>
     String(left.name || "").localeCompare(String(right.name || ""))
   );
+}
+
+function getAllListedSources() {
+  return state.feeds.concat(getNonUsCatalogOnlySources());
 }
 
 function getSourcePanelContextLabel() {
@@ -53071,7 +53045,7 @@ function renderFeedItem(feed) {
 
 function renderSourceManagementSummary() {
   if (!elements.sourceManagementSummary) return;
-  const feeds = Array.isArray(state.feeds) ? state.feeds : [];
+  const feeds = getAllListedSources();
   const sourceHealth = feeds.map((feed) => getSourceHealth(feed, {
     isLinkOnlySource: isLinkOnlyDmvSource(feed),
   }));
@@ -53098,13 +53072,40 @@ function renderSourceManagementSummary() {
   });
 }
 
+function getSourceListVisibilitySignature() {
+  return JSON.stringify({
+    mode: getSourceListMode(),
+    search: String(elements.feedPanelSearch?.value || "").trim().toLowerCase(),
+    status: elements.feedVisibilityFilter?.value || "all",
+    group: state.filters.sourceGroup || "all",
+  });
+}
+
+function renderSourceListLoadMore(totalCount, renderedCount) {
+  if (!elements.sourceListLoadMore || !elements.sourceListLoadMoreStatus || !elements.sourceListLoadMoreButton) {
+    return;
+  }
+  const remaining = Math.max(0, totalCount - renderedCount);
+  elements.sourceListLoadMore.hidden = remaining === 0;
+  if (!remaining) return;
+
+  elements.sourceListLoadMoreStatus.textContent = `Showing ${renderedCount} of ${totalCount} sources`;
+  const nextBatch = Math.min(MAX_VISIBLE_SOURCES_IN_LIST, remaining);
+  elements.sourceListLoadMoreButton.textContent = `Show ${nextBatch} more source${nextBatch === 1 ? "" : "s"}`;
+}
+
 function renderFeedList() {
   renderSourceManagementSummary();
   syncSourceGroupTabs();
   syncSourcePanelContextActions();
   saveSourceSelectionPreferences();
   const visibleFeeds = getVisibleFeeds();
-  const renderedFeeds = visibleFeeds.slice(0, MAX_VISIBLE_SOURCES_IN_LIST);
+  const sourceListVisibilitySignature = getSourceListVisibilitySignature();
+  if (runtime.sourceListVisibilitySignature !== sourceListVisibilitySignature) {
+    runtime.sourceListVisibilitySignature = sourceListVisibilitySignature;
+    state.sourceListLimit = MAX_VISIBLE_SOURCES_IN_LIST;
+  }
+  const renderedFeeds = visibleFeeds.slice(0, state.sourceListLimit);
   const activeGroup = state.filters.sourceGroup || "all";
 
   elements.feedCount.textContent = String(visibleFeeds.length);
@@ -53112,6 +53113,7 @@ function renderFeedList() {
 
   if (!visibleFeeds.length) {
     elements.feedList.innerHTML = `<div class="empty-state">No feeds match the current view.</div>`;
+    renderSourceListLoadMore(0, 0);
     updateDmvToggleButton();
     syncFilterUx();
     syncFeedPanelVisibility();
@@ -53141,6 +53143,7 @@ function renderFeedList() {
   });
 
   elements.feedList.appendChild(fragment);
+  renderSourceListLoadMore(visibleFeeds.length, renderedFeeds.length);
   updateDmvToggleButton();
   syncFilterUx();
   syncFeedPanelVisibility();
@@ -58712,7 +58715,7 @@ function applyPersonalDashboardStageMeasured({ articles, diagnostics } = {}) {
           : "source_group_view_without_profile",
         notes: [
           queryContext.sourceOnly
-            ? "Source list View articles has no active profile to apply"
+            ? "Source list Open feed has no active profile to apply"
             : "Source group view has no active profile to apply",
         ],
         metadata: {
@@ -62715,15 +62718,6 @@ function bindEvents() {
     });
   }
 
-  if (elements.personalDashboardTemplateSelect) {
-    elements.personalDashboardTemplateSelect.addEventListener("change", (event) => {
-      const templateId = String(event.target.value || "").trim();
-      if (templateId && templateId !== "custom") {
-        applyPersonalDashboardTemplate(templateId);
-      }
-    });
-  }
-
   if (elements.personalDashboardTemplateOptions) {
     elements.personalDashboardTemplateOptions.addEventListener("click", (event) => {
       const strictnessButton = event.target instanceof Element
@@ -63536,6 +63530,11 @@ function bindEvents() {
     renderFeedList();
   });
 
+  elements.sourceListLoadMoreButton?.addEventListener("click", () => {
+    state.sourceListLimit += MAX_VISIBLE_SOURCES_IN_LIST;
+    renderFeedList();
+  });
+
   if (elements.feedGroupTabs) {
     elements.feedGroupTabs.addEventListener("click", (event) => {
       const button = event.target.closest("[data-source-group]");
@@ -63624,6 +63623,7 @@ function bindEvents() {
     if (viewButton) {
       const feedId = viewButton.dataset.feedId;
       applySourceListFeedFilter(feedId);
+      setAppView("feed");
       return;
     }
 

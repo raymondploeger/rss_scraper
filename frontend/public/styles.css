@@ -628,15 +628,6 @@ button.admin-health-metric:focus-visible {
   opacity: 0.55;
 }
 
-.personal-dashboard-template-select-fallback {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}
-
 .personal-dashboard-summary {
   display: grid;
   gap: 10px;
@@ -2869,6 +2860,21 @@ button.intelligence-context-chip:focus-visible .intelligence-context-chip-remove
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 4px;
+}
+
+.source-list-load-more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 2px 0;
+}
+
+.source-list-load-more-status {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
 }
 
 .feed-group-heading {

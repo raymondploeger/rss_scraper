@@ -122,17 +122,6 @@
                   </button>
                   <input id="personal-dashboard-import-file" type="file" accept="application/json,.json" hidden />
                 </div>
-                <select id="personal-dashboard-template-select" class="personal-dashboard-template-select-fallback" aria-label="Choose profile fallback" tabindex="-1">
-                  <option value="">Choose template</option>
-                  <option value="central_bank">Central Bank</option>
-                  <option value="passport_authority">Identity Document Authority</option>
-                  <option value="border_control">Border Control</option>
-                  <option value="security_printer">Security Printer</option>
-                  <option value="vendors">Vendors</option>
-                  <option value="identity_verification">Identity Verification</option>
-                  <option value="researcher">Industry Research</option>
-                  <option value="custom">Custom profile</option>
-                </select>
               </div>
               <section class="personal-dashboard-profile-section">
                 <div class="personal-dashboard-profile-section-head">
@@ -250,6 +239,10 @@
                 </div>
               </div>
               <div id="feed-list" class="feed-list"></div>
+              <div id="source-list-load-more" class="source-list-load-more" hidden>
+                <span id="source-list-load-more-status" class="source-list-load-more-status"></span>
+                <button id="source-list-load-more-button" class="ghost-button" type="button">Show more sources</button>
+              </div>
             </div>
           </section>
           <section id="admin-workspace" class="panel admin-workspace" data-app-section="admin" aria-label="Administration workspace">
@@ -503,7 +496,7 @@
         <div class="feed-item-side">
           <span class="feed-status"></span>
           <div class="feed-item-actions">
-            <button class="ghost-button feed-view-button" type="button">View articles</button>
+            <button class="ghost-button feed-view-button" type="button">Open feed</button>
             <button class="ghost-button feed-sync-button" type="button">Sync now</button>
             <button class="ghost-button feed-edit-button" type="button">Edit</button>
             <button class="ghost-button feed-delete-button" type="button">Delete</button>
