@@ -7744,6 +7744,7 @@ const elements = {
   tagManagerList: document.getElementById("tag-manager-list"),
   profileBuilderPanel: document.getElementById("profile-builder-panel"),
   profileBuilderDone: document.getElementById("profile-builder-done"),
+  profileBuilderViewFeed: document.getElementById("profile-builder-view-feed"),
   personalDashboard: document.getElementById("personal-dashboard"),
   personalDashboardTemplateOptions: document.getElementById("personal-dashboard-template-options"),
   identityDocumentAuthorityStrictnessEditor: document.getElementById("identity-document-authority-strictness-editor"),
@@ -28588,6 +28589,12 @@ function finishPersonalDashboardEditing() {
   state.personalDashboard.editing = false;
   state.personalDashboard.expandedGroups = [];
   renderPersonalDashboard();
+}
+
+function returnToFeedFromProfileBuilder() {
+  finishPersonalDashboardEditing();
+  setAppView("feed");
+  window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
 }
 
 function togglePersonalDashboardSummary() {
@@ -62717,6 +62724,10 @@ function bindEvents() {
       finishPersonalDashboardEditing();
     });
   }
+
+  elements.profileBuilderViewFeed?.addEventListener("click", () => {
+    returnToFeedFromProfileBuilder();
+  });
 
   if (elements.personalDashboardTemplateOptions) {
     elements.personalDashboardTemplateOptions.addEventListener("click", (event) => {

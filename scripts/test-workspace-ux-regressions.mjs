@@ -26,6 +26,12 @@ assert.match(
   "opening a regular source must retain its filter and navigate to Feed"
 );
 assert.match(indexSource, />Open feed<\/button>/, "ordinary sources expose an explicit Open feed action");
+assert.match(indexSource, /id="profile-builder-view-feed"[\s\S]*?>View Feed<\/button>/, "Profiles exposes a Feed action at the bottom of the editor");
+assert.match(
+  appSource,
+  /function returnToFeedFromProfileBuilder\(\) \{[\s\S]*?finishPersonalDashboardEditing\(\);[\s\S]*?setAppView\("feed"\);/,
+  "the bottom Profile action preserves profile state before navigating to Feed"
+);
 assert.match(
   appSource,
   /Showing \$\{renderedCount\} of \$\{totalCount\} sources[\s\S]*?Show \$\{nextBatch\} more source/,
@@ -154,7 +160,7 @@ assert.equal(
 
 process.stdout.write(JSON.stringify({
   status: "passed",
-  checks: 33,
+  checks: 35,
   covered: [
     "Feed Start Profile and Show profile route",
     "direct workspace hashes",
@@ -163,6 +169,7 @@ process.stdout.write(JSON.stringify({
     "shared source health classification",
     "source status presentation and source-type labels",
     "Source Open feed route and visible source-list continuation",
+    "Profile editor bottom Feed action",
     "single accessible profile-template control",
     "Admin source-status shortcuts",
   ],

@@ -404,6 +404,12 @@ button.admin-health-metric:focus-visible {
   color: var(--text);
 }
 
+.profile-builder-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
 .personal-dashboard-panel {
   display: grid;
   gap: 12px;
@@ -3848,6 +3854,14 @@ button.grouped-sources-more {
   .feed-form-actions,
   .feed-item-side,
   .feed-item-actions {
+    width: 100%;
+  }
+
+  .profile-builder-footer {
+    justify-content: stretch;
+  }
+
+  .profile-builder-footer .primary-button {
     width: 100%;
   }
 
