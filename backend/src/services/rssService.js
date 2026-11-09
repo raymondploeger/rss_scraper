@@ -15,6 +15,7 @@ import { listFeeds as listFeedRecords, updateFeed as updateFeedRecord } from "..
 import { broadcast } from "./realtimeService.js";
 import { articleMatchesSourceRelevanceRule, getSourceRelevanceAssessment } from "./sourceRelevanceService.js";
 import { classifyArticleForIngest } from "./articleClassificationService.js";
+import { matchAndStoreArticleWishlistSignals } from "./wishlistMatchingService.js";
 import {
   enrichArticle,
   isGoogleNewsPlaceholderImage,
@@ -5769,6 +5770,15 @@ async function runFeedSync(feed) {
         );
 
         const result = await upsertArticle(normalized);
+        const wishlistMatches = await matchAndStoreArticleWishlistSignals(result.article);
+        if (wishlistMatches.length) {
+          result.article.wishlistMatches = wishlistMatches.map((match) => ({
+            confidence: match.confidence,
+            matchedTerms: match.matchedTerms,
+            imageCandidate: match.imageCandidate,
+          }));
+          broadcast("article:update", { type: "article:update", article: result.article });
+        }
         if (!result.created) {
           if (vendorFeedLogLabel) {
             console.log(

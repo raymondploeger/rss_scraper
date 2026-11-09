@@ -57520,6 +57520,16 @@ function renderArticleCard(article) {
     meta.appendChild(duplicateBadge);
   }
 
+  if (meta && Array.isArray(article?.wishlistMatches) && article.wishlistMatches.length) {
+    const strongestMatch = article.wishlistMatches.find((match) => match?.confidence === "strong") || article.wishlistMatches[0];
+    const badge = document.createElement("span");
+    badge.className = `article-wishlist-badge${strongestMatch?.confidence === "strong" ? " is-strong" : ""}`;
+    badge.textContent = strongestMatch?.confidence === "strong" ? "Wishlist match" : "Possible wishlist match";
+    const matchedTitle = strongestMatch?.wishlistItem?.title;
+    badge.title = matchedTitle ? `Wishlist: ${matchedTitle}` : "Matched against the document wishlist";
+    meta.appendChild(badge);
+  }
+
   if (groupedSources.length) {
     const sourcePanel = document.createElement("div");
     sourcePanel.className = "grouped-sources-inline";

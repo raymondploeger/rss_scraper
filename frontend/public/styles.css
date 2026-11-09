@@ -3595,6 +3595,25 @@ button.intelligence-context-chip:focus-visible .intelligence-context-chip-remove
   white-space: nowrap;
 }
 
+.article-wishlist-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--warning, #b7791f) 14%, transparent);
+  color: var(--warning, #8a5800);
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.article-wishlist-badge.is-strong {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent-strong, var(--accent));
+}
+
 button.article-duplicate-badge {
   cursor: pointer;
 }

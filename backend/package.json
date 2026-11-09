@@ -68,6 +68,8 @@
     "articles:retention": "node scripts/enforce-article-retention.js",
     "articles:retention:apply": "node scripts/enforce-article-retention.js --apply",
     "articles:reclassify:secunet": "node scripts/reclassify-article-profiles.js --feed secunet Press",
+    "wishlist:import": "node scripts/import-wishlist-tracker.js",
+    "wishlist:backfill": "node scripts/backfill-wishlist-matches.js",
     "sources:bing-mirror-google-alerts": "node scripts/bing-mirror-google-alerts.js",
     "sources:bing-mirror-google-alerts:apply": "node scripts/bing-mirror-google-alerts.js --apply",
     "prisma:generate": "prisma generate",

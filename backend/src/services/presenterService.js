@@ -126,6 +126,15 @@ export function toArticleDto(article, feed = {}) {
     profileSignals: Array.isArray(article.profileSignals) ? article.profileSignals : [],
     profileDecisions: getArticleProfileDecisions(article, feed),
     classifications: Array.isArray(article.classifications) ? article.classifications : [],
+    wishlistMatches: Array.isArray(article.wishlistMatches)
+      ? article.wishlistMatches.map((match) => ({
+        id: match.id,
+        confidence: match.confidence,
+        matchedTerms: Array.isArray(match.matchedTerms) ? match.matchedTerms : [],
+        imageCandidate: match.imageCandidate || null,
+        wishlistItem: match.wishlistItem || null,
+      }))
+      : [],
     tags: Array.isArray(article.tags)
       ? article.tags
       : Array.isArray(article.keywords)

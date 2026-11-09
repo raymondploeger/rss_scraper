@@ -2,6 +2,16 @@ import { getDatabase } from "../config/db.js";
 import { env } from "../config/env.js";
 import { mapArticleRecord, toIsoString } from "./helpers.js";
 
+const wishlistMatchesInclude = {
+  wishlistMatches: {
+    include: {
+      wishlistItem: {
+        select: { id: true, title: true, priority: true, category: true },
+      },
+    },
+  },
+};
+
 function buildArticleWhere(filters = {}) {
   const where = {};
   const andConditions = [];
@@ -90,7 +100,7 @@ function buildArticleWhere(filters = {}) {
 
 export async function findArticleById(id) {
   const prisma = getDatabase();
-  const article = await prisma.article.findUnique({ where: { id } });
+  const article = await prisma.article.findUnique({ where: { id }, include: wishlistMatchesInclude });
   return mapArticleRecord(article);
 }
 
@@ -220,6 +230,7 @@ export async function createArticle(article) {
       fetchStatus: article.fetchStatus || "pending",
       hash: article.articleHash,
     },
+    include: wishlistMatchesInclude,
   });
 
   return mapArticleRecord(created);
@@ -281,6 +292,7 @@ export async function updateArticle(id, updates) {
         : {}),
       ...(Object.prototype.hasOwnProperty.call(updates, "articleHash") ? { hash: updates.articleHash } : {}),
     },
+    include: wishlistMatchesInclude,
   });
 
   return mapArticleRecord(updated);
@@ -293,6 +305,7 @@ export async function listArticles(filters = {}, options = {}) {
     orderBy: [{ pubDate: "desc" }, { createdAt: "desc" }],
     take: Math.min(env.maxArticlePageSize, Math.max(1, Number(options.limit || env.maxArticlePageSize))),
     skip: Math.max(0, Number(options.offset || 0)),
+    include: wishlistMatchesInclude,
   });
 
   return items.map(mapArticleRecord);
@@ -325,6 +338,7 @@ export async function listCanonicalDedupedArticles(filters = {}, options = {}) {
     where: buildArticleWhere(filters),
     orderBy: [{ pubDate: "desc" }, { createdAt: "desc" }],
     ...(candidateLimit ? { take: candidateLimit } : {}),
+    include: wishlistMatchesInclude,
   });
   const seen = new Set();
   const deduped = [];

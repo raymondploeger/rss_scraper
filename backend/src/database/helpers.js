@@ -55,6 +55,22 @@ export function mapArticleRecord(article) {
     domains: Array.isArray(article.domains) ? article.domains : [],
     profileSignals: Array.isArray(article.profileSignals) ? article.profileSignals : [],
     classifications: Array.isArray(article.classifications) ? article.classifications : [],
+    wishlistMatches: Array.isArray(article.wishlistMatches)
+      ? article.wishlistMatches.map((match) => ({
+        id: match.id,
+        confidence: match.confidence,
+        matchedTerms: Array.isArray(match.matchedTerms) ? match.matchedTerms : [],
+        imageCandidate: match.imageCandidate || null,
+        wishlistItem: match.wishlistItem
+          ? {
+            id: match.wishlistItem.id,
+            title: match.wishlistItem.title,
+            priority: match.wishlistItem.priority,
+            category: match.wishlistItem.category,
+          }
+          : null,
+      }))
+      : [],
     contentSnippet: article.contentSnippet || "",
     author: article.author || "",
     clusterId: article.clusterId || null,
