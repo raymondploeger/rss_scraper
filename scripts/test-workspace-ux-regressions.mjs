@@ -47,7 +47,7 @@ assert.deepEqual(getProfileEditorTransition(), {
   focusSelector: "[data-personal-group-toggle]",
 });
 
-["profiles", "sources", "admin"].forEach((view) => {
+["wishlist", "profiles", "sources", "admin"].forEach((view) => {
   assert.equal(getWorkspaceViewFromHash(`#${view}`, "feed"), view, `direct #${view} link`);
   assert.equal(getWorkspaceViewFromHash(`#/${view}`, "feed"), view, `direct #/${view} link`);
 });
@@ -60,6 +60,12 @@ assert.equal(
   getWorkspaceInitializationTransition({ currentHash: "#profiles", fallbackView: "feed" }).historyAction,
   "none",
   "a direct workspace hash must remain untouched during initialization"
+);
+assert.match(indexSource, /data-app-view="wishlist">Wishlist<\/button>/, "Wishlist is available from primary navigation");
+assert.match(
+  appSource,
+  /\/api\/articles\?wishlistOnly=true&includePagination=true&limit=100&page=1/,
+  "Wishlist must load its own unfiltered match inbox"
 );
 
 const profileState = Object.freeze({
@@ -160,7 +166,7 @@ assert.equal(
 
 process.stdout.write(JSON.stringify({
   status: "passed",
-  checks: 35,
+  checks: 38,
   covered: [
     "Feed Start Profile and Show profile route",
     "direct workspace hashes",
@@ -172,5 +178,6 @@ process.stdout.write(JSON.stringify({
     "Profile editor bottom Feed action",
     "single accessible profile-template control",
     "Admin source-status shortcuts",
+    "Wishlist match inbox navigation and API query",
   ],
 }, null, 2) + "\n");

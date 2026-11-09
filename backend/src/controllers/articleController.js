@@ -191,6 +191,7 @@ export async function listArticles(request, response) {
       signal,
       showDuplicates,
       completeCandidates,
+      wishlistOnly,
     } = request.query;
     const pageNumber = Math.max(1, Number(page) || 1);
     const pageSize = Math.min(env.maxArticlePageSize, Math.max(1, Number(limit) || env.maxArticlePageSize));
@@ -213,6 +214,7 @@ export async function listArticles(request, response) {
       search,
       tag,
       signalKeywords,
+      wishlistOnly: String(wishlistOnly || "").trim().toLowerCase() === "true",
       excludeDuplicates: !includeDuplicates
     };
 

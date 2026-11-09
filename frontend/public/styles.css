@@ -259,6 +259,7 @@ img {
 }
 
 body[data-app-view="feed"] [data-app-section]:not([data-app-section="feed"]),
+body[data-app-view="wishlist"] [data-app-section]:not([data-app-section="wishlist"]),
 body[data-app-view="profiles"] [data-app-section]:not([data-app-section="profiles"]),
 body[data-app-view="sources"] [data-app-section]:not([data-app-section="sources"]),
 body[data-app-view="admin"] [data-app-section]:not([data-app-section="admin"]) {
@@ -269,7 +270,18 @@ body[data-app-view="profiles"] .profile-builder-panel {
   display: block;
 }
 
+/* Wishlist is a focused article inbox, so it reuses the main feed canvas while
+   leaving the feed-only sidebar and summary panels out of view. */
+body[data-app-view="wishlist"] .dashboard-layout .main-content[data-app-section="feed"] {
+  display: block !important;
+}
+
+body[data-app-view="wishlist"] .advanced-search-panel {
+  display: none;
+}
+
 body[data-app-view="profiles"] .dashboard-layout,
+body[data-app-view="wishlist"] .dashboard-layout,
 body[data-app-view="sources"] .dashboard-layout,
 body[data-app-view="admin"] .dashboard-layout {
   grid-template-columns: minmax(0, 820px);

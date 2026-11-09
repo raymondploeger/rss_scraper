@@ -55,6 +55,10 @@ function buildArticleWhere(filters = {}) {
     };
   }
 
+  if (filters.wishlistOnly) {
+    where.wishlistMatches = { some: {} };
+  }
+
   if (filters.search) {
     andConditions.push({
       OR: [

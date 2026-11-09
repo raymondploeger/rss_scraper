@@ -7554,6 +7554,9 @@ const SIGNAL_NOISE_CONTEXT_KEYWORDS = [
 
 const state = {
   appView: "feed",
+  wishlistArticles: [],
+  wishlistTotalCount: 0,
+  wishlistLoading: false,
   feeds: [],
   dmvCatalog: [],
   articles: [],
@@ -7875,6 +7878,11 @@ function setAppView(view, { updateLocation = true, explicitNavigation = true } =
     window.history.pushState(null, "", transition.hash);
   }
   syncAppView();
+  if (nextView === "wishlist") {
+    void renderWishlistWorkspace();
+  } else if (state.appView !== "wishlist") {
+    renderDashboard();
+  }
 }
 
 function syncAppViewFromLocation() {
@@ -61946,7 +61954,81 @@ function renderArticles() {
   }
 }
 
+async function renderWishlistWorkspace({ force = false } = {}) {
+  if (state.appView !== "wishlist" || state.wishlistLoading) {
+    return;
+  }
+
+  if (!force && Array.isArray(state.wishlistArticles) && state.wishlistArticles.length) {
+    renderWishlistArticles();
+    return;
+  }
+
+  state.wishlistLoading = true;
+  if (elements.intelligenceFeedEyebrow) elements.intelligenceFeedEyebrow.textContent = "Document acquisition";
+  if (elements.intelligenceFeedTitle) elements.intelligenceFeedTitle.textContent = "Wishlist signals";
+  if (elements.intelligenceFeedSummary) {
+    elements.intelligenceFeedSummary.textContent = "Articles that may help find documents still missing from the collection.";
+  }
+  if (elements.articleFilterContext) {
+    elements.articleFilterContext.textContent = "Loading wishlist matches…";
+    elements.articleFilterContext.hidden = false;
+  }
+  if (elements.articlesGrid) elements.articlesGrid.innerHTML = "";
+  if (elements.paginationControls) elements.paginationControls.hidden = true;
+
+  try {
+    const response = await apiRequest("/api/articles?wishlistOnly=true&includePagination=true&limit=100&page=1");
+    if (state.appView !== "wishlist") return;
+    state.wishlistArticles = Array.isArray(response?.items) ? response.items : [];
+    state.wishlistTotalCount = Number(response?.pagination?.total) || state.wishlistArticles.length;
+    renderWishlistArticles();
+  } catch (error) {
+    if (state.appView !== "wishlist") return;
+    if (elements.articlesGrid) {
+      elements.articlesGrid.innerHTML = `<div class="empty-state">${escapeHtml(error?.message || "Could not load wishlist matches.")}</div>`;
+    }
+  } finally {
+    state.wishlistLoading = false;
+  }
+}
+
+function renderWishlistArticles() {
+  if (state.appView !== "wishlist") return;
+  const articles = Array.isArray(state.wishlistArticles) ? state.wishlistArticles : [];
+  const total = Math.max(Number(state.wishlistTotalCount) || 0, articles.length);
+  if (elements.intelligenceFeedEyebrow) elements.intelligenceFeedEyebrow.textContent = "Document acquisition";
+  if (elements.intelligenceFeedTitle) elements.intelligenceFeedTitle.textContent = "Wishlist signals";
+  if (elements.intelligenceFeedSummary) {
+    elements.intelligenceFeedSummary.textContent = "Articles that may help find documents still missing from the collection.";
+  }
+  if (elements.intelligenceFeedContext) elements.intelligenceFeedContext.innerHTML = "";
+  if (elements.profileHistoryControl) elements.profileHistoryControl.hidden = true;
+  if (elements.resultsCount) elements.resultsCount.textContent = `${total} signal${total === 1 ? "" : "s"}`;
+  if (elements.articleFilterContext) {
+    elements.articleFilterContext.textContent = articles.length < total
+      ? `Showing the latest ${articles.length} of ${total} matched articles.`
+      : `${total} matched article${total === 1 ? "" : "s"}.`;
+    elements.articleFilterContext.hidden = false;
+  }
+  if (elements.paginationControls) elements.paginationControls.hidden = true;
+  if (!elements.articlesGrid) return;
+  elements.articlesGrid.classList.remove("is-grouped-feed-view", "has-personal-lanes");
+  elements.articlesGrid.innerHTML = "";
+  if (!articles.length) {
+    elements.articlesGrid.innerHTML = `<div class="empty-state">No wishlist signals yet. New matching articles will appear here automatically.</div>`;
+    return;
+  }
+  const fragment = document.createDocumentFragment();
+  articles.forEach((article) => fragment.appendChild(renderArticleCard(article)));
+  elements.articlesGrid.appendChild(fragment);
+}
+
 function renderDashboard() {
+  if (state.appView === "wishlist") {
+    void renderWishlistWorkspace();
+    return;
+  }
   renderSummary();
   renderAdminWorkspace();
   renderFavoritesPanel();

@@ -1,4 +1,4 @@
-export const WORKSPACE_VIEWS = Object.freeze(["feed", "profiles", "sources", "admin"]);
+export const WORKSPACE_VIEWS = Object.freeze(["feed", "wishlist", "profiles", "sources", "admin"]);
 
 const WORKSPACE_VIEW_SET = new Set(WORKSPACE_VIEWS);
 
