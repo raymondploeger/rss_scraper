@@ -53,9 +53,14 @@ function containsPhrase(text, phrase) {
   return text.includes(normalizeWishlistText(phrase));
 }
 
+function containsWholeWord(text, word) {
+  const escapedWord = String(word).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${escapedWord}\\b`, "i").test(text);
+}
+
 function getImageCandidate(article) {
   const thumbnail = String(article?.thumbnail || "").trim();
-  if (!/^https?:\/\//i.test(thumbnail) || /placeholder|source-title-card/i.test(thumbnail)) {
+  if (!/^https?:\/\//i.test(thumbnail) || /placeholder|placehold\.co|source-title-card/i.test(thumbnail)) {
     return null;
   }
   return thumbnail;
@@ -75,7 +80,7 @@ export function matchArticleAgainstWishlist(article, items = []) {
   return items.flatMap((item) => {
     const countryTerms = getCountryTerms(item);
     const documentTerms = findDocumentTerms(item.title).filter((term) => containsPhrase(searchableText, term));
-    const countryMatches = countryTerms.filter((term) => searchableText.includes(term));
+    const countryMatches = countryTerms.filter((term) => containsWholeWord(searchableText, term));
     const titleWithoutYear = normalizeWishlistText(item.title).replace(/\b\d{4}\b/g, "").trim();
     const exactTitleFamily = titleWithoutYear.length >= 8 && searchableText.includes(titleWithoutYear);
     const hasCountry = countryTerms.length > 0 && countryMatches.length === countryTerms.length;
@@ -119,7 +124,6 @@ export async function matchAndStoreArticleWishlistSignals(article) {
   if (!article?.id) return [];
   const items = await getActiveWishlistItems();
   const matches = matchArticleAgainstWishlist(article, items);
-  if (!matches.length) return [];
   await upsertArticleWishlistMatches(article.id, matches);
   return matches;
 }

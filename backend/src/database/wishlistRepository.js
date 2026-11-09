@@ -28,7 +28,15 @@ export async function upsertWishlistItem(item) {
 
 export async function upsertArticleWishlistMatches(articleId, matches) {
   const prisma = getDatabase();
-  await prisma.$transaction(matches.map((match) => prisma.articleWishlistMatch.upsert({
+  const wishlistItemIds = matches.map((match) => match.wishlistItemId);
+  await prisma.$transaction([
+    prisma.articleWishlistMatch.deleteMany({
+      where: {
+        articleId,
+        ...(wishlistItemIds.length ? { wishlistItemId: { notIn: wishlistItemIds } } : {}),
+      },
+    }),
+    ...matches.map((match) => prisma.articleWishlistMatch.upsert({
     where: {
       articleId_wishlistItemId: {
         articleId,
@@ -41,5 +49,6 @@ export async function upsertArticleWishlistMatches(articleId, matches) {
       matchedTerms: match.matchedTerms,
       imageCandidate: match.imageCandidate,
     },
-  })));
+    })),
+  ]);
 }

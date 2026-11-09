@@ -20,6 +20,14 @@ assert.deepEqual(
 );
 
 assert.deepEqual(
+  matchArticleAgainstWishlist({ title: "Luxembourgers discuss visa-free travel" }, [
+    { id: "luxembourg-passport", title: "Luxembourg passport May 2026" },
+  ]),
+  [],
+  "country names must not match longer demonyms"
+);
+
+assert.deepEqual(
   matchArticleAgainstWishlist({ title: "Afghanistan issues updated driving licence" }, wishlist),
   [{
     wishlistItemId: "afghan-licence",

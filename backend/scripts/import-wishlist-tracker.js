@@ -18,6 +18,7 @@ const WISHLIST_STATUSES = new Set(["wishlist", "priority wishlist"]);
 
 let imported = 0;
 let skipped = 0;
+const pendingItems = [];
 
 for (const row of rows) {
   const title = String(row[0] || "").trim();
@@ -38,11 +39,15 @@ for (const row of rows) {
     sourceReference: "Acquisition document tracker.xlsx",
     isActive: true,
   };
-  if (!dryRun) {
-    await upsertWishlistItem(item);
-  }
+  pendingItems.push(item);
   imported += 1;
 }
 
-if (!dryRun) clearWishlistItemCache();
+if (!dryRun) {
+  const batchSize = 25;
+  for (let index = 0; index < pendingItems.length; index += batchSize) {
+    await Promise.all(pendingItems.slice(index, index + batchSize).map(upsertWishlistItem));
+  }
+  clearWishlistItemCache();
+}
 console.log(JSON.stringify({ imported, skipped, dryRun, source: path.basename(inputPath) }));
