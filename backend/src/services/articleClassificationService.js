@@ -7,6 +7,8 @@ const GENERIC_SOURCE_TOPICS = new Set([
   "news",
   "industry",
 ]);
+const MAX_CLASSIFICATION_KEYWORDS = 12;
+const MAX_CLASSIFICATION_KEYWORD_LENGTH = 120;
 
 const CLASSIFICATION_RULES = [
   {
@@ -435,12 +437,34 @@ function pickTopic(currentTopic, matchedRules, sourceText) {
   return currentTopic || "General";
 }
 
-export function classifyArticleForIngest({ title = "", contentSnippet = "", topic = "", source = "", feedName = "", link = "" } = {}) {
+function normalizeClassificationKeywords(keywords) {
+  if (!Array.isArray(keywords)) {
+    return [];
+  }
+
+  return Array.from(new Set(keywords
+    .filter((keyword) => typeof keyword === "string")
+    .map((keyword) => normalize(keyword).trim().slice(0, MAX_CLASSIFICATION_KEYWORD_LENGTH))
+    .filter(Boolean)))
+    .slice(0, MAX_CLASSIFICATION_KEYWORDS);
+}
+
+export function classifyArticleForIngest({
+  title = "",
+  contentSnippet = "",
+  topic = "",
+  source = "",
+  feedName = "",
+  link = "",
+  keywords = [],
+} = {}) {
   const titleText = normalize(title);
+  const normalizedKeywords = normalizeClassificationKeywords(keywords);
   const text = normalize([
     title,
     contentSnippet,
     link,
+    ...normalizedKeywords,
   ].join(" "));
   const sourceText = normalize([source, feedName].join(" "));
   const matchedRules = CLASSIFICATION_RULES

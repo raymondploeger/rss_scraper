@@ -2687,7 +2687,6 @@ export const SOURCE_RELEVANCE_RULES = [
       "banknote",
       "counterfeit",
       "counterfeiting",
-      "cash",
       "euro banknote",
       "euro cash",
       "legal tender",

@@ -91,6 +91,15 @@ const germanBanknoteArticle = classifyArticleForIngest({
 assertIncludes(germanBanknoteArticle.profileSignals, "central_bank", "German banknote profile signal");
 assertIncludes(germanBanknoteArticle.profileSignals, "security_printer", "German security-printing profile signal");
 
+const keywordOnlyBanknoteArticle = classifyArticleForIngest({
+  title: "Monthly update",
+  contentSnippet: "",
+  topic: "General",
+  source: "official source",
+  keywords: ["banknotes"],
+});
+assertIncludes(keywordOnlyBanknoteArticle.domains, "banknotes", "keyword-only banknote domain");
+
 const nonBorderDigitalIdentityArticle = classifyArticleForIngest({
   title: "Government-backed eID verification supports regulated onboarding",
   contentSnippet: "The publisher navigation also mentions immigration services.",

@@ -15,6 +15,7 @@ import { listFeeds as listFeedRecords, updateFeed as updateFeedRecord } from "..
 import { broadcast } from "./realtimeService.js";
 import { articleMatchesSourceRelevanceRule, getSourceRelevanceAssessment } from "./sourceRelevanceService.js";
 import { classifyArticleForIngest } from "./articleClassificationService.js";
+import { mergeArticleClassificationArrays } from "./articleUpsertMergeService.js";
 import { matchAndStoreArticleWishlistSignals } from "./wishlistMatchingService.js";
 import {
   enrichArticle,
@@ -5346,7 +5347,7 @@ function normalizeItem(feed, item) {
     source,
     feedName: feed.name,
     link,
-    keywords: [...tags, ...inferredKeywords],
+    keywords: tags,
   });
   const keywords = Array.from(new Set([...tags, ...classification.semanticTags, ...inferredKeywords]));
   const isNotafiliaArticle = isNotafiliaUrl(link) || isNotafiliaUrl(canonicalLink);
@@ -5435,20 +5436,10 @@ async function upsertArticle(article) {
     isLikelyGenericMetadataImage(existing.thumbnail) &&
     article.thumbnail !== existing.thumbnail;
   const shouldBackfillSnippet = (!existing.contentSnippet || existing.contentSnippet.length < 40) && article.contentSnippet;
-  const nextKeywords = Array.isArray(article.keywords) ? article.keywords : [];
-  const existingKeywords = Array.isArray(existing.keywords) ? existing.keywords : [];
+  const classificationArrays = mergeArticleClassificationArrays(existing, article);
   const shouldRefreshClassification =
     (article.topic && article.topic !== existing.topic) ||
-    JSON.stringify(article.domains || []) !== JSON.stringify(existing.domains || []) ||
-    JSON.stringify(article.profileSignals || []) !== JSON.stringify(existing.profileSignals || []) ||
-    JSON.stringify(article.classifications || []) !== JSON.stringify(existing.classifications || []) ||
-    (
-      nextKeywords.length > 0 &&
-      (
-        nextKeywords.length !== existingKeywords.length ||
-        nextKeywords.some((keyword, index) => keyword !== existingKeywords[index])
-      )
-    );
+    classificationArrays.changed;
   const shouldRefreshCoreMetadata =
     shouldUpdatePubDate ||
     (article.title && article.title !== existing.title) ||
@@ -5481,10 +5472,10 @@ async function upsertArticle(article) {
       contentSnippet: article.contentSnippet || existing.contentSnippet,
       summary: article.summary || existing.summary,
       summaryShort: article.summaryShort || existing.summaryShort,
-      keywords: nextKeywords.length ? nextKeywords : existing.keywords,
-      domains: article.domains?.length ? article.domains : existing.domains,
-      profileSignals: article.profileSignals?.length ? article.profileSignals : existing.profileSignals,
-      classifications: article.classifications?.length ? article.classifications : existing.classifications,
+      keywords: classificationArrays.values.keywords,
+      domains: classificationArrays.values.domains,
+      profileSignals: classificationArrays.values.profileSignals,
+      classifications: classificationArrays.values.classifications,
       fetchStatus: article.fetchStatus
     });
     broadcast("article:update", { type: "article:update", article: updated });
