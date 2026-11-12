@@ -3,7 +3,10 @@ import { getDatabase } from "../config/db.js";
 export async function listActiveWishlistItems() {
   const prisma = getDatabase();
   return prisma.wishlistItem.findMany({
-    where: { isActive: true },
+    where: {
+      isActive: true,
+      workflowStatus: { not: "Completed" },
+    },
     select: { id: true, title: true, priority: true, category: true },
     orderBy: { title: "asc" },
   });
@@ -26,9 +29,21 @@ export async function upsertWishlistItem(item) {
   });
 }
 
+export async function deactivateCompletedWishlistItems() {
+  const prisma = getDatabase();
+  return prisma.wishlistItem.updateMany({
+    where: {
+      isActive: true,
+      workflowStatus: "Completed",
+    },
+    data: { isActive: false },
+  });
+}
+
 export async function upsertArticleWishlistMatches(articleId, matches) {
   const prisma = getDatabase();
-  const wishlistItemIds = matches.map((match) => match.wishlistItemId);
+  const strongMatches = matches.filter((match) => match.confidence === "strong");
+  const wishlistItemIds = strongMatches.map((match) => match.wishlistItemId);
   await prisma.$transaction([
     prisma.articleWishlistMatch.deleteMany({
       where: {
@@ -36,7 +51,7 @@ export async function upsertArticleWishlistMatches(articleId, matches) {
         ...(wishlistItemIds.length ? { wishlistItemId: { notIn: wishlistItemIds } } : {}),
       },
     }),
-    ...matches.map((match) => prisma.articleWishlistMatch.upsert({
+    ...strongMatches.map((match) => prisma.articleWishlistMatch.upsert({
     where: {
       articleId_wishlistItemId: {
         articleId,

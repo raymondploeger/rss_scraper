@@ -1,11 +1,9 @@
 import { listActiveWishlistItems, upsertArticleWishlistMatches } from "../database/wishlistRepository.js";
 
 const DOCUMENT_TERMS = [
-  "passport",
-  "driving licence",
   "driving license",
-  "licence",
   "license",
+  "passport",
   "identity card",
   "id card",
   "residence permit",
@@ -16,7 +14,7 @@ const DOCUMENT_TERMS = [
 ];
 
 const IGNORED_WORDS = new Set([
-  "all", "card", "document", "documents", "minor", "new", "old", "paper", "service", "specimen", "the",
+  "all", "card", "document", "documents", "the",
 ]);
 
 let cachedItems = [];
@@ -27,6 +25,7 @@ export function normalizeWishlistText(value = "") {
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
+    .replace(/\blicence\b/g, "license")
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
     .replace(/\s+/g, " ");
@@ -34,23 +33,31 @@ export function normalizeWishlistText(value = "") {
 
 function findDocumentTerms(value) {
   const text = normalizeWishlistText(value);
-  return DOCUMENT_TERMS.filter((term) => text.includes(normalizeWishlistText(term)));
+  return DOCUMENT_TERMS.filter((term) => containsPhrase(text, term));
 }
 
-function getCountryTerms(item) {
+function getItemRequirements(item) {
   const normalizedTitle = normalizeWishlistText(item.title);
   const documentTerm = findDocumentTerms(normalizedTitle)[0];
-  const countryPart = documentTerm
-    ? normalizedTitle.slice(0, normalizedTitle.indexOf(normalizeWishlistText(documentTerm)))
-    : normalizedTitle;
+  if (!documentTerm) return null;
 
-  return countryPart
+  const documentIndex = normalizedTitle.indexOf(documentTerm);
+  const countryTerms = normalizedTitle
+    .slice(0, documentIndex)
     .split(" ")
     .filter((word) => word.length >= 3 && !/^\d+$/.test(word) && !IGNORED_WORDS.has(word));
+  const qualifierTerms = normalizedTitle
+    .slice(documentIndex + documentTerm.length)
+    .split(" ")
+    .filter((word) => word.length >= 3 && !/^\d+$/.test(word) && !IGNORED_WORDS.has(word));
+  const years = normalizedTitle.match(/\b(?:19|20)\d{2}\b/g) || [];
+
+  return { countryTerms, documentTerm, qualifierTerms, years };
 }
 
 function containsPhrase(text, phrase) {
-  return text.includes(normalizeWishlistText(phrase));
+  const normalizedPhrase = normalizeWishlistText(phrase);
+  return Boolean(normalizedPhrase && ` ${text} `.includes(` ${normalizedPhrase} `));
 }
 
 function containsWholeWord(text, word) {
@@ -76,35 +83,39 @@ export function matchArticleAgainstWishlist(article, items = []) {
 
   if (!searchableText) return [];
 
-  return items.flatMap((item) => {
-    const countryTerms = getCountryTerms(item);
-    const documentTerms = findDocumentTerms(item.title).filter((term) => containsPhrase(searchableText, term));
-    const countryMatches = countryTerms.filter((term) => containsWholeWord(searchableText, term));
-    const titleWithoutYear = normalizeWishlistText(item.title).replace(/\b\d{4}\b/g, "").trim();
-    const exactTitleFamily = titleWithoutYear.length >= 8 && searchableText.includes(titleWithoutYear);
-    const hasCountry = countryTerms.length > 0 && countryMatches.length === countryTerms.length;
-    const hasDocument = documentTerms.length > 0;
-
-    if (!exactTitleFamily && !(hasCountry && hasDocument)) {
+  const qualifiedMatches = items.flatMap((item) => {
+    if (item?.isActive === false || String(item?.workflowStatus || "").trim().toLowerCase() === "completed") {
       return [];
     }
 
-    const year = (String(item.title).match(/\b(19|20)\d{2}\b/) || [])[0];
-    const hasYear = Boolean(year && searchableText.includes(year));
-    const confidence = exactTitleFamily || (hasCountry && hasDocument && hasYear) ? "strong" : "candidate";
+    const requirements = getItemRequirements(item);
+    if (!requirements || !requirements.countryTerms.length) return [];
+    const countryMatches = requirements.countryTerms.filter((term) => containsWholeWord(searchableText, term));
+    const qualifierMatches = requirements.qualifierTerms.filter((term) => containsWholeWord(searchableText, term));
+    const hasAllRequirements = countryMatches.length === requirements.countryTerms.length
+      && containsPhrase(searchableText, requirements.documentTerm)
+      && qualifierMatches.length === requirements.qualifierTerms.length
+      && requirements.years.every((year) => containsWholeWord(searchableText, year));
+
+    if (!hasAllRequirements) return [];
+
     const matchedTerms = Array.from(new Set([
       ...countryMatches,
-      ...documentTerms.map((term) => normalizeWishlistText(term)),
-      ...(hasYear ? [year] : []),
+      requirements.documentTerm,
+      ...qualifierMatches,
+      ...requirements.years,
     ]));
 
     return [{
       wishlistItemId: item.id,
-      confidence,
+      confidence: "strong",
       matchedTerms,
       imageCandidate: getImageCandidate(article),
     }];
   });
+
+  if (qualifiedMatches.length !== 1) return [];
+  return qualifiedMatches;
 }
 
 async function getActiveWishlistItems() {

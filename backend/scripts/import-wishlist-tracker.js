@@ -37,7 +37,7 @@ for (const row of rows) {
     priority: String(row[3] || "Medium").trim() || "Medium",
     category: String(row[15] || "").trim(),
     sourceReference: "Acquisition document tracker.xlsx",
-    isActive: true,
+    isActive: workflowStatus.toLowerCase() !== "completed",
   };
   pendingItems.push(item);
   imported += 1;

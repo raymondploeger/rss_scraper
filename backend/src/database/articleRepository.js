@@ -12,7 +12,7 @@ const wishlistMatchesInclude = {
   },
 };
 
-function buildArticleWhere(filters = {}) {
+export function buildArticleWhere(filters = {}) {
   const where = {};
   const andConditions = [];
 
@@ -56,7 +56,15 @@ function buildArticleWhere(filters = {}) {
   }
 
   if (filters.wishlistOnly) {
-    where.wishlistMatches = { some: {} };
+    where.wishlistMatches = {
+      some: {
+        confidence: "strong",
+        wishlistItem: {
+          isActive: true,
+          workflowStatus: { not: "Completed" },
+        },
+      },
+    };
   }
 
   if (filters.search) {
