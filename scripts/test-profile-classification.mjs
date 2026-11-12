@@ -9,6 +9,10 @@ function assertIncludes(values, expected, label) {
   assert.ok(values.includes(expected), `${label}: expected ${expected}, got ${JSON.stringify(values)}`);
 }
 
+function assertExcludes(values, unexpected, label) {
+  assert.ok(!values.includes(unexpected), `${label}: did not expect ${unexpected}, got ${JSON.stringify(values)}`);
+}
+
 // Source affinities are candidate roles only. The classifier still requires
 // article-level evidence before using one of these roles in a profile result.
 const secunetAffinities = resolveFeedProfileAffinities({ name: "secunet Press" });
@@ -138,6 +142,39 @@ const printingArticle = classifyArticleForIngest({
 });
 assertIncludes(printingArticle.domains, "security_printing", "security printing domain");
 assertIncludes(printingArticle.profileSignals, "security_printer", "security printer profile signal");
+
+const zwolleGasLeakageArticle = classifyArticleForIngest({
+  title: "Gaslekkage op Kuyerhuislaan in Zwolle",
+  contentSnippet: "Brandweer is ter plaatse buiten OvD-B bij de gaslekkage.",
+  topic: "General",
+  source: "Google Alerts",
+  feedName: "OVD",
+});
+assertExcludes(zwolleGasLeakageArticle.domains, "security_printing", "Zwolle OvD-B emergency domain");
+assertExcludes(zwolleGasLeakageArticle.profileSignals, "security_printer", "Zwolle OvD-B emergency profile signal");
+assertExcludes(zwolleGasLeakageArticle.classifications, "security_features", "Zwolle OvD-B emergency classification");
+
+const veenhuizenFireBrigadeArticle = classifyArticleForIngest({
+  title: "Brandweer met hoge urgentie naar Veenhuizen",
+  contentSnippet: "De brandweer is uitgerukt naar het incident (OvD Midden).",
+  topic: "General",
+  source: "Google Alerts",
+  feedName: "OVD",
+});
+assertExcludes(veenhuizenFireBrigadeArticle.domains, "security_printing", "Veenhuizen OvD emergency domain");
+assertExcludes(veenhuizenFireBrigadeArticle.profileSignals, "security_printer", "Veenhuizen OvD emergency profile signal");
+assertExcludes(veenhuizenFireBrigadeArticle.classifications, "security_features", "Veenhuizen OvD emergency classification");
+
+const corroboratedOvdSecurityArticle = classifyArticleForIngest({
+  title: "New OVD for passport document security",
+  contentSnippet: "The optically variable device adds a holographic anti-counterfeit feature.",
+  topic: "General",
+  source: "security printer",
+  feedName: "OVD Kinegram Insights",
+});
+assertIncludes(corroboratedOvdSecurityArticle.domains, "security_printing", "corroborated OVD security-printing domain");
+assertIncludes(corroboratedOvdSecurityArticle.profileSignals, "security_printer", "corroborated OVD security-printer signal");
+assertIncludes(corroboratedOvdSecurityArticle.classifications, "security_features", "corroborated OVD security-features classification");
 
 const aamvaDigitalTrustArticle = classifyArticleForIngest({
   title: "AAMVA Digital Trust Service Welcomes Kentucky",

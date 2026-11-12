@@ -356,7 +356,6 @@ const CLASSIFICATION_RULES = [
       "hologram",
       "holography",
       "optically variable",
-      "ovd",
       "dovid",
       "security thread",
       "security ink",
@@ -384,6 +383,26 @@ const CLASSIFICATION_RULES = [
       "veiligheidskenmerken",
       "veiligheidsinkt",
     ],
+    // OVD is also the Dutch emergency-services abbreviation for Officier van
+    // Dienst. Treat it as security-printing evidence only when its local
+    // article text also establishes an optical or document-security context.
+    conditionalTerms: [
+      {
+        term: "ovd",
+        corroboratingTerms: [
+          "optically variable",
+          "optical security",
+          "hologram",
+          "holography",
+          "document security",
+          "security document",
+          "security feature",
+          "security features",
+          "anti-counterfeit",
+          "counterfeit",
+        ],
+      },
+    ],
   },
 ];
 
@@ -404,8 +423,13 @@ function matchesTerm(text, term) {
   return text.includes(normalizedTerm);
 }
 
-function scoreRule(text, sourceText, rule) {
-  const contentScore = rule.terms.reduce((score, term) => score + (matchesTerm(text, term) ? 1 : 0), 0);
+function scoreRule(text, sourceText, rule, localArticleText = text) {
+  const contentScore = rule.terms.reduce((score, term) => score + (matchesTerm(text, term) ? 1 : 0), 0)
+    + (rule.conditionalTerms || []).reduce((score, { term, corroboratingTerms = [] }) => (
+      matchesTerm(localArticleText, term) && corroboratingTerms.some((corroboratingTerm) => matchesTerm(localArticleText, corroboratingTerm))
+        ? score + 1
+        : score
+    ), 0);
   const sourceScore = (rule.sourceTerms || []).reduce(
     (score, term) => score + (matchesTerm(sourceText, term) ? 1 : 0),
     0
@@ -454,6 +478,7 @@ export function classifyArticleForIngest({
   keywords = [],
 } = {}) {
   const titleText = normalize(title);
+  const localArticleText = normalize([title, contentSnippet].join(" "));
   const text = normalize([
     title,
     contentSnippet,
@@ -462,7 +487,7 @@ export function classifyArticleForIngest({
   const sourceText = normalize([source, feedName].join(" "));
   const normalizedKeywords = Array.isArray(keywords) ? keywords : [];
   const matchedRules = CLASSIFICATION_RULES
-    .map((rule) => ({ rule, score: scoreRule(text, sourceText, rule) }))
+    .map((rule) => ({ rule, score: scoreRule(text, sourceText, rule, localArticleText) }))
     .filter((entry) => entry.score > 0)
     .sort((left, right) => right.score - left.score)
     .map((entry) => entry.rule);
