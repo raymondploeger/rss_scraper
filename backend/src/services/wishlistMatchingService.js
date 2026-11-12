@@ -13,8 +13,27 @@ const DOCUMENT_TERMS = [
   "laissez passer",
 ];
 
+const DOCUMENT_TERM_EQUIVALENTS = {
+  "id card": ["id card", "identity card"],
+  "identity card": ["identity card", "id card"],
+};
+
+const COUNTRY_TERM_EQUIVALENTS = {
+  slovenia: ["slovenia", "slovenian"],
+};
+
 const IGNORED_WORDS = new Set([
   "all", "card", "document", "documents", "the",
+]);
+
+const NEW_DOCUMENT_FORMULATION = "new\\s+(?:[a-z]+\\s+)?(?:documents?|cards?|passports?|visas?|permits?)";
+const POSITIVE_DOCUMENT_SIGNAL = new RegExp(`\\b(?:issu(?:e|ed|es|ing)|launch(?:ed|es|ing)?|introduc(?:e|ed|es|ing|tion)|unveil(?:ed|s|ing)?|present(?:ed|s|ing)?|contract\\s+signed|comes?\\s+into\\s+force|${NEW_DOCUMENT_FORMULATION}|design|redesign|personali[sz]ation|produc(?:ed|tion|ing)|security[ -]upgraded|security\\s+features?|specimen|rollout)\\b`, "i");
+const STRONG_DOCUMENT_SIGNAL = new RegExp(`\\b(?:issu(?:e|ed|es|ing)|launch(?:ed|es|ing)?|contract\\s+signed|comes?\\s+into\\s+force|${NEW_DOCUMENT_FORMULATION}|design|redesign|personali[sz]ation|produc(?:ed|tion|ing)|security[ -]upgraded|security\\s+features?|specimen|rollout)\\b`, "i");
+const GENERAL_CONTEXT = /\b(?:passport\s+(?:ranking|index)|visa[ -]free\s+travel|travel\s+advice|citizenship|naturalization|passport\s+(?:revoked|removed)|(?:migration|immigration)\s+(?:policy|reform)|(?:policy|general)\s+biometrics|visa\s+policy)\b/i;
+const VISA_PAYMENT_CONTEXT = /\b(?:visa\s+(?:infinite|debit|credit|signature|platinum|electron|payment|card)|(?:payment|bank|credit|debit)\s+cards?|samsung\s+wallet|cardholder|contactless)\b/i;
+const CALENDAR_MONTHS = new Map([
+  ["january", 0], ["february", 1], ["march", 2], ["april", 3], ["may", 4], ["june", 5],
+  ["july", 6], ["august", 7], ["september", 8], ["october", 9], ["november", 10], ["december", 11],
 ]);
 
 let cachedItems = [];
@@ -46,13 +65,15 @@ function getItemRequirements(item) {
     .slice(0, documentIndex)
     .split(" ")
     .filter((word) => word.length >= 3 && !/^\d+$/.test(word) && !IGNORED_WORDS.has(word));
-  const qualifierTerms = normalizedTitle
+  const allQualifierTerms = normalizedTitle
     .slice(documentIndex + documentTerm.length)
     .split(" ")
     .filter((word) => word.length >= 3 && !/^\d+$/.test(word) && !IGNORED_WORDS.has(word));
   const years = normalizedTitle.match(/\b(?:19|20)\d{2}\b/g) || [];
+  const calendarMonth = allQualifierTerms.map((term) => CALENDAR_MONTHS.get(term)).find(Number.isInteger);
+  const qualifierTerms = allQualifierTerms.filter((term) => !CALENDAR_MONTHS.has(term));
 
-  return { countryTerms, documentTerm, qualifierTerms, years };
+  return { countryTerms, documentTerm, qualifierTerms, years, calendarMonth };
 }
 
 function containsPhrase(text, phrase) {
@@ -65,6 +86,50 @@ function containsWholeWord(text, word) {
   return new RegExp(`\\b${escapedWord}\\b`, "i").test(text);
 }
 
+function getArticlePassages(article) {
+  const fields = [article?.title, article?.summary, article?.summaryShort, article?.contentSnippet];
+  return fields.flatMap((field) => String(field || "")
+    .split(/[.!?]+|\n+/)
+    .map(normalizeWishlistText)
+    .filter(Boolean));
+}
+
+function containsAllNonYearTerms(passage, requirements) {
+  return requirements.countryTerms.every((term) => containsCountryTerm(passage, term))
+    && containsDocumentTerm(passage, requirements.documentTerm)
+    && requirements.qualifierTerms.every((term) => containsWholeWord(passage, term));
+}
+
+function containsCountryTerm(passage, countryTerm) {
+  const equivalents = COUNTRY_TERM_EQUIVALENTS[countryTerm] || [countryTerm];
+  return equivalents.some((term) => containsWholeWord(passage, term));
+}
+
+function containsDocumentTerm(passage, documentTerm) {
+  const equivalents = DOCUMENT_TERM_EQUIVALENTS[documentTerm] || [documentTerm];
+  return equivalents.some((term) => containsPhrase(passage, term) || containsPhrase(passage, `${term}s`));
+}
+
+function hasNearbyYears(passages, passageIndex, years) {
+  if (!years.length) return true;
+  return years.every((year) => [passages[passageIndex - 1], passages[passageIndex], passages[passageIndex + 1]]
+    .filter(Boolean)
+    .some((passage) => containsWholeWord(passage, year)));
+}
+
+function hasMatchingPublicationMonth(article, requirements) {
+  if (!Number.isInteger(requirements.calendarMonth)) return false;
+  const publishedAt = new Date(article?.pubDate || article?.isoDate || "");
+  return !Number.isNaN(publishedAt.getTime())
+    && publishedAt.getUTCMonth() === requirements.calendarMonth
+    && requirements.years.includes(String(publishedAt.getUTCFullYear()));
+}
+
+function hasDocumentEvidence(passage) {
+  if (!POSITIVE_DOCUMENT_SIGNAL.test(passage)) return false;
+  return !GENERAL_CONTEXT.test(passage) || STRONG_DOCUMENT_SIGNAL.test(passage);
+}
+
 function getImageCandidate(article) {
   const thumbnail = String(article?.thumbnail || "").trim();
   if (!/^https?:\/\//i.test(thumbnail) || /placeholder|placehold\.co|source-title-card/i.test(thumbnail)) {
@@ -74,14 +139,8 @@ function getImageCandidate(article) {
 }
 
 export function matchArticleAgainstWishlist(article, items = []) {
-  const searchableText = normalizeWishlistText([
-    article?.title,
-    article?.summary,
-    article?.summaryShort,
-    article?.contentSnippet,
-  ].filter(Boolean).join(" "));
-
-  if (!searchableText) return [];
+  const passages = getArticlePassages(article);
+  if (!passages.length) return [];
 
   const qualifiedMatches = items.flatMap((item) => {
     if (item?.isActive === false || String(item?.workflowStatus || "").trim().toLowerCase() === "completed") {
@@ -90,19 +149,21 @@ export function matchArticleAgainstWishlist(article, items = []) {
 
     const requirements = getItemRequirements(item);
     if (!requirements || !requirements.countryTerms.length) return [];
-    const countryMatches = requirements.countryTerms.filter((term) => containsWholeWord(searchableText, term));
-    const qualifierMatches = requirements.qualifierTerms.filter((term) => containsWholeWord(searchableText, term));
-    const hasAllRequirements = countryMatches.length === requirements.countryTerms.length
-      && containsPhrase(searchableText, requirements.documentTerm)
-      && qualifierMatches.length === requirements.qualifierTerms.length
-      && requirements.years.every((year) => containsWholeWord(searchableText, year));
-
-    if (!hasAllRequirements) return [];
+    if (requirements.documentTerm === "visa" && passages.some((passage) => VISA_PAYMENT_CONTEXT.test(passage))) {
+      return [];
+    }
+    const evidencePassageIndex = passages.findIndex((passage, index) =>
+      containsAllNonYearTerms(passage, requirements)
+      && (Number.isInteger(requirements.calendarMonth)
+        ? hasMatchingPublicationMonth(article, requirements)
+        : hasNearbyYears(passages, index, requirements.years))
+      && hasDocumentEvidence(passage));
+    if (evidencePassageIndex === -1) return [];
 
     const matchedTerms = Array.from(new Set([
-      ...countryMatches,
+      ...requirements.countryTerms,
       requirements.documentTerm,
-      ...qualifierMatches,
+      ...requirements.qualifierTerms,
       ...requirements.years,
     ]));
 

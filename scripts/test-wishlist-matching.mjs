@@ -34,7 +34,7 @@ assert.deepEqual(
 
 assert.deepEqual(
   matchArticleAgainstWishlist(
-    { title: "Albania service passport 2017" },
+    { title: "Albania launches service passport 2017" },
     albaniaServicePassport
   ),
   [{
@@ -75,6 +75,140 @@ assert.deepEqual(
     imageCandidate: null,
   }],
   "licence and license are equivalent"
+);
+
+assert.deepEqual(
+  matchArticleAgainstWishlist({
+    title: "European Entry/Exit System contractors selected after Estonia review",
+    summary: "The procurement covers border technology and visa processing across participating states.",
+    contentSnippet: "Officials expect the work to continue through 2022, with several suppliers involved.",
+  }, [{ id: "estonia-visa", title: "Estonia Visa 2022" }]),
+  [],
+  "terms scattered across an EES contractor story without document evidence do not match"
+);
+
+assert.deepEqual(
+  matchArticleAgainstWishlist({
+    title: "Passport Index ranks Malaysia among leading visa-free travel destinations",
+    summary: "The annual ranking compares how many countries travellers can enter without a visa.",
+  }, [{ id: "malaysia-visa", title: "Malaysia Visa" }]),
+  [],
+  "passport-index and visa-free travel context is not document evidence"
+);
+
+assert.deepEqual(
+  matchArticleAgainstWishlist({
+    title: "Britain revokes passport after espionage investigation",
+    summary: "The case has diplomatic implications for Russia.",
+    contentSnippet: "Court records refer to a trip made in 2018.",
+  }, [{ id: "russia-passport", title: "Russia Passport 2018" }]),
+  [],
+  "passport revocation context does not match a new passport target"
+);
+
+assert.deepEqual(
+  matchArticleAgainstWishlist({
+    title: "Nigeria launches ECOWAS National Biometric ID Card in 2025",
+    summary: "The new card will support regional identity services.",
+  }, [{ id: "nigeria-ecowas-id", title: "Nigeria ECOWAS ID card 2025" }]),
+  [{
+    wishlistItemId: "nigeria-ecowas-id",
+    confidence: "strong",
+    matchedTerms: ["nigeria", "ecowas", "id card", "2025"],
+    imageCandidate: null,
+  }],
+  "a local card launch with a neighbouring year matches"
+);
+
+assert.deepEqual(
+  matchArticleAgainstWishlist({
+    title: "Slovenia to issue new residence permit cards with improved security",
+    summary: "The redesigned cards will be issued from 2022.",
+  }, [{ id: "slovenia-permit", title: "Slovenia Residence permit 2022" }]),
+  [{
+    wishlistItemId: "slovenia-permit",
+    confidence: "strong",
+    matchedTerms: ["slovenia", "residence permit", "2022"],
+    imageCandidate: null,
+  }],
+  "a new security-improved residence permit issuance matches"
+);
+
+assert.deepEqual(
+  matchArticleAgainstWishlist({
+    title: "Contract signed for new, security-upgraded Slovenian residence permit cards",
+    summary: "The new cards will start to be issued at the beginning of 2022.",
+  }, [{ id: "slovenia-permit", title: "Slovenia residence permit 2022" }]),
+  [{
+    wishlistItemId: "slovenia-permit",
+    confidence: "strong",
+    matchedTerms: ["slovenia", "residence permit", "2022"],
+    imageCandidate: null,
+  }],
+  "a signed contract for security-upgraded residence permit cards matches"
+);
+
+assert.deepEqual(
+  matchArticleAgainstWishlist({
+    title: "Estonia introduced the new generation of identity cards, residence permit cards, digital identity cards and diplomatic identity cards in December 2018.",
+  }, [{ id: "estonia-diplomatic-id", title: "Estonia Diplomatic ID card 2018" }]),
+  [{
+    wishlistItemId: "estonia-diplomatic-id",
+    confidence: "strong",
+    matchedTerms: ["estonia", "diplomatic", "id card", "2018"],
+    imageCandidate: null,
+  }],
+  "identity cards and ID cards are equivalent document types"
+);
+
+assert.deepEqual(
+  matchArticleAgainstWishlist({
+    title: "Malaysia introduces new visa document with security features",
+    summary: "The document will be used for selected applications.",
+  }, [{ id: "malaysia-visa", title: "Malaysia Visa" }]),
+  [{
+    wishlistItemId: "malaysia-visa",
+    confidence: "strong",
+    matchedTerms: ["malaysia", "visa"],
+    imageCandidate: null,
+  }],
+  "a new Malaysia visa document with security features matches"
+);
+
+assert.deepEqual(
+  matchArticleAgainstWishlist({
+    title: "The new visa document of Malaysia incorporates advanced security features.",
+  }, [{ id: "malaysia-visa", title: "Malaysia visa" }]),
+  [{
+    wishlistItemId: "malaysia-visa",
+    confidence: "strong",
+    matchedTerms: ["malaysia", "visa"],
+    imageCandidate: null,
+  }],
+  "a new visa document formulation matches without weakening Visa payment-card exclusions"
+);
+
+assert.deepEqual(
+  matchArticleAgainstWishlist({
+    title: "The new Luxembourg passport comes into force.",
+    pubDate: "2026-05-11T03:27:00Z",
+  }, [{ id: "luxembourg-passport-may-2026", title: "Luxembourg passport May 2026" }]),
+  [{
+    wishlistItemId: "luxembourg-passport-may-2026",
+    confidence: "strong",
+    matchedTerms: ["luxembourg", "passport", "2026"],
+    imageCandidate: null,
+  }],
+  "a calendar-month target matches a local document introduction published in that month"
+);
+
+assert.deepEqual(
+  matchArticleAgainstWishlist({
+    title: "Visa Introduces Refreshed Visa Infinite Suite In Malaysia With Three-Tier Structure",
+    summary: "The Visa Infinite payment card suite adds Samsung Wallet and bank card benefits.",
+  }, [{ id: "malaysia-visa", title: "Malaysia visa" }]),
+  [],
+  "Visa payment products are not travel visa documents"
 );
 
 assert.deepEqual(
