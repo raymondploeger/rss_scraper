@@ -62108,6 +62108,20 @@ async function refreshSingleFeedArticles(feedId) {
   renderDashboard();
 }
 
+function invalidateWishlistArticleCacheForSnapshot() {
+  if (
+    state.appView !== "wishlist" ||
+    !Array.isArray(state.wishlistArticles) ||
+    !state.wishlistArticles.length
+  ) {
+    return;
+  }
+
+  state.wishlistArticles = [];
+  state.wishlistTotalCount = 0;
+  void renderWishlistWorkspace({ force: true });
+}
+
 function applySnapshotPayload(snapshotPayload, options = {}) {
   const { render = true } = options;
   if (!snapshotPayload) {
@@ -62148,6 +62162,7 @@ function applySnapshotPayload(snapshotPayload, options = {}) {
   syncActivityLog();
   syncNewArticleNotifications(snapshotPayload.normalizedArticles);
   syncFeedErrorNotifications();
+  invalidateWishlistArticleCacheForSnapshot();
   runtime.lastBackgroundRefreshAt = Date.now();
 
   if (!render) {

@@ -7,8 +7,6 @@ const GENERIC_SOURCE_TOPICS = new Set([
   "news",
   "industry",
 ]);
-const MAX_CLASSIFICATION_KEYWORDS = 12;
-const MAX_CLASSIFICATION_KEYWORD_LENGTH = 120;
 
 const CLASSIFICATION_RULES = [
   {
@@ -16,6 +14,10 @@ const CLASSIFICATION_RULES = [
     topic: "Banknotes",
     tags: ["banknotes"],
     domains: ["banknotes"],
+    // Feed keywords are normally metadata, not article evidence. This exact
+    // semantic label is an intentional exception: it may establish only the
+    // banknotes domain for keyword-only feed entries.
+    keywordDomainTerms: ["banknote", "banknotes"],
     profileSignals: ["central_bank"],
     minScore: 1,
     sourceTerms: ["banknotenews", "notafilia"],
@@ -413,6 +415,11 @@ function scoreRule(text, sourceText, rule) {
   return score >= minScore ? score : 0;
 }
 
+function hasKeywordDomainMatch(keywords, rule) {
+  const allowedTerms = rule.keywordDomainTerms || [];
+  return allowedTerms.some((term) => keywords.some((keyword) => normalize(keyword).trim() === normalize(term).trim()));
+}
+
 function pickTopic(currentTopic, matchedRules, sourceText) {
   const normalizedTopic = normalize(currentTopic).trim();
   const matchedIds = new Set(matchedRules.map((rule) => rule.id));
@@ -437,18 +444,6 @@ function pickTopic(currentTopic, matchedRules, sourceText) {
   return currentTopic || "General";
 }
 
-function normalizeClassificationKeywords(keywords) {
-  if (!Array.isArray(keywords)) {
-    return [];
-  }
-
-  return Array.from(new Set(keywords
-    .filter((keyword) => typeof keyword === "string")
-    .map((keyword) => normalize(keyword).trim().slice(0, MAX_CLASSIFICATION_KEYWORD_LENGTH))
-    .filter(Boolean)))
-    .slice(0, MAX_CLASSIFICATION_KEYWORDS);
-}
-
 export function classifyArticleForIngest({
   title = "",
   contentSnippet = "",
@@ -459,14 +454,13 @@ export function classifyArticleForIngest({
   keywords = [],
 } = {}) {
   const titleText = normalize(title);
-  const normalizedKeywords = normalizeClassificationKeywords(keywords);
   const text = normalize([
     title,
     contentSnippet,
     link,
-    ...normalizedKeywords,
   ].join(" "));
   const sourceText = normalize([source, feedName].join(" "));
+  const normalizedKeywords = Array.isArray(keywords) ? keywords : [];
   const matchedRules = CLASSIFICATION_RULES
     .map((rule) => ({ rule, score: scoreRule(text, sourceText, rule) }))
     .filter((entry) => entry.score > 0)
@@ -474,7 +468,11 @@ export function classifyArticleForIngest({
     .map((entry) => entry.rule);
 
   const semanticTags = Array.from(new Set(matchedRules.flatMap((rule) => rule.tags)));
-  const domains = Array.from(new Set(matchedRules.flatMap((rule) => rule.domains || [])));
+  const keywordDomainRules = CLASSIFICATION_RULES.filter((rule) => hasKeywordDomainMatch(normalizedKeywords, rule));
+  const domains = Array.from(new Set([
+    ...matchedRules.flatMap((rule) => rule.domains || []),
+    ...keywordDomainRules.flatMap((rule) => rule.domains || []),
+  ]));
   const profileSignals = Array.from(new Set(matchedRules.flatMap((rule) => {
     if (Array.isArray(rule.profileSignalTitleTerms) && rule.profileSignalTitleTerms.length) {
       const matchesTitle = rule.profileSignalTitleTerms.some((term) => matchesTerm(titleText, term));

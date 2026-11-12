@@ -30,6 +30,7 @@ const NEW_DOCUMENT_FORMULATION = "new\\s+(?:[a-z]+\\s+)?(?:documents?|cards?|pas
 const POSITIVE_DOCUMENT_SIGNAL = new RegExp(`\\b(?:issu(?:e|ed|es|ing)|launch(?:ed|es|ing)?|introduc(?:e|ed|es|ing|tion)|unveil(?:ed|s|ing)?|present(?:ed|s|ing)?|contract\\s+signed|comes?\\s+into\\s+force|${NEW_DOCUMENT_FORMULATION}|design|redesign|personali[sz]ation|produc(?:ed|tion|ing)|security[ -]upgraded|security\\s+features?|specimen|rollout)\\b`, "i");
 const STRONG_DOCUMENT_SIGNAL = new RegExp(`\\b(?:issu(?:e|ed|es|ing)|launch(?:ed|es|ing)?|contract\\s+signed|comes?\\s+into\\s+force|${NEW_DOCUMENT_FORMULATION}|design|redesign|personali[sz]ation|produc(?:ed|tion|ing)|security[ -]upgraded|security\\s+features?|specimen|rollout)\\b`, "i");
 const GENERAL_CONTEXT = /\b(?:passport\s+(?:ranking|index)|visa[ -]free\s+travel|travel\s+advice|citizenship|naturalization|passport\s+(?:revoked|removed)|(?:migration|immigration)\s+(?:policy|reform)|(?:policy|general)\s+biometrics|visa\s+policy)\b/i;
+const PASSPORT_SERVICE_CONTEXT = /\bpassport\s+(?:office|facility|center|centre|agency|service)\b/i;
 const VISA_PAYMENT_CONTEXT = /\b(?:visa\s+(?:infinite|debit|credit|signature|platinum|electron|payment|card)|(?:payment|bank|credit|debit)\s+cards?|samsung\s+wallet|cardholder|contactless)\b/i;
 const CALENDAR_MONTHS = new Map([
   ["january", 0], ["february", 1], ["march", 2], ["april", 3], ["may", 4], ["june", 5],
@@ -125,7 +126,8 @@ function hasMatchingPublicationMonth(article, requirements) {
     && requirements.years.includes(String(publishedAt.getUTCFullYear()));
 }
 
-function hasDocumentEvidence(passage) {
+function hasDocumentEvidence(passage, requirements) {
+  if (requirements.documentTerm === "passport" && PASSPORT_SERVICE_CONTEXT.test(passage)) return false;
   if (!POSITIVE_DOCUMENT_SIGNAL.test(passage)) return false;
   return !GENERAL_CONTEXT.test(passage) || STRONG_DOCUMENT_SIGNAL.test(passage);
 }
@@ -157,7 +159,7 @@ export function matchArticleAgainstWishlist(article, items = []) {
       && (Number.isInteger(requirements.calendarMonth)
         ? hasMatchingPublicationMonth(article, requirements)
         : hasNearbyYears(passages, index, requirements.years))
-      && hasDocumentEvidence(passage));
+      && hasDocumentEvidence(passage, requirements));
     if (evidencePassageIndex === -1) return [];
 
     const matchedTerms = Array.from(new Set([

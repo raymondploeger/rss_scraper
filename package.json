@@ -29,6 +29,7 @@
     "test:profile-classification": "node scripts/test-profile-classification.mjs",
     "test:profile-regression": "node scripts/test-profile-regression-corpus.mjs",
     "test:wishlist-matching": "node scripts/test-wishlist-matching.mjs",
+    "test:backlog-wishlist-contract": "node scripts/test-backlog-wishlist-contract.mjs",
     "audit:storage": "npm --prefix backend run audit:storage",
     "audit:crane-currency": "npm --prefix backend run audit:crane-currency",
     "db:storage-diagnostics": "npm --prefix backend run db:storage-diagnostics",

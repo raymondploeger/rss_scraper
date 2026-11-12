@@ -6055,6 +6055,12 @@ export async function processArticleBacklog(limit = 20) {
         language: enriched.language || article.language,
         fetchStatus: enriched.fetchStatus
       });
+      const wishlistMatches = await matchAndStoreArticleWishlistSignals(updatedArticle);
+      updatedArticle.wishlistMatches = wishlistMatches.map((match) => ({
+        confidence: match.confidence,
+        matchedTerms: match.matchedTerms,
+        imageCandidate: match.imageCandidate,
+      }));
       broadcast("article:update", { type: "article:update", article: updatedArticle });
     } catch (error) {
       console.error(`Backlog enrichment error for article ${article.id}:`, error?.stack || error);

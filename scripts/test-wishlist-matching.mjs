@@ -305,6 +305,29 @@ assert.deepEqual(
 );
 
 assert.deepEqual(
+  matchArticleAgainstWishlist(
+    { title: "United States launches a passport office" },
+    [{ id: "us-passport", title: "United States Passport" }]
+  ),
+  [],
+  "a passport office launch is not a document introduction"
+);
+
+assert.deepEqual(
+  matchArticleAgainstWishlist(
+    { title: "United States launches a new passport with enhanced security features" },
+    [{ id: "us-passport", title: "United States Passport" }]
+  ),
+  [{
+    wishlistItemId: "us-passport",
+    confidence: "strong",
+    matchedTerms: ["united", "states", "passport"],
+    imageCandidate: null,
+  }],
+  "a real passport launch remains a document introduction"
+);
+
+assert.deepEqual(
   matchArticleAgainstWishlist({
     title: "Kosovo introduces a new passport",
     source: "Albania document news",

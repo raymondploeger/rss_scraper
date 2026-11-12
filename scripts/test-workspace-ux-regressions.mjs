@@ -67,6 +67,16 @@ assert.match(
   /\/api\/articles\?wishlistOnly=true&includePagination=true&limit=100&page=1/,
   "Wishlist must load its own unfiltered match inbox"
 );
+assert.match(
+  appSource,
+  /function invalidateWishlistArticleCacheForSnapshot\(\) \{[\s\S]*?state\.appView !== "wishlist"[\s\S]*?state\.wishlistArticles = \[\];[\s\S]*?renderWishlistWorkspace\(\{ force: true \}\)/,
+  "an active Wishlist invalidates a populated cache and forces its match-inbox refetch after a snapshot"
+);
+assert.match(
+  appSource,
+  /function applySnapshotPayload\([\s\S]*?invalidateWishlistArticleCacheForSnapshot\(\);/,
+  "snapshot application must invalidate the active Wishlist match cache"
+);
 
 const profileState = Object.freeze({
   interests: ["security_printing"],
