@@ -72,7 +72,6 @@ export function matchArticleAgainstWishlist(article, items = []) {
     article?.summary,
     article?.summaryShort,
     article?.contentSnippet,
-    article?.source,
   ].filter(Boolean).join(" "));
 
   if (!searchableText) return [];

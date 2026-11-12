@@ -44,4 +44,22 @@ assert.deepEqual(
   "country-only news must not create a wishlist flag"
 );
 
+assert.deepEqual(
+  matchArticleAgainstWishlist({
+    title: "Kosovo introduces a new passport",
+    source: "Albania document news",
+  }, wishlist),
+  [],
+  "publisher source metadata must not supply the wishlist country"
+);
+
+assert.deepEqual(
+  matchArticleAgainstWishlist({
+    title: "Pakistan licence reform announced",
+    source: "Afghanistan transport updates",
+  }, wishlist),
+  [],
+  "publisher source metadata must not supply the wishlist country"
+);
+
 console.log("Wishlist matching checks passed.");
