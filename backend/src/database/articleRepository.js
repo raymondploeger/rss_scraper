@@ -116,6 +116,21 @@ export async function findArticleById(id) {
   return mapArticleRecord(article);
 }
 
+export async function findArticleByCanonicalLink(canonicalLink, options = {}) {
+  const normalizedCanonicalLink = String(canonicalLink || "").trim();
+  if (!normalizedCanonicalLink) {
+    return null;
+  }
+
+  const prisma = options.prisma || getDatabase();
+  const article = await prisma.article.findFirst({
+    where: { canonicalLink: normalizedCanonicalLink },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    include: wishlistMatchesInclude,
+  });
+  return mapArticleRecord(article);
+}
+
 export async function createArticleNoiseFeedback({ article, clientId, reason, profileContext, interestIds }) {
   const prisma = getDatabase();
   return prisma.articleNoiseFeedback.upsert({
@@ -324,10 +339,11 @@ export async function listArticles(filters = {}, options = {}) {
 }
 
 function getCanonicalArticleDedupeKey(article) {
+  const canonicalLink = String(article?.canonicalLink || "").trim();
   return String(
+    canonicalLink ||
     article?.normalizedTitle ||
     article?.title ||
-    article?.canonicalLink ||
     article?.link ||
     article?.id ||
     ""

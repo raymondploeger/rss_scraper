@@ -6,6 +6,7 @@ import { env } from "../config/env.js";
 import {
   createArticle,
   deleteArticlesByFeedId,
+  findArticleByCanonicalLink,
   findArticleById,
   listPendingArticles,
   updateArticle
@@ -5414,11 +5415,23 @@ function logSourceClassificationAudit(feed, article, sourceRelevance) {
   );
 }
 
-async function upsertArticle(article) {
-  const existing = await findArticleById(article.id);
+export async function upsertArticle(article, dependencies = {}) {
+  const findById = dependencies.findArticleById || findArticleById;
+  const findByCanonicalLink = dependencies.findArticleByCanonicalLink || findArticleByCanonicalLink;
+  const create = dependencies.createArticle || createArticle;
+  const update = dependencies.updateArticle || updateArticle;
+  const publish = dependencies.broadcast || broadcast;
+
+  let existing = await findById(article.id);
+  let matchedByCanonicalLink = false;
+  if (!existing && String(article.canonicalLink || "").trim()) {
+    existing = await findByCanonicalLink(article.canonicalLink);
+    matchedByCanonicalLink = Boolean(existing);
+  }
+
   if (!existing) {
-    const created = await createArticle(article);
-    broadcast("article:new", { type: "article:new", article: created });
+    const created = await create(article);
+    publish("article:new", { type: "article:new", article: created });
     return { created: true, article: created };
   }
 
@@ -5438,18 +5451,22 @@ async function upsertArticle(article) {
   const shouldBackfillSnippet = (!existing.contentSnippet || existing.contentSnippet.length < 40) && article.contentSnippet;
   const classificationArrays = mergeArticleClassificationArrays(existing, article);
   const shouldRefreshClassification =
-    (article.topic && article.topic !== existing.topic) ||
+    (matchedByCanonicalLink
+      ? !existing.topic && article.topic
+      : article.topic && article.topic !== existing.topic) ||
     classificationArrays.changed;
   const shouldRefreshCoreMetadata =
-    shouldUpdatePubDate ||
-    (article.title && article.title !== existing.title) ||
-    (article.link && article.link !== existing.link) ||
-    (article.canonicalLink && article.canonicalLink !== existing.canonicalLink) ||
-    (article.source && article.source !== existing.source) ||
-    (article.feedName && article.feedName !== existing.feedName) ||
-    (article.summary && article.summary !== existing.summary) ||
-    (article.summaryShort && article.summaryShort !== existing.summaryShort) ||
-    (article.contentSnippet && article.contentSnippet !== existing.contentSnippet);
+    !matchedByCanonicalLink && (
+      shouldUpdatePubDate ||
+      (article.title && article.title !== existing.title) ||
+      (article.link && article.link !== existing.link) ||
+      (article.canonicalLink && article.canonicalLink !== existing.canonicalLink) ||
+      (article.source && article.source !== existing.source) ||
+      (article.feedName && article.feedName !== existing.feedName) ||
+      (article.summary && article.summary !== existing.summary) ||
+      (article.summaryShort && article.summaryShort !== existing.summaryShort) ||
+      (article.contentSnippet && article.contentSnippet !== existing.contentSnippet)
+    );
 
   if (
     shouldBackfillThumbnail ||
@@ -5458,27 +5475,33 @@ async function upsertArticle(article) {
     shouldRefreshCoreMetadata ||
     shouldRefreshClassification
   ) {
-    const updated = await updateArticle(existing.id, {
-      topic: article.topic || existing.topic,
-      title: article.title || existing.title,
-      normalizedTitle: article.normalizedTitle || existing.normalizedTitle,
-      link: article.link || existing.link,
-      canonicalLink: article.canonicalLink || existing.canonicalLink,
-      source: article.source || existing.source,
-      feedName: article.feedName || existing.feedName,
-      pubDate: shouldUpdatePubDate ? nextPubDate.toISOString() : existing.pubDate,
+    const updated = await update(existing.id, {
+      topic: matchedByCanonicalLink ? existing.topic || article.topic : article.topic || existing.topic,
+      title: matchedByCanonicalLink ? existing.title : article.title || existing.title,
+      normalizedTitle: matchedByCanonicalLink
+        ? existing.normalizedTitle
+        : article.normalizedTitle || existing.normalizedTitle,
+      link: matchedByCanonicalLink ? existing.link : article.link || existing.link,
+      canonicalLink: matchedByCanonicalLink ? existing.canonicalLink : article.canonicalLink || existing.canonicalLink,
+      source: matchedByCanonicalLink ? existing.source : article.source || existing.source,
+      feedName: matchedByCanonicalLink ? existing.feedName : article.feedName || existing.feedName,
+      pubDate: matchedByCanonicalLink ? existing.pubDate : shouldUpdatePubDate ? nextPubDate.toISOString() : existing.pubDate,
       thumbnail:
         shouldBackfillThumbnail || shouldReplaceGenericThumbnail ? article.thumbnail : existing.thumbnail,
-      contentSnippet: article.contentSnippet || existing.contentSnippet,
-      summary: article.summary || existing.summary,
-      summaryShort: article.summaryShort || existing.summaryShort,
+      contentSnippet: matchedByCanonicalLink
+        ? shouldBackfillSnippet ? article.contentSnippet : existing.contentSnippet
+        : article.contentSnippet || existing.contentSnippet,
+      summary: matchedByCanonicalLink ? existing.summary || article.summary : article.summary || existing.summary,
+      summaryShort: matchedByCanonicalLink
+        ? existing.summaryShort || article.summaryShort
+        : article.summaryShort || existing.summaryShort,
       keywords: classificationArrays.values.keywords,
       domains: classificationArrays.values.domains,
       profileSignals: classificationArrays.values.profileSignals,
       classifications: classificationArrays.values.classifications,
-      fetchStatus: article.fetchStatus
+      fetchStatus: matchedByCanonicalLink ? existing.fetchStatus : article.fetchStatus
     });
-    broadcast("article:update", { type: "article:update", article: updated });
+    publish("article:update", { type: "article:update", article: updated });
     return { created: false, article: updated };
   }
 
