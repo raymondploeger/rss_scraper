@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "description": "Frontend grouping pairs. The Moldova positive case is a scrubbed copy of observed production articles; publisher names, URLs and IDs are removed while event signals and publication times are retained.",
+  "pairs": [
+    {
+      "id": "missed-moldova-passport-model",
+      "kind": "missed_cross_bucket_observed_production_copy",
+      "left": {
+        "id": "scrubbed-001",
+        "article": { "title": "Moldova rolls out new biometric passports with 100 security features", "summary": "A redesigned biometric passport model adds advanced anti-counterfeiting features." },
+        "identityEventKey": "travel_passport-passport_release-moldova-introduce-model",
+        "pubDate": "2026-10-15T15:25:34Z",
+        "domain": "identity_document",
+        "topicFamily": "travel_passport",
+        "canonicalEventType": "passport_release",
+        "country": "moldova",
+        "primaryEntity": "moldova",
+        "authority": "moldova ministry of internal affairs",
+        "systems": ["passport"],
+        "fingerprint": { "grouped": true, "confidence": "high", "score": 18 }
+      },
+      "right": {
+        "id": "scrubbed-002",
+        "article": { "title": "Moldova completes identity document overhaul with new biometric passport", "summary": "A five-year identity document overhaul introduces a new biometric passport with stronger security." },
+        "identityEventKey": "travel_passport-passport_release-moldova-security-elements",
+        "pubDate": "2026-10-19T05:33:00Z",
+        "domain": "identity_document",
+        "topicFamily": "travel_passport",
+        "canonicalEventType": "passport_release",
+        "country": "moldova",
+        "primaryEntity": "moldova",
+        "authority": "moldova ministry of internal affairs",
+        "systems": ["passport"],
+        "fingerprint": { "grouped": true, "confidence": "high", "score": 19 }
+      },
+      "expected": { "sameInitialBucket": false, "fallback": true, "grouped": true }
+    },
+    {
+      "id": "nearby-passport-different-country",
+      "kind": "near_match_must_not_merge",
+      "left": {
+        "id": "scrubbed-003",
+        "article": { "title": "Moldova announces a new passport model", "summary": "A new travel document is planned." },
+        "identityEventKey": "travel_passport-passport_release-moldova-new-model",
+        "pubDate": "2026-10-04T09:00:00Z",
+        "domain": "identity_document",
+        "topicFamily": "travel_passport",
+        "canonicalEventType": "passport_release",
+        "country": "moldova",
+        "primaryEntity": "moldova",
+        "authority": "moldova ministry of internal affairs",
+        "systems": ["passport"],
+        "fingerprint": { "grouped": true, "confidence": "high", "score": 18 }
+      },
+      "right": {
+        "id": "scrubbed-004",
+        "article": { "title": "Abkhazia introduces a new passport series", "summary": "A different passport authority announced its own document." },
+        "identityEventKey": "travel_passport-passport_release-abkhazia-new-series",
+        "pubDate": "2026-10-06T10:00:00Z",
+        "domain": "identity_document",
+        "topicFamily": "travel_passport",
+        "canonicalEventType": "passport_release",
+        "country": "-abkhazia",
+        "primaryEntity": "-abkhazia",
+        "authority": "-abkhazia passport service",
+        "systems": ["passport"],
+        "fingerprint": { "grouped": true, "confidence": "high", "score": 17 }
+      },
+      "expected": { "sameInitialBucket": false, "fallback": false, "grouped": false }
+    },
+    {
+      "id": "banknote-design-compatible-candidate-pool",
+      "kind": "cross_bucket_candidate_pool",
+      "left": {
+        "id": "scrubbed-005",
+        "article": { "title": "Central bank unveils a new polymer banknote design", "summary": "The Bank of Canada presented a redesigned $20 note." },
+        "identityEventKey": "banknote-banknote_redesign-canada-vertical-20",
+        "pubDate": "2026-09-11T08:00:00Z",
+        "domain": "banknote",
+        "topicFamily": "banknote",
+        "canonicalEventType": "banknote_redesign",
+        "country": "canada",
+        "primaryEntity": "canada",
+        "authority": "bank of canada",
+        "systems": ["polymer banknote"],
+        "fingerprint": { "grouped": true, "confidence": "high", "score": 20 }
+      },
+      "right": {
+        "id": "scrubbed-006",
+        "article": { "title": "Bank of Canada reveals the new $20 polymer note", "summary": "The same planned banknote design is detailed by another source." },
+        "identityEventKey": "banknote-banknote_design-canada-new-20-note",
+        "pubDate": "2026-09-14T08:00:00Z",
+        "domain": "banknote",
+        "topicFamily": "banknote",
+        "canonicalEventType": "banknote_new_design",
+        "country": "canada",
+        "primaryEntity": "canada",
+        "authority": "bank of canada",
+        "systems": ["polymer banknote"],
+        "fingerprint": { "grouped": true, "confidence": "high", "score": 21 }
+      },
+      "expected": { "sameInitialBucket": false, "fallback": true, "grouped": true }
+    }
+  ]
+}

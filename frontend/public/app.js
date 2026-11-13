@@ -1,4 +1,5 @@
 import { createFilterContract, FILTER_CONTRACT_VERSION } from "./filter-contract.js";
+import { decideCrossBucketNearMatch, getCrossBucketCandidateKeys } from "./cross-bucket-event-grouping.js";
 import { evaluateProfilePolicyEvidence, getProfilePolicyDefinition } from "./profile-policies.js";
 import { evaluateInterestRefinementGroups, evaluateUnifiedFilterDecision } from "./unified-filter-evaluator.js";
 import { evaluateSharedSecurityProfileDecision } from "./shared-security-profile-policy.js";
@@ -56885,6 +56886,23 @@ function getIdentityEventKey(article) {
   });
 }
 
+function getCrossBucketEventDescriptor(article, fingerprint = null) {
+  const normalizedEvent = normalizeIntelligenceEvent(article);
+  const eventFingerprint = extractEventFingerprint(article);
+  return {
+    identityEventKey: getIdentityEventKey(article),
+    pubDate: article?.pubDate,
+    domain: normalizedEvent?.domain || "",
+    topicFamily: getArticleGroupingTopicFamily(article),
+    canonicalEventType: normalizedEvent?.canonicalEventType || getDetailedArticleEventType(article),
+    country: normalizedEvent?.country || "",
+    primaryEntity: normalizedEvent?.primaryEntity || getDetectedEventEntity(article) || "",
+    authority: normalizedEvent?.authority || "",
+    systems: eventFingerprint?.systems || [],
+    fingerprint,
+  };
+}
+
 function groupArticlesByEvent(articles) {
   intelligenceTime("groupArticlesByEvent");
   const grouped = {};
@@ -56922,7 +56940,47 @@ function groupArticlesByEvent(articles) {
     grouped[key].push([article]);
   });
 
-  const groupedArticles = Object.values(grouped).flatMap((bucket) => bucket).map((group) => {
+  const strictGroups = Object.values(grouped).flatMap((bucket) => bucket);
+  const crossBucketCandidateIndex = new Map();
+  const crossBucketGroups = [];
+  const maxCandidatesPerAnchor = 24;
+
+  strictGroups.forEach((group) => {
+    const primary = group[0];
+    const descriptor = getCrossBucketEventDescriptor(primary);
+    const candidateGroups = getCrossBucketCandidateKeys(descriptor)
+      .flatMap((candidateKey) => crossBucketCandidateIndex.get(candidateKey) || [])
+      .filter((candidate, index, candidates) => candidates.indexOf(candidate) === index)
+      .slice(0, maxCandidatesPerAnchor);
+    const matchingGroup = candidateGroups.find((candidateGroup) => {
+      const candidatePrimary = candidateGroup[0];
+      const fingerprint = getEventFingerprintMatch(candidatePrimary, primary);
+      const hardConflict = Boolean(
+        hasConflictingEventSignals(candidatePrimary, primary) || getConflictReason(candidatePrimary, primary)
+      );
+      return decideCrossBucketNearMatch(
+        getCrossBucketEventDescriptor(candidatePrimary, fingerprint),
+        descriptor,
+        { hardConflict }
+      ).matched;
+    });
+
+    if (matchingGroup) {
+      matchingGroup.push(...group);
+      return;
+    }
+
+    crossBucketGroups.push(group);
+    getCrossBucketCandidateKeys(descriptor).forEach((candidateKey) => {
+      const candidates = crossBucketCandidateIndex.get(candidateKey) || [];
+      if (candidates.length < maxCandidatesPerAnchor) {
+        candidates.push(group);
+        crossBucketCandidateIndex.set(candidateKey, candidates);
+      }
+    });
+  });
+
+  const groupedArticles = crossBucketGroups.map((group) => {
     const primary = group[0];
     if (group.length > 1) {
       const firstMatch = group[1] ? getEventFingerprintMatch(primary, group[1]) : null;
