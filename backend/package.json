@@ -67,6 +67,8 @@
     "articles:reclassify:apply": "node scripts/reclassify-article-profiles.js --apply",
     "articles:retention": "node scripts/enforce-article-retention.js",
     "articles:retention:apply": "node scripts/enforce-article-retention.js --apply",
+    "articles:consolidate-canonical-duplicates": "node scripts/consolidate-canonical-duplicates.js",
+    "articles:consolidate-canonical-duplicates:apply": "node scripts/consolidate-canonical-duplicates.js --apply",
     "articles:reclassify:secunet": "node scripts/reclassify-article-profiles.js --feed secunet Press",
     "wishlist:import": "node scripts/import-wishlist-tracker.js",
     "wishlist:backfill": "node scripts/backfill-wishlist-matches.js",
