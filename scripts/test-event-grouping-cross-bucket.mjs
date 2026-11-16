@@ -33,6 +33,9 @@ assert.match(
   /const strictGroups = Object\.values\(grouped\)\.flatMap\(\(bucket\) => bucket\);[\s\S]*?crossBucketCandidateIndex/,
   "the existing strict identity-key grouping must run before cross-bucket fallback"
 );
+assert.match(appSource, /\(\?:bank\|central bank\|reserve bank\) of/, "issuer anchors must be generic rather than Ghana-specific");
+assert.match(appSource, /maritime authority/, "maritime authority anchors must be generic rather than Bahamas-specific");
+assert.match(appSource, /hasSecureMaritimeDocumentContext/, "maritime normalization requires secure document evidence");
 
 process.stdout.write(JSON.stringify({
   status: "passed",

@@ -31,6 +31,7 @@ for (const title of [
   assert.equal(result.reason, "ovd_missing_document_security_context");
 }
 assert.equal(assess("OVD", "New OVD for passport document security", "Holographic anti-counterfeit device.").accepted, true);
+assert.equal(assess("OVD", "OVD 112 incident response update").accepted, false, "operational OVD noise must not pass");
 
 for (const title of [
   "24 Ellesmere Rd House for Rent with security screens",
@@ -43,6 +44,11 @@ for (const title of [
   assert.equal(assess("Security Features", title).accepted, false, title);
 }
 assert.equal(assess("Security Features", "Bank of Ghana unveils Heritage Series Cedi banknotes with enhanced security features").accepted, true);
+assert.equal(
+  assess("Security Features", "Bank of Ghana unveils Heritage Series Cedi banknotes", "Enhanced anti-counterfeit security features." ).accepted,
+  true,
+  "historical Security Features decisions must use local text rather than stored classifications"
+);
 
 for (const title of [
   "Dollar near 19-month high as markets react, banknotes pictured",
@@ -60,5 +66,6 @@ assert.equal(assess("passports", "Singapore barred Alice Huang after a dispute w
 assert.equal(assess("passports", "Sri Lankan Woman arrested with forged Indian Passport at border").accepted, true);
 assert.equal(assess("passports", "Illegal Alien Charged with False Use of a Passport").accepted, true);
 assert.equal(assess("passports", "AI Passport project to be reviewed").accepted, true);
+assert.equal(assess("passports", "Maritime logistics passport booking platform expands").accepted, false);
 
-process.stdout.write(`${JSON.stringify({ status: "passed", checks: 18 })}\n`);
+process.stdout.write(`${JSON.stringify({ status: "passed", checks: 21 })}\n`);

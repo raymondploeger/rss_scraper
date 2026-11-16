@@ -30,6 +30,22 @@ function getEventTypeFamily(event) {
   return eventType;
 }
 
+function hasSecureMaritimeDocumentContext(event) {
+  const text = [event?.article?.title, event?.article?.contentSnippet, event?.article?.summary]
+    .map((value) => String(value || "").toLowerCase())
+    .join(" ");
+  return /\bmaritime passport\b|\bseafarer documentation\b|\bcrew record\b/.test(text) &&
+    /\b(?:electronic|digital identity|secure|verified)\b/.test(text);
+}
+
+function getComparableDomain(event) {
+  return hasSecureMaritimeDocumentContext(event) ? "identity_document" : normalizedValue(event?.domain);
+}
+
+function getComparableTopicFamily(event) {
+  return hasSecureMaritimeDocumentContext(event) ? "identity_document" : normalizedValue(event?.topicFamily);
+}
+
 function getEventDateMs(event) {
   const dateMs = new Date(event?.pubDate || "").getTime();
   return Number.isNaN(dateMs) ? NaN : dateMs;
@@ -58,8 +74,8 @@ function getSharedHardAnchor(left, right) {
  * bucket, which keeps cross-key comparisons local rather than global O(n²).
  */
 export function getCrossBucketCandidateKeys(event) {
-  const domain = normalizedValue(event?.domain);
-  const topicFamily = normalizedValue(event?.topicFamily);
+  const domain = getComparableDomain(event);
+  const topicFamily = getComparableTopicFamily(event);
   const eventTypeFamily = getEventTypeFamily(event);
   if (!domain || !topicFamily || !eventTypeFamily) {
     return [];
@@ -94,7 +110,7 @@ export function decideCrossBucketNearMatch(left, right, { hardConflict = false }
     return { matched: false, reason: "outside_10_day_window" };
   }
 
-  if (normalizedValue(left?.domain) !== normalizedValue(right?.domain) || normalizedValue(left?.topicFamily) !== normalizedValue(right?.topicFamily)) {
+  if (getComparableDomain(left) !== getComparableDomain(right) || getComparableTopicFamily(left) !== getComparableTopicFamily(right)) {
     return { matched: false, reason: "different_domain_or_topic_family" };
   }
   if (!getEventTypeFamily(left) || getEventTypeFamily(left) !== getEventTypeFamily(right)) {

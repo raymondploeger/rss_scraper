@@ -33,6 +33,7 @@ import {
   normalizeWorkspaceView,
 } from "./workspace-navigation.js";
 import { getSourceHealth, getSourceStatusPresentation, sourceMatchesHealthFilter } from "./source-health.js";
+import { assessDiscoveryFeedQuality, shouldApplyDiscoveryFeedQualityGate } from "./discovery-feed-quality-policy.js";
 
 const PLACEHOLDER_IMAGE = "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image";
 const THEME_STORAGE_KEY = "rss-monitor-theme";
@@ -53186,6 +53187,37 @@ function getCoreQualityNoiseAssessment(article) {
   return { passed: true, reason: "core_quality_passed", category: "" };
 }
 
+function hasActiveDiscoveryQualityProfile() {
+  return Boolean(
+    state.personalDashboard.activeTemplateId ||
+    state.personalDashboard.activeCustomProfileId ||
+    normalizePersonalDashboardInterests(state.personalDashboard.interests).length
+  );
+}
+
+function getDiscoveryQualityAssessment(article, { ignoreFeedId = false } = {}) {
+  const hasExplicitFeedOrSource = Boolean(
+    !ignoreFeedId && (
+      getActiveArticleFeedId() ||
+      state.filters.sourceGroup !== "all" ||
+      state.filters.dmvFeedId ||
+      state.filters.canadaDmvFeedPath ||
+      state.dashboardMode !== "normal"
+    )
+  );
+  if (!shouldApplyDiscoveryFeedQualityGate({
+    hasProfile: hasActiveDiscoveryQualityProfile(),
+    hasExplicitFeedOrSource,
+  })) {
+    return { accepted: true, reason: "discovery_feed_quality_scope_not_applicable" };
+  }
+  const feed = state.feeds.find((item) => item.id === article?.feedId) || article?.feed || {
+    name: article?.feedName,
+    rssUrl: article?.feedRssUrl,
+  };
+  return assessDiscoveryFeedQuality(feed, article);
+}
+
 function articleMatchesFilters(article, options = {}) {
   const filterTimingContext = typeof options.timingContext === "string" ? options.timingContext : "";
   const filterTimingEnabled = Boolean(filterTimingContext && runtime.activeProductionLoadTimingRun);
@@ -53225,6 +53257,13 @@ function articleMatchesFilters(article, options = {}) {
   const qualityNoise = measureFilterSegment("coreQualityNoise", () => getCoreQualityNoiseAssessment(article));
   if (!qualityNoise.passed) {
     return finishFilterTiming(false, qualityNoise.reason);
+  }
+
+  const discoveryQuality = measureFilterSegment("discoveryFeedQuality", () =>
+    getDiscoveryQualityAssessment(article, { ignoreFeedId: Boolean(options.ignoreFeedId) })
+  );
+  if (!discoveryQuality.accepted) {
+    return finishFilterTiming(false, discoveryQuality.reason);
   }
 
   if (isCentralBankProfileActive() && !getCentralBankProfileProfessionalAssessment(article).passed) {
@@ -54929,11 +54968,21 @@ function normalizeAuthorityValue(value) {
   return normalizeFilterTag(String(value || "").replace(/\s+/g, " ").trim());
 }
 
+function hasSecureMaritimeDocumentContext(article) {
+  const text = getArticleSignalText(article);
+  const hasMaritimeDocument = ["maritime passport", "seafarer documentation", "crew record"]
+    .some((term) => textMatchesKeyword(text, term));
+  const hasSecureElectronicEvidence = ["electronic", "digital identity", "secure", "verified"]
+    .some((term) => textMatchesKeyword(text, term));
+  return hasMaritimeDocument && hasSecureElectronicEvidence;
+}
+
 function extractAuthorities(article) {
   return getCachedArticleValue(article, "normalizedAuthorities", () => {
     const text = getArticleSignalText(article);
     const authorities = new Set(getMatchingFingerprintKeys(text, EVENT_FINGERPRINT_AGENCY_KEYWORDS));
     const authorityPatterns = [
+      /\b(?:bank|central bank|reserve bank) of [a-z][a-z\s-]{2,50}\b/g,
       /\b(?:central|national|reserve) bank(?: of)? [a-z][a-z\s-]{2,50}\b/g,
       /\b[a-z][a-z-]*(?:\s+[a-z][a-z-]*){0,5}\s+(?:central|national|reserve) bank\b/g,
       /\bbank of [a-z][a-z\s-]{2,50}\b/g,
@@ -54946,6 +54995,7 @@ function extractAuthorities(article) {
       /\bborder (?:agency|authority|police|control)\b/g,
       /\bcustoms\b/g,
       /\bnational id authority\b/g,
+      /\b[a-z][a-z-]*(?:\s+[a-z][a-z-]*){0,5}\s+maritime authority\b/g,
       /\bsecurity printer\b/g,
       /\bcurrency board\b/g,
     ];
@@ -55008,6 +55058,7 @@ function extractDocumentSystems(article) {
       ["national-id", ["national id", "identity card", "national identity system"]],
       ["residence-permit", ["residence permit"]],
       ["document-verification", ["identity verification", "document verification", "nfc verification"]],
+      ["maritime-seafarer-documentation", ["electronic seafarer documentation", "secure electronic seafarer documentation", "verified crew record"]],
       ["icao-pkd", ["icao pkd", "public key directory", "passport directory", "global trust network", "icao trust network", "icao directory"]],
     ];
 
@@ -55475,6 +55526,10 @@ function resolveIdentityCanonicalEventType(article, context) {
   const detailedEventType = getDetailedArticleEventType(article);
   const { systems = [], actions = [] } = context;
 
+  if (hasSecureMaritimeDocumentContext(article)) {
+    return "identity_infrastructure";
+  }
+
   if (systems.includes("ees")) {
     return "ees_event";
   }
@@ -55660,6 +55715,8 @@ function normalizeIntelligenceEvent(article) {
 
     if (topicType === "banknote") {
       domain = "banknote";
+    } else if (hasSecureMaritimeDocumentContext(article)) {
+      domain = "identity_document";
     } else if (systems.includes("ees") || systems.includes("etias") || systems.includes("biometric-border-checks") || systems.includes("border-checks") || systems.includes("airport-disruption")) {
       domain = "border_system";
     } else if (topicType === "travel_passport") {

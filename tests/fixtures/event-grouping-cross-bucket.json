@@ -100,6 +100,105 @@
         "fingerprint": { "grouped": true, "confidence": "high", "score": 21 }
       },
       "expected": { "sameInitialBucket": false, "fallback": true, "grouped": true }
+    },
+    {
+      "id": "ghana-heritage-series-issuer-anchor",
+      "kind": "cross_bucket_candidate_pool",
+      "left": {
+        "id": "scrubbed-ghana-001",
+        "article": { "title": "Bank of Ghana launches Heritage Series Cedi banknotes", "summary": "The issuer unveiled a redesigned banknote series with stronger security features." },
+        "identityEventKey": "banknote-banknote_redesign-heritage-series-launch",
+        "pubDate": "2026-11-16T03:50:20Z",
+        "domain": "banknote",
+        "topicFamily": "banknote",
+        "canonicalEventType": "banknote_redesign",
+        "country": "ghana",
+        "primaryEntity": "bank of ghana",
+        "authority": "bank of ghana",
+        "systems": ["banknote"],
+        "fingerprint": { "grouped": true, "confidence": "high", "score": 19 }
+      },
+      "right": {
+        "id": "scrubbed-ghana-002",
+        "article": { "title": "Ghana begins rollout of new Heritage Series banknotes", "summary": "The Bank of Ghana introduced the new Cedi series." },
+        "identityEventKey": "banknote-new_banknote_series-ghana-rollout",
+        "pubDate": "2026-11-13T10:26:25Z",
+        "domain": "banknote",
+        "topicFamily": "banknote",
+        "canonicalEventType": "new_banknote_series",
+        "country": "ghana",
+        "primaryEntity": "ghana",
+        "authority": "bank of ghana",
+        "systems": ["banknote"],
+        "fingerprint": { "grouped": true, "confidence": "high", "score": 19 }
+      },
+      "expected": { "sameInitialBucket": false, "fallback": true, "grouped": true }
+    },
+    {
+      "id": "bahamas-maritime-passport-secure-documentation",
+      "kind": "cross_bucket_candidate_pool",
+      "left": {
+        "id": "scrubbed-bahamas-001",
+        "article": { "title": "Maritime Passport and The Bahamas Maritime Authority progress electronic seafarer documentation", "summary": "The collaboration develops secure electronic seafarer documentation." },
+        "identityEventKey": "identity_document-identity_infrastructure-bahamas-seafarer-documents",
+        "pubDate": "2026-11-16T03:50:20Z",
+        "domain": "identity_document",
+        "topicFamily": "identity_document",
+        "canonicalEventType": "identity_infrastructure",
+        "country": "bahamas",
+        "primaryEntity": "bahamas maritime authority",
+        "authority": "bahamas maritime authority",
+        "systems": ["electronic-seafarer-documentation"],
+        "fingerprint": { "grouped": true, "confidence": "high", "score": 18 }
+      },
+      "right": {
+        "id": "scrubbed-bahamas-002",
+        "article": { "title": "Maritime Passport builds one verified crew record for Bahamas-flag owners", "summary": "The Bahamas Maritime Authority is developing a secure digital identity service and electronic seafarer documentation." },
+        "identityEventKey": "digital_identity-identity_infrastructure-bahamas-crew-record",
+        "pubDate": "2026-11-13T08:21:40Z",
+        "domain": "digital_identity",
+        "topicFamily": "digital_identity",
+        "canonicalEventType": "identity_infrastructure",
+        "country": "bahamas",
+        "primaryEntity": "bahamas maritime authority",
+        "authority": "bahamas maritime authority",
+        "systems": ["electronic-seafarer-documentation"],
+        "fingerprint": { "grouped": true, "confidence": "high", "score": 18 }
+      },
+      "expected": { "sameInitialBucket": false, "fallback": true, "grouped": true }
+    },
+    {
+      "id": "maritime-logistics-without-secure-document-evidence",
+      "kind": "near_match_must_not_merge",
+      "left": {
+        "id": "scrubbed-bahamas-003",
+        "article": { "title": "Bahamas Maritime Authority updates cargo berth schedules", "summary": "Port logistics and vessel turnaround operations continue." },
+        "identityEventKey": "identity_document-identity_infrastructure-bahamas-cargo",
+        "pubDate": "2026-11-16T03:50:20Z",
+        "domain": "identity_document",
+        "topicFamily": "identity_document",
+        "canonicalEventType": "identity_infrastructure",
+        "country": "bahamas",
+        "primaryEntity": "bahamas maritime authority",
+        "authority": "bahamas maritime authority",
+        "systems": ["electronic-seafarer-documentation"],
+        "fingerprint": { "grouped": true, "confidence": "high", "score": 18 }
+      },
+      "right": {
+        "id": "scrubbed-bahamas-004",
+        "article": { "title": "Maritime logistics platform adds cargo tracking", "summary": "Shipping operators gain route and container updates." },
+        "identityEventKey": "digital_identity-identity_infrastructure-bahamas-logistics",
+        "pubDate": "2026-11-13T08:21:40Z",
+        "domain": "digital_identity",
+        "topicFamily": "digital_identity",
+        "canonicalEventType": "identity_infrastructure",
+        "country": "bahamas",
+        "primaryEntity": "bahamas maritime authority",
+        "authority": "bahamas maritime authority",
+        "systems": ["electronic-seafarer-documentation"],
+        "fingerprint": { "grouped": true, "confidence": "high", "score": 18 }
+      },
+      "expected": { "sameInitialBucket": false, "fallback": false, "grouped": false }
     }
   ]
 }
