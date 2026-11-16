@@ -34,7 +34,7 @@ import {
 } from "./workspace-navigation.js";
 import { getSourceHealth, getSourceStatusPresentation, sourceMatchesHealthFilter } from "./source-health.js";
 import { assessDiscoveryFeedQuality, shouldApplyDiscoveryFeedQualityGate } from "./discovery-feed-quality-policy.js";
-import { assessDefaultFeedRelevance, shouldApplyDefaultFeedRelevanceGate } from "./default-feed-relevance-policy.js";
+import { filterDefaultFeedRelevanceBeforeGrouping } from "./default-feed-relevance-stream.js";
 
 const PLACEHOLDER_IMAGE = "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image";
 const THEME_STORAGE_KEY = "rss-monitor-theme";
@@ -53219,7 +53219,7 @@ function getDiscoveryQualityAssessment(article, { ignoreFeedId = false } = {}) {
   return assessDiscoveryFeedQuality(feed, article);
 }
 
-function getDefaultFeedRelevanceAssessment(article) {
+function filterDefaultFeedRelevanceForCurrentStream(articles) {
   const hasExplicitFeedOrSource = Boolean(
     getActiveArticleFeedId() ||
     state.filters.sourceGroup !== "all" ||
@@ -53227,17 +53227,14 @@ function getDefaultFeedRelevanceAssessment(article) {
     state.filters.canadaDmvFeedPath ||
     state.dashboardMode !== "normal"
   );
-  if (!shouldApplyDefaultFeedRelevanceGate({
+  return filterDefaultFeedRelevanceBeforeGrouping(articles, {
     hasProfile: hasActiveDiscoveryQualityProfile(),
     hasExplicitFeedOrSource,
-  })) {
-    return { accepted: true, reason: "default_feed_relevance_scope_not_applicable" };
-  }
-  const feed = state.feeds.find((item) => item.id === article?.feedId) || article?.feed || {
-    name: article?.feedName,
-    rssUrl: article?.feedRssUrl,
-  };
-  return assessDefaultFeedRelevance(article, feed);
+    resolveFeed: (article) => state.feeds.find((item) => item.id === article?.feedId) || article?.feed || {
+      name: article?.feedName,
+      rssUrl: article?.feedRssUrl,
+    },
+  });
 }
 
 function articleMatchesFilters(article, options = {}) {
@@ -53286,13 +53283,6 @@ function articleMatchesFilters(article, options = {}) {
   );
   if (!discoveryQuality.accepted) {
     return finishFilterTiming(false, discoveryQuality.reason);
-  }
-
-  const defaultFeedRelevance = measureFilterSegment("defaultFeedRelevance", () =>
-    getDefaultFeedRelevanceAssessment(article)
-  );
-  if (!defaultFeedRelevance.accepted) {
-    return finishFilterTiming(false, defaultFeedRelevance.reason);
   }
 
   if (isCentralBankProfileActive() && !getCentralBankProfileProfessionalAssessment(article).passed) {
@@ -61237,9 +61227,12 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
   markProductionLoadTiming("backendNormalizationSortStart", {
     inputCount: digitalIdentityFilteredBackendArticles.length,
   });
-  const filteredRawArticles = sortArticlesForCurrentDashboardMode(digitalIdentityFilteredBackendArticles);
+  const defaultFeedRelevantBackendArticles = filterDefaultFeedRelevanceForCurrentStream(
+    digitalIdentityFilteredBackendArticles
+  );
+  const filteredRawArticles = sortArticlesForCurrentDashboardMode(defaultFeedRelevantBackendArticles);
   markProductionLoadTiming("backendNormalizationSortComplete", {
-    inputCount: digitalIdentityFilteredBackendArticles.length,
+    inputCount: defaultFeedRelevantBackendArticles.length,
     outputCount: filteredRawArticles.length,
   });
   markProductionLoadTiming("backendNormalizationGroupingStart", {
@@ -61315,7 +61308,7 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
           source: "backend_result_normalization",
         },
         sorting: {
-          inputCount: digitalIdentityFilteredBackendArticles.length,
+          inputCount: defaultFeedRelevantBackendArticles.length,
           outputCount: filteredRawArticles.length,
           source: "backend_result_normalization",
         },
@@ -61445,7 +61438,7 @@ function executeDateFilterProvider(candidateProvider, normalizedFilterState, can
   setFilterPipelineBranch(diagnostics, "date-filter");
   const candidatePool = state.articles;
   const filteredRawArticles = sortArticlesForCurrentDashboardMode(
-    state.articles.filter(articleMatchesFilters)
+    filterDefaultFeedRelevanceForCurrentStream(state.articles.filter(articleMatchesFilters))
   );
   return {
     articles: filteredRawArticles,
@@ -61469,7 +61462,9 @@ function executeGlobalMemoryProvider(candidateProvider, normalizedFilterState, c
   addFilterPipelineNote(diagnostics, "global candidate source split; filtering still handled by getVisibleArticles compatibility wrapper");
   const candidateSource = getGlobalArticleCandidateSource();
   const candidatePool = candidateSource;
-  const visibleArticles = getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping });
+  const visibleArticles = filterDefaultFeedRelevanceForCurrentStream(
+    getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping })
+  );
   const groupedArticles = prepareDateFirstGroupedArticles(visibleArticles);
   const feedScopedArticles = shouldIgnoreFeedIdForGrouping
     ? groupedArticles.filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
@@ -61500,21 +61495,27 @@ function renderArticlesFallback(error) {
   try {
     const shouldIgnoreFeedIdForGrouping = Boolean(state.filters?.feedId) && !state.filters?.date;
     fallbackAllArticles = state.filters?.date
-      ? sortArticlesForCurrentDashboardMode(state.articles.filter(articleMatchesFilters))
+      ? sortArticlesForCurrentDashboardMode(
+          filterDefaultFeedRelevanceForCurrentStream(state.articles.filter(articleMatchesFilters))
+        )
       : state.filters?.feedId
         ? (() => {
             const selectedFeedResolution = getSelectedFeedResolution(state.filters.feedId);
             const candidateArticles = selectedFeedResolution.selectedFeedId
               ? (runtime.articlesByFeedId.get(selectedFeedResolution.selectedFeedId) || [])
               : state.articles.filter((article) => articleMatchesSelectedFeed(article, state.filters.feedId));
-            const feedMatches = candidateArticles.filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }));
+            const feedMatches = filterDefaultFeedRelevanceForCurrentStream(
+              candidateArticles.filter((article) => articleMatchesFilters(article, { ignoreFeedId: true }))
+            );
             const rawFeedMatches = hasPersonalDashboardSelections()
               ? sortArticlesForCurrentDashboardMode(feedMatches)
               : sortArticlesByPublicationDate(feedMatches);
             return prepareDateFirstGroupedArticles(rawFeedMatches);
           })()
         : (() => {
-          const visibleArticles = getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping });
+          const visibleArticles = filterDefaultFeedRelevanceForCurrentStream(
+            getVisibleArticles({ ignoreFeedId: shouldIgnoreFeedIdForGrouping })
+          );
           const groupedArticles = prepareDateFirstGroupedArticles(visibleArticles);
           const feedScopedArticles = shouldIgnoreFeedIdForGrouping
             ? groupedArticles.filter((article) => groupedArticleMatchesFeedFilter(article, state.filters.feedId))
@@ -61533,7 +61534,9 @@ function renderArticlesFallback(error) {
           return true;
         }
       });
-    fallbackAllArticles = sortArticlesForCurrentDashboardMode(fallbackAllArticles);
+    fallbackAllArticles = sortArticlesForCurrentDashboardMode(
+      filterDefaultFeedRelevanceForCurrentStream(fallbackAllArticles)
+    );
   }
 
   const fallbackPagination = getPaginatedItems(fallbackAllArticles);

@@ -4,6 +4,7 @@ import {
   assessDefaultFeedRelevance,
   shouldApplyDefaultFeedRelevanceGate,
 } from "../frontend/public/default-feed-relevance-policy.js";
+import { filterDefaultFeedRelevanceBeforeGrouping } from "../frontend/public/default-feed-relevance-stream.js";
 
 const appSource = fs.readFileSync(new URL("../frontend/public/app.js", import.meta.url), "utf8");
 
@@ -114,12 +115,72 @@ assert.equal(assessDefaultFeedRelevance({
 assert.equal(shouldApplyDefaultFeedRelevanceGate({ hasProfile: false, hasExplicitFeedOrSource: false }), true);
 assert.equal(shouldApplyDefaultFeedRelevanceGate({ hasProfile: true, hasExplicitFeedOrSource: false }), false, "profiles remain unchanged");
 assert.equal(shouldApplyDefaultFeedRelevanceGate({ hasProfile: false, hasExplicitFeedOrSource: true }), false, "selected feeds and sources remain unchanged");
-assert.match(appSource, /shouldApplyDefaultFeedRelevanceGate\(/, "app applies the default-stream scope gate");
-assert.match(appSource, /assessDefaultFeedRelevance\(article, feed\)/, "app invokes the shared default relevance policy with resolved feed metadata");
+
+const collectorCoin = {
+  id: "collector-coin",
+  feedId: "banknotes-feed",
+  title: "Kirgistan – moneta kolekcjonerska",
+  contentSnippet: "Collector coin listing.",
+  domains: ["banknotes"],
+};
+const kinegram = {
+  id: "kinegram",
+  feedId: "identity-feed",
+  title: "Kinegram releases mobile identity verification for secure onboarding",
+  contentSnippet: "The product release deploys document verification for issuers.",
+};
+const euUkBorderBiometric = {
+  id: "eu-uk-biometric",
+  feedId: "biometrics-feed",
+  title: "EU–UK Border Breakthrough Could Transform Channel Tunnel Travel as Brussels Tests Drive-Through Biometrics - EU Today",
+  contentSnippet: "EU–UK Border Breakthrough Could Transform Channel Tunnel Travel as Brussels Tests Drive-Through Biometrics EU Today",
+  domains: ["digital_identity_biometrics"],
+  classifications: ["biometrics"],
+};
+let normalDefaultAssessmentCalls = 0;
+const normalDefaultStream = filterDefaultFeedRelevanceBeforeGrouping(
+  [collectorCoin, kinegram, euUkBorderBiometric],
+  {
+    hasProfile: false,
+    hasExplicitFeedOrSource: false,
+    resolveFeed: (article) => ({ id: article.feedId, name: article.feedId }),
+    assess: (article, feed) => {
+      normalDefaultAssessmentCalls += 1;
+      return assessDefaultFeedRelevance(article, feed);
+    },
+  }
+);
+assert.deepEqual(
+  normalDefaultStream.map((article) => article.id),
+  ["kinegram", "eu-uk-biometric"],
+  "the normal no-profile stream removes the rejected collector article before grouping while retaining observed accepted cards"
+);
+assert.equal(normalDefaultAssessmentCalls, 3, "the normal default stream assesses each candidate exactly once before grouping");
+assert.deepEqual(
+  filterDefaultFeedRelevanceBeforeGrouping([collectorCoin], {
+    hasProfile: true,
+    hasExplicitFeedOrSource: false,
+  }).map((article) => article.id),
+  ["collector-coin"],
+  "profile streams retain their relevance-policy bypass"
+);
+assert.deepEqual(
+  filterDefaultFeedRelevanceBeforeGrouping([collectorCoin], {
+    hasProfile: false,
+    hasExplicitFeedOrSource: true,
+  }).map((article) => article.id),
+  ["collector-coin"],
+  "explicit feed streams retain their relevance-policy bypass"
+);
 assert.match(
   appSource,
-  /const discoveryQuality[\s\S]*?if \(!discoveryQuality\.accepted\)[\s\S]*?const defaultFeedRelevance[\s\S]*?getDefaultFeedRelevanceAssessment/,
-  "default relevance runs after discovery quality"
+  /filterDefaultFeedRelevanceForCurrentStream\([\s\S]*?getVisibleArticles\([\s\S]*?\)[\s\S]*?prepareDateFirstGroupedArticles\(visibleArticles\)/,
+  "the normal global stream applies default relevance before grouping"
+);
+assert.match(
+  appSource,
+  /defaultFeedRelevantBackendArticles[\s\S]*?sortArticlesForCurrentDashboardMode\(defaultFeedRelevantBackendArticles\)[\s\S]*?prepareDateFirstGroupedArticles\(filteredRawArticles\)/,
+  "the backend candidate path applies default relevance before grouping"
 );
 
-process.stdout.write(`${JSON.stringify({ status: "passed", checks: 27 })}\n`);
+process.stdout.write(`${JSON.stringify({ status: "passed", checks: 30 })}\n`);
