@@ -53225,7 +53225,7 @@ function filterDefaultFeedRelevanceForCurrentStream(articles) {
     state.filters.sourceGroup !== "all" ||
     state.filters.dmvFeedId ||
     state.filters.canadaDmvFeedPath ||
-    state.dashboardMode !== "normal"
+    state.dashboardMode === "usa" || state.dashboardMode === "canada"
   );
   return filterDefaultFeedRelevanceBeforeGrouping(articles, {
     hasProfile: hasActiveDiscoveryQualityProfile(),

@@ -182,5 +182,18 @@ assert.match(
   /defaultFeedRelevantBackendArticles[\s\S]*?sortArticlesForCurrentDashboardMode\(defaultFeedRelevantBackendArticles\)[\s\S]*?prepareDateFirstGroupedArticles\(filteredRawArticles\)/,
   "the backend candidate path applies default relevance before grouping"
 );
+const defaultStreamScopeSource = appSource.match(
+  /function filterDefaultFeedRelevanceForCurrentStream\([\s\S]*?\n}\n\nfunction articleMatchesFilters/
+)?.[0] || "";
+assert.doesNotMatch(
+  defaultStreamScopeSource,
+  /state\.dashboardMode !== "normal"/,
+  "an internal non-normal dashboard mode alone does not bypass default-stream relevance"
+);
+assert.match(
+  defaultStreamScopeSource,
+  /state\.dashboardMode === "usa" \|\| state\.dashboardMode === "canada"/,
+  "only explicit DMV dashboard modes bypass default-stream relevance"
+);
 
-process.stdout.write(`${JSON.stringify({ status: "passed", checks: 30 })}\n`);
+process.stdout.write(`${JSON.stringify({ status: "passed", checks: 32 })}\n`);
