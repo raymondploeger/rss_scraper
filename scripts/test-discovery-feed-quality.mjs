@@ -1,0 +1,64 @@
+import assert from "node:assert/strict";
+import { classifyArticleForIngest } from "../backend/src/services/articleClassificationService.js";
+import { assessDiscoveryFeedQuality } from "../backend/src/services/discoveryFeedQualityService.js";
+
+function classify(feedName, title, contentSnippet = "") {
+  return {
+    title,
+    contentSnippet,
+    source: "Google Alerts",
+    feedName,
+    ...classifyArticleForIngest({ title, contentSnippet, source: "Google Alerts", feedName }),
+  };
+}
+
+function assess(feedName, title, contentSnippet = "") {
+  return assessDiscoveryFeedQuality(
+    { name: feedName, rssUrl: "https://www.google.com/alerts/feeds/test" },
+    classify(feedName, title, contentSnippet),
+  );
+}
+
+for (const title of [
+  "Hulpdiensten naar ongeval ... Drimble",
+  "Brandweer met hoge urgentie naar Veenhuizen",
+]) {
+  const article = classify("OVD", title);
+  assert.deepEqual(article.classifications, [], `${title}: no classifier label`);
+  assert.deepEqual(article.domains, [], `${title}: no classifier domain`);
+  const result = assess("OVD", title);
+  assert.equal(result.accepted, false, title);
+  assert.equal(result.reason, "ovd_missing_document_security_context");
+}
+assert.equal(assess("OVD", "New OVD for passport document security", "Holographic anti-counterfeit device.").accepted, true);
+
+for (const title of [
+  "24 Ellesmere Rd House for Rent with security screens",
+  "Google DeepMind Uses AI to Verify Security of Signal Messaging",
+  "NSFW AI Chatbots: Security Features and Data Policies",
+  "Advantech announces Security Compliance Support",
+  "AMD launches tamper-resistant Versal chips",
+  "NordVPN launches a new feature",
+]) {
+  assert.equal(assess("Security Features", title).accepted, false, title);
+}
+assert.equal(assess("Security Features", "Bank of Ghana unveils Heritage Series Cedi banknotes with enhanced security features").accepted, true);
+
+for (const title of [
+  "Dollar near 19-month high as markets react, banknotes pictured",
+  "From Costa Rica to the Maldives: 5 banknotes that are works of art",
+  "Keynes quote on X mentions banknotes",
+]) {
+  assert.equal(assess("banknotes", title).accepted, false, title);
+}
+assert.equal(assess("banknotes", "Central bank unveils new banknote design with hologram security features").accepted, true);
+assert.equal(assess("banknotes", "CBC invites public to take part in ECB survey on future euro banknotes").accepted, true);
+assert.equal(assess("banknotes", "BSP eyes self-reliant banknote production").accepted, true);
+assert.equal(assess("banknotes", "NRB starts circulating new 500 banknotes after 5 years").accepted, true);
+
+assert.equal(assess("passports", "Singapore barred Alice Huang after a dispute where her passport was mentioned").accepted, false);
+assert.equal(assess("passports", "Sri Lankan Woman arrested with forged Indian Passport at border").accepted, true);
+assert.equal(assess("passports", "Illegal Alien Charged with False Use of a Passport").accepted, true);
+assert.equal(assess("passports", "AI Passport project to be reviewed").accepted, true);
+
+process.stdout.write(`${JSON.stringify({ status: "passed", checks: 18 })}\n`);

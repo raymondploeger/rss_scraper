@@ -16,6 +16,7 @@ import { listFeeds as listFeedRecords, updateFeed as updateFeedRecord } from "..
 import { broadcast } from "./realtimeService.js";
 import { articleMatchesSourceRelevanceRule, getSourceRelevanceAssessment } from "./sourceRelevanceService.js";
 import { classifyArticleForIngest } from "./articleClassificationService.js";
+import { assessDiscoveryFeedQuality } from "./discoveryFeedQualityService.js";
 import { mergeArticleClassificationArrays } from "./articleUpsertMergeService.js";
 import { matchAndStoreArticleWishlistSignals } from "./wishlistMatchingService.js";
 import {
@@ -5415,6 +5416,35 @@ function logSourceClassificationAudit(feed, article, sourceRelevance) {
   );
 }
 
+export async function ingestNormalizedArticle(feed, article, dependencies = {}) {
+  const assessSourceRelevance = dependencies.getSourceRelevanceAssessment || getSourceRelevanceAssessment;
+  const assessDiscoveryQuality = dependencies.assessDiscoveryFeedQuality || assessDiscoveryFeedQuality;
+  const sourceRelevance = assessSourceRelevance(feed, article);
+  if (!sourceRelevance.accepted) {
+    console.log(
+      `Rejected item for feed ${feed.id}: source-relevance-filter (${sourceRelevance.reason}) title=${JSON.stringify(article.title || "")}`
+    );
+    return { accepted: false, reason: `source-relevance-filter:${sourceRelevance.reason}` };
+  }
+
+  const discoveryQuality = assessDiscoveryQuality(feed, article);
+  if (!discoveryQuality.accepted) {
+    console.log(
+      `Rejected item for feed ${feed.id}: discovery-feed-quality (${discoveryQuality.reason}) title=${JSON.stringify(article.title || "")}`
+    );
+    return { accepted: false, reason: `discovery-feed-quality:${discoveryQuality.reason}` };
+  }
+
+  logSourceClassificationAudit(feed, article, sourceRelevance);
+  const enrichGoogleThumbnail = dependencies.enrichGoogleNewsThumbnailFromSourceUrl || enrichGoogleNewsThumbnailFromSourceUrl;
+  const enrichDirectThumbnail = dependencies.enrichDirectArticleThumbnail || enrichDirectArticleThumbnail;
+  const upsert = dependencies.upsertArticle || upsertArticle;
+  let normalized = await enrichGoogleThumbnail(article);
+  normalized = await enrichDirectThumbnail(feed, normalized);
+  const result = await upsert(normalized, dependencies.upsertDependencies);
+  return { accepted: true, normalized, result };
+}
+
 export async function upsertArticle(article, dependencies = {}) {
   const findById = dependencies.findArticleById || findArticleById;
   const findByCanonicalLink = dependencies.findArticleByCanonicalLink || findArticleByCanonicalLink;
@@ -5766,24 +5796,17 @@ async function runFeedSync(feed) {
           continue;
         }
 
-        const sourceRelevance = getSourceRelevanceAssessment(feed, normalized);
-        if (!sourceRelevance.accepted) {
-          console.log(
-            `Rejected item for feed ${feed.id}: source-relevance-filter (${sourceRelevance.reason}) title=${JSON.stringify(normalized.title || "")}`
-          );
+        const ingestion = await ingestNormalizedArticle(feed, normalized);
+        if (!ingestion.accepted) {
           continue;
         }
-
-        logSourceClassificationAudit(feed, normalized, sourceRelevance);
-
-        normalized = await enrichGoogleNewsThumbnailFromSourceUrl(normalized);
-        normalized = await enrichDirectArticleThumbnail(feed, normalized);
+        normalized = ingestion.normalized;
 
         console.log(
           `Thumbnail source for article ${normalized.id}: ${normalized.thumbnailSource || "placeholder"}`
         );
 
-        const result = await upsertArticle(normalized);
+        const result = ingestion.result;
         const wishlistMatches = await matchAndStoreArticleWishlistSignals(result.article);
         if (wishlistMatches.length) {
           result.article.wishlistMatches = wishlistMatches.map((match) => ({

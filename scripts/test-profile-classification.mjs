@@ -143,6 +143,27 @@ const printingArticle = classifyArticleForIngest({
 assertIncludes(printingArticle.domains, "security_printing", "security printing domain");
 assertIncludes(printingArticle.profileSignals, "security_printer", "security printer profile signal");
 
+const genericSecurityFeatureArticle = classifyArticleForIngest({
+  title: "Google DeepMind Uses AI to Verify Security of Signal Messaging",
+  contentSnippet: "The report discusses security features and data policies.",
+  topic: "General",
+  source: "Google Alerts",
+  feedName: "Security Features",
+});
+assertExcludes(genericSecurityFeatureArticle.domains, "security_printing", "generic security features must not imply security printing");
+assertExcludes(genericSecurityFeatureArticle.profileSignals, "security_printer", "generic security features must not imply a security printer");
+assertExcludes(genericSecurityFeatureArticle.classifications, "security_features", "generic security features must not classify as document security");
+
+const banknoteSecurityFeatureArticle = classifyArticleForIngest({
+  title: "Bank of Ghana unveils Heritage Series Cedi banknotes with enhanced security features",
+  contentSnippet: "The central bank introduced the new banknotes with upgraded document security.",
+  topic: "General",
+  source: "Google Alerts",
+  feedName: "Security Features",
+});
+assertIncludes(banknoteSecurityFeatureArticle.domains, "security_printing", "banknote security features remain security printing");
+assertIncludes(banknoteSecurityFeatureArticle.classifications, "security_features", "banknote security features remain classified");
+
 const zwolleGasLeakageArticle = classifyArticleForIngest({
   title: "Gaslekkage op Kuyerhuislaan in Zwolle",
   contentSnippet: "Brandweer is ter plaatse buiten OvD-B bij de gaslekkage.",

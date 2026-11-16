@@ -351,8 +351,6 @@ const CLASSIFICATION_RULES = [
     domains: ["security_printing"],
     profileSignals: ["security_printer"],
     terms: [
-      "security feature",
-      "security features",
       "hologram",
       "holography",
       "optically variable",
@@ -387,6 +385,51 @@ const CLASSIFICATION_RULES = [
     // Dienst. Treat it as security-printing evidence only when its local
     // article text also establishes an optical or document-security context.
     conditionalTerms: [
+      // Generic product-security language is not evidence of security
+      // printing. It needs nearby banknote, secure-document or optical
+      // corroboration before it can classify an article.
+      {
+        term: "security feature",
+        corroboratingTerms: [
+          "banknote",
+          "banknotes",
+          "bank note",
+          "bank notes",
+          "document security",
+          "security document",
+          "secure document",
+          "passport",
+          "identity document",
+          "optically variable",
+          "hologram",
+          "holography",
+          "security ink",
+          "security thread",
+          "anti-counterfeit",
+          "counterfeit",
+        ],
+      },
+      {
+        term: "security features",
+        corroboratingTerms: [
+          "banknote",
+          "banknotes",
+          "bank note",
+          "bank notes",
+          "document security",
+          "security document",
+          "secure document",
+          "passport",
+          "identity document",
+          "optically variable",
+          "hologram",
+          "holography",
+          "security ink",
+          "security thread",
+          "anti-counterfeit",
+          "counterfeit",
+        ],
+      },
       {
         term: "ovd",
         corroboratingTerms: [
@@ -396,8 +439,6 @@ const CLASSIFICATION_RULES = [
           "holography",
           "document security",
           "security document",
-          "security feature",
-          "security features",
           "anti-counterfeit",
           "counterfeit",
         ],
