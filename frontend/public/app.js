@@ -34,7 +34,7 @@ import {
 } from "./workspace-navigation.js";
 import { getSourceHealth, getSourceStatusPresentation, sourceMatchesHealthFilter } from "./source-health.js";
 import { assessDiscoveryFeedQuality, shouldApplyDiscoveryFeedQualityGate } from "./discovery-feed-quality-policy.js";
-import { filterDefaultFeedRelevanceBeforeGrouping } from "./default-feed-relevance-stream.js";
+import { filterDefaultFeedRelevanceBeforeGrouping } from "./default-feed-relevance-stream.js?v=20261116-default-feed-relevance-004";
 
 const PLACEHOLDER_IMAGE = "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image";
 const THEME_STORAGE_KEY = "rss-monitor-theme";
