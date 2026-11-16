@@ -34,6 +34,7 @@ import {
 } from "./workspace-navigation.js";
 import { getSourceHealth, getSourceStatusPresentation, sourceMatchesHealthFilter } from "./source-health.js";
 import { assessDiscoveryFeedQuality, shouldApplyDiscoveryFeedQualityGate } from "./discovery-feed-quality-policy.js";
+import { assessDefaultFeedRelevance, shouldApplyDefaultFeedRelevanceGate } from "./default-feed-relevance-policy.js";
 
 const PLACEHOLDER_IMAGE = "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image";
 const THEME_STORAGE_KEY = "rss-monitor-theme";
@@ -53218,6 +53219,23 @@ function getDiscoveryQualityAssessment(article, { ignoreFeedId = false } = {}) {
   return assessDiscoveryFeedQuality(feed, article);
 }
 
+function getDefaultFeedRelevanceAssessment(article) {
+  const hasExplicitFeedOrSource = Boolean(
+    getActiveArticleFeedId() ||
+    state.filters.sourceGroup !== "all" ||
+    state.filters.dmvFeedId ||
+    state.filters.canadaDmvFeedPath ||
+    state.dashboardMode !== "normal"
+  );
+  if (!shouldApplyDefaultFeedRelevanceGate({
+    hasProfile: hasActiveDiscoveryQualityProfile(),
+    hasExplicitFeedOrSource,
+  })) {
+    return { accepted: true, reason: "default_feed_relevance_scope_not_applicable" };
+  }
+  return assessDefaultFeedRelevance(article);
+}
+
 function articleMatchesFilters(article, options = {}) {
   const filterTimingContext = typeof options.timingContext === "string" ? options.timingContext : "";
   const filterTimingEnabled = Boolean(filterTimingContext && runtime.activeProductionLoadTimingRun);
@@ -53264,6 +53282,13 @@ function articleMatchesFilters(article, options = {}) {
   );
   if (!discoveryQuality.accepted) {
     return finishFilterTiming(false, discoveryQuality.reason);
+  }
+
+  const defaultFeedRelevance = measureFilterSegment("defaultFeedRelevance", () =>
+    getDefaultFeedRelevanceAssessment(article)
+  );
+  if (!defaultFeedRelevance.accepted) {
+    return finishFilterTiming(false, defaultFeedRelevance.reason);
   }
 
   if (isCentralBankProfileActive() && !getCentralBankProfileProfessionalAssessment(article).passed) {
