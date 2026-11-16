@@ -53233,7 +53233,11 @@ function getDefaultFeedRelevanceAssessment(article) {
   })) {
     return { accepted: true, reason: "default_feed_relevance_scope_not_applicable" };
   }
-  return assessDefaultFeedRelevance(article);
+  const feed = state.feeds.find((item) => item.id === article?.feedId) || article?.feed || {
+    name: article?.feedName,
+    rssUrl: article?.feedRssUrl,
+  };
+  return assessDefaultFeedRelevance(article, feed);
 }
 
 function articleMatchesFilters(article, options = {}) {

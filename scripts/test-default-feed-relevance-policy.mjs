@@ -28,11 +28,53 @@ const banknoteIllustration = {
   contentSnippet: "Banknotes pictured in an illustration alongside the story.",
   domains: ["banknotes"],
 };
+const entryExitSystemFeed = { name: "Entry Exit System", rssUrl: "https://www.google.com/alerts/feeds/test" };
+const identityDocumentFeed = { name: "Identity Document", rssUrl: "https://www.google.com/alerts/feeds/test" };
+const driverLicenceFeed = { name: "Google News - Driver Licence Issuance and Redesign", rssUrl: "https://news.google.com/rss/search?q=driver+licence" };
 
 assert.equal(assessDefaultFeedRelevance(vandalismArticle).accepted, false, "identity-document confiscation is not a document-system story");
 assert.equal(assessDefaultFeedRelevance(genericDigitalTrust).accepted, false, "stored digital-identity labels cannot approve generic trust/background-check content");
 assert.equal(assessDefaultFeedRelevance(celebrityPassport).accepted, false, "celebrity passport coverage is not a document-system story");
 assert.equal(assessDefaultFeedRelevance(banknoteIllustration).accepted, false, "stored banknote labels cannot approve an illustration/related-link story");
+assert.equal(assessDefaultFeedRelevance({
+  title: "Benin: young man arrested in Nikki with counterfeit banknotes - Bénin Web TV",
+  contentSnippet: "Police seized counterfeit notes from an individual.",
+}).accepted, false, "individual counterfeit arrests are not organised anti-counterfeit operations");
+assert.equal(assessDefaultFeedRelevance({
+  title: "Paper Currency Guide: US Banknotes & Values - US Coin Shows",
+  contentSnippet: "A collector guide to note values.",
+}).accepted, false, "collector banknote guides are not issuance events");
+assert.equal(assessDefaultFeedRelevance({
+  title: "Kirgistan – moneta kolekcjonerska",
+  contentSnippet: "Collector coin listing.",
+  domains: ["banknotes"],
+}).accepted, false, "collector coins remain rejected");
+assert.equal(assessDefaultFeedRelevance({
+  title: "New look, same Cedi! Ghana's redesigned banknotes are here, but what's behind the ... - Instagram",
+  contentSnippet: "Instagram presentation of the redesigned notes.",
+}).accepted, false, "social banknote marketing is not source-of-record issuance");
+assert.equal(assessDefaultFeedRelevance({
+  title: "Brits utterly terrified as border issue threatens European travel and fears of £8K fines - The Mirror",
+  contentSnippet: "Consumer travel fears about the new border rules.",
+}, entryExitSystemFeed).accepted, false, "EES feed nomination cannot accept travel-consumer clickbait without an identity-system subject");
+assert.equal(assessDefaultFeedRelevance({
+  title: "Hasina's passport ploy puts BNP in a tight spot",
+  contentSnippet: "Political dispute over a personal passport.",
+  domains: ["identity_documents"],
+  classifications: ["passports"],
+}).accepted, false, "political personal passport coverage is not a document-system event");
+assert.equal(assessDefaultFeedRelevance({
+  title: "UK names people who must apply for new passports from the beginning",
+  contentSnippet: "Consumer guidance for passport applicants.",
+}).accepted, false, "consumer passport application guidance is not a system event");
+assert.equal(assessDefaultFeedRelevance({
+  title: "Mirra Andreeva has a plan for her potential new car despite not having a driving licence",
+  contentSnippet: "The tennis star discussed a future car.",
+}, driverLicenceFeed).accepted, false, "driver-licence feed nomination cannot accept incidental celebrity coverage");
+assert.equal(assessDefaultFeedRelevance({
+  title: "Coinone Warns of Identity Theft After Support Breach | The Defiant",
+  contentSnippet: "The report incidentally lists identity-document issuance dates.",
+}, identityDocumentFeed).accepted, false, "identity-document feed nomination cannot accept incidental breach coverage");
 
 assert.equal(assessDefaultFeedRelevance({
   title: "Kinegram releases mobile identity verification for secure onboarding",
@@ -46,6 +88,14 @@ assert.equal(assessDefaultFeedRelevance({
   title: "Bank of Ghana issues Heritage Series cedi banknotes",
   contentSnippet: "The new series enters circulation with upgraded security features.",
 }).accepted, true, "Bank of Ghana Heritage Series issuance remains visible");
+assert.equal(assessDefaultFeedRelevance({
+  title: "Central bank dismantles counterfeit banknote ring in national operation",
+  contentSnippet: "The organised anti-counterfeit operation targets a distribution network.",
+}).accepted, true, "organised counterfeit operations remain visible when the title and concrete event are present");
+assert.equal(assessDefaultFeedRelevance({
+  title: "State launches digital driver licence issuance system",
+  contentSnippet: "The authority rolls out the new document platform under an interoperability standard.",
+}, driverLicenceFeed).accepted, true, "concrete driver-licence issuance system rollouts remain visible");
 assert.equal(assessDefaultFeedRelevance({
   title: "Government rolls out eID wallet under new interoperability standard",
   contentSnippet: "The national digital identity system enters deployment.",
@@ -65,11 +115,11 @@ assert.equal(shouldApplyDefaultFeedRelevanceGate({ hasProfile: false, hasExplici
 assert.equal(shouldApplyDefaultFeedRelevanceGate({ hasProfile: true, hasExplicitFeedOrSource: false }), false, "profiles remain unchanged");
 assert.equal(shouldApplyDefaultFeedRelevanceGate({ hasProfile: false, hasExplicitFeedOrSource: true }), false, "selected feeds and sources remain unchanged");
 assert.match(appSource, /shouldApplyDefaultFeedRelevanceGate\(/, "app applies the default-stream scope gate");
-assert.match(appSource, /assessDefaultFeedRelevance\(article\)/, "app invokes the shared default relevance policy");
+assert.match(appSource, /assessDefaultFeedRelevance\(article, feed\)/, "app invokes the shared default relevance policy with resolved feed metadata");
 assert.match(
   appSource,
   /const discoveryQuality[\s\S]*?if \(!discoveryQuality\.accepted\)[\s\S]*?const defaultFeedRelevance[\s\S]*?getDefaultFeedRelevanceAssessment/,
   "default relevance runs after discovery quality"
 );
 
-process.stdout.write(`${JSON.stringify({ status: "passed", checks: 16 })}\n`);
+process.stdout.write(`${JSON.stringify({ status: "passed", checks: 27 })}\n`);
