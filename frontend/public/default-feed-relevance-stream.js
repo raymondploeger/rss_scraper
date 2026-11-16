@@ -19,5 +19,32 @@ export function filterDefaultFeedRelevanceBeforeGrouping(articles, {
     return candidates;
   }
 
-  return candidates.filter((article) => assess(article, resolveFeed(article)).accepted);
+  return candidates.flatMap((article) => {
+    const groupedSources = Array.isArray(article?.sources) && article.sources.length
+      ? article.sources
+      : null;
+
+    if (!groupedSources) {
+      return assess(article, resolveFeed(article)).accepted ? [article] : [];
+    }
+
+    // A cached/backend candidate can already carry a reconciled event group.
+    // Filter its members too: grouping may otherwise promote a rejected member
+    // as the displayed primary after this boundary has run.
+    const relevantSources = groupedSources.filter((sourceArticle) =>
+      assess(sourceArticle, resolveFeed(sourceArticle)).accepted
+    );
+    if (!relevantSources.length) {
+      return [];
+    }
+
+    const representative = relevantSources[0];
+    return [{
+      ...article,
+      ...representative,
+      sources: relevantSources,
+      sourceCount: relevantSources.length,
+      groupedArticlesCount: Math.max(0, relevantSources.length - 1),
+    }];
+  });
 }

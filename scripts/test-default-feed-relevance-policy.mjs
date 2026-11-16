@@ -156,6 +156,52 @@ assert.deepEqual(
   "the normal no-profile stream removes the rejected collector article before grouping while retaining observed accepted cards"
 );
 assert.equal(normalDefaultAssessmentCalls, 3, "the normal default stream assesses each candidate exactly once before grouping");
+
+const groupedCollectorPrimary = {
+  id: "grouped-collector-primary",
+  feedId: "banknotes-feed",
+  title: "Bank of Ghana issues Heritage Series cedi banknotes",
+  contentSnippet: "The new series enters circulation with upgraded security features.",
+  sources: [
+    {
+      ...collectorCoin,
+      pubDate: "2026-11-16T12:00:00.000Z",
+    },
+    {
+      id: "grouped-relevant-banknote",
+      feedId: "banknotes-feed",
+      title: "Bank of Ghana issues Heritage Series cedi banknotes",
+      contentSnippet: "The new series enters circulation with upgraded security features.",
+      pubDate: "2026-11-15T12:00:00.000Z",
+    },
+  ],
+};
+const reconciledDefaultStream = filterDefaultFeedRelevanceBeforeGrouping(
+  [groupedCollectorPrimary],
+  {
+    hasProfile: false,
+    hasExplicitFeedOrSource: false,
+    resolveFeed: (article) => ({ id: article.feedId, name: article.feedId }),
+  }
+);
+assert.deepEqual(
+  reconciledDefaultStream[0]?.sources.map((article) => article.id),
+  ["grouped-relevant-banknote"],
+  "default reconciliation removes a rejected collector member before grouping can promote it"
+);
+assert.equal(
+  reconciledDefaultStream[0]?.id,
+  "grouped-relevant-banknote",
+  "default reconciliation promotes a passing grouped member instead of rendering the rejected collector primary"
+);
+assert.deepEqual(
+  filterDefaultFeedRelevanceBeforeGrouping([groupedCollectorPrimary], {
+    hasProfile: true,
+    hasExplicitFeedOrSource: false,
+  })[0]?.sources.map((article) => article.id),
+  ["collector-coin", "grouped-relevant-banknote"],
+  "profile streams retain grouped-member relevance-policy bypass"
+);
 assert.deepEqual(
   filterDefaultFeedRelevanceBeforeGrouping([collectorCoin], {
     hasProfile: true,
@@ -182,6 +228,16 @@ assert.match(
   /defaultFeedRelevantBackendArticles[\s\S]*?sortArticlesForCurrentDashboardMode\(defaultFeedRelevantBackendArticles\)[\s\S]*?prepareDateFirstGroupedArticles\(filteredRawArticles\)/,
   "the backend candidate path applies default relevance before grouping"
 );
+assert.match(
+  appSource,
+  /function executeDateFilterProvider[\s\S]*?filterDefaultFeedRelevanceForCurrentStream\(state\.articles\.filter\(articleMatchesFilters\)\)/,
+  "the date-filter path applies default relevance to its output cards"
+);
+assert.match(
+  appSource,
+  /function renderArticlesFallback[\s\S]*?filterDefaultFeedRelevanceForCurrentStream\(fallbackAllArticles\)/,
+  "the rendering fallback reapplies default relevance before presentation"
+);
 const defaultStreamScopeSource = appSource.match(
   /function filterDefaultFeedRelevanceForCurrentStream\([\s\S]*?\n}\n\nfunction articleMatchesFilters/
 )?.[0] || "";
@@ -196,4 +252,4 @@ assert.match(
   "only explicit DMV dashboard modes bypass default-stream relevance"
 );
 
-process.stdout.write(`${JSON.stringify({ status: "passed", checks: 32 })}\n`);
+process.stdout.write(`${JSON.stringify({ status: "passed", checks: 35 })}\n`);
