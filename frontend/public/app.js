@@ -12,6 +12,7 @@ import { evaluateIdentityWeekIdentityVerificationQualityDecision } from "./ident
 import { evaluateProfileDomainScopeDecision } from "./profile-domain-scope-policy.js";
 import { evaluateProfileProfessionalGuardDecision } from "./profile-professional-guard-policy.js";
 import { fetchCompleteCandidatePages } from "./complete-candidate-pagination.js";
+import { getBackendCandidateRetentionStrategy } from "./backend-candidate-retention-strategy.js";
 import {
   PROFILE_DEFAULT_LOOKBACK_DAYS,
   getProfileHistoryLookbackDays,
@@ -58119,6 +58120,12 @@ function buildPersonalDashboardBackendQueryParamsList() {
     Math.min(MAX_ARTICLES_IN_MEMORY, Number(plan.perRequestLimit) || Math.floor(MAX_ARTICLES_IN_MEMORY / 3))
   );
   const includeTopicBaseline = plan.includeTopicBaseline !== false && Boolean(plan.topic);
+  const explicitSearch = String(state.filters.search || "").trim();
+  const candidateRetentionStrategy = getBackendCandidateRetentionStrategy({
+    hasActivePersonalProfile: hasPersonalDashboardSelections(),
+    explicitSearch,
+    selectedFeed: Boolean(resolvedFeed?.id || state.filters.feedId),
+  });
 
   const buildTargetedRequests = (profileDateRange) => {
     const requests = [];
@@ -58127,6 +58134,7 @@ function buildPersonalDashboardBackendQueryParamsList() {
       const params = applyBackendArticleQueryBaseParams({
         limit: perRequestLimit,
         profileDateRange,
+        completeCandidates: candidateRetentionStrategy.completeCandidates,
       });
       if (typeof mutate === "function") {
         mutate(params);
@@ -58146,12 +58154,17 @@ function buildPersonalDashboardBackendQueryParamsList() {
   };
 
   if (resolvedFeed?.id) {
-    return profileDateRanges.map((profileDateRange) => applyBackendArticleQueryBaseParams({ profileDateRange }));
+    return profileDateRanges.map((profileDateRange) => applyBackendArticleQueryBaseParams({
+      profileDateRange,
+      completeCandidates: candidateRetentionStrategy.completeCandidates,
+    }));
   }
 
-  const explicitSearch = String(state.filters.search || "").trim();
   if (explicitSearch) {
-    return profileDateRanges.map((profileDateRange) => applyBackendArticleQueryBaseParams({ profileDateRange }));
+    return profileDateRanges.map((profileDateRange) => applyBackendArticleQueryBaseParams({
+      profileDateRange,
+      completeCandidates: candidateRetentionStrategy.completeCandidates,
+    }));
   }
 
   const sourceGroup = String(state.filters.sourceGroup || "all").trim() || "all";
@@ -58159,6 +58172,7 @@ function buildPersonalDashboardBackendQueryParamsList() {
     return profileDateRanges.map((profileDateRange) => applyBackendArticleQueryBaseParams({
         limit: MAX_ARTICLES_IN_MEMORY,
         profileDateRange,
+        completeCandidates: candidateRetentionStrategy.completeCandidates,
       }));
   }
 
@@ -58341,6 +58355,11 @@ async function ensureBackendArticleQueryData() {
     String(state.filters.sourceGroup || "all") === "all" &&
     !state.filters.feedId && !state.filters.search
   );
+  const candidateRetentionStrategy = getBackendCandidateRetentionStrategy({
+    hasActivePersonalProfile: Boolean(personalDomainPlan && hasPersonalDashboardSelections()),
+    explicitSearch: state.filters.search,
+    selectedFeed: Boolean(state.filters.feedId),
+  });
   const dedupedRawArticles = Array.from(dedupedRawArticleMap.values())
     .sort((left, right) => {
       const leftDirectlyRequested = directlyRequestedFeedArticleKeys.has(getRawArticleDedupeKey(left));
@@ -58350,7 +58369,7 @@ async function ensureBackendArticleQueryData() {
       }
       return new Date(right?.pubDate || 0) - new Date(left?.pubDate || 0);
     })
-    .slice(0, state.filters.trackedSourcesAll || retainProfileAllSourceCandidates
+    .slice(0, state.filters.trackedSourcesAll || retainProfileAllSourceCandidates || candidateRetentionStrategy.retainAllDedupedCandidates
       ? dedupedRawArticleMap.size
       : backendCandidateLimit);
   let normalizedArticles = dedupedRawArticles.map(normalizeLoadedArticle);
