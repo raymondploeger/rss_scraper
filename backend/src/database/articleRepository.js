@@ -67,16 +67,17 @@ export function buildArticleWhere(filters = {}) {
     };
   }
 
-  if (filters.search) {
+  const searchTokens = String(filters.search || "").trim().split(/\s+/).filter(Boolean);
+  for (const token of searchTokens) {
     andConditions.push({
       OR: [
-      { title: { contains: filters.search, mode: "insensitive" } },
-      { source: { contains: filters.search, mode: "insensitive" } },
-      { topic: { contains: filters.search, mode: "insensitive" } },
-      { feedName: { contains: filters.search, mode: "insensitive" } },
-      { link: { contains: filters.search, mode: "insensitive" } },
-      { canonicalLink: { contains: filters.search, mode: "insensitive" } },
-      { contentSnippet: { contains: filters.search, mode: "insensitive" } },
+        { title: { contains: token, mode: "insensitive" } },
+        { source: { contains: token, mode: "insensitive" } },
+        { topic: { contains: token, mode: "insensitive" } },
+        { feedName: { contains: token, mode: "insensitive" } },
+        { link: { contains: token, mode: "insensitive" } },
+        { canonicalLink: { contains: token, mode: "insensitive" } },
+        { contentSnippet: { contains: token, mode: "insensitive" } },
       ],
     });
   }
