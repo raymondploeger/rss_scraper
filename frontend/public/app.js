@@ -35,6 +35,7 @@ import {
 import { getSourceHealth, getSourceStatusPresentation, sourceMatchesHealthFilter } from "./source-health.js";
 import { assessDiscoveryFeedQuality, shouldApplyDiscoveryFeedQualityGate } from "./discovery-feed-quality-policy.js";
 import { filterDefaultFeedRelevanceBeforeGrouping } from "./default-feed-relevance-stream.js?v=20261116-default-feed-relevance-004";
+import { articleMatchesSearchQuery, reconcileGroupedSourcesForSearch } from "./search-presentation.js?v=20261117-ghana-search-005";
 
 const PLACEHOLDER_IMAGE = "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image";
 const THEME_STORAGE_KEY = "rss-monitor-theme";
@@ -8043,21 +8044,27 @@ function promoteNewestArticleInSelectedFeedGroup(article) {
   const originalSources = Array.isArray(article?.sources) && article.sources.length
     ? sortArticlesByPublicationDate(article.sources)
     : [article].filter(Boolean);
+  const searchReconciliation = reconcileGroupedSourcesForSearch(
+    { ...article, sources: originalSources },
+    state.filters.search,
+    getArticleSearchText
+  );
+  const searchScopedSources = searchReconciliation.sources;
   const centralBankProfileActive = isCentralBankProfileActive();
   const identityDocumentBundleGateActive = shouldUseIdentityDocumentBundleQualityGate();
   const centralBankSources = centralBankProfileActive
-    ? originalSources.filter((sourceArticle) =>
+    ? searchScopedSources.filter((sourceArticle) =>
       getCentralBankProfileProfessionalAssessment(sourceArticle).passed
     )
-    : originalSources;
+    : searchScopedSources;
   const sources = identityDocumentBundleGateActive
     ? centralBankSources.filter((sourceArticle) =>
       getIdentityDocumentBundleQualityGateAssessment(sourceArticle).passed
     )
     : centralBankSources;
-  const safeSources = sources.length ? sources : originalSources.slice(0, 1);
+  const safeSources = sources.length ? sources : searchScopedSources;
   const representative = selectDashboardRepresentativeArticle(safeSources) || article;
-  const groupedSourceCountIsFiltered = centralBankProfileActive || identityDocumentBundleGateActive;
+  const groupedSourceCountIsFiltered = Boolean(state.filters.search) || centralBankProfileActive || identityDocumentBundleGateActive;
 
   return {
     ...article,
@@ -8077,7 +8084,22 @@ function prepareDateFirstGroupedArticles(articles) {
 
 function prepareDateFirstGroupedArticlesMeasured(articles) {
   incrementFilterPerformanceCounter("groupingInputCount", Array.isArray(articles) ? articles.length : 0);
-  const dateSortedArticles = sortArticlesByPublicationDate(articles);
+  const searchScopedArticles = state.filters.search
+    ? articles.map((article) => {
+      const reconciliation = reconcileGroupedSourcesForSearch(article, state.filters.search, getArticleSearchText);
+      if (!reconciliation.sources.length) {
+        return null;
+      }
+      return {
+        ...article,
+        ...reconciliation.primary,
+        sources: reconciliation.sources,
+        sourceCount: reconciliation.sources.length,
+        groupedArticlesCount: Math.max(0, reconciliation.sources.length - 1),
+      };
+    }).filter(Boolean)
+    : articles;
+  const dateSortedArticles = sortArticlesByPublicationDate(searchScopedArticles);
   const groupedArticles = groupArticlesByEvent(dateSortedArticles).map(promoteNewestArticleInSelectedFeedGroup);
   return hasPersonalDashboardSelections()
     ? sortArticlesForCurrentDashboardMode(groupedArticles)
@@ -22911,8 +22933,7 @@ function getPersonalDashboardTraceMetadata(article, rejection = null, personalDa
 function getAdvancedFiltersTraceMetadata(article, options = {}, rejection = null) {
   const activeKeywordRule = getActiveTopicKeywordRule();
   const hasSearch = Boolean(state.filters.search);
-  const searchText = hasSearch ? getArticleSearchText(article) : "";
-  const searchMatched = hasSearch ? searchText.includes(state.filters.search.toLowerCase()) : null;
+  const searchMatched = hasSearch ? articleMatchesSearchQuery(article, state.filters.search, getArticleSearchText) : null;
   const hasDate = Boolean(state.filters.date);
   const dateMatched = hasDate ? toDateInputValue(article.pubDate) === state.filters.date : null;
   const hasTopic = Boolean(state.filters.topic);
@@ -25058,8 +25079,7 @@ function classifyAdvancedFilterRejection(article, options = {}) {
   }
 
   if (state.filters.search) {
-    const haystack = getArticleSearchText(article);
-    if (!haystack.includes(state.filters.search.toLowerCase())) {
+    if (!articleMatchesSearchQuery(article, state.filters.search, getArticleSearchText)) {
       return { category: "search", reason: "search text did not match" };
     }
   }
@@ -46760,7 +46780,7 @@ function articleMatchesCurrentViewFilters(article) {
     return false;
   }
 
-  if (state.filters.search && !getArticleSearchText(article).includes(state.filters.search.toLowerCase())) {
+  if (state.filters.search && !articleMatchesSearchQuery(article, state.filters.search, getArticleSearchText)) {
     return false;
   }
 
@@ -53409,9 +53429,9 @@ function articleMatchesFilters(article, options = {}) {
   }
 
   if (state.filters.search) {
-    const haystack = measureFilterSegment("searchText", () => getArticleSearchText(article));
+    measureFilterSegment("searchText", () => getArticleSearchText(article));
 
-    if (!haystack.includes(state.filters.search.toLowerCase())) {
+    if (!articleMatchesSearchQuery(article, state.filters.search, getArticleSearchText)) {
       return finishFilterTiming(false, "search");
     }
   }
