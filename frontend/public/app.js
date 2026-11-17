@@ -13,6 +13,7 @@ import { evaluateProfileDomainScopeDecision } from "./profile-domain-scope-polic
 import { evaluateProfileProfessionalGuardDecision } from "./profile-professional-guard-policy.js";
 import { fetchCompleteCandidatePages } from "./complete-candidate-pagination.js";
 import { getBackendCandidateRetentionStrategy } from "./backend-candidate-retention-strategy.js";
+import { appendProgressiveCandidatePage, getSearchRetrievalStrategy } from "./search-retrieval-pagination.js";
 import {
   PROFILE_DEFAULT_LOOKBACK_DAYS,
   getProfileHistoryLookbackDays,
@@ -7628,6 +7629,8 @@ const state = {
     totalCount: 0,
     page: 1,
     limit: MAX_ARTICLES_IN_MEMORY,
+    progressive: false,
+    hasMorePages: false,
   },
 };
 
@@ -57914,6 +57917,15 @@ function getBackendArticleQueryKey() {
   });
 }
 
+function getBackendArticleQueryRetrievalStrategy() {
+  const personalDomainPlan = getPersonalDashboardBackendDomainPlan();
+  return getSearchRetrievalStrategy({
+    hasActivePersonalProfile: Boolean(personalDomainPlan && hasPersonalDashboardSelections()),
+    explicitSearch: state.filters.search,
+    selectedFeed: Boolean(state.filters.feedId),
+  });
+}
+
 function applyBackendArticleQueryBaseParams(options = {}) {
   const params = new URLSearchParams();
   params.set("includePagination", "true");
@@ -58225,10 +58237,104 @@ function cancelPendingBackendArticleQuery() {
   runtime.backendArticleQueryLoading = false;
 }
 
+function refreshProgressiveBackendQueryPayload(payload) {
+  const mergedRawArticles = [];
+  const directlyRequestedFeedArticleKeys = new Set();
+  const getRawArticleDedupeKey = (article) => (
+    String(article?.id || "").trim() ||
+    String(article?.canonicalLink || article?.link || "").trim().toLowerCase()
+  );
+  (payload.progressivePageStates || []).forEach((response, responseIndex) => {
+    const items = Array.isArray(response?.items) ? response.items : Array.isArray(response?.articles) ? response.articles : [];
+    items.forEach((item) => {
+      mergedRawArticles.push(item);
+      if (payload.progressiveRequestParams?.[responseIndex] && new URLSearchParams(payload.progressiveRequestParams[responseIndex]).has("feedId")) {
+        const key = getRawArticleDedupeKey(item);
+        if (key) {
+          directlyRequestedFeedArticleKeys.add(key);
+        }
+      }
+    });
+  });
+  const deduped = new Map();
+  mergedRawArticles.forEach((article) => {
+    const key = getRawArticleDedupeKey(article);
+    if (key && !deduped.has(key)) {
+      deduped.set(key, article);
+    }
+  });
+  let articles = Array.from(deduped.values())
+    .sort((left, right) => {
+      const leftDirect = directlyRequestedFeedArticleKeys.has(getRawArticleDedupeKey(left));
+      const rightDirect = directlyRequestedFeedArticleKeys.has(getRawArticleDedupeKey(right));
+      if (leftDirect !== rightDirect) {
+        return rightDirect ? 1 : -1;
+      }
+      return new Date(right?.pubDate || 0) - new Date(left?.pubDate || 0);
+    })
+    .map(normalizeLoadedArticle);
+  if (getPersonalDashboardBackendDomainPlan()?.domain === "identity_documents") {
+    articles = articles.filter((article) => !shouldExcludeIdentityDocumentsRetrievalCandidate(article));
+  }
+  payload.articles = articles;
+  payload.totalCount = articles.length;
+  payload.progressiveHasMorePages = payload.progressivePageStates.some((pageState) => pageState.pagination?.hasMorePages);
+  return payload;
+}
+
+async function loadNextProgressiveBackendArticleQueryPage() {
+  const queryKey = state.remoteQuery.activeKey;
+  const payload = runtime.backendArticleQueryCache.get(queryKey);
+  if (!payload?.retrievalStrategy?.progressive || !payload.progressiveHasMorePages || runtime.backendArticleQueryLoading) {
+    return null;
+  }
+  const requestId = ++runtime.backendArticleQueryRequestId;
+  runtime.backendArticleQueryActiveRequestId = requestId;
+  const abortController = new AbortController();
+  runtime.backendArticleQueryAbortController = abortController;
+  runtime.backendArticleQueryLoading = true;
+  try {
+    const nextStates = await Promise.all(payload.progressivePageStates.map(async (pageState, index) => {
+      if (!pageState.pagination?.hasMorePages) {
+        return pageState;
+      }
+      const params = new URLSearchParams(payload.progressiveRequestParams[index]);
+      params.set("page", String((Number(pageState.pagination.loadedPages) || 1) + 1));
+      const response = await apiRequest(`/api/articles?${params.toString()}`, { signal: abortController.signal });
+      return appendProgressiveCandidatePage(pageState, response);
+    }));
+    if (requestId !== runtime.backendArticleQueryActiveRequestId) {
+      return null;
+    }
+    payload.progressivePageStates = nextStates;
+    refreshProgressiveBackendQueryPayload(payload);
+    runtime.backendArticleQueryCache.set(queryKey, payload);
+    state.remoteQuery = {
+      ...state.remoteQuery,
+      totalCount: payload.totalCount,
+      progressive: true,
+      hasMorePages: payload.progressiveHasMorePages,
+    };
+    return payload;
+  } finally {
+    if (requestId === runtime.backendArticleQueryActiveRequestId) {
+      runtime.backendArticleQueryAbortController = null;
+      runtime.backendArticleQueryLoading = false;
+    }
+  }
+}
+
 async function ensureBackendArticleQueryData() {
   if (!shouldUseBackendArticleQuery()) {
     runtime.backendArticleQueryLoading = false;
-    state.remoteQuery.activeKey = "";
+    state.remoteQuery = {
+      activeKey: "",
+      totalCount: 0,
+      page: 1,
+      limit: MAX_ARTICLES_IN_MEMORY,
+      progressive: false,
+      hasMorePages: false,
+    };
     return null;
   }
 
@@ -58243,6 +58349,8 @@ async function ensureBackendArticleQueryData() {
       totalCount: cached.totalCount,
       page: 1,
       limit: cachedCandidateLimit,
+      progressive: Boolean(cached.retrievalStrategy?.progressive),
+      hasMorePages: Boolean(cached.progressiveHasMorePages),
     };
     return cached;
   }
@@ -58258,6 +58366,7 @@ async function ensureBackendArticleQueryData() {
   }
 
   const personalDomainPlan = getPersonalDashboardBackendDomainPlan();
+  const retrievalStrategy = getBackendArticleQueryRetrievalStrategy();
   const backendCandidateLimit = personalDomainPlan && hasPersonalDashboardSelections()
     ? PERSONAL_DASHBOARD_TARGETED_MAX_ARTICLES
     : MAX_ARTICLES_IN_MEMORY;
@@ -58322,13 +58431,19 @@ async function ensureBackendArticleQueryData() {
     return null;
   }
 
+  const progressivePageStates = retrievalStrategy.progressive
+    ? responses.map((response) => appendProgressiveCandidatePage(null, response))
+    : [];
+  const responsesForCandidateMerge = retrievalStrategy.progressive
+    ? progressivePageStates
+    : responses;
   const mergedRawArticles = [];
   const directlyRequestedFeedArticleKeys = new Set();
   const getRawArticleDedupeKey = (article) => (
     String(article?.id || "").trim() ||
     String(article?.canonicalLink || article?.link || "").trim().toLowerCase()
   );
-  responses.forEach((response, responseIndex) => {
+  responsesForCandidateMerge.forEach((response, responseIndex) => {
     const items = Array.isArray(response?.items) ? response.items : Array.isArray(response?.articles) ? response.articles : [];
     items.forEach((item) => {
       mergedRawArticles.push(item);
@@ -58406,6 +58521,12 @@ async function ensureBackendArticleQueryData() {
     queryKey,
     articles: normalizedArticles,
     totalCount,
+    retrievalStrategy,
+    progressivePageStates,
+    progressiveRequestParams: retrievalStrategy.progressive
+      ? queryParamsList.map((params) => params.toString())
+      : [],
+    progressiveHasMorePages: progressivePageStates.some((pageState) => pageState.pagination?.hasMorePages),
     backendRequests: queryParamsList.map((params) => Object.fromEntries(params.entries())),
     backendArticleQueryTimingDiagnostics,
     backendRequestContributionRaw: contributionDiagnosticsEnabled
@@ -58418,6 +58539,8 @@ async function ensureBackendArticleQueryData() {
     totalCount,
     page: 1,
     limit: backendCandidateLimit,
+    progressive: retrievalStrategy.progressive,
+    hasMorePages: payload.progressiveHasMorePages,
   };
   runtime.backendArticleQueryLoading = false;
   return payload;
@@ -58518,11 +58641,14 @@ function renderPaginationControls(pagination) {
   const totalPages = Number(pagination?.totalPages) || 1;
   const startDisplay = totalItems ? (Number(pagination?.startIndex) || 0) + 1 : 0;
   const endDisplay = Number(pagination?.endIndex) || 0;
+  const progressiveResultsRemain = Boolean(state.remoteQuery.progressive && state.remoteQuery.hasMorePages);
+  const totalLabel = progressiveResultsRemain ? `${totalItems} loaded` : String(totalItems);
+  const pageLabel = progressiveResultsRemain ? `Page ${page} of ${totalPages} loaded` : `Page ${page} of ${totalPages}`;
 
   container.innerHTML = `
     <div class="pagination-summary">
-      <span class="pagination-range">Showing ${startDisplay}-${endDisplay} of ${totalItems}</span>
-      <span class="pagination-status">Page ${page} of ${totalPages}</span>
+      <span class="pagination-range">Showing ${startDisplay}-${endDisplay} of ${totalLabel}</span>
+      <span class="pagination-status">${pageLabel}</span>
     </div>
     <div class="pagination-actions">
       <button class="ghost-button pagination-button" type="button" data-pagination-action="prev">Previous</button>
@@ -58554,9 +58680,23 @@ function renderPaginationControls(pagination) {
   }
 
   if (elements.paginationNext) {
-    elements.paginationNext.disabled = page >= totalPages;
+    const canLoadMoreResults = Boolean(state.remoteQuery.progressive && state.remoteQuery.hasMorePages && page >= totalPages);
+    elements.paginationNext.textContent = canLoadMoreResults ? "Load more results" : "Next";
+    elements.paginationNext.disabled = !canLoadMoreResults && page >= totalPages;
     elements.paginationNext.onclick = () => {
       if (state.pagination.page >= totalPages) {
+        if (canLoadMoreResults) {
+          void loadNextProgressiveBackendArticleQueryPage()
+            .then((result) => {
+              if (result) {
+                scheduleRenderArticles("pagination-load-more-results");
+              }
+            })
+            .catch((error) => {
+              runtime.backendArticleQueryLoading = false;
+              elements.resultsCount.textContent = error?.message || "Failed to load more results.";
+            });
+        }
         return;
       }
 
@@ -60272,7 +60412,7 @@ function preparePipelinePagination({
   useBackendQuery,
 } = {}) {
   const pagination = getPaginatedItems(articles);
-  if (useBackendQuery && !hasPersonalDashboardSelections() && Number(state.remoteQuery.totalCount) > pagination.totalCount) {
+  if (useBackendQuery && !state.remoteQuery.progressive && !hasPersonalDashboardSelections() && Number(state.remoteQuery.totalCount) > pagination.totalCount) {
     pagination.totalCount = Number(state.remoteQuery.totalCount);
     pagination.totalPages = Math.max(1, Math.ceil(pagination.totalCount / pagination.pageSize));
   }
