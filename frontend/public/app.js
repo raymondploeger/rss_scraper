@@ -38,6 +38,7 @@ import { getSourceHealth, getSourceStatusPresentation, sourceMatchesHealthFilter
 import { assessDiscoveryFeedQuality, shouldApplyDiscoveryFeedQualityGate } from "./discovery-feed-quality-policy.js";
 import { filterDefaultFeedRelevanceBeforeGrouping } from "./default-feed-relevance-stream.js?v=20261116-default-feed-relevance-004";
 import { articleMatchesSearchQuery, reconcileGroupedSourcesForSearch } from "./search-presentation.js?v=20261117-ghana-search-005";
+import { buildNoiseFeedbackRegressionReviewExport } from "./noise-feedback-regression-review-export.js";
 
 const PLACEHOLDER_IMAGE = "https://placehold.co/800x450/f3f6fb/9aa7b8?text=No+Image";
 const THEME_STORAGE_KEY = "rss-monitor-theme";
@@ -7778,6 +7779,7 @@ const elements = {
   favoritesEmptyState: document.getElementById("favorites-empty-state"),
   noiseFeedbackList: document.getElementById("noise-feedback-list"),
   noiseFeedbackEmpty: document.getElementById("noise-feedback-empty"),
+  noiseFeedbackExport: document.getElementById("noise-feedback-export"),
   adminHealthSummary: document.getElementById("admin-health-summary"),
   adminSourceHealthList: document.getElementById("admin-source-health-list"),
   advancedFiltersToggle: document.getElementById("advanced-filters-toggle"),
@@ -27097,6 +27099,7 @@ function renderNoiseFeedbackPanel() {
   const records = Array.isArray(state.noiseFeedbackRecords) ? state.noiseFeedbackRecords : [];
   elements.noiseFeedbackList.replaceChildren();
   elements.noiseFeedbackEmpty.hidden = records.length > 0;
+  if (elements.noiseFeedbackExport) elements.noiseFeedbackExport.disabled = records.length === 0;
   if (!records.length) return;
 
   const rulesByArticleId = new Map();
@@ -27212,7 +27215,6 @@ function renderAdminWorkspace() {
 
 async function submitNoiseFeedback(article, reason) {
   hideNoiseArticle(article);
-  const rule = addNoiseFeedbackRule(article, reason);
   scheduleRenderArticles("noise-feedback-hide", { mode: "frame" });
   try {
     const response = await fetch(`/api/articles/${encodeURIComponent(article.id)}/noise-feedback`, {
@@ -27227,7 +27229,7 @@ async function submitNoiseFeedback(article, reason) {
     });
     if (!response.ok) throw new Error("Feedback could not be saved.");
     await loadNoiseFeedbackRecords();
-    showNoiseFeedbackSavedNotification(article, rule);
+    showNoiseFeedbackSavedNotification(article);
   } catch (error) {
     showNotification({
       title: "Article hidden locally",
@@ -27252,12 +27254,10 @@ async function undoNoiseFeedback(article) {
   await loadNoiseFeedbackRecords();
 }
 
-function showNoiseFeedbackSavedNotification(article, rule) {
+function showNoiseFeedbackSavedNotification(article) {
   showNotification({
     title: "Article hidden",
-    message: rule
-      ? "A careful rule now hides future close matches in this profile."
-      : "Your feedback was saved; this article is hidden in this browser.",
+    message: "This exact article is hidden locally and your feedback is queued for review.",
     type: "success",
     timeout: 15000,
     actionLabel: "Undo",
@@ -62956,7 +62956,18 @@ function bindEvents() {
     const record = state.noiseFeedbackRecords.find((entry) => entry.articleId === articleId);
     if (!record) return;
     await undoNoiseFeedback({ id: articleId, title: record.articleTitle || "" });
-    showNotification({ title: "Article restored", message: "Its personal noise feedback and automatic rule were removed.", type: "success" });
+    showNotification({ title: "Article restored", message: "Its personal noise feedback was removed.", type: "success" });
+  });
+
+  elements.noiseFeedbackExport?.addEventListener("click", () => {
+    const records = Array.isArray(state.noiseFeedbackRecords) ? state.noiseFeedbackRecords : [];
+    if (!records.length) {
+      showNotification({ title: "Nothing to export", message: "Mark an article as noise first to build a review queue.", type: "info" });
+      return;
+    }
+    const reviewExport = buildNoiseFeedbackRegressionReviewExport(records);
+    downloadJsonFile("noise-feedback-regression-review.json", reviewExport);
+    showNotification({ title: "Review queue exported", message: "Review and approve candidates before creating any permanent rule or regression fixture.", type: "success" });
   });
 
   if (elements.sidebar) {

@@ -278,6 +278,8 @@
                 <span class="noise-feedback-summary">Review or restore</span>
               </summary>
               <div class="noise-feedback-content">
+                <p class="noise-feedback-review-copy">Exported feedback is a review queue, not an automatic global filter. Approve cases before adding a permanent rule or regression fixture.</p>
+                <button type="button" id="noise-feedback-export" class="ghost-button" disabled>Export review</button>
                 <div id="noise-feedback-empty" class="saved-articles-empty">No articles marked as noise.</div>
                 <div id="noise-feedback-list" class="saved-articles-list" aria-live="polite"></div>
               </div>
@@ -589,6 +591,6 @@
       </form>
     </dialog>
 
-    <script type="module" src="/app.js?v=20261117-search-retrieval-pagination-007"></script>
+    <script type="module" src="/app.js?v=20261117-noise-feedback-review-008"></script>
   </body>
 </html>

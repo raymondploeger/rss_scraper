@@ -3180,6 +3180,7 @@ button.intelligence-context-chip:focus-visible .intelligence-context-chip-remove
 .noise-feedback-details > summary::after { content: "›"; color: var(--accent); font-size: 1.2rem; font-weight: 900; }
 .noise-feedback-details[open] > summary::after { content: "↓"; }
 .noise-feedback-content { display: grid; gap: 12px; padding-top: 14px; }
+.noise-feedback-review-copy { margin: 0; color: var(--muted); font-size: .84rem; line-height: 1.45; }
 .noise-feedback-restore { align-self: start; color: var(--accent); }
 .noise-feedback-retained { color: var(--success); }
 
