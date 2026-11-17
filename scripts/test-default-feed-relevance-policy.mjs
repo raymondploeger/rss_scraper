@@ -111,6 +111,18 @@ assert.equal(assessDefaultFeedRelevance({
   title: "City park opens new playground",
   contentSnippet: "Families attended the opening.",
 }).accepted, true, "family-neutral articles are not subject to a global allowlist");
+assert.equal(assessDefaultFeedRelevance({
+  title: "Yukon DMV launches online driver licence rollout",
+  contentSnippet: "The motor vehicle authority deploys the new driver licensing system.",
+}, { name: "Yukon DMV", source: "yukon.ca" }).accepted, true, "DMV driver-licence rollouts remain visible");
+assert.equal(assessDefaultFeedRelevance({
+  title: "CBP deploys biometric document verification system at border",
+  contentSnippet: "The border system deployment improves passport and biometric processing at the port of entry.",
+}, { name: "CBP Newsroom", source: "cbp.gov" }).accepted, true, "CBP document and biometric border-system deployments remain visible");
+assert.equal(assessDefaultFeedRelevance({
+  title: "Government updates national passport issuance policy",
+  contentSnippet: "The national passport system reform updates issuance regulations and security standards.",
+}).accepted, true, "passport system and regulation stories remain visible");
 
 assert.equal(shouldApplyDefaultFeedRelevanceGate({ hasProfile: false, hasExplicitFeedOrSource: false }), true);
 assert.equal(shouldApplyDefaultFeedRelevanceGate({ hasProfile: true, hasExplicitFeedOrSource: false }), false, "profiles remain unchanged");
@@ -252,4 +264,4 @@ assert.match(
   "only explicit DMV dashboard modes bypass default-stream relevance"
 );
 
-process.stdout.write(`${JSON.stringify({ status: "passed", checks: 35 })}\n`);
+process.stdout.write(`${JSON.stringify({ status: "passed", checks: 38 })}\n`);

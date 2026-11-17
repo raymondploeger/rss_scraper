@@ -1,7 +1,7 @@
 import {
   assessDefaultFeedRelevance,
   shouldApplyDefaultFeedRelevanceGate,
-} from "./default-feed-relevance-policy.js";
+} from "./default-feed-relevance-policy.js?v=20261117-noise-feedback-policy-009";
 
 /**
  * The default-stream policy belongs at the boundary between candidate filtering

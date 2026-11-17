@@ -1,0 +1,74 @@
+{
+  "schema": "rss-monitoring-dashboard.noise-feedback-default-stream-regression-corpus",
+  "version": 1,
+  "profileContext": "balanced",
+  "interestIds": [],
+  "cases": [
+    {
+      "article": {
+        "id": "be32275a4619bb20bbb1c4e189f698a669a864674e8bd2de259cde944927caf5",
+        "title": "Brandweer met hoge urgentie naar Veenhuizen op 12 november 2026 | 112 - Drimble",
+        "contentSnippet": "OvD Midden and Brandweer Drenthe units were dispatched to Veenhuizen."
+      },
+      "feed": { "name": "OVD", "source": "drimble.nl" },
+      "feedbackReason": "wrong_word_meaning",
+      "reviewNote": "Emergency dispatch alert, not a scraper-scope article.",
+      "expectedAction": "exclude"
+    },
+    {
+      "article": {
+        "id": "314744c8b1fc16229fd72809f6d48b61b44f23ad69e0105fcbc9b1f56d90a247",
+        "title": "Gaslekkage op Kuyerhuislaan in Zwolle | 12 november 2026 12:00 - Alarmeringen.nl",
+        "contentSnippet": "Alarmering for a gas leak: ovd-b and brandweer were dispatched in Zwolle."
+      },
+      "feed": { "name": "OVD", "source": "alarmeringen.nl" },
+      "feedbackReason": "wrong_word_meaning",
+      "reviewNote": "Emergency dispatch alert, not a scraper-scope article.",
+      "expectedAction": "exclude"
+    },
+    {
+      "article": {
+        "id": "5c2596b6e440eb074c4227fe3d66ad90a6ef6878635dfaac9ee3b2417d7c86eb",
+        "title": "Sheikh Hasina not guaranteed passport as convicted offender: Shama Obaed - Ajker Patrika",
+        "contentSnippet": "Bangladesh is not legally obliged to issue a passport to a convicted criminal, even if the person is a Bangladeshi citizen."
+      },
+      "feed": { "name": "passports", "source": "ajkerpatrika.com" },
+      "feedbackReason": "wrong_word_meaning",
+      "reviewNote": "Personal criminal/legal passport case, not a passport system or issuance policy story.",
+      "expectedAction": "exclude"
+    },
+    {
+      "article": {
+        "id": "e28f073eae8810089dc83549596867ca602d928f331e33bb1acc200b8fa257f1",
+        "title": "Apple details HomeView biometric security as anti-spoofing safeguards emerge",
+        "contentSnippet": "Apple's consumer HomeView smart-home display recognizes household members with facial and voice biometrics; access requires facial recognition and a paired iPhone or iPad."
+      },
+      "feed": { "name": "Biometric Update", "source": "Abhishek Jadhav" },
+      "feedbackReason": "wrong_word_meaning",
+      "reviewNote": "Consumer smart-home biometric feature outside scraper scope.",
+      "expectedAction": "exclude"
+    },
+    {
+      "article": {
+        "id": "170178397318987e4791842232b771633d3f298501929aba43af143ef7a2ce18",
+        "title": "CBP officers arrest U.S. citizen wanted on child molestation warrant at Rainbow Bridge",
+        "contentSnippet": "CBP officers arrested a U.S. citizen after an active warrant was found at the Rainbow Bridge border crossing."
+      },
+      "feed": { "name": "CBP Newsroom", "source": "cbp.gov" },
+      "feedbackReason": "wrong_topic",
+      "reviewNote": "Individual criminal enforcement, not a document or biometric border-system event.",
+      "expectedAction": "exclude"
+    },
+    {
+      "article": {
+        "id": "034b43c6c704b89959e3694695dfc76a8104fdd7ae650aa0f3fdcbb99abf57f6",
+        "title": "Government of Yukon investing over $23 million in schools to better support learners and staff",
+        "contentSnippet": "The Yukon government announced funding for school buildings, classrooms and education infrastructure."
+      },
+      "feed": { "name": "Yukon DMV", "source": "zaburke" },
+      "feedbackReason": "wrong_topic",
+      "reviewNote": "General schools infrastructure, not a DMV/article subject.",
+      "expectedAction": "exclude"
+    }
+  ]
+}
