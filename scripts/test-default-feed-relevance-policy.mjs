@@ -65,6 +65,24 @@ assert.equal(assessDefaultFeedRelevance({
   classifications: ["passports"],
 }).accepted, false, "political personal passport coverage is not a document-system event");
 assert.equal(assessDefaultFeedRelevance({
+  title: "Delhi mission receives email seeking new passport, NID for Hasina, forwards it to Dhaka: Report - The Business Standard",
+  contentSnippet: "Delhi mission receives email seeking new passport, NID for Hasina, forwards it to Dhaka: Report The Business Standard",
+  domains: ["identity_documents"],
+  classifications: ["passports"],
+}).accepted, false, "individual political passport disputes are not document-system events");
+assert.equal(assessDefaultFeedRelevance({
+  title: "Government refuses to issue passport to ousted former prime minister after return plan",
+  contentSnippet: "Officials say the former leader cannot receive travel documents during the dispute.",
+  domains: ["identity_documents"],
+  classifications: ["passports"],
+}).accepted, false, "individual political passport eligibility disputes are not document-system events");
+assert.equal(assessDefaultFeedRelevance({
+  title: "Country refuses to issue new passport to a named individual",
+  contentSnippet: "Video report",
+  domains: ["identity_documents"],
+  classifications: ["passports"],
+}).accepted, false, "individual passport decisions are not document-system events");
+assert.equal(assessDefaultFeedRelevance({
   title: "UK names people who must apply for new passports from the beginning",
   contentSnippet: "Consumer guidance for passport applicants.",
 }).accepted, false, "consumer passport application guidance is not a system event");

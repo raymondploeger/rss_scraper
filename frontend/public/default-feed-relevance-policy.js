@@ -46,6 +46,9 @@ const BORDER_SYSTEM_EVENT_CONTEXT = /\b(?:border|port of entry|entry exit)\b[\s\
 const DMV_FEED_CONTEXT = /\b(?:dmv|department of motor vehicles)\b/;
 const DMV_SUBJECT_CONTEXT = /\b(?:driver'?s? licen[cs]e|driving licen[cs]e|motor vehicle|vehicle registration|registration|driving test)\b/;
 const PERSONAL_CRIMINAL_PASSPORT_CONTEXT = /\b(?:convicted (?:criminal|offender)|criminal offender|convict(?:ed|ion)?|offender|criminal case|court (?:case|ruling)|legal case)\b/;
+const INDIVIDUAL_PASSPORT_REQUEST_CONTEXT = /\b(?:seeks?|seeking|requests?|request(?:ed|ing)?|appl(?:y|ies|ied|ication)|bid|appeals?)\b[\s\S]{0,100}\b(?:new )?(?:passports?|travel documents?|national identity cards?|nids?)\b|\b(?:passports?|travel documents?|national identity cards?|nids?)\b[\s\S]{0,100}\b(?:request(?:ed|ing)?|application|bid|appeal)\b/;
+const PERSONAL_POLITICAL_PASSPORT_ELIGIBILITY_CONTEXT = /\b(?:extradition|execution|exil(?:e|ed)|ousted|former (?:prime minister|president)|ex-?pm|prime minister|in-laws|legal scope|under any circumstances|ineligible|return plan)\b/;
+const INDIVIDUAL_PASSPORT_DECISION_CONTEXT = /\b(?:refus(?:e|es|ed|ing)|den(?:y|ies|ied|ying)|reject(?:s|ed|ing)?|issu(?:e|es|ed|ing)|grant(?:s|ed|ing)?)\b[\s\S]{0,40}\b(?:new )?passport\b\s+(?:to|for)\b/;
 const PASSPORT_SYSTEM_OR_REGULATION_CONTEXT = /\b(?:passport (?:system|programme|program|policy|regulation|rules)|issuance (?:system|policy|regulation)|passport (?:roll-?out|reform)|national passport)\b/;
 const CONSUMER_SMART_HOME_BIOMETRIC_CONTEXT = /\b(?:homeview|smart[- ]home|shared household|household (?:device|access|control)|face id|paired iphone)\b/;
 
@@ -108,6 +111,15 @@ export function assessDefaultFeedRelevance(article, feed = {}) {
   if (families.identityDocuments) {
     if (matches(title, /\bpassports?\b/) && matches(content, PERSONAL_CRIMINAL_PASSPORT_CONTEXT) && !matches(content, PASSPORT_SYSTEM_OR_REGULATION_CONTEXT)) {
       return { accepted: false, family: "identity_documents", reason: "personal_criminal_passport_context" };
+    }
+    if (matches(title, /\b(?:passports?|national identity cards?|nids?)\b/) && matches(content, INDIVIDUAL_PASSPORT_REQUEST_CONTEXT) && !matches(content, PASSPORT_SYSTEM_OR_REGULATION_CONTEXT)) {
+      return { accepted: false, family: "identity_documents", reason: "individual_passport_request_context" };
+    }
+    if (matches(title, /\b(?:passports?|travel documents?|national identity cards?|nids?)\b/) && matches(content, PERSONAL_POLITICAL_PASSPORT_ELIGIBILITY_CONTEXT) && !matches(content, PASSPORT_SYSTEM_OR_REGULATION_CONTEXT)) {
+      return { accepted: false, family: "identity_documents", reason: "personal_political_passport_eligibility_context" };
+    }
+    if (matches(title, /\bpassports?\b/) && matches(content, INDIVIDUAL_PASSPORT_DECISION_CONTEXT) && !matches(content, PASSPORT_SYSTEM_OR_REGULATION_CONTEXT)) {
+      return { accepted: false, family: "identity_documents", reason: "individual_passport_decision_context" };
     }
     const accepted = matches(title, IDENTITY_DOCUMENT_TERMS) &&
       matches(content, DOCUMENT_EVENT_CONTEXT) &&
