@@ -69,6 +69,43 @@
       "feedbackReason": "wrong_topic",
       "reviewNote": "General schools infrastructure, not a DMV/article subject.",
       "expectedAction": "exclude"
+    },
+    {
+      "article": {
+        "id": "0c021546d86b7f4b513854cc08df7102352203d5a58e231c9c515a88b6a3d662",
+        "title": "Star Wars 'The Last Jedi' banknote UV security features",
+        "contentSnippet": "Half-Asleep Chris shows one of the 1,000 Star Wars 'The Last Jedi' banknotes and its ultraviolet security art.",
+        "link": "https://msn.com/en-us/news/other/star-wars-the-last-jedi-banknote-uv-security-features/vi-AA2gPVdF"
+      },
+      "feed": { "name": "Bing Mirror - banknote security features professional", "source": "msn.com" },
+      "feedbackReason": "wrong_word_meaning",
+      "reviewNote": "Entertainment-themed banknote video, not professional currency-security reporting.",
+      "expectedAction": "exclude"
+    },
+    {
+      "article": {
+        "id": "719f1f7756b50679b2dbbd290958e90b3df5e1d4c8dccf46fe8d3927e81f368c",
+        "title": "Banknotes with distinctive colors and security features",
+        "contentSnippet": "Half-Asleep Chris highlights banknotes that go beyond basic designs, showing distinctive colors, materials and security features.",
+        "link": "https://msn.com/en-us/money/economy/banknotes-with-distinctive-colors-and-security-features/vi-AA1ZQor6"
+      },
+      "feed": { "name": "Bing Mirror - banknote security features professional", "source": "msn.com" },
+      "feedbackReason": "stale_or_duplicate",
+      "reviewNote": "Consumer/hobby video mirror, not a professional banknote-security article.",
+      "expectedAction": "exclude"
+    },
+    {
+      "article": {
+        "id": "31132b97341bf33709f1ad8b3cb57f0a29878cd94784a978dde6800ea5cdccdc",
+        "title": "More than 156 tonnes of drugs seized and dozens of criminal networks dismantled in a global operation co-led by Frontex",
+        "contentSnippet": "More than 156 tonnes of drugs were seized and over 490 people arrested in an international operation against organised crime.",
+        "domains": [],
+        "classifications": []
+      },
+      "feed": { "name": "Frontex Newsroom", "source": "frontex.europa.eu" },
+      "feedbackReason": "wrong_topic",
+      "reviewNote": "General drugs-enforcement operation, not a border document or biometric-system event.",
+      "expectedAction": "exclude"
     }
   ]
 }

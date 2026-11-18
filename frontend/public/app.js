@@ -36,7 +36,7 @@ import {
 } from "./workspace-navigation.js";
 import { getSourceHealth, getSourceStatusPresentation, sourceMatchesHealthFilter } from "./source-health.js";
 import { assessDiscoveryFeedQuality, shouldApplyDiscoveryFeedQualityGate } from "./discovery-feed-quality-policy.js";
-import { filterDefaultFeedRelevanceBeforeGrouping } from "./default-feed-relevance-stream.js?v=20261117-passport-context-010";
+import { filterDefaultFeedRelevanceBeforeGrouping } from "./default-feed-relevance-stream.js?v=20261118-noise-feedback-policy-011";
 import { articleMatchesSearchQuery, reconcileGroupedSourcesForSearch } from "./search-presentation.js?v=20261117-ghana-search-005";
 import { buildNoiseFeedbackRegressionReviewExport } from "./noise-feedback-regression-review-export.js";
 

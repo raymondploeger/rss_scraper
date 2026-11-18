@@ -6,6 +6,10 @@ function articleText(article) {
   return [article?.title, article?.contentSnippet, article?.summary].map(text).join(" ");
 }
 
+function articleMetadataText(article) {
+  return [article?.source, article?.link, article?.canonicalLink].map(text).join(" ");
+}
+
 function storedFamilyText(article) {
   return [article?.domains, article?.classifications]
     .flatMap((value) => Array.isArray(value) ? value : [])
@@ -41,6 +45,8 @@ const EMERGENCY_DISPATCH_FEED_CONTEXT = /\b(?:ovd|alarmeringen|emergency dispatc
 const FIREFIGHTING_DISPATCH_CONTEXT = /\b(?:brandweer|fire brigade|firefighters?|emergency dispatch|alarmering|gaslek|gas leak|uitgerukt|ter plaatse)\b/;
 const CBP_FEED_CONTEXT = /\b(?:cbp|customs and border protection)\b/;
 const INDIVIDUAL_ENFORCEMENT_CONTEXT = /\b(?:arrest(?:s|ed)?|warrant|arrested individual|outstanding warrant|charged|fugitive)\b/;
+const FRONTEX_FEED_CONTEXT = /\bfrontex\b/;
+const DRUGS_ENFORCEMENT_CONTEXT = /\b(?:drugs?|cocaine|narcotics?|illicit goods?|drug trafficking|drug networks?)\b/;
 const DOCUMENT_OR_BIOMETRIC_BORDER_SYSTEM_CONTEXT = /\b(?:passport|travel document|identity document|biometric(?:s| identity| verification)?)\b/;
 const BORDER_SYSTEM_EVENT_CONTEXT = /\b(?:border|port of entry|entry exit)\b[\s\S]{0,120}\b(?:system|deploy(?:ment|ed|ing)?|roll-?out|pilot|platform|verification|processing)\b|\b(?:system|deploy(?:ment|ed|ing)?|roll-?out|pilot|platform|verification|processing)\b[\s\S]{0,120}\b(?:border|port of entry|entry exit)\b/;
 const DMV_FEED_CONTEXT = /\b(?:dmv|department of motor vehicles)\b/;
@@ -51,6 +57,8 @@ const PERSONAL_POLITICAL_PASSPORT_ELIGIBILITY_CONTEXT = /\b(?:extradition|execut
 const INDIVIDUAL_PASSPORT_DECISION_CONTEXT = /\b(?:refus(?:e|es|ed|ing)|den(?:y|ies|ied|ying)|reject(?:s|ed|ing)?|issu(?:e|es|ed|ing)|grant(?:s|ed|ing)?)\b[\s\S]{0,40}\b(?:new )?passport\b\s+(?:to|for)\b/;
 const PASSPORT_SYSTEM_OR_REGULATION_CONTEXT = /\b(?:passport (?:system|programme|program|policy|regulation|rules)|issuance (?:system|policy|regulation)|passport (?:roll-?out|reform)|national passport)\b/;
 const CONSUMER_SMART_HOME_BIOMETRIC_CONTEXT = /\b(?:homeview|smart[- ]home|shared household|household (?:device|access|control)|face id|paired iphone)\b/;
+const BING_MIRROR_FEED_CONTEXT = /\bbing mirror\b/;
+const MSN_VIDEO_CONTEXT = /\bmsn\.com\b[\s\S]*\/vi-[a-z0-9]+\b/;
 
 function candidateFamilies(article, feed) {
   const content = articleText(article);
@@ -74,6 +82,7 @@ function isBorderBiometricSystemTitle(title) {
 export function assessDefaultFeedRelevance(article, feed = {}) {
   const title = text(article?.title);
   const content = articleText(article);
+  const articleMetadata = articleMetadataText(article);
   const feedMetadata = feedMetadataText(feed);
   const families = candidateFamilies(article, feed);
 
@@ -86,11 +95,19 @@ export function assessDefaultFeedRelevance(article, feed = {}) {
     return { accepted: false, family: "", reason: "cbp_individual_enforcement_without_document_or_biometric_system" };
   }
 
+  if (matches(feedMetadata, FRONTEX_FEED_CONTEXT) && matches(content, DRUGS_ENFORCEMENT_CONTEXT) &&
+    !(matches(content, DOCUMENT_OR_BIOMETRIC_BORDER_SYSTEM_CONTEXT) && matches(content, BORDER_SYSTEM_EVENT_CONTEXT))) {
+    return { accepted: false, family: "", reason: "frontex_drugs_enforcement_without_document_or_biometric_system" };
+  }
+
   if (matches(feedMetadata, DMV_FEED_CONTEXT) && !matches(content, DMV_SUBJECT_CONTEXT)) {
     return { accepted: false, family: "", reason: "dmv_feed_missing_motor_vehicle_or_licensing_subject" };
   }
 
   if (families.banknotes) {
+    if (matches(feedMetadata, BING_MIRROR_FEED_CONTEXT) && matches(articleMetadata, MSN_VIDEO_CONTEXT)) {
+      return { accepted: false, family: "banknotes", reason: "mirrored_consumer_video_context" };
+    }
     const accepted = matches(title, BANKNOTE_TERMS) &&
       matches(content, BANKNOTE_EVENT_CONTEXT) &&
       !matches(content, COLLECTOR_OR_SOCIAL_CONTEXT) &&
