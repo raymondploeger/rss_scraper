@@ -14,6 +14,7 @@ import { evaluateProfileProfessionalGuardDecision } from "./profile-professional
 import { fetchCompleteCandidatePages } from "./complete-candidate-pagination.js";
 import { getBackendCandidateRetentionStrategy } from "./backend-candidate-retention-strategy.js";
 import { appendProgressiveCandidatePage, getSearchRetrievalStrategy } from "./search-retrieval-pagination.js";
+import { shouldStartBackendQuery } from "./backend-query-loading-state.js";
 import {
   PROFILE_DEFAULT_LOOKBACK_DAYS,
   getProfileHistoryLookbackDays,
@@ -36,7 +37,7 @@ import {
 } from "./workspace-navigation.js";
 import { getSourceHealth, getSourceStatusPresentation, sourceMatchesHealthFilter } from "./source-health.js";
 import { assessDiscoveryFeedQuality, shouldApplyDiscoveryFeedQualityGate } from "./discovery-feed-quality-policy.js";
-import { filterDefaultFeedRelevanceBeforeGrouping } from "./default-feed-relevance-stream.js?v=20261118-noise-feedback-policy-011";
+import { filterDefaultFeedRelevanceBeforeGrouping } from "./default-feed-relevance-stream.js?v=20261118-profile-period-query-012";
 import { articleMatchesSearchQuery, reconcileGroupedSourcesForSearch } from "./search-presentation.js?v=20261117-ghana-search-005";
 import { buildNoiseFeedbackRegressionReviewExport } from "./noise-feedback-regression-review-export.js";
 
@@ -7673,6 +7674,7 @@ const runtime = {
   backendArticleQueryActiveRequestId: 0,
   backendArticleQueryAbortController: null,
   backendArticleQueryLoading: false,
+  backendArticleQueryLoadingKey: "",
   filterPipelineRenderId: 0,
   filterDecisionTraceMap: new Map(),
   personalDashboardScoreMap: new Map(),
@@ -58235,6 +58237,7 @@ function cancelPendingBackendArticleQuery() {
   runtime.backendArticleQueryAbortController?.abort();
   runtime.backendArticleQueryAbortController = null;
   runtime.backendArticleQueryLoading = false;
+  runtime.backendArticleQueryLoadingKey = "";
 }
 
 function refreshProgressiveBackendQueryPayload(payload) {
@@ -58327,6 +58330,7 @@ async function loadNextProgressiveBackendArticleQueryPage() {
 async function ensureBackendArticleQueryData() {
   if (!shouldUseBackendArticleQuery()) {
     runtime.backendArticleQueryLoading = false;
+    runtime.backendArticleQueryLoadingKey = "";
     state.remoteQuery = {
       activeKey: "",
       totalCount: 0,
@@ -58339,6 +58343,16 @@ async function ensureBackendArticleQueryData() {
   }
 
   const queryKey = getBackendArticleQueryKey();
+  if (runtime.backendArticleQueryLoading && !shouldStartBackendQuery({
+    loading: runtime.backendArticleQueryLoading,
+    loadingKey: runtime.backendArticleQueryLoadingKey,
+    queryKey,
+  })) {
+    return null;
+  }
+  if (runtime.backendArticleQueryLoading) {
+    cancelPendingBackendArticleQuery();
+  }
   if (runtime.backendArticleQueryCache.has(queryKey)) {
     const cached = runtime.backendArticleQueryCache.get(queryKey);
     const cachedCandidateLimit = getPersonalDashboardBackendDomainPlan() && hasPersonalDashboardSelections()
@@ -58360,6 +58374,7 @@ async function ensureBackendArticleQueryData() {
   const abortController = new AbortController();
   runtime.backendArticleQueryAbortController = abortController;
   runtime.backendArticleQueryLoading = true;
+  runtime.backendArticleQueryLoadingKey = queryKey;
   renderSkeletons();
   if (elements.resultsCount) {
     elements.resultsCount.textContent = "Loading articles...";
@@ -58408,6 +58423,7 @@ async function ensureBackendArticleQueryData() {
   } finally {
     if (requestId === runtime.backendArticleQueryActiveRequestId) {
       runtime.backendArticleQueryAbortController = null;
+      runtime.backendArticleQueryLoadingKey = "";
     }
   }
   const backendRequestWallClockMs = Math.round((getPerformanceNow() - backendRequestTimingStartedMs) * 10) / 10;
@@ -58543,6 +58559,7 @@ async function ensureBackendArticleQueryData() {
     hasMorePages: payload.progressiveHasMorePages,
   };
   runtime.backendArticleQueryLoading = false;
+  runtime.backendArticleQueryLoadingKey = "";
   return payload;
 }
 
@@ -61842,7 +61859,11 @@ function renderArticles() {
             runtime.selectedFeedFullPoolLoadingKeys.delete(getSelectedFeedFullPoolKey(activeFeedId));
             elements.resultsCount.textContent = error?.message || "Failed to load selected feed articles.";
           });
-      } else if (!runtime.backendArticleQueryLoading) {
+      } else if (shouldStartBackendQuery({
+        loading: runtime.backendArticleQueryLoading,
+        loadingKey: runtime.backendArticleQueryLoadingKey,
+        queryKey: getBackendArticleQueryKey(),
+      })) {
         void ensureBackendArticleQueryData()
           .then((result) => {
             if (result) {
