@@ -19,10 +19,10 @@ assert.deepEqual(
     explicitSearch: "",
   }),
   {
-    completeCandidates: false,
-    retainAllDedupedCandidates: false,
+    completeCandidates: true,
+    retainAllDedupedCandidates: true,
   },
-  "A profile without an explicit search keeps the existing bounded route."
+  "A profile-only view must fetch every candidate page and retain the complete deduped pool before applying profile policy."
 );
 
 assert.deepEqual(
@@ -34,7 +34,7 @@ assert.deepEqual(
     completeCandidates: false,
     retainAllDedupedCandidates: false,
   },
-  "A non-profile search keeps the existing bounded route."
+  "A non-profile search keeps the existing progressive route."
 );
 
 assert.deepEqual(
@@ -44,10 +44,10 @@ assert.deepEqual(
     selectedFeed: true,
   }),
   {
-    completeCandidates: false,
-    retainAllDedupedCandidates: false,
+    completeCandidates: true,
+    retainAllDedupedCandidates: true,
   },
-  "A selected-feed profile search keeps the existing bounded route."
+  "A selected-feed profile view must fetch every candidate page and retain the complete deduped pool before applying profile policy."
 );
 
 process.stdout.write(`${JSON.stringify({ status: "passed", checks: 4 })}\n`);

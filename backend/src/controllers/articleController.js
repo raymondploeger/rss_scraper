@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   countArticles,
   createArticleNoiseFeedback,
@@ -5,6 +6,7 @@ import {
   deleteArticleNoiseFeedback,
   findArticleById,
   listArticleNoiseFeedback,
+  buildBoundedCanonicalCandidateSnapshot,
   listCanonicalDedupedArticles,
   listArticles as listArticleRecords,
   listDistinctArticleTopics
@@ -14,6 +16,17 @@ import { listFeeds } from "../database/feedRepository.js";
 import { endOfDay, startOfDay } from "../utils/date.js";
 import { toArticleDto, toFeedDto } from "../services/presenterService.js";
 import { isRuntimeReady } from "../services/runtimeState.js";
+import {
+  CandidateSnapshotError,
+  createCompleteCandidateSnapshotStore,
+  serveCompleteCandidateSnapshotRequest,
+} from "../services/completeCandidateSnapshotService.js";
+
+const completeCandidateSnapshotStore = createCompleteCandidateSnapshotStore({
+  ttlMs: env.completeCandidateSnapshotTtlMs,
+  maxSnapshots: env.completeCandidateSnapshotMaxSnapshots,
+  maxItems: env.completeCandidateSnapshotMaxItems,
+});
 
 let articleQueryRequestCounter = 0;
 
@@ -124,6 +137,22 @@ function parseArticleQueryList(value) {
     .filter(Boolean);
 }
 
+function getCompleteCandidateSnapshotScopeKey(filters, includeDuplicates) {
+  const scope = {
+    topic: String(filters.topic || ""),
+    feedId: String(filters.feedId || ""),
+    feedIds: Array.isArray(filters.feedIds) ? filters.feedIds.map(String).sort() : [],
+    from: filters.from ? new Date(filters.from).toISOString() : "",
+    to: filters.to ? new Date(filters.to).toISOString() : "",
+    search: String(filters.search || ""),
+    tag: String(filters.tag || ""),
+    signalKeywords: Array.isArray(filters.signalKeywords) ? filters.signalKeywords.map(String).sort() : [],
+    wishlistOnly: Boolean(filters.wishlistOnly),
+    includeDuplicates: Boolean(includeDuplicates),
+  };
+  return createHash("sha256").update(JSON.stringify(scope)).digest("base64url");
+}
+
 function buildArticleQueryDiagnostics(request, details = {}) {
   const query = request?.query || {};
   return {
@@ -191,6 +220,7 @@ export async function listArticles(request, response) {
       signal,
       showDuplicates,
       completeCandidates,
+      candidateSnapshotId: requestedCandidateSnapshotId,
       wishlistOnly,
     } = request.query;
     const pageNumber = Math.max(1, Number(page) || 1);
@@ -205,6 +235,13 @@ export async function listArticles(request, response) {
 
     const includeDuplicates = String(showDuplicates || "").trim().toLowerCase() === "true";
     const requireCompleteCandidates = String(completeCandidates || "").trim().toLowerCase() === "true";
+    const includePagination = String(request.query.includePagination || "").trim().toLowerCase() === "true";
+    if (requireCompleteCandidates && !includePagination) {
+      throw new CandidateSnapshotError(
+        "CANDIDATE_SNAPSHOT_PAGINATION_REQUIRED",
+        "Complete candidate retrieval requires includePagination=true."
+      );
+    }
     const filters = {
       topic,
       feedId: resolvedFeedId || null,
@@ -218,27 +255,45 @@ export async function listArticles(request, response) {
       excludeDuplicates: !includeDuplicates
     };
 
-    const shouldCanonicalDedupe = !includeDuplicates && Boolean(resolvedFeedId || requestedFeedIds.length);
+    const shouldCanonicalDedupe = !includeDuplicates && (requireCompleteCandidates || Boolean(resolvedFeedId || requestedFeedIds.length));
     const offset = (pageNumber - 1) * pageSize;
-    const candidateLimit = shouldCanonicalDedupe
-      ? (requireCompleteCandidates
-        ? null
-        : Math.max(pageSize + offset, Math.min(env.canonicalDedupeCandidateLimit, 5000)))
+    const candidateLimit = shouldCanonicalDedupe && !requireCompleteCandidates
+      ? Math.max(pageSize + offset, Math.min(env.canonicalDedupeCandidateLimit, 5000))
       : 0;
-    const { items, total } = shouldCanonicalDedupe
-      ? await listCanonicalDedupedArticles(filters, {
+    let candidateSnapshotId = "";
+    let items;
+    let total;
+
+    if (requireCompleteCandidates) {
+      const snapshotScopeKey = getCompleteCandidateSnapshotScopeKey(filters, includeDuplicates);
+      const snapshotPage = await serveCompleteCandidateSnapshotRequest({
+        store: completeCandidateSnapshotStore,
+        scopeKey: snapshotScopeKey,
+        candidateSnapshotId: requestedCandidateSnapshotId,
+        page: pageNumber,
+        limit: pageSize,
+        buildItems: async () => buildBoundedCanonicalCandidateSnapshot(filters, {
+          batchSize: env.completeCandidateSnapshotBatchSize,
+          maxCandidates: env.completeCandidateSnapshotMaxCandidates,
+          dedupe: !includeDuplicates,
+        }),
+      });
+      items = snapshotPage.items;
+      total = snapshotPage.pagination.total;
+      candidateSnapshotId = snapshotPage.candidateSnapshotId;
+    } else if (shouldCanonicalDedupe) {
+      ({ items, total } = await listCanonicalDedupedArticles(filters, {
         limit: pageSize,
         offset,
         candidateLimit,
-        complete: requireCompleteCandidates,
-      })
-      : {
-        items: await listArticleRecords(filters, {
-          limit: pageSize,
-          offset,
-        }),
-        total: await countArticles(filters),
-      };
+      }));
+    } else {
+      items = await listArticleRecords(filters, {
+        limit: pageSize,
+        offset,
+      });
+      total = await countArticles(filters);
+    }
     const durationMs = Date.now() - startedAt;
     const memoryAfter = getArticleQueryMemorySnapshot();
     const diagnostics = buildArticleQueryDiagnostics(request, {
@@ -273,6 +328,7 @@ export async function listArticles(request, response) {
       response.json({
         items: articleDtos,
         articles: articleDtos,
+        ...(candidateSnapshotId ? { candidateSnapshotId } : {}),
         totalCount: total,
         page: pageNumber,
         limit: pageSize,
@@ -296,6 +352,17 @@ export async function listArticles(request, response) {
       error: error?.message || error,
     }));
     console.error("Articles error:", error?.stack || error);
+    if (error instanceof CandidateSnapshotError || error?.code === "CANDIDATE_SNAPSHOT_SOURCE_LIMIT") {
+      const status = error.code === "CANDIDATE_SNAPSHOT_UNAVAILABLE" || error.code === "CANDIDATE_SNAPSHOT_SCOPE_MISMATCH"
+        ? 409
+        : error.code === "CANDIDATE_SNAPSHOT_CAPACITY" || error.code === "CANDIDATE_SNAPSHOT_TOKEN_GENERATION_FAILED"
+          ? 503
+          : error.code === "CANDIDATE_SNAPSHOT_PAGINATION_REQUIRED" || error.code === "CANDIDATE_SNAPSHOT_SCOPE_INVALID"
+            ? 400
+            : 413;
+      response.status(status).json({ error: error.message, code: error.code });
+      return;
+    }
     response.status(500).json({ error: error?.message || "Failed to load articles" });
   }
 }

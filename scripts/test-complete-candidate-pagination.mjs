@@ -19,6 +19,7 @@ const completeResponse = await fetchCompleteCandidatePages(
     };
     return {
       items: itemsByPage[page],
+      candidateSnapshotId: "basic-snapshot-token",
       pagination: { page, limit: 2, total: 5, totalPages: 3 },
     };
   }
@@ -26,6 +27,33 @@ const completeResponse = await fetchCompleteCandidatePages(
 assert.deepEqual(requestedPages, [1, 2, 3]);
 assert.deepEqual(completeResponse.items.map((item) => item.id), ["a", "b", "c", "d", "e"]);
 assert.equal(completeResponse.pagination.loadedPages, 3);
+
+const snapshotIdsByPage = [];
+await fetchCompleteCandidatePages(
+  new URLSearchParams({ includePagination: "true", completeCandidates: "true", limit: "2", page: "1" }),
+  async (params) => {
+    const page = Number(params.get("page"));
+    snapshotIdsByPage.push(params.get("candidateSnapshotId") || "");
+    return {
+      items: page === 1 ? [{ id: "snapshot-a" }, { id: "snapshot-b" }] : [{ id: "snapshot-c" }],
+      candidateSnapshotId: "opaque-snapshot-token",
+      pagination: { page, limit: 2, total: 3, totalPages: 2 },
+    };
+  }
+);
+assert.deepEqual(snapshotIdsByPage, ["", "opaque-snapshot-token"], "complete pagination must reuse the opaque backend snapshot for later pages");
+
+await assert.rejects(
+  () => fetchCompleteCandidatePages(
+    new URLSearchParams({ includePagination: "true", completeCandidates: "true", limit: "1", page: "1" }),
+    async () => ({
+      items: [{ id: "missing-token" }],
+      pagination: { page: 1, limit: 1, total: 2, totalPages: 2 },
+    })
+  ),
+  /candidateSnapshotId/,
+  "multi-page complete retrieval must fail instead of accidentally creating a fresh snapshot per page"
+);
 
 const singlePageResponse = { items: [{ id: "only" }], pagination: { page: 1, limit: 1, total: 1, totalPages: 1 } };
 let singlePageCalls = 0;
@@ -41,8 +69,8 @@ assert.equal(unchangedResponse, singlePageResponse);
 
 const sourceArticles = [
   { id: "a", title: "First", pubDate: new Date("2026-01-05") },
-  { id: "b", title: "Shared article", pubDate: new Date("2026-01-04") },
-  { id: "c", title: "Shared article", pubDate: new Date("2026-01-03") },
+  { id: "b", canonicalLink: "https://example.test/shared", title: "Shared article", pubDate: new Date("2026-01-04") },
+  { id: "c", canonicalLink: "https://example.test/shared", title: "Shared article", pubDate: new Date("2026-01-03") },
   { id: "d", title: "Fourth", pubDate: new Date("2026-01-02") },
   { id: "e", title: "Fifth", pubDate: new Date("2026-01-01") },
 ];

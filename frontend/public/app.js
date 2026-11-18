@@ -13,7 +13,7 @@ import { evaluateProfileDomainScopeDecision } from "./profile-domain-scope-polic
 import { evaluateProfileProfessionalGuardDecision } from "./profile-professional-guard-policy.js";
 import { fetchCompleteCandidatePages } from "./complete-candidate-pagination.js";
 import { getBackendCandidateRetentionStrategy } from "./backend-candidate-retention-strategy.js";
-import { appendProgressiveCandidatePage, getSearchRetrievalStrategy } from "./search-retrieval-pagination.js";
+import { appendProgressiveCandidatePage, getCanonicalCandidateKey, getSearchRetrievalStrategy } from "./search-retrieval-pagination.js";
 import { shouldStartBackendQuery } from "./backend-query-loading-state.js";
 import {
   PROFILE_DEFAULT_LOOKBACK_DAYS,
@@ -58245,10 +58245,7 @@ function cancelPendingBackendArticleQuery() {
 function refreshProgressiveBackendQueryPayload(payload) {
   const mergedRawArticles = [];
   const directlyRequestedFeedArticleKeys = new Set();
-  const getRawArticleDedupeKey = (article) => (
-    String(article?.id || "").trim() ||
-    String(article?.canonicalLink || article?.link || "").trim().toLowerCase()
-  );
+  const getRawArticleDedupeKey = (article) => getCanonicalCandidateKey(article);
   (payload.progressivePageStates || []).forEach((response, responseIndex) => {
     const items = Array.isArray(response?.items) ? response.items : Array.isArray(response?.articles) ? response.articles : [];
     items.forEach((item) => {
@@ -58457,10 +58454,7 @@ async function ensureBackendArticleQueryData() {
     : responses;
   const mergedRawArticles = [];
   const directlyRequestedFeedArticleKeys = new Set();
-  const getRawArticleDedupeKey = (article) => (
-    String(article?.id || "").trim() ||
-    String(article?.canonicalLink || article?.link || "").trim().toLowerCase()
-  );
+  const getRawArticleDedupeKey = (article) => getCanonicalCandidateKey(article);
   responsesForCandidateMerge.forEach((response, responseIndex) => {
     const items = Array.isArray(response?.items) ? response.items : Array.isArray(response?.articles) ? response.articles : [];
     items.forEach((item) => {
@@ -61287,15 +61281,15 @@ function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendReq
     : [];
 
   cachedArticles.forEach((article) => {
-    const key = String(article?.id || article?.canonicalLink || article?.link || "").trim().toLowerCase();
-    if (key && !candidatePoolMap.has(key)) {
+    const key = getCanonicalCandidateKey(article);
+    if (key && key !== "id:" && !candidatePoolMap.has(key)) {
       candidatePoolMap.set(key, article);
     }
   });
 
   curatedVendorArticles.forEach((article) => {
-    const key = String(article?.id || article?.canonicalLink || article?.link || "").trim().toLowerCase();
-    if (key && !candidatePoolMap.has(key)) {
+    const key = getCanonicalCandidateKey(article);
+    if (key && key !== "id:" && !candidatePoolMap.has(key)) {
       candidatePoolMap.set(key, article);
     }
   });

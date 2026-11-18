@@ -8,11 +8,27 @@ function getItemKey(item) {
   return String(item?.id || item?.canonicalLink || item?.link || "").trim().toLowerCase();
 }
 
+export function getCanonicalCandidateKey(item) {
+  const canonical = [item?.canonicalLink, item?.link]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .find(Boolean);
+  return canonical ? `canonical:${canonical}` : `id:${String(item?.id || "").trim().toLowerCase()}`;
+}
+
+export function mergeCanonicalCandidatePool(items = []) {
+  const merged = new Map();
+  for (const item of items) {
+    const key = getCanonicalCandidateKey(item);
+    if (!key || key === "id:") continue;
+    if (!merged.has(key)) merged.set(key, item);
+  }
+  return Array.from(merged.values());
+}
+
 export function getSearchRetrievalStrategy(options = {}) {
   const hasActivePersonalProfile = Boolean(options.hasActivePersonalProfile);
   const explicitSearch = String(options.explicitSearch || "").trim();
-  const selectedFeed = Boolean(options.selectedFeed);
-  const complete = hasActivePersonalProfile && Boolean(explicitSearch) && !selectedFeed;
+  const complete = hasActivePersonalProfile;
   const progressive = Boolean(explicitSearch) && !complete;
 
   return Object.freeze({

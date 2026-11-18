@@ -339,16 +339,55 @@ export async function listArticles(filters = {}, options = {}) {
   return items.map(mapArticleRecord);
 }
 
+export class CandidateSnapshotSourceLimitError extends Error {
+  constructor(maxCandidates) {
+    super(`Candidate snapshot exceeds the configured source limit of ${maxCandidates} articles.`);
+    this.name = "CandidateSnapshotSourceLimitError";
+    this.code = "CANDIDATE_SNAPSHOT_SOURCE_LIMIT";
+  }
+}
+
+export async function buildBoundedCanonicalCandidateSnapshot(filters = {}, options = {}) {
+  const prisma = options.prisma || getDatabase();
+  const batchSize = Math.min(500, Math.max(1, Number(options.batchSize) || 200));
+  const maxCandidates = Math.min(10_000, Math.max(1, Number(options.maxCandidates) || 5_000));
+  const candidates = [];
+  let offset = 0;
+
+  while (true) {
+    const take = Math.min(batchSize, maxCandidates - candidates.length + 1);
+    const batch = await prisma.article.findMany({
+      where: buildArticleWhere(filters),
+      orderBy: [{ pubDate: "desc" }, { createdAt: "desc" }],
+      take,
+      skip: offset,
+      include: wishlistMatchesInclude,
+    });
+    if (!batch.length) break;
+
+    candidates.push(...batch);
+    if (candidates.length > maxCandidates) {
+      throw new CandidateSnapshotSourceLimitError(maxCandidates);
+    }
+    offset += batch.length;
+    if (batch.length < batchSize) break;
+  }
+
+  const dedupe = options.dedupe !== false;
+  const seen = new Set();
+  return candidates.reduce((deduped, article) => {
+    const key = getCanonicalArticleDedupeKey(article);
+    if (!key || (dedupe && seen.has(key))) return deduped;
+    seen.add(key);
+    deduped.push(mapArticleRecord(article));
+    return deduped;
+  }, []);
+}
+
 function getCanonicalArticleDedupeKey(article) {
-  const canonicalLink = String(article?.canonicalLink || "").trim();
-  return String(
-    canonicalLink ||
-    article?.normalizedTitle ||
-    article?.title ||
-    article?.link ||
-    article?.id ||
-    ""
-  ).trim().toLowerCase();
+  return [article?.canonicalLink, article?.link, article?.id]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .find(Boolean) || "";
 }
 
 export async function listCanonicalDedupedArticles(filters = {}, options = {}) {
