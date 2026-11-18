@@ -1,7 +1,7 @@
 import {
   assessDefaultFeedRelevance,
   shouldApplyDefaultFeedRelevanceGate,
-} from "./default-feed-relevance-policy.js?v=20261118-banknote-video-context-013";
+} from "./default-feed-relevance-policy.js?v=20261118-noise-feedback-ux-014";
 
 /**
  * The default-stream policy belongs at the boundary between candidate filtering

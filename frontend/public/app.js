@@ -37,7 +37,7 @@ import {
 } from "./workspace-navigation.js";
 import { getSourceHealth, getSourceStatusPresentation, sourceMatchesHealthFilter } from "./source-health.js";
 import { assessDiscoveryFeedQuality, shouldApplyDiscoveryFeedQualityGate } from "./discovery-feed-quality-policy.js";
-import { filterDefaultFeedRelevanceBeforeGrouping } from "./default-feed-relevance-stream.js?v=20261118-banknote-video-context-013";
+import { filterDefaultFeedRelevanceBeforeGrouping } from "./default-feed-relevance-stream.js?v=20261118-noise-feedback-ux-014";
 import { articleMatchesSearchQuery, reconcileGroupedSourcesForSearch } from "./search-presentation.js?v=20261117-ghana-search-005";
 import { buildNoiseFeedbackRegressionReviewExport } from "./noise-feedback-regression-review-export.js";
 
@@ -27025,11 +27025,11 @@ function getNoiseFeedbackProfileContext() {
 }
 
 const NOISE_FEEDBACK_REASON_LABELS = Object.freeze({
-  wrong_topic: "Wrong topic",
-  wrong_word_meaning: "Wrong meaning of a word",
-  noisy_source: "Source produces too much noise",
-  promotion_or_navigation: "Promotion, category page, or navigation",
-  stale_or_duplicate: "Stale or duplicate article",
+  wrong_topic: "Not relevant to me",
+  wrong_word_meaning: "Wrong word meaning",
+  noisy_source: "Poor-quality page or source",
+  promotion_or_navigation: "Poor-quality page or source",
+  stale_or_duplicate: "Duplicate or outdated",
 });
 
 async function loadNoiseFeedbackRecords() {
@@ -27269,6 +27269,8 @@ function showNoiseFeedbackSavedNotification(article) {
 
 function openNoiseFeedbackDialog(article) {
   if (!article?.id || !elements.noiseFeedbackDialog || !elements.noiseFeedbackArticle) return;
+  hideNoiseArticle(article);
+  scheduleRenderArticles("noise-feedback-hide", { mode: "frame" });
   runtime.pendingNoiseFeedbackArticle = article;
   elements.noiseFeedbackArticle.textContent = article.title || "Untitled article";
   elements.noiseFeedbackReason.value = "wrong_topic";
@@ -62958,7 +62960,14 @@ function bindEvents() {
     });
   }
 
-  elements.noiseFeedbackCancel?.addEventListener("click", () => elements.noiseFeedbackDialog?.close());
+  elements.noiseFeedbackCancel?.addEventListener("click", async () => {
+    const article = runtime.pendingNoiseFeedbackArticle;
+    elements.noiseFeedbackDialog?.close();
+    runtime.pendingNoiseFeedbackArticle = null;
+    if (article) {
+      await submitNoiseFeedback(article, "wrong_topic");
+    }
+  });
   elements.noiseFeedbackForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const article = runtime.pendingNoiseFeedbackArticle;
