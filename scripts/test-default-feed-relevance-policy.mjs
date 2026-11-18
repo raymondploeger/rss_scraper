@@ -108,6 +108,12 @@ assert.equal(assessDefaultFeedRelevance({
   contentSnippet: "The new series enters circulation with upgraded security features.",
 }).accepted, true, "Bank of Ghana Heritage Series issuance remains visible");
 assert.equal(assessDefaultFeedRelevance({
+  title: "Bank of Ghana unveils new heritage series banknotes",
+  contentSnippet: "The central bank launches the new series into circulation with upgraded security features.",
+  link: "https://msn.com/en-us/news/other/bank-of-ghana-unveils-new-heritage-series-banknotes/vi-AA2hkzvD",
+  source: "msn.com",
+}, { name: "Bing Mirror - banknotes", source: "msn.com" }).accepted, true, "professional central-bank video reporting remains visible");
+assert.equal(assessDefaultFeedRelevance({
   title: "Central bank dismantles counterfeit banknote ring in national operation",
   contentSnippet: "The organised anti-counterfeit operation targets a distribution network.",
 }).accepted, true, "organised counterfeit operations remain visible when the title and concrete event are present");

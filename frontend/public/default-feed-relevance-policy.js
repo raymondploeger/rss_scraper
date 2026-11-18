@@ -59,6 +59,7 @@ const PASSPORT_SYSTEM_OR_REGULATION_CONTEXT = /\b(?:passport (?:system|programme
 const CONSUMER_SMART_HOME_BIOMETRIC_CONTEXT = /\b(?:homeview|smart[- ]home|shared household|household (?:device|access|control)|face id|paired iphone)\b/;
 const BING_MIRROR_FEED_CONTEXT = /\bbing mirror\b/;
 const MSN_VIDEO_CONTEXT = /\bmsn\.com\b[\s\S]*\/vi-[a-z0-9]+\b/;
+const AUTHORITATIVE_BANKNOTE_VIDEO_CONTEXT = /\b(?:central bank|reserve bank|bank of|currency authority|national bank|issuer)\b/;
 
 function candidateFamilies(article, feed) {
   const content = articleText(article);
@@ -105,7 +106,7 @@ export function assessDefaultFeedRelevance(article, feed = {}) {
   }
 
   if (families.banknotes) {
-    if (matches(feedMetadata, BING_MIRROR_FEED_CONTEXT) && matches(articleMetadata, MSN_VIDEO_CONTEXT)) {
+    if (matches(feedMetadata, BING_MIRROR_FEED_CONTEXT) && matches(articleMetadata, MSN_VIDEO_CONTEXT) && !matches(content, AUTHORITATIVE_BANKNOTE_VIDEO_CONTEXT)) {
       return { accepted: false, family: "banknotes", reason: "mirrored_consumer_video_context" };
     }
     const accepted = matches(title, BANKNOTE_TERMS) &&
