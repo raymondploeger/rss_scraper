@@ -347,6 +347,14 @@ export class CandidateSnapshotSourceLimitError extends Error {
   }
 }
 
+export class CandidateSnapshotCompositeLimitError extends Error {
+  constructor(maxItems) {
+    super(`Candidate snapshot exceeds the configured composite limit of ${maxItems} articles.`);
+    this.name = "CandidateSnapshotCompositeLimitError";
+    this.code = "CANDIDATE_SNAPSHOT_COMPOSITE_LIMIT";
+  }
+}
+
 export async function buildBoundedCanonicalCandidateSnapshot(filters = {}, options = {}) {
   const prisma = options.prisma || getDatabase();
   const batchSize = Math.min(500, Math.max(1, Number(options.batchSize) || 200));
@@ -382,6 +390,47 @@ export async function buildBoundedCanonicalCandidateSnapshot(filters = {}, optio
     deduped.push(mapArticleRecord(article));
     return deduped;
   }, []);
+}
+
+export async function buildBoundedCanonicalCandidateSnapshotComposite(filters = {}, options = {}) {
+  const searchTerms = Array.from(new Set((Array.isArray(filters.searchTerms) ? filters.searchTerms : [])
+    .map((term) => String(term || "").trim())
+    .filter(Boolean)));
+  const profileTopic = String(filters.profileTopic || "").trim();
+  const componentFilters = [
+    ...(profileTopic ? [{ ...filters, profileTopic: "", search: "", searchTerms: [], topic: profileTopic }] : []),
+    ...searchTerms.map((search) => ({ ...filters, profileTopic: "", search, searchTerms: [] })),
+  ];
+  if (componentFilters.length <= 1) {
+    return buildBoundedCanonicalCandidateSnapshot(componentFilters[0] || filters, options);
+  }
+
+  const concurrency = Math.max(1, Math.min(Number(options.concurrency) || 3, componentFilters.length));
+  const maxItems = Math.min(10_000, Math.max(1, Number(options.maxItems) || 5_000));
+  const seen = new Set();
+  const merged = [];
+  let nextIndex = 0;
+  let overflowError = null;
+  const runWorker = async () => {
+    while (!overflowError && nextIndex < componentFilters.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const componentItems = await buildBoundedCanonicalCandidateSnapshot(componentFilters[index], options);
+      for (const article of componentItems) {
+        if (overflowError) break;
+        const key = getCanonicalArticleDedupeKey(article);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        merged.push(article);
+        if (merged.length > maxItems) {
+          overflowError = new CandidateSnapshotCompositeLimitError(maxItems);
+        }
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: concurrency }, () => runWorker()));
+  if (overflowError) throw overflowError;
+  return merged;
 }
 
 function getCanonicalArticleDedupeKey(article) {

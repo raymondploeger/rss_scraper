@@ -80,7 +80,7 @@ export async function fetchAdaptiveCompleteCandidatePages(params, requestPage, o
     try {
       return [await fetchCompleteCandidatePages(attemptParams, requestPage)];
     } catch (error) {
-      if (error?.code !== "CANDIDATE_SNAPSHOT_SOURCE_LIMIT") throw error;
+      if (!["CANDIDATE_SNAPSHOT_SOURCE_LIMIT", "CANDIDATE_SNAPSHOT_COMPOSITE_LIMIT"].includes(error?.code)) throw error;
       const ranges = splitProfileHistoryDateRange({
         from: attemptParams.get("from"),
         to: attemptParams.get("to"),
