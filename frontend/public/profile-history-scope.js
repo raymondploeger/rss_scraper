@@ -22,10 +22,33 @@ function formatLocalDate(date) {
 
 export function getProfileHistoryDateRanges(scope, now = new Date(), days = getProfileHistoryLookbackDays(scope)) {
   const normalizedDays = Math.max(1, Number(days) || PROFILE_DEFAULT_LOOKBACK_DAYS);
-  const date = new Date(now);
-  date.setHours(0, 0, 0, 0);
-  date.setDate(date.getDate() - normalizedDays);
-  // The selector promises an exact lookback window. Returning a second, older
-  // range here made "Last 180 days" silently include up to 360 days of data.
-  return [{ from: formatLocalDate(date), to: "" }];
+  const latestDate = new Date(now);
+  latestDate.setHours(0, 0, 0, 0);
+  const rangesNewestFirst = [];
+  let newestOffsetDays = 0;
+
+  // A complete snapshot has a hard source bound. Partition longer profile
+  // windows into exact, non-overlapping 90-day spans before retrieval, then
+  // let the caller merge canonical candidates across those spans.
+  while (newestOffsetDays <= normalizedDays) {
+    const oldestOffsetDays = Math.min(
+      normalizedDays,
+      newestOffsetDays + PROFILE_DEFAULT_LOOKBACK_DAYS
+    );
+    const fromDate = new Date(latestDate);
+    fromDate.setDate(fromDate.getDate() - oldestOffsetDays);
+    const toDate = newestOffsetDays
+      ? new Date(latestDate)
+      : null;
+    if (toDate) {
+      toDate.setDate(toDate.getDate() - newestOffsetDays);
+    }
+    rangesNewestFirst.push({
+      from: formatLocalDate(fromDate),
+      to: toDate ? formatLocalDate(toDate) : "",
+    });
+    newestOffsetDays = oldestOffsetDays + 1;
+  }
+
+  return rangesNewestFirst.reverse();
 }

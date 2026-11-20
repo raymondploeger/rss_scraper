@@ -137,7 +137,11 @@ assert.deepEqual(
 );
 assert.deepEqual(
   getProfileHistoryDateRanges("extended", new Date(2026, 8, 25, 12, 0, 0)),
-  [{ from: "2026-03-29", to: "" }]
+  [
+    { from: "2026-03-29", to: "2026-06-26" },
+    { from: "2026-06-27", to: "" },
+  ],
+  "The 180-day profile scope must use exact, non-overlapping 90-day windows so each complete query stays bounded."
 );
 
 process.stdout.write(`${JSON.stringify({ status: "passed", checks: 17 })}\n`);
