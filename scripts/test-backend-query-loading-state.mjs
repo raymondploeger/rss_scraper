@@ -16,5 +16,25 @@ assert.equal(
   true,
   "a changed date scope replaces an obsolete in-flight query"
 );
+assert.equal(
+  shouldStartBackendQuery({
+    loading: false,
+    loadingKey: "",
+    failedKey: "profile:90",
+    queryKey: "profile:90",
+  }),
+  false,
+  "a failed snapshot query is not retried on every render"
+);
+assert.equal(
+  shouldStartBackendQuery({
+    loading: false,
+    loadingKey: "",
+    failedKey: "profile:90",
+    queryKey: "profile:30",
+  }),
+  true,
+  "a changed scope may start after a previous snapshot failure"
+);
 
-process.stdout.write(`${JSON.stringify({ status: "passed", checks: 3 })}\n`);
+process.stdout.write(`${JSON.stringify({ status: "passed", checks: 5 })}\n`);

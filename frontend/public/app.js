@@ -7675,6 +7675,8 @@ const runtime = {
   backendArticleQueryAbortController: null,
   backendArticleQueryLoading: false,
   backendArticleQueryLoadingKey: "",
+  backendArticleQueryFailedKey: "",
+  backendArticleQueryFailedMessage: "",
   filterPipelineRenderId: 0,
   filterDecisionTraceMap: new Map(),
   personalDashboardScoreMap: new Map(),
@@ -57870,6 +57872,18 @@ function renderSkeletons() {
     .join("");
 }
 
+function renderBackendArticleQueryFailure(message) {
+  elements.articlesGrid.classList.remove("is-grouped-feed-view");
+  if (elements.paginationControls) {
+    elements.paginationControls.hidden = true;
+  }
+  elements.articlesGrid.innerHTML = "";
+  const emptyState = document.createElement("div");
+  emptyState.className = "empty-state";
+  emptyState.textContent = message;
+  elements.articlesGrid.appendChild(emptyState);
+}
+
 function shouldUseBackendArticleQuery() {
   const queryContext = getActiveArticleQueryContext();
   const plainSourceOnlyFeedView = queryContext.sourceOnly &&
@@ -58556,6 +58570,8 @@ async function ensureBackendArticleQueryData() {
   };
   runtime.backendArticleQueryLoading = false;
   runtime.backendArticleQueryLoadingKey = "";
+  runtime.backendArticleQueryFailedKey = "";
+  runtime.backendArticleQueryFailedMessage = "";
   return payload;
 }
 
@@ -61855,21 +61871,33 @@ function renderArticles() {
             runtime.selectedFeedFullPoolLoadingKeys.delete(getSelectedFeedFullPoolKey(activeFeedId));
             elements.resultsCount.textContent = error?.message || "Failed to load selected feed articles.";
           });
-      } else if (shouldStartBackendQuery({
-        loading: runtime.backendArticleQueryLoading,
-        loadingKey: runtime.backendArticleQueryLoadingKey,
-        queryKey: getBackendArticleQueryKey(),
-      })) {
-        void ensureBackendArticleQueryData()
-          .then((result) => {
-            if (result) {
-              scheduleRenderArticles("backend-article-query-ready", { mode: "frame" });
-            }
-          })
-          .catch((error) => {
-            runtime.backendArticleQueryLoading = false;
-            elements.resultsCount.textContent = error?.message || "Failed to load filtered articles.";
-          });
+      } else {
+        const backendQueryKey = getBackendArticleQueryKey();
+        if (runtime.backendArticleQueryFailedKey === backendQueryKey) {
+          renderBackendArticleQueryFailure(runtime.backendArticleQueryFailedMessage);
+        } else if (shouldStartBackendQuery({
+          loading: runtime.backendArticleQueryLoading,
+          loadingKey: runtime.backendArticleQueryLoadingKey,
+          failedKey: runtime.backendArticleQueryFailedKey,
+          queryKey: backendQueryKey,
+        })) {
+          void ensureBackendArticleQueryData()
+            .then((result) => {
+              if (result) {
+                scheduleRenderArticles("backend-article-query-ready", { mode: "frame" });
+              }
+            })
+            .catch((error) => {
+              runtime.backendArticleQueryLoading = false;
+              const message = error?.message || "Failed to load filtered articles.";
+              elements.resultsCount.textContent = message;
+              if (String(error?.code || "").startsWith("CANDIDATE_SNAPSHOT_")) {
+                runtime.backendArticleQueryFailedKey = backendQueryKey;
+                runtime.backendArticleQueryFailedMessage = `${message} Shorten the article period or select a narrower source, then try again.`;
+                renderBackendArticleQueryFailure(runtime.backendArticleQueryFailedMessage);
+              }
+            });
+        }
       }
       completeFilterPerformanceRun({ renderedCardCount: 0 });
       completeProductionLoadTiming({
@@ -62396,7 +62424,10 @@ async function apiRequest(path, options = {}) {
 
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.error || `Request failed with status ${response.status}`);
+    const error = new Error(payload.error || `Request failed with status ${response.status}`);
+    error.code = String(payload.code || "");
+    error.status = response.status;
+    throw error;
   }
 
   return response.json().catch(() => ({}));

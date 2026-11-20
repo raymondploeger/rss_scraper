@@ -123,4 +123,20 @@ const singleWorkflowPage = await serveCompleteCandidateSnapshotRequest({
 assert.equal(singleWorkflowPage.candidateSnapshotId, "", "single-page snapshots should be released immediately");
 assert.equal(singlePageStore.size(), 0, "single-page snapshots must not consume capacity until TTL expiry");
 
-process.stdout.write(`${JSON.stringify({ status: "passed", checks: 16 })}\n`);
+const defaultCapacityStore = createCompleteCandidateSnapshotStore({
+  createId: () => "default-capacity-snapshot",
+});
+const supportedProfileItems = Array.from({ length: 5_000 }, (_, index) => ({ id: `candidate-${index}` }));
+assert.doesNotThrow(
+  () => defaultCapacityStore.create({ scopeKey: "central-bank-90-days", items: supportedProfileItems }),
+  "the default snapshot capacity must match the supported 5,000-candidate source bound"
+);
+assert.throws(
+  () => defaultCapacityStore.create({
+    scopeKey: "over-default-capacity",
+    items: [...supportedProfileItems, { id: "candidate-overflow" }],
+  }),
+  (error) => error instanceof CandidateSnapshotError && error.code === "CANDIDATE_SNAPSHOT_LIMIT"
+);
+
+process.stdout.write(`${JSON.stringify({ status: "passed", checks: 18 })}\n`);

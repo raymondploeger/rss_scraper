@@ -43,7 +43,7 @@ export const env = {
   canonicalDedupeCandidateLimit: Math.max(200, toNumber(process.env.CANONICAL_DEDUPE_CANDIDATE_LIMIT, 1500)),
   completeCandidateSnapshotTtlMs: Math.min(15 * 60 * 1000, Math.max(10_000, toNumber(process.env.COMPLETE_CANDIDATE_SNAPSHOT_TTL_MS, 60_000))),
   completeCandidateSnapshotMaxSnapshots: Math.min(128, Math.max(1, toNumber(process.env.COMPLETE_CANDIDATE_SNAPSHOT_MAX_SNAPSHOTS, 16))),
-  completeCandidateSnapshotMaxItems: Math.min(10_000, Math.max(100, toNumber(process.env.COMPLETE_CANDIDATE_SNAPSHOT_MAX_ITEMS, 2_000))),
+  completeCandidateSnapshotMaxItems: Math.min(10_000, Math.max(100, toNumber(process.env.COMPLETE_CANDIDATE_SNAPSHOT_MAX_ITEMS, 5_000))),
   completeCandidateSnapshotMaxCandidates: Math.min(10_000, Math.max(100, toNumber(process.env.COMPLETE_CANDIDATE_SNAPSHOT_MAX_CANDIDATES, 5_000))),
   completeCandidateSnapshotBatchSize: Math.min(500, Math.max(25, toNumber(process.env.COMPLETE_CANDIDATE_SNAPSHOT_BATCH_SIZE, 200))),
   articleQuerySlowMs: Math.max(250, toNumber(process.env.ARTICLE_QUERY_SLOW_MS, 1500)),

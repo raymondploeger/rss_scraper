@@ -50,7 +50,7 @@ export async function serveCompleteCandidateSnapshotRequest({
 export function createCompleteCandidateSnapshotStore(options = {}) {
   const ttlMs = normalizePositiveInteger(options.ttlMs, 60_000);
   const maxSnapshots = normalizePositiveInteger(options.maxSnapshots, 16);
-  const maxItems = normalizePositiveInteger(options.maxItems, 2_000);
+  const maxItems = normalizePositiveInteger(options.maxItems, 5_000);
   const now = typeof options.now === "function" ? options.now : Date.now;
   const createId = typeof options.createId === "function" ? options.createId : defaultSnapshotId;
   const maxIdAttempts = Math.min(10, normalizePositiveInteger(options.maxIdAttempts, 3));
