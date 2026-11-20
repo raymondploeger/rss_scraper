@@ -148,22 +148,17 @@ assert.deepEqual(
 );
 
 const adaptiveAttemptedRanges = [];
-const adaptiveAttemptedSearchTerms = [];
 const sourceLimitError = new Error("Candidate snapshot exceeds the configured source limit of 5000 articles.");
 sourceLimitError.code = "CANDIDATE_SNAPSHOT_SOURCE_LIMIT";
-const adaptiveParams = new URLSearchParams({
-  includePagination: "true",
-  completeCandidates: "true",
-  from: "2026-03-29",
-});
-adaptiveParams.append("searchTerms", "currency, redesign");
-adaptiveParams.append("searchTerms", "banknote issuance");
 const adaptiveResponse = await fetchAdaptiveCompleteCandidatePages(
-  adaptiveParams,
+  new URLSearchParams({
+    includePagination: "true",
+    completeCandidates: "true",
+    from: "2026-03-29",
+  }),
   async (params) => {
     const range = { from: params.get("from") || "", to: params.get("to") || "" };
     adaptiveAttemptedRanges.push(range);
-    adaptiveAttemptedSearchTerms.push(params.getAll("searchTerms"));
     if (range.from === "2026-03-29" && !range.to) throw sourceLimitError;
     if (range.from === "2026-03-29" && range.to === "2026-06-27") {
       return {
@@ -188,11 +183,6 @@ assert.deepEqual(adaptiveAttemptedRanges, [
   { from: "2026-03-29", to: "" },
   { from: "2026-03-29", to: "2026-06-27" },
   { from: "2026-06-28", to: "" },
-]);
-assert.deepEqual(adaptiveAttemptedSearchTerms, [
-  ["currency, redesign", "banknote issuance"],
-  ["currency, redesign", "banknote issuance"],
-  ["currency, redesign", "banknote issuance"],
 ]);
 assert.deepEqual(
   adaptiveResponse.items.map((item) => item.id),
@@ -255,4 +245,4 @@ assert.equal(
   "non-complete retrieval must retain its progressive pagination response"
 );
 
-process.stdout.write(`${JSON.stringify({ status: "passed", checks: 29 })}\n`);
+process.stdout.write(`${JSON.stringify({ status: "passed", checks: 27 })}\n`);

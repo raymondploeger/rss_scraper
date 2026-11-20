@@ -137,12 +137,6 @@ function parseArticleQueryList(value) {
     .filter(Boolean);
 }
 
-export function parseArticleQueryValues(value) {
-  return (Array.isArray(value) ? value : [value])
-    .map((entry) => String(entry || "").trim())
-    .filter(Boolean);
-}
-
 function getCompleteCandidateSnapshotScopeKey(filters, includeDuplicates) {
   const scope = {
     topic: String(filters.topic || ""),
@@ -151,7 +145,6 @@ function getCompleteCandidateSnapshotScopeKey(filters, includeDuplicates) {
     from: filters.from ? new Date(filters.from).toISOString() : "",
     to: filters.to ? new Date(filters.to).toISOString() : "",
     search: String(filters.search || ""),
-    searchTerms: Array.isArray(filters.searchTerms) ? filters.searchTerms.map(String).sort() : [],
     tag: String(filters.tag || ""),
     signalKeywords: Array.isArray(filters.signalKeywords) ? filters.signalKeywords.map(String).sort() : [],
     wishlistOnly: Boolean(filters.wishlistOnly),
@@ -176,7 +169,6 @@ function buildArticleQueryDiagnostics(request, details = {}) {
     tag: serializeArticleQuery(query.tag),
     signal: serializeArticleQuery(query.signal),
     search: serializeArticleQuery(query.search),
-    searchTerms: serializeArticleQuery(query.searchTerms),
     date: serializeArticleQuery(query.date),
     from: serializeArticleQuery(query.from),
     to: serializeArticleQuery(query.to),
@@ -224,7 +216,6 @@ export async function listArticles(request, response) {
       page = 1,
       limit = env.maxArticlePageSize,
       search,
-      searchTerms,
       tag,
       signal,
       showDuplicates,
@@ -238,7 +229,6 @@ export async function listArticles(request, response) {
       ? String(requestedFeedId).trim()
       : await resolveFeedIdFromQuery(feed);
     const requestedFeedIds = parseArticleQueryList(feedIds);
-    const requestedSearchTerms = parseArticleQueryValues(searchTerms);
     const signalKeywords = SIGNAL_QUERY_KEYWORDS[String(signal || "").trim()] || [];
     const dateFrom = date ? startOfDay(date) : null;
     const dateTo = date ? endOfDay(date) : null;
@@ -259,7 +249,6 @@ export async function listArticles(request, response) {
       from: dateFrom || (from ? startOfDay(from) : null),
       to: dateTo || (to ? endOfDay(to) : null),
       search,
-      searchTerms: requestedSearchTerms,
       tag,
       signalKeywords,
       wishlistOnly: String(wishlistOnly || "").trim().toLowerCase() === "true",

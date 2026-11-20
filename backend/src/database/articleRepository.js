@@ -16,10 +16,7 @@ export function buildArticleWhere(filters = {}) {
   const where = {};
   const andConditions = [];
 
-  const searchTerms = Array.from(new Set((Array.isArray(filters.searchTerms) ? filters.searchTerms : [])
-    .map((term) => String(term || "").trim())
-    .filter(Boolean)));
-  if (filters.topic && !searchTerms.length) {
+  if (filters.topic) {
     where.topic = filters.topic;
   }
 
@@ -70,13 +67,9 @@ export function buildArticleWhere(filters = {}) {
     };
   }
 
-  const buildSearchPhraseCondition = (search) => {
-    const searchTokens = String(search || "").trim().split(/\s+/).filter(Boolean);
-    if (!searchTokens.length) {
-      return null;
-    }
-    return {
-      AND: searchTokens.map((token) => ({
+  const searchTokens = String(filters.search || "").trim().split(/\s+/).filter(Boolean);
+  for (const token of searchTokens) {
+    andConditions.push({
       OR: [
         { title: { contains: token, mode: "insensitive" } },
         { source: { contains: token, mode: "insensitive" } },
@@ -86,23 +79,7 @@ export function buildArticleWhere(filters = {}) {
         { canonicalLink: { contains: token, mode: "insensitive" } },
         { contentSnippet: { contains: token, mode: "insensitive" } },
       ],
-      })),
-    };
-  };
-
-  const searchPhraseCondition = buildSearchPhraseCondition(filters.search);
-  if (searchPhraseCondition) {
-    andConditions.push(...searchPhraseCondition.AND);
-  }
-
-  if (searchTerms.length) {
-    const unionBranches = [
-      ...(filters.topic ? [{ topic: filters.topic }] : []),
-      ...searchTerms.map(buildSearchPhraseCondition).filter(Boolean),
-    ];
-    if (unionBranches.length) {
-      andConditions.push({ OR: unionBranches });
-    }
+    });
   }
 
   if (filters.tag) {
