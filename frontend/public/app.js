@@ -12,6 +12,7 @@ import { evaluateIdentityWeekIdentityVerificationQualityDecision } from "./ident
 import { evaluateProfileDomainScopeDecision } from "./profile-domain-scope-policy.js";
 import { evaluateProfileProfessionalGuardDecision } from "./profile-professional-guard-policy.js";
 import { fetchAdaptiveCompleteCandidatePages } from "./complete-candidate-pagination.js";
+import { appendProfileCandidateSearchTerms } from "./profile-candidate-query-params.js";
 import { getBackendCandidateRetentionStrategy } from "./backend-candidate-retention-strategy.js";
 import { appendProgressiveCandidatePage, getCanonicalCandidateKey, getSearchRetrievalStrategy } from "./search-retrieval-pagination.js";
 import { shouldStartBackendQuery } from "./backend-query-loading-state.js";
@@ -58158,29 +58159,18 @@ function buildPersonalDashboardBackendQueryParamsList() {
   });
 
   const buildTargetedRequests = (profileDateRange) => {
-    const requests = [];
-    const seenKeys = new Set();
-    const addRequest = (mutate) => {
-      const params = applyBackendArticleQueryBaseParams({
-        limit: perRequestLimit,
-        profileDateRange,
-        completeCandidates: candidateRetentionStrategy.completeCandidates,
-      });
-      if (typeof mutate === "function") {
-        mutate(params);
-      }
-      const key = params.toString();
-      if (!seenKeys.has(key)) {
-        seenKeys.add(key);
-        requests.push(params);
-      }
-    };
-
+    const params = applyBackendArticleQueryBaseParams({
+      limit: perRequestLimit,
+      profileDateRange,
+      completeCandidates: candidateRetentionStrategy.completeCandidates,
+    });
     if (includeTopicBaseline) {
-      addRequest((params) => params.set("topic", plan.topic));
+      params.set("topic", plan.topic);
     }
-    searches.forEach((search) => addRequest((params) => params.set("search", search)));
-    return requests;
+    if (searches.length) {
+      appendProfileCandidateSearchTerms(params, searches);
+    }
+    return includeTopicBaseline || searches.length ? [params] : [];
   };
 
   if (resolvedFeed?.id) {
