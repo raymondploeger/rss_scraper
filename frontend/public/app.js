@@ -11,7 +11,7 @@ import { evaluateIdentityDocumentQualityGateDecision, isHondaPassportVehicleNois
 import { evaluateIdentityWeekIdentityVerificationQualityDecision } from "./identity-week-quality-policy.js";
 import { evaluateProfileDomainScopeDecision } from "./profile-domain-scope-policy.js";
 import { evaluateProfileProfessionalGuardDecision } from "./profile-professional-guard-policy.js";
-import { fetchCompleteCandidatePages } from "./complete-candidate-pagination.js";
+import { fetchAdaptiveCompleteCandidatePages } from "./complete-candidate-pagination.js";
 import { getBackendCandidateRetentionStrategy } from "./backend-candidate-retention-strategy.js";
 import { appendProgressiveCandidatePage, getCanonicalCandidateKey, getSearchRetrievalStrategy } from "./search-retrieval-pagination.js";
 import { shouldStartBackendQuery } from "./backend-query-loading-state.js";
@@ -58242,7 +58242,7 @@ async function mapBackendArticleQueryParamsWithConcurrency(queryParamsList = [],
 }
 
 async function fetchCompleteBackendArticleQuery(params, signal) {
-  return fetchCompleteCandidatePages(
+  return fetchAdaptiveCompleteCandidatePages(
     params,
     (pageParams) => apiRequest(`/api/articles?${pageParams.toString()}`, { signal })
   );

@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { fetchCompleteCandidatePages } from "../frontend/public/complete-candidate-pagination.js";
+import {
+  fetchAdaptiveCompleteCandidatePages,
+  fetchCompleteCandidatePages,
+} from "../frontend/public/complete-candidate-pagination.js";
 import {
   getProfileHistoryDateRanges,
   normalizeProfileHistoryScope,
@@ -144,4 +147,102 @@ assert.deepEqual(
   "The 180-day profile scope must use exact, non-overlapping 90-day windows so each complete query stays bounded."
 );
 
-process.stdout.write(`${JSON.stringify({ status: "passed", checks: 17 })}\n`);
+const adaptiveAttemptedRanges = [];
+const sourceLimitError = new Error("Candidate snapshot exceeds the configured source limit of 5000 articles.");
+sourceLimitError.code = "CANDIDATE_SNAPSHOT_SOURCE_LIMIT";
+const adaptiveResponse = await fetchAdaptiveCompleteCandidatePages(
+  new URLSearchParams({
+    includePagination: "true",
+    completeCandidates: "true",
+    from: "2026-03-29",
+  }),
+  async (params) => {
+    const range = { from: params.get("from") || "", to: params.get("to") || "" };
+    adaptiveAttemptedRanges.push(range);
+    if (range.from === "2026-03-29" && !range.to) throw sourceLimitError;
+    if (range.from === "2026-03-29" && range.to === "2026-06-27") {
+      return {
+        items: [{ id: "older", canonicalLink: "   ", link: "https://example.test/duplicate" }],
+        pagination: { page: 1, limit: 1, total: 1, totalPages: 1 },
+      };
+    }
+    if (range.from === "2026-06-28" && !range.to) {
+      return {
+        items: [
+          { id: "duplicate", canonicalLink: "https://example.test/duplicate" },
+          { id: "fallback", canonicalLink: " ", link: "https://example.test/fallback" },
+        ],
+        pagination: { page: 1, limit: 2, total: 2, totalPages: 1 },
+      };
+    }
+    throw new Error(`Unexpected range: ${JSON.stringify(range)}`);
+  },
+  { now: new Date(2026, 8, 25, 12, 0, 0) }
+);
+assert.deepEqual(adaptiveAttemptedRanges, [
+  { from: "2026-03-29", to: "" },
+  { from: "2026-03-29", to: "2026-06-27" },
+  { from: "2026-06-28", to: "" },
+]);
+assert.deepEqual(
+  adaptiveResponse.items.map((item) => item.id),
+  ["older", "fallback"],
+  "adaptive result merging must use the first non-empty canonical link, then link, then id"
+);
+
+const recursiveAttemptedRanges = [];
+const recursiveResponse = await fetchAdaptiveCompleteCandidatePages(
+  new URLSearchParams({ completeCandidates: "true", from: "2026-09-01", to: "2026-09-25" }),
+  async (params) => {
+    const range = `${params.get("from")}:${params.get("to")}`;
+    recursiveAttemptedRanges.push(range);
+    if (range === "2026-09-01:2026-09-25" || range === "2026-09-01:2026-09-13") throw sourceLimitError;
+    return { items: [{ id: range }], pagination: { page: 1, limit: 1, total: 1, totalPages: 1 } };
+  },
+  { minimumWindowDays: 7 }
+);
+assert.deepEqual(recursiveAttemptedRanges, [
+  "2026-09-01:2026-09-25",
+  "2026-09-01:2026-09-13",
+  "2026-09-01:2026-09-07",
+  "2026-09-08:2026-09-13",
+  "2026-09-14:2026-09-25",
+]);
+assert.equal(recursiveResponse.items.length, 3);
+
+await assert.rejects(
+  () => fetchAdaptiveCompleteCandidatePages(
+    new URLSearchParams({ completeCandidates: "true", from: "2026-09-18", to: "2026-09-25" }),
+    async () => { throw sourceLimitError; },
+    { minimumWindowDays: 7 }
+  ),
+  (error) => error === sourceLimitError,
+  "source-limit failures must remain fail-closed at the minimum window"
+);
+
+const abortError = new Error("aborted");
+abortError.name = "AbortError";
+await assert.rejects(
+  () => fetchAdaptiveCompleteCandidatePages(
+    new URLSearchParams({ completeCandidates: "true", from: "2026-09-01", to: "2026-09-25" }),
+    async () => { throw abortError; }
+  ),
+  (error) => error === abortError,
+  "abort errors must not be retried or transformed"
+);
+
+const progressiveResponse = {
+  items: [{ id: "progressive" }],
+  pagination: { page: 1, limit: 1, total: 3, totalPages: 3 },
+};
+const unchangedProgressiveResponse = await fetchAdaptiveCompleteCandidatePages(
+  new URLSearchParams({ includePagination: "true", page: "1" }),
+  async () => progressiveResponse
+);
+assert.equal(
+  unchangedProgressiveResponse,
+  progressiveResponse,
+  "non-complete retrieval must retain its progressive pagination response"
+);
+
+process.stdout.write(`${JSON.stringify({ status: "passed", checks: 27 })}\n`);

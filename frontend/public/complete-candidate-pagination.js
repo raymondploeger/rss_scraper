@@ -1,3 +1,6 @@
+import { splitProfileHistoryDateRange } from "./profile-history-scope.js";
+import { getCanonicalCandidateKey } from "./search-retrieval-pagination.js";
+
 function getResponseItems(response) {
   if (Array.isArray(response?.items)) {
     return response.items;
@@ -41,4 +44,61 @@ export async function fetchCompleteCandidatePages(params, requestPage) {
       loadedPages: totalPages,
     },
   };
+}
+
+function mergeAdaptiveResponses(responses = []) {
+  const items = [];
+  const seen = new Set();
+  for (const response of responses) {
+    for (const item of getResponseItems(response)) {
+      const key = getCanonicalCandidateKey(item);
+      if (!key || key === "id:" || seen.has(key)) continue;
+      seen.add(key);
+      items.push(item);
+    }
+  }
+  return {
+    items,
+    articles: items,
+    totalCount: items.length,
+    pagination: {
+      page: 1,
+      limit: Math.max(1, items.length),
+      total: items.length,
+      totalPages: 1,
+      loadedPages: 1,
+    },
+  };
+}
+
+export async function fetchAdaptiveCompleteCandidatePages(params, requestPage, options = {}) {
+  const initialParams = new URLSearchParams(params);
+  if (initialParams.get("completeCandidates") !== "true") {
+    return fetchCompleteCandidatePages(initialParams, requestPage);
+  }
+  const attempt = async (attemptParams) => {
+    try {
+      return [await fetchCompleteCandidatePages(attemptParams, requestPage)];
+    } catch (error) {
+      if (error?.code !== "CANDIDATE_SNAPSHOT_SOURCE_LIMIT") throw error;
+      const ranges = splitProfileHistoryDateRange({
+        from: attemptParams.get("from"),
+        to: attemptParams.get("to"),
+      }, options.now, options.minimumWindowDays);
+      if (!ranges.length) throw error;
+      const responses = [];
+      for (const range of ranges) {
+        const splitParams = new URLSearchParams(attemptParams);
+        splitParams.set("from", range.from);
+        if (range.to) splitParams.set("to", range.to);
+        else splitParams.delete("to");
+        splitParams.set("page", "1");
+        splitParams.delete("candidateSnapshotId");
+        responses.push(...await attempt(splitParams));
+      }
+      return responses;
+    }
+  };
+
+  return mergeAdaptiveResponses(await attempt(new URLSearchParams(params)));
 }

@@ -20,6 +20,32 @@ function formatLocalDate(date) {
   return `${year}-${month}-${day}`;
 }
 
+function parseLocalDate(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export function splitProfileHistoryDateRange(range = {}, now = new Date(), minimumWindowDays = 7) {
+  const fromDate = parseLocalDate(range.from);
+  const latestDate = range.to ? parseLocalDate(range.to) : new Date(now);
+  if (!fromDate || !latestDate) return [];
+  latestDate.setHours(0, 0, 0, 0);
+  const spanDays = Math.round((latestDate.getTime() - fromDate.getTime()) / (24 * 60 * 60 * 1000));
+  if (spanDays <= Math.max(1, Number(minimumWindowDays) || 1)) return [];
+
+  const firstSpanDays = Math.floor(spanDays / 2);
+  const firstToDate = new Date(fromDate);
+  firstToDate.setDate(firstToDate.getDate() + firstSpanDays);
+  const secondFromDate = new Date(firstToDate);
+  secondFromDate.setDate(secondFromDate.getDate() + 1);
+  return [
+    { from: formatLocalDate(fromDate), to: formatLocalDate(firstToDate) },
+    { from: formatLocalDate(secondFromDate), to: range.to ? formatLocalDate(latestDate) : "" },
+  ];
+}
+
 export function getProfileHistoryDateRanges(scope, now = new Date(), days = getProfileHistoryLookbackDays(scope)) {
   const normalizedDays = Math.max(1, Number(days) || PROFILE_DEFAULT_LOOKBACK_DAYS);
   const latestDate = new Date(now);
