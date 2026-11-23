@@ -7,7 +7,6 @@ import {
   findArticleById,
   listArticleNoiseFeedback,
   buildBoundedCanonicalCandidateSnapshot,
-  buildBoundedCanonicalCandidateSnapshotComposite,
   listCanonicalDedupedArticles,
   listArticles as listArticleRecords,
   listDistinctArticleTopics
@@ -138,12 +137,6 @@ function parseArticleQueryList(value) {
     .filter(Boolean);
 }
 
-function parseArticleQueryValues(value) {
-  return (Array.isArray(value) ? value : [value])
-    .map((entry) => String(entry || "").trim())
-    .filter(Boolean);
-}
-
 function getCompleteCandidateSnapshotScopeKey(filters, includeDuplicates) {
   const scope = {
     topic: String(filters.topic || ""),
@@ -152,8 +145,6 @@ function getCompleteCandidateSnapshotScopeKey(filters, includeDuplicates) {
     from: filters.from ? new Date(filters.from).toISOString() : "",
     to: filters.to ? new Date(filters.to).toISOString() : "",
     search: String(filters.search || ""),
-    searchTerms: Array.isArray(filters.searchTerms) ? filters.searchTerms.map(String).sort() : [],
-    profileTopic: String(filters.profileTopic || ""),
     tag: String(filters.tag || ""),
     signalKeywords: Array.isArray(filters.signalKeywords) ? filters.signalKeywords.map(String).sort() : [],
     wishlistOnly: Boolean(filters.wishlistOnly),
@@ -225,8 +216,6 @@ export async function listArticles(request, response) {
       page = 1,
       limit = env.maxArticlePageSize,
       search,
-      searchTerms,
-      profileTopic,
       tag,
       signal,
       showDuplicates,
@@ -240,7 +229,6 @@ export async function listArticles(request, response) {
       ? String(requestedFeedId).trim()
       : await resolveFeedIdFromQuery(feed);
     const requestedFeedIds = parseArticleQueryList(feedIds);
-    const requestedSearchTerms = parseArticleQueryValues(searchTerms);
     const signalKeywords = SIGNAL_QUERY_KEYWORDS[String(signal || "").trim()] || [];
     const dateFrom = date ? startOfDay(date) : null;
     const dateTo = date ? endOfDay(date) : null;
@@ -261,8 +249,6 @@ export async function listArticles(request, response) {
       from: dateFrom || (from ? startOfDay(from) : null),
       to: dateTo || (to ? endOfDay(to) : null),
       search,
-      searchTerms: requestedSearchTerms,
-      profileTopic: String(profileTopic || "").trim(),
       tag,
       signalKeywords,
       wishlistOnly: String(wishlistOnly || "").trim().toLowerCase() === "true",
@@ -286,18 +272,11 @@ export async function listArticles(request, response) {
         candidateSnapshotId: requestedCandidateSnapshotId,
         page: pageNumber,
         limit: pageSize,
-        buildItems: async () => (requestedSearchTerms.length
-          ? buildBoundedCanonicalCandidateSnapshotComposite(filters, {
-            batchSize: env.completeCandidateSnapshotBatchSize,
-            maxCandidates: env.completeCandidateSnapshotMaxCandidates,
-            maxItems: env.completeCandidateSnapshotMaxItems,
-            dedupe: !includeDuplicates,
-          })
-          : buildBoundedCanonicalCandidateSnapshot(filters, {
-            batchSize: env.completeCandidateSnapshotBatchSize,
-            maxCandidates: env.completeCandidateSnapshotMaxCandidates,
-            dedupe: !includeDuplicates,
-          })),
+        buildItems: async () => buildBoundedCanonicalCandidateSnapshot(filters, {
+          batchSize: env.completeCandidateSnapshotBatchSize,
+          maxCandidates: env.completeCandidateSnapshotMaxCandidates,
+          dedupe: !includeDuplicates,
+        }),
       });
       items = snapshotPage.items;
       total = snapshotPage.pagination.total;
@@ -373,7 +352,7 @@ export async function listArticles(request, response) {
       error: error?.message || error,
     }));
     console.error("Articles error:", error?.stack || error);
-    if (error instanceof CandidateSnapshotError || ["CANDIDATE_SNAPSHOT_SOURCE_LIMIT", "CANDIDATE_SNAPSHOT_COMPOSITE_LIMIT"].includes(error?.code)) {
+    if (error instanceof CandidateSnapshotError || error?.code === "CANDIDATE_SNAPSHOT_SOURCE_LIMIT") {
       const status = error.code === "CANDIDATE_SNAPSHOT_UNAVAILABLE" || error.code === "CANDIDATE_SNAPSHOT_SCOPE_MISMATCH"
         ? 409
         : error.code === "CANDIDATE_SNAPSHOT_CAPACITY" || error.code === "CANDIDATE_SNAPSHOT_TOKEN_GENERATION_FAILED"
