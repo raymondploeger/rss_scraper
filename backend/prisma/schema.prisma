@@ -63,6 +63,7 @@ model Article {
   feed             Feed      @relation(fields: [feedId], references: [id], onDelete: Cascade)
   noiseFeedback    ArticleNoiseFeedback[]
   wishlistMatches  ArticleWishlistMatch[]
+  centralBankCacheEntries CentralBankCacheEntry[]
 
   @@index([pubDate(sort: Desc)])
   @@index([feedId, pubDate(sort: Desc)])
@@ -70,6 +71,41 @@ model Article {
   @@index([isDuplicate, pubDate(sort: Desc)])
   @@index([fetchStatus, createdAt(sort: Desc)])
   @@map("articles")
+}
+
+model CentralBankCacheState {
+  id            String                   @id @default("central_bank")
+  activeBuildId String?                  @unique
+  generatedAt   DateTime?
+  lastError     String                   @default("")
+  refreshGeneration Int                  @default(0)
+  leaseOwner    String?
+  leaseExpiresAt DateTime?
+  updatedAt     DateTime                 @updatedAt
+  activeBuild   CentralBankCacheBuild?   @relation("CentralBankCacheActiveBuild", fields: [activeBuildId], references: [id], onDelete: SetNull)
+
+  @@map("central_bank_cache_state")
+}
+
+model CentralBankCacheBuild {
+  id         String                    @id @default(uuid())
+  generatedAt DateTime                 @default(now())
+  entries    CentralBankCacheEntry[]
+  activeFor  CentralBankCacheState?    @relation("CentralBankCacheActiveBuild")
+
+  @@index([generatedAt(sort: Desc)])
+  @@map("central_bank_cache_builds")
+}
+
+model CentralBankCacheEntry {
+  buildId   String
+  articleId String
+  build     CentralBankCacheBuild @relation(fields: [buildId], references: [id], onDelete: Cascade)
+  article   Article               @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@id([buildId, articleId])
+  @@index([articleId])
+  @@map("central_bank_cache_entries")
 }
 
 model WishlistItem {

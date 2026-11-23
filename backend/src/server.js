@@ -4,6 +4,7 @@ import { env, envFilePath } from "./config/env.js";
 import { startScheduler } from "./services/schedulerService.js";
 import { ensureStrategicFeeds } from "./services/strategicFeedBootstrapService.js";
 import { syncFeed } from "./services/rssService.js";
+import { centralBankCacheService } from "./services/centralBankCacheService.js";
 import { spawn } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -87,6 +88,10 @@ async function bootstrapRuntime() {
   } else if (!env.schedulerEnabled) {
     markSchedulerStarted(false);
   }
+
+  void centralBankCacheService.rebuild().catch((error) => {
+    console.error("[central-bank-cache] startup rebuild failed:", error?.stack || error);
+  });
 
   console.log("Background bootstrap complete.");
 }

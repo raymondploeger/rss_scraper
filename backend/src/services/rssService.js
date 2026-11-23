@@ -14,6 +14,7 @@ import {
 import { createPollLog } from "../database/pollLogRepository.js";
 import { listFeeds as listFeedRecords, updateFeed as updateFeedRecord } from "../database/feedRepository.js";
 import { broadcast } from "./realtimeService.js";
+import { centralBankCacheService } from "./centralBankCacheService.js";
 import { articleMatchesSourceRelevanceRule, getSourceRelevanceAssessment } from "./sourceRelevanceService.js";
 import { classifyArticleForIngest } from "./articleClassificationService.js";
 import { assessDiscoveryFeedQuality } from "./discoveryFeedQualityService.js";
@@ -5904,14 +5905,23 @@ async function runFeedSync(feed) {
   }
 }
 
-export async function syncFeed(feed) {
+export async function syncFeed(feed, options = {}) {
   const syncKey = String(feed?.id || feed?.rssUrl || "");
   if (syncKey && inFlightFeedSyncs.has(syncKey)) {
     console.log(`[syncFeed] Reusing in-flight sync for ${syncKey}`);
     return inFlightFeedSyncs.get(syncKey);
   }
 
-  const promise = runFeedSync(feed).finally(() => {
+  const promise = runFeedSync(feed)
+    .then((result) => {
+      if (!options.deferCentralBankCacheRebuild) {
+        void centralBankCacheService.rebuild().catch((error) => {
+          console.error("[central-bank-cache] post-feed-sync rebuild failed:", error?.stack || error);
+        });
+      }
+      return result;
+    })
+    .finally(() => {
     if (syncKey) {
       inFlightFeedSyncs.delete(syncKey);
     }
@@ -5993,7 +6003,7 @@ export async function syncAllFeeds(options = {}) {
       console.log(
         `[syncAllFeeds] starting batch ${batchNumber}/${totalBatches} size=${batch.length} concurrency=${batchSize} trigger=${requestedTrigger} rssMb=${memoryBeforeBatch.rssMb} heapUsedMb=${memoryBeforeBatch.heapUsedMb}`
       );
-      const batchResults = await Promise.all(batch.map((feed) => syncFeed(feed)));
+      const batchResults = await Promise.all(batch.map((feed) => syncFeed(feed, { deferCentralBankCacheRebuild: true })));
       results.push(...batchResults);
       const memoryAfterBatch = getRefreshMemorySnapshot();
       console.log(
@@ -6020,6 +6030,12 @@ export async function syncAllFeeds(options = {}) {
       trigger: requestedTrigger,
       abortedForMemory,
     });
+
+    if (!abortedForMemory) {
+      void centralBankCacheService.rebuild().catch((error) => {
+        console.error("[central-bank-cache] post-sync rebuild failed:", error?.stack || error);
+      });
+    }
 
     return {
       feedsProcessed: results.length,

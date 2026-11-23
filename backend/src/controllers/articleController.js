@@ -21,6 +21,7 @@ import {
   createCompleteCandidateSnapshotStore,
   serveCompleteCandidateSnapshotRequest,
 } from "../services/completeCandidateSnapshotService.js";
+import { centralBankCacheService } from "../services/centralBankCacheService.js";
 
 const completeCandidateSnapshotStore = createCompleteCandidateSnapshotStore({
   ttlMs: env.completeCandidateSnapshotTtlMs,
@@ -29,6 +30,10 @@ const completeCandidateSnapshotStore = createCompleteCandidateSnapshotStore({
 });
 
 let articleQueryRequestCounter = 0;
+
+export async function getCentralBankCache(request, response) {
+  response.json(await centralBankCacheService.read(request.query?.scope));
+}
 
 const SIGNAL_QUERY_KEYWORDS = {
   "new-releases": ["issued", "released", "launched", "introduced", "unveiled"],
