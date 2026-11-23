@@ -9,6 +9,8 @@ import { toArticleDto } from "./presenterService.js";
 
 export const BUILT_IN_PROFILE_CACHE_IDS = Object.freeze(Object.keys(PROFILE_MODEL));
 export const PROFILE_CACHE_SCOPES = Object.freeze({ "7": 7, "30": 30, recent: 90, extended: 180 });
+export const PROFILE_CACHE_DEFAULT_PAGE_SIZE = 30;
+export const PROFILE_CACHE_MAX_PAGE_SIZE = 100;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function requireProfileId(profileId) {
@@ -27,6 +29,54 @@ function makeWindow(scope, now) {
   const normalizedScope = normalizeScope(scope);
   const lookbackDays = PROFILE_CACHE_SCOPES[normalizedScope];
   return { scope: normalizedScope, lookbackDays, timezone: "UTC", rolling: true, from: new Date(now.getTime() - lookbackDays * DAY_MS).toISOString(), to: now.toISOString() };
+}
+
+function normalizePageSize(value) {
+  const parsed = Number.parseInt(String(value || ""), 10);
+  return Math.min(PROFILE_CACHE_MAX_PAGE_SIZE, Math.max(1, Number.isFinite(parsed) ? parsed : PROFILE_CACHE_DEFAULT_PAGE_SIZE));
+}
+
+function makeCursor({ buildId, scope, article }) {
+  return Buffer.from(JSON.stringify({ buildId, scope, pubDate: new Date(article.pubDate).toISOString(), id: String(article.id) })).toString("base64url");
+}
+
+function parseCursor(value) {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(String(value), "base64url").toString("utf8"));
+    if (!parsed?.buildId || !parsed?.scope || !parsed?.pubDate || !parsed?.id || Number.isNaN(new Date(parsed.pubDate).getTime())) throw new Error("invalid");
+    return parsed;
+  } catch {
+    throw new Error("Invalid profile cache cursor");
+  }
+}
+
+function compareArticles(left, right) {
+  return new Date(right.pubDate).getTime() - new Date(left.pubDate).getTime() || String(left.id).localeCompare(String(right.id));
+}
+
+function toCompactCard(article, feed, toDto) {
+  const dto = toDto(article, feed);
+  return {
+    id: dto.id,
+    title: dto.title || "",
+    normalizedTitle: dto.normalizedTitle || "",
+    link: dto.link || "",
+    canonicalLink: dto.canonicalLink || dto.link || "",
+    pubDate: dto.pubDate || null,
+    source: dto.source || "",
+    topic: dto.topic || "",
+    feedId: dto.feedId || "",
+    thumbnail: dto.thumbnail || "",
+    summaryShort: dto.summaryShort || "",
+    author: dto.author || "",
+    clusterId: dto.clusterId || null,
+    duplicateGroupId: dto.duplicateGroupId || null,
+    isDuplicate: dto.isDuplicate === true,
+    duplicateOf: dto.duplicateOf || null,
+    language: dto.language || "unknown",
+    fetchStatus: dto.fetchStatus || "pending",
+  };
 }
 
 export function createProfileCacheService(dependencies = {}) {
@@ -83,20 +133,38 @@ export function createProfileCacheService(dependencies = {}) {
     return rebuildProfile(id);
   }
 
-  async function read(profileId, scope) {
+  async function read(profileId, scope, options = {}) {
     const id = requireProfileId(profileId);
     const requestedAt = now();
     const window = makeWindow(scope, requestedAt);
     const active = await repository.loadActive(id);
     const lastError = String(active?.lastError || await repository.getLastError?.(id) || "");
     const entries = active?.activeBuild?.entries || active?.entries || active?.articles || [];
+    const hasBuild = Boolean(active?.activeBuild || active?.generatedAt || active?.articles);
+    const state = hasBuild
+      ? (lastError || rebuildPromises.has(id) ? "stale" : "ready")
+      : rebuildPromises.has(id) ? "building" : lastError ? "error" : "never-built";
+    const buildId = String(active?.activeBuild?.id || active?.id || active?.generatedAt || "");
+    const cursor = parseCursor(options.cursor);
+    if (cursor && (cursor.buildId !== buildId || cursor.scope !== window.scope)) throw new Error("Profile cache cursor no longer matches the active cache build");
+    if (state !== "ready" && state !== "stale") {
+      return { profileId: id, state, generatedAt: active?.generatedAt || active?.activeBuild?.generatedAt || null, error: lastError || null, window, total: 0, nextCursor: null, items: [] };
+    }
     const articles = entries.map((entry) => entry.article || entry).filter(Boolean)
       .filter((article) => new Date(article.pubDate).getTime() >= new Date(window.from).getTime())
-      .sort((left, right) => new Date(right.pubDate) - new Date(left.pubDate))
-      .map((article) => toDto(article, article.feed || {}));
-    const hasBuild = Boolean(active?.activeBuild || active?.generatedAt || active?.articles);
-    const state = rebuildPromises.has(id) ? "building" : hasBuild ? (lastError ? "stale" : "ready") : lastError ? "error" : "never-built";
-    return { profileId: id, state, generatedAt: active?.generatedAt || active?.activeBuild?.generatedAt || null, error: lastError || null, window, articles };
+      .sort(compareArticles);
+    const afterCursor = cursor
+      ? articles.filter((article) => compareArticles(article, { pubDate: cursor.pubDate, id: cursor.id }) > 0)
+      : articles;
+    const pageSize = normalizePageSize(options.limit);
+    const pageArticles = afterCursor.slice(0, pageSize);
+    const items = pageArticles.map((article) => toCompactCard(article, article.feed || {}, toDto));
+    const last = pageArticles.at(-1);
+    return {
+      profileId: id, state, generatedAt: active?.generatedAt || active?.activeBuild?.generatedAt || null,
+      error: lastError || null, window, total: articles.length, items,
+      nextCursor: last && afterCursor.length > pageArticles.length ? makeCursor({ buildId, scope: window.scope, article: last }) : null,
+    };
   }
 
   function rebuildAll() {

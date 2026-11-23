@@ -15,7 +15,7 @@ import { fetchAdaptiveCompleteCandidatePages } from "./complete-candidate-pagina
 import { getBackendCandidateRetentionStrategy } from "./backend-candidate-retention-strategy.js";
 import { appendProgressiveCandidatePage, getCanonicalCandidateKey, getSearchRetrievalStrategy } from "./search-retrieval-pagination.js";
 import { shouldStartBackendQuery } from "./backend-query-loading-state.js";
-import { getPersistentProfileCacheSelection, shouldFallbackToLiveProfileArticles, shouldUseProfileCacheResponse } from "./profile-cache-client.js";
+import { getPersistentProfileCacheSelection, getProfileCachePageUrl, shouldFallbackToLiveProfileArticles, shouldUseProfileCacheResponse } from "./profile-cache-client.js";
 import {
   PROFILE_DEFAULT_LOOKBACK_DAYS,
   getProfileHistoryLookbackDays,
@@ -7635,6 +7635,7 @@ const state = {
     limit: MAX_ARTICLES_IN_MEMORY,
     progressive: false,
     hasMorePages: false,
+    profileCache: false,
   },
 };
 
@@ -58368,6 +58369,35 @@ async function loadNextProgressiveBackendArticleQueryPage() {
   }
 }
 
+async function loadNextProfileCachePage() {
+  const queryKey = state.remoteQuery.activeKey;
+  const payload = runtime.backendArticleQueryCache.get(queryKey);
+  if (!payload?.profileCache?.nextCursor || runtime.backendArticleQueryLoading) return null;
+  const requestId = ++runtime.backendArticleQueryRequestId;
+  runtime.backendArticleQueryActiveRequestId = requestId;
+  const abortController = new AbortController();
+  runtime.backendArticleQueryAbortController = abortController;
+  runtime.backendArticleQueryLoading = true;
+  try {
+    const response = await apiRequest(getProfileCachePageUrl(payload.profileCache.profileId, payload.profileCache.scope, payload.profileCache.nextCursor), { signal: abortController.signal });
+    if (requestId !== runtime.backendArticleQueryActiveRequestId || !shouldUseProfileCacheResponse(response)) return null;
+    // The profile cache is server-filtered and already ordered. Keep only this page;
+    // retaining historical pages recreates the memory pressure this endpoint avoids.
+    payload.articles = (Array.isArray(response.items) ? response.items : []).map(normalizeLoadedArticle);
+    payload.totalCount = Math.max(0, Number(response.total) || 0);
+    payload.profileCache = { ...payload.profileCache, nextCursor: response.nextCursor || null, state: response.state };
+    runtime.backendArticleQueryCache.set(queryKey, payload);
+    state.pagination.page = 1;
+    state.remoteQuery = { ...state.remoteQuery, totalCount: payload.totalCount, hasMorePages: Boolean(response.nextCursor), profileCache: true };
+    return payload;
+  } finally {
+    if (requestId === runtime.backendArticleQueryActiveRequestId) {
+      runtime.backendArticleQueryAbortController = null;
+      runtime.backendArticleQueryLoading = false;
+    }
+  }
+}
+
 async function ensureBackendArticleQueryData() {
   if (!shouldUseBackendArticleQuery()) {
     runtime.backendArticleQueryLoading = false;
@@ -58430,20 +58460,21 @@ async function ensureBackendArticleQueryData() {
   if (persistentProfileCache.eligible) {
     let cacheResponse;
     try {
-      cacheResponse = await apiRequest(`/api/article-caches/${encodeURIComponent(persistentProfileCache.profileId)}?scope=${encodeURIComponent(getPersonalDashboardHistoryScope())}`, { signal: abortController.signal });
+      cacheResponse = await apiRequest(getProfileCachePageUrl(persistentProfileCache.profileId, getPersonalDashboardHistoryScope()), { signal: abortController.signal });
     } catch (error) {
-      cacheResponse = { state: "error", error: String(error?.message || error), articles: [] };
+      cacheResponse = { state: "error", error: String(error?.message || error), items: [] };
     }
     if (requestId !== runtime.backendArticleQueryActiveRequestId) return null;
     if (shouldUseProfileCacheResponse(cacheResponse)) {
-      const articles = (Array.isArray(cacheResponse.articles) ? cacheResponse.articles : []).map(normalizeLoadedArticle);
+      const articles = (Array.isArray(cacheResponse.items) ? cacheResponse.items : []).map(normalizeLoadedArticle);
       const payload = {
-        queryKey, articles, totalCount: articles.length,
+        queryKey, articles, totalCount: Math.max(0, Number(cacheResponse.total) || 0),
+        profileCache: { profileId: persistentProfileCache.profileId, scope: cacheResponse.window?.scope || getPersonalDashboardHistoryScope(), nextCursor: cacheResponse.nextCursor || null, state: cacheResponse.state },
         retrievalStrategy: { ...retrievalStrategy, profileCache: persistentProfileCache.profileId }, progressivePageStates: [], progressiveRequestParams: [], progressiveHasMorePages: false,
         backendRequests: [{ profileCache: persistentProfileCache.profileId, state: cacheResponse.state, scope: cacheResponse.window?.scope || getPersonalDashboardHistoryScope() }],
       };
       runtime.backendArticleQueryCache.set(queryKey, payload);
-      state.remoteQuery = { activeKey: queryKey, totalCount: payload.totalCount, page: 1, limit: MAX_ARTICLES_IN_MEMORY, progressive: false, hasMorePages: false };
+      state.remoteQuery = { activeKey: queryKey, totalCount: payload.totalCount, page: 1, limit: articles.length || 1, progressive: false, hasMorePages: Boolean(cacheResponse.nextCursor), profileCache: true };
       runtime.backendArticleQueryAbortController = null;
       runtime.backendArticleQueryLoading = false;
       runtime.backendArticleQueryLoadingKey = "";
@@ -58771,13 +58802,13 @@ function renderPaginationControls(pagination) {
   }
 
   if (elements.paginationNext) {
-    const canLoadMoreResults = Boolean(state.remoteQuery.progressive && state.remoteQuery.hasMorePages && page >= totalPages);
+    const canLoadMoreResults = Boolean((state.remoteQuery.progressive || state.remoteQuery.profileCache) && state.remoteQuery.hasMorePages && page >= totalPages);
     elements.paginationNext.textContent = canLoadMoreResults ? "Load more results" : "Next";
     elements.paginationNext.disabled = !canLoadMoreResults && page >= totalPages;
     elements.paginationNext.onclick = () => {
       if (state.pagination.page >= totalPages) {
         if (canLoadMoreResults) {
-          void loadNextProgressiveBackendArticleQueryPage()
+          void (state.remoteQuery.profileCache ? loadNextProfileCachePage() : loadNextProgressiveBackendArticleQueryPage())
             .then((result) => {
               if (result) {
                 scheduleRenderArticles("pagination-load-more-results");
@@ -60503,7 +60534,13 @@ function preparePipelinePagination({
   useBackendQuery,
 } = {}) {
   const pagination = getPaginatedItems(articles);
-  if (useBackendQuery && !state.remoteQuery.progressive && !hasPersonalDashboardSelections() && Number(state.remoteQuery.totalCount) > pagination.totalCount) {
+  if (state.remoteQuery.profileCache) {
+    pagination.totalCount = Math.max(0, Number(state.remoteQuery.totalCount) || 0);
+    pagination.totalPages = 1;
+    pagination.startIndex = 0;
+    pagination.endIndex = Array.isArray(pagination.items) ? pagination.items.length : 0;
+  }
+  if (useBackendQuery && !state.remoteQuery.profileCache && !state.remoteQuery.progressive && !hasPersonalDashboardSelections() && Number(state.remoteQuery.totalCount) > pagination.totalCount) {
     pagination.totalCount = Number(state.remoteQuery.totalCount);
     pagination.totalPages = Math.max(1, Math.ceil(pagination.totalCount / pagination.pageSize));
   }
@@ -61347,6 +61384,29 @@ function resolveBackendPendingStage({ cachedQuery, queryKey, backendRequests } =
 }
 
 function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendRequests, diagnostics } = {}) {
+  if (cachedQuery?.profileCache) {
+    const cards = Array.isArray(cachedQuery.articles) ? cachedQuery.articles : [];
+    return {
+      stage: createBackendProviderStage(
+        "profile_cache_page",
+        "normalized",
+        `${cards.length} server-authoritative compact card(s)`,
+        `${cards.length} rendered without local reclassification or grouping`,
+        ["profile cache pages are already eligible and ordered"]
+      ),
+      result: {
+        articles: cards,
+        candidatePool: cards,
+        filteredRawArticles: cards,
+        groupedArticlesCount: cards.length,
+        branch: "profile-cache-page",
+        cacheKey: queryKey,
+        cacheHit: true,
+        backendRequests,
+        productionDecisionStageCounts: {},
+      },
+    };
+  }
   const vendorsProfileActive = isVendorsProfileActive();
   const candidatePoolMap = new Map();
   const activeFeedId = getActiveArticleFeedId();

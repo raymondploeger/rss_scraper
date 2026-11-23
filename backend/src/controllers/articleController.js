@@ -37,7 +37,10 @@ export function normalizeProfileCacheId(profileId) {
 
 export async function getProfileCache(request, response) {
   const requestedProfileId = normalizeProfileCacheId(request.params?.profileId);
-  response.json(await profileCacheService.read(requestedProfileId, request.query?.scope));
+  response.json(await profileCacheService.read(requestedProfileId, request.query?.scope, {
+    cursor: request.query?.cursor,
+    limit: request.query?.limit,
+  }));
 }
 
 const SIGNAL_QUERY_KEYWORDS = {

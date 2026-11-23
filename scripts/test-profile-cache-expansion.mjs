@@ -58,7 +58,7 @@ for (const profileId of profileIds) {
   const response = await service.read(profileId, "recent");
   assert.equal(response.profileId, profileId);
   assert.equal(response.state, "ready");
-  assert.deepEqual(response.articles.map((article) => article.id), [`${profileId}-article`], `${profileId} reads only its own build`);
+  assert.deepEqual(response.items.map((article) => article.id), [`${profileId}-article`], `${profileId} reads only its own build`);
   assert.equal((await service.read(profileId, "7")).window.lookbackDays, 7);
   assert.equal((await service.read(profileId, "30")).window.lookbackDays, 30);
   assert.equal((await service.read(profileId, "90")).window.lookbackDays, 90);
