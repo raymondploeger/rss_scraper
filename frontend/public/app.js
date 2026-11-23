@@ -7613,6 +7613,7 @@ const state = {
     sourceGroup: "all",
     trackedSourcesAll: true,
     date: "",
+    periodScope: "recent",
     favoritesOnly: false,
     readState: "all",
     articleIds: [],
@@ -28971,6 +28972,17 @@ function setPersonalDashboardHistoryScope(scope) {
   renderSummary();
   clearFeedRenderCaches();
   scheduleRenderArticles("personal-dashboard-history-scope", { mode: "frame" });
+}
+
+function setArticlePeriodScope(scope) {
+  const normalizedScope = normalizeProfileHistoryScope(scope);
+  if (state.filters.periodScope === normalizedScope) return;
+  cancelPendingBackendArticleQuery();
+  state.filters.periodScope = normalizedScope;
+  ensurePaginationState();
+  state.pagination.page = 1;
+  clearFeedRenderCaches();
+  scheduleRenderArticles("article-period-scope", { mode: "frame" });
 }
 
 function isSourceOnlyFeedViewActive() {
@@ -57225,7 +57237,7 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
   const hasCount = !forceLoading && (hasExplicitCount || hasDisplayedCount);
   const count = Math.max(0, hasExplicitCount ? Number(articleCount) || 0 : hasDisplayedCount ? displayedResultCount : 0);
   const countLabel = `${count} article${count === 1 ? "" : "s"}`;
-  const historyScope = getPersonalDashboardHistoryScope();
+  const historyScope = hasProfile ? getPersonalDashboardHistoryScope() : (state.filters.periodScope || "recent");
   const profileLookbackDays = getProfileHistoryLookbackDays(historyScope);
   const profileTimeframeLabel = `the last ${profileLookbackDays} days`;
 
@@ -57263,7 +57275,7 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
     elements.intelligenceFeedSummary.textContent = summary;
   }
   if (elements.profileHistoryControl && elements.profileHistoryLabel && elements.profileHistoryToggle) {
-    elements.profileHistoryControl.hidden = !hasProfile || state.filters.favoritesOnly;
+    elements.profileHistoryControl.hidden = state.filters.favoritesOnly;
     elements.profileHistoryLabel.textContent = `Showing the last ${profileLookbackDays} days`;
     if (elements.profileHistorySelect) elements.profileHistorySelect.value = historyScope;
     if (elements.articleReadFilter) elements.articleReadFilter.value = state.filters.readState || "all";
@@ -57928,6 +57940,7 @@ function getBackendArticleQueryKey() {
     signal: state.filters.signalCategory || "",
     search: state.filters.search || "",
     date: state.filters.date || "",
+    periodScope: state.filters.periodScope || "recent",
     personalDashboardInterests: Array.isArray(state.personalDashboard?.interests) ? state.personalDashboard.interests.slice().sort() : [],
     personalDashboardMode: normalizePersonalDashboardMode(state.personalDashboard?.mode),
     personalDashboardDomain: personalDomainPlan?.domain || "",
@@ -57984,6 +57997,9 @@ function applyBackendArticleQueryBaseParams(options = {}) {
     if (options.profileDateRange.to) {
       params.set("to", options.profileDateRange.to);
     }
+  } else if (!hasPersonalDashboardSelections()) {
+    const genericRange = getProfileHistoryDateRanges(state.filters.periodScope || "recent")[0];
+    if (genericRange?.from) params.set("from", genericRange.from);
   }
 
   return params;
@@ -63741,7 +63757,11 @@ function bindEvents() {
   }
   if (elements.profileHistorySelect) {
     elements.profileHistorySelect.addEventListener("change", () => {
-      setPersonalDashboardHistoryScope(elements.profileHistorySelect.value);
+      if (hasPersonalDashboardSelections()) {
+        setPersonalDashboardHistoryScope(elements.profileHistorySelect.value);
+      } else {
+        setArticlePeriodScope(elements.profileHistorySelect.value);
+      }
     });
   }
   if (elements.articleReadFilter) {
