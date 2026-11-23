@@ -4,7 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import axios from "axios";
 import { env } from "./config/env.js";
-import { createNoiseFeedback, deleteNoiseFeedback, getCentralBankCache, listArticles, listNoiseFeedback } from "./controllers/articleController.js";
+import { createNoiseFeedback, deleteNoiseFeedback, getProfileCache, listArticles, listNoiseFeedback } from "./controllers/articleController.js";
 import {
   batchImportGoogleAlertsFeeds,
   createFeed,
@@ -80,7 +80,7 @@ export function createApp() {
     });
   }));
   app.get("/api/articles", asyncHandler(listArticles));
-  app.get("/api/article-caches/central-bank", asyncHandler(getCentralBankCache));
+  app.get("/api/article-caches/:profileId", asyncHandler(getProfileCache));
   app.post("/api/articles/:articleId/noise-feedback", asyncHandler(createNoiseFeedback));
   app.delete("/api/articles/:articleId/noise-feedback", asyncHandler(deleteNoiseFeedback));
   app.get("/api/noise-feedback", asyncHandler(listNoiseFeedback));

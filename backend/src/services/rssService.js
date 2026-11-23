@@ -14,7 +14,7 @@ import {
 import { createPollLog } from "../database/pollLogRepository.js";
 import { listFeeds as listFeedRecords, updateFeed as updateFeedRecord } from "../database/feedRepository.js";
 import { broadcast } from "./realtimeService.js";
-import { centralBankCacheService } from "./centralBankCacheService.js";
+import { profileCacheService } from "./profileCacheService.js";
 import { articleMatchesSourceRelevanceRule, getSourceRelevanceAssessment } from "./sourceRelevanceService.js";
 import { classifyArticleForIngest } from "./articleClassificationService.js";
 import { assessDiscoveryFeedQuality } from "./discoveryFeedQualityService.js";
@@ -5914,9 +5914,9 @@ export async function syncFeed(feed, options = {}) {
 
   const promise = runFeedSync(feed)
     .then((result) => {
-      if (!options.deferCentralBankCacheRebuild) {
-        void centralBankCacheService.rebuild().catch((error) => {
-          console.error("[central-bank-cache] post-feed-sync rebuild failed:", error?.stack || error);
+      if (!options.deferProfileCacheRebuild && !options.deferCentralBankCacheRebuild) {
+        void profileCacheService.rebuildAll().catch((error) => {
+          console.error("[profile-cache] post-feed-sync rebuild failed:", error?.stack || error);
         });
       }
       return result;
@@ -6003,7 +6003,7 @@ export async function syncAllFeeds(options = {}) {
       console.log(
         `[syncAllFeeds] starting batch ${batchNumber}/${totalBatches} size=${batch.length} concurrency=${batchSize} trigger=${requestedTrigger} rssMb=${memoryBeforeBatch.rssMb} heapUsedMb=${memoryBeforeBatch.heapUsedMb}`
       );
-      const batchResults = await Promise.all(batch.map((feed) => syncFeed(feed, { deferCentralBankCacheRebuild: true })));
+      const batchResults = await Promise.all(batch.map((feed) => syncFeed(feed, { deferProfileCacheRebuild: true })));
       results.push(...batchResults);
       const memoryAfterBatch = getRefreshMemorySnapshot();
       console.log(
@@ -6032,8 +6032,8 @@ export async function syncAllFeeds(options = {}) {
     });
 
     if (!abortedForMemory) {
-      void centralBankCacheService.rebuild().catch((error) => {
-        console.error("[central-bank-cache] post-sync rebuild failed:", error?.stack || error);
+      void profileCacheService.rebuildAll().catch((error) => {
+        console.error("[profile-cache] post-sync rebuild failed:", error?.stack || error);
       });
     }
 

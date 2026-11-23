@@ -15,7 +15,7 @@ import { fetchAdaptiveCompleteCandidatePages } from "./complete-candidate-pagina
 import { getBackendCandidateRetentionStrategy } from "./backend-candidate-retention-strategy.js";
 import { appendProgressiveCandidatePage, getCanonicalCandidateKey, getSearchRetrievalStrategy } from "./search-retrieval-pagination.js";
 import { shouldStartBackendQuery } from "./backend-query-loading-state.js";
-import { shouldFallbackToLiveCentralBankArticles, shouldUseCentralBankCacheResponse } from "./central-bank-cache-client.js";
+import { getPersistentProfileCacheSelection, shouldFallbackToLiveProfileArticles, shouldUseProfileCacheResponse } from "./profile-cache-client.js";
 import {
   PROFILE_DEFAULT_LOOKBACK_DAYS,
   getProfileHistoryLookbackDays,
@@ -4669,7 +4669,7 @@ function getMatchingPersonalDashboardTemplateId(interests = state.personalDashbo
     return templateKey === normalizedKey;
   });
   const matchedTemplateId = matchedTemplate?.[0] || "";
-  return matchedTemplateId === "security_printer" ? "custom" : matchedTemplateId || "custom";
+  return matchedTemplateId || "custom";
 }
 
 function getPersonalDashboardRefinementInterests(interests = state.personalDashboard.interests) {
@@ -57958,13 +57958,15 @@ function getBackendArticleQueryRetrievalStrategy() {
   });
 }
 
-function shouldUseCentralBankPersistentCache() {
-  return getMatchingPersonalDashboardTemplateId(normalizePersonalDashboardInterests(state.personalDashboard.interests)) === "central_bank" &&
-    !state.filters.feedId &&
-    String(state.filters.sourceGroup || "all") === "all" &&
-    state.filters.trackedSourcesAll &&
-    !state.filters.topic && !state.filters.tag && !state.filters.signalCategory && !state.filters.search && !state.filters.date &&
-    !state.filters.favoritesOnly;
+function getCurrentPersistentProfileCacheSelection() {
+  const selectedInterests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
+  const profileId = getMatchingPersonalDashboardTemplateId(selectedInterests);
+  const templateInterests = PERSONAL_DASHBOARD_PROFILE_TEMPLATES[profileId]?.interests || [];
+  return getPersistentProfileCacheSelection({
+    profileId,
+    exactProfile: samePersonalDashboardInterestSet(selectedInterests, templateInterests),
+    filters: state.filters,
+  });
 }
 
 function applyBackendArticleQueryBaseParams(options = {}) {
@@ -58424,20 +58426,21 @@ async function ensureBackendArticleQueryData() {
   const backendCandidateLimit = personalDomainPlan && hasPersonalDashboardSelections()
     ? PERSONAL_DASHBOARD_TARGETED_MAX_ARTICLES
     : MAX_ARTICLES_IN_MEMORY;
-  if (shouldUseCentralBankPersistentCache()) {
+  const persistentProfileCache = getCurrentPersistentProfileCacheSelection();
+  if (persistentProfileCache.eligible) {
     let cacheResponse;
     try {
-      cacheResponse = await apiRequest(`/api/article-caches/central-bank?scope=${encodeURIComponent(getPersonalDashboardHistoryScope())}`, { signal: abortController.signal });
+      cacheResponse = await apiRequest(`/api/article-caches/${encodeURIComponent(persistentProfileCache.profileId)}?scope=${encodeURIComponent(getPersonalDashboardHistoryScope())}`, { signal: abortController.signal });
     } catch (error) {
       cacheResponse = { state: "error", error: String(error?.message || error), articles: [] };
     }
     if (requestId !== runtime.backendArticleQueryActiveRequestId) return null;
-    if (shouldUseCentralBankCacheResponse(cacheResponse)) {
+    if (shouldUseProfileCacheResponse(cacheResponse)) {
       const articles = (Array.isArray(cacheResponse.articles) ? cacheResponse.articles : []).map(normalizeLoadedArticle);
       const payload = {
         queryKey, articles, totalCount: articles.length,
-        retrievalStrategy: { ...retrievalStrategy, centralBankCache: true }, progressivePageStates: [], progressiveRequestParams: [], progressiveHasMorePages: false,
-        backendRequests: [{ centralBankCache: cacheResponse.state, scope: cacheResponse.window?.scope || getPersonalDashboardHistoryScope() }],
+        retrievalStrategy: { ...retrievalStrategy, profileCache: persistentProfileCache.profileId }, progressivePageStates: [], progressiveRequestParams: [], progressiveHasMorePages: false,
+        backendRequests: [{ profileCache: persistentProfileCache.profileId, state: cacheResponse.state, scope: cacheResponse.window?.scope || getPersonalDashboardHistoryScope() }],
       };
       runtime.backendArticleQueryCache.set(queryKey, payload);
       state.remoteQuery = { activeKey: queryKey, totalCount: payload.totalCount, page: 1, limit: MAX_ARTICLES_IN_MEMORY, progressive: false, hasMorePages: false };
@@ -58448,12 +58451,12 @@ async function ensureBackendArticleQueryData() {
       runtime.backendArticleQueryFailedMessage = "";
       return payload;
     }
-    if (!shouldFallbackToLiveCentralBankArticles(cacheResponse)) {
+    if (!shouldFallbackToLiveProfileArticles(cacheResponse)) {
       runtime.backendArticleQueryAbortController = null;
       runtime.backendArticleQueryLoading = false;
       runtime.backendArticleQueryLoadingKey = "";
       runtime.backendArticleQueryFailedKey = queryKey;
-      runtime.backendArticleQueryFailedMessage = cacheResponse.error || "Central Bank cache is unavailable.";
+      runtime.backendArticleQueryFailedMessage = cacheResponse.error || `${persistentProfileCache.profileId} cache is unavailable.`;
       return null;
     }
   }

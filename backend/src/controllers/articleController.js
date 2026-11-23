@@ -21,7 +21,7 @@ import {
   createCompleteCandidateSnapshotStore,
   serveCompleteCandidateSnapshotRequest,
 } from "../services/completeCandidateSnapshotService.js";
-import { centralBankCacheService } from "../services/centralBankCacheService.js";
+import { profileCacheService } from "../services/profileCacheService.js";
 
 const completeCandidateSnapshotStore = createCompleteCandidateSnapshotStore({
   ttlMs: env.completeCandidateSnapshotTtlMs,
@@ -31,8 +31,13 @@ const completeCandidateSnapshotStore = createCompleteCandidateSnapshotStore({
 
 let articleQueryRequestCounter = 0;
 
-export async function getCentralBankCache(request, response) {
-  response.json(await centralBankCacheService.read(request.query?.scope));
+export function normalizeProfileCacheId(profileId) {
+  return profileId === "central-bank" ? "central_bank" : profileId;
+}
+
+export async function getProfileCache(request, response) {
+  const requestedProfileId = normalizeProfileCacheId(request.params?.profileId);
+  response.json(await profileCacheService.read(requestedProfileId, request.query?.scope));
 }
 
 const SIGNAL_QUERY_KEYWORDS = {
