@@ -16,6 +16,7 @@ import { getBackendCandidateRetentionStrategy } from "./backend-candidate-retent
 import { appendProgressiveCandidatePage, getCanonicalCandidateKey, getSearchRetrievalStrategy } from "./search-retrieval-pagination.js";
 import { shouldStartBackendQuery } from "./backend-query-loading-state.js";
 import { getPersistentProfileCacheSelection, getProfileCachePageUrl, shouldFallbackToLiveProfileArticles, shouldUseProfileCacheResponse } from "./profile-cache-client.js";
+import { createProfileCachePaginationControl } from "./profile-cache-pagination-ui.js";
 import {
   PROFILE_DEFAULT_LOOKBACK_DAYS,
   getProfileHistoryLookbackDays,
@@ -58369,17 +58370,18 @@ async function loadNextProgressiveBackendArticleQueryPage() {
   }
 }
 
-async function loadNextProfileCachePage() {
+async function loadNextProfileCachePage(expectedCursor = null) {
   const queryKey = state.remoteQuery.activeKey;
   const payload = runtime.backendArticleQueryCache.get(queryKey);
-  if (!payload?.profileCache?.nextCursor || runtime.backendArticleQueryLoading) return null;
+  const nextCursor = payload?.profileCache?.nextCursor || null;
+  if (!nextCursor || (expectedCursor && expectedCursor !== nextCursor) || runtime.backendArticleQueryLoading) return null;
   const requestId = ++runtime.backendArticleQueryRequestId;
   runtime.backendArticleQueryActiveRequestId = requestId;
   const abortController = new AbortController();
   runtime.backendArticleQueryAbortController = abortController;
   runtime.backendArticleQueryLoading = true;
   try {
-    const response = await apiRequest(getProfileCachePageUrl(payload.profileCache.profileId, payload.profileCache.scope, payload.profileCache.nextCursor), { signal: abortController.signal });
+    const response = await apiRequest(getProfileCachePageUrl(payload.profileCache.profileId, payload.profileCache.scope, nextCursor), { signal: abortController.signal });
     if (requestId !== runtime.backendArticleQueryActiveRequestId || !shouldUseProfileCacheResponse(response)) return null;
     // The profile cache is server-filtered and already ordered. Keep only this page;
     // retaining historical pages recreates the memory pressure this endpoint avoids.
@@ -58435,7 +58437,8 @@ async function ensureBackendArticleQueryData() {
       page: 1,
       limit: cachedCandidateLimit,
       progressive: Boolean(cached.retrievalStrategy?.progressive),
-      hasMorePages: Boolean(cached.progressiveHasMorePages),
+      hasMorePages: Boolean(cached.profileCache?.nextCursor || cached.progressiveHasMorePages),
+      profileCache: Boolean(cached.profileCache),
     };
     return cached;
   }
@@ -58763,13 +58766,29 @@ function renderPaginationControls(pagination) {
   const totalPages = Number(pagination?.totalPages) || 1;
   const startDisplay = totalItems ? (Number(pagination?.startIndex) || 0) + 1 : 0;
   const endDisplay = Number(pagination?.endIndex) || 0;
+  const profileCachePayload = state.remoteQuery.profileCache
+    ? runtime.backendArticleQueryCache.get(state.remoteQuery.activeKey)?.profileCache
+    : null;
+  const profileCacheControl = profileCachePayload
+    ? createProfileCachePaginationControl({
+      response: {
+        items: Array.isArray(pagination?.items) ? pagination.items : [],
+        total: totalItems,
+        nextCursor: profileCachePayload.nextCursor,
+      },
+      fetchNextPage: (cursor) => loadNextProfileCachePage(cursor),
+    })
+    : null;
   const progressiveResultsRemain = Boolean(state.remoteQuery.progressive && state.remoteQuery.hasMorePages);
   const totalLabel = progressiveResultsRemain ? `${totalItems} loaded` : String(totalItems);
   const pageLabel = progressiveResultsRemain ? `Page ${page} of ${totalPages} loaded` : `Page ${page} of ${totalPages}`;
+  const rangeLabel = profileCacheControl
+    ? `Showing ${profileCacheControl.visibleCountLabel}`
+    : `Showing ${startDisplay}-${endDisplay} of ${totalLabel}`;
 
   container.innerHTML = `
     <div class="pagination-summary">
-      <span class="pagination-range">Showing ${startDisplay}-${endDisplay} of ${totalLabel}</span>
+      <span class="pagination-range">${rangeLabel}</span>
       <span class="pagination-status">${pageLabel}</span>
     </div>
     <div class="pagination-actions">
@@ -58802,13 +58821,15 @@ function renderPaginationControls(pagination) {
   }
 
   if (elements.paginationNext) {
-    const canLoadMoreResults = Boolean((state.remoteQuery.progressive || state.remoteQuery.profileCache) && state.remoteQuery.hasMorePages && page >= totalPages);
-    elements.paginationNext.textContent = canLoadMoreResults ? "Load more results" : "Next";
+    const canLoadMoreResults = Boolean(
+      page >= totalPages && (profileCacheControl?.canFetchNextPage || (state.remoteQuery.progressive && state.remoteQuery.hasMorePages))
+    );
+    elements.paginationNext.textContent = profileCacheControl?.canFetchNextPage ? profileCacheControl.nextLabel : canLoadMoreResults ? "Load more results" : "Next";
     elements.paginationNext.disabled = !canLoadMoreResults && page >= totalPages;
     elements.paginationNext.onclick = () => {
       if (state.pagination.page >= totalPages) {
         if (canLoadMoreResults) {
-          void (state.remoteQuery.profileCache ? loadNextProfileCachePage() : loadNextProgressiveBackendArticleQueryPage())
+          void (profileCacheControl ? profileCacheControl.fetchNextPage() : loadNextProgressiveBackendArticleQueryPage())
             .then((result) => {
               if (result) {
                 scheduleRenderArticles("pagination-load-more-results");
