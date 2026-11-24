@@ -85,12 +85,12 @@ const CONTENT_EVIDENCE_RULES = freezeDefinition({
     events: ["renew", "issu", "launch", "standard", "guideline", "security", "fraud", "digital", "biometric", "requirement", "trust service", "implementation", "joins"],
   },
   border_control: {
-    anchors: ["border", "frontex", "customs", "migration", "ees", "etias", "border police", "grenzpolizei"],
-    events: ["border check", "entry exit system", "ees", "etias", "crossing", "operation", "smuggling", "trafficking", "arrest", "seized", "surveillance", "coordination", "document inspection", "identity check"],
+    anchors: ["border", "frontex", "customs", "migration", "ees", "etias", "border police", "grenzpolizei", "border management", "integrated border management", "automated clearance"],
+    events: ["border check", "entry exit system", "ees", "etias", "crossing", "operation", "smuggling", "trafficking", "arrest", "seized", "surveillance", "coordination", "document inspection", "identity check", "border management", "integrated border management", "automated clearance"],
   },
   security_printer: {
     anchors: ["security print", "banknote", "passport", "identity document", "secure document"],
-    events: ["substrate", "ink", "hologram", "holograph", "personalization", "personalisation", "production", "manufactur", "technology"],
+    events: ["substrate", "ink", "hologram", "holograph", "personalization", "personalisation", "production", "manufactur", "technology", "pre-press", "prepress", "printing equipment", "finishing", "counterfeit"],
   },
   vendors: {
     anchors: ["identity", "biometric", "authentication", "banknote", "passport", "security print", "security document", "credential"],

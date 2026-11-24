@@ -140,6 +140,222 @@
         "profileSignalsExclude": ["border_control", "central_bank", "identity_verification", "passport_authority", "security_printer"],
         "profilePolicy": { "border_control": false, "identity_verification": false, "security_printer": false }
       }
+    },
+    {
+      "id": "eu-lisa-etias-implementation",
+      "article": {
+        "title": "eu-LISA advances ETIAS implementation readiness",
+        "contentSnippet": "The European Travel Information and Authorisation System programme prepares border authorities for launch.",
+        "topic": "General",
+        "source": "eu-LISA",
+        "feedName": "eu-LISA News"
+      },
+      "expected": {
+        "domainsInclude": ["identity_documents"],
+        "classificationsInclude": ["border_control"],
+        "profileSignalsInclude": ["border_control"],
+        "profilePolicy": { "border_control": true }
+      }
+    },
+    {
+      "id": "frontex-integrated-border-management",
+      "article": {
+        "title": "Frontex updates integrated border management strategy",
+        "contentSnippet": "The strategy coordinates border-management operations across the EU.",
+        "topic": "General",
+        "source": "Frontex",
+        "feedName": "Frontex Newsroom"
+      },
+      "expected": {
+        "domainsInclude": ["identity_documents"],
+        "classificationsInclude": ["border_control"],
+        "profileSignalsInclude": ["border_control"],
+        "profilePolicy": { "border_control": true }
+      }
+    },
+    {
+      "id": "hong-kong-automated-clearance",
+      "article": {
+        "title": "Hong Kong Immigration expands automated clearance service",
+        "contentSnippet": "Eligible travellers can use automated clearance at immigration control points.",
+        "topic": "General",
+        "source": "Hong Kong Immigration Department",
+        "feedName": "Hong Kong Immigration Department News"
+      },
+      "expected": {
+        "domainsInclude": ["identity_documents"],
+        "classificationsInclude": ["border_control"],
+        "profileSignalsInclude": ["border_control"],
+        "profilePolicy": { "border_control": true }
+      }
+    },
+    {
+      "id": "nigeria-passport-booklet-factory",
+      "article": {
+        "title": "Nigeria opens passport booklet factory",
+        "contentSnippet": "The new factory will manufacture and personalise passport booklets locally.",
+        "topic": "General",
+        "source": "Nigeria Immigration Service",
+        "feedName": "Nigeria Immigration Service News"
+      },
+      "expected": {
+        "domainsInclude": ["identity_documents", "security_printing"],
+        "classificationsInclude": ["passports", "security_features"],
+        "profileSignalsInclude": ["passport_authority", "security_printer"],
+        "profilePolicy": { "security_printer": true }
+      }
+    },
+    {
+      "id": "kb-jura-security-printing-workflow",
+      "article": {
+        "title": "K+B and JURA complete security printing workflow",
+        "contentSnippet": "The workflow connects pre-press, printing equipment and finishing for secure documents.",
+        "topic": "General",
+        "source": "K+B",
+        "feedName": "Jura Security Printing"
+      },
+      "expected": {
+        "domainsInclude": ["identity_documents", "security_printing"],
+        "classificationsInclude": ["identity_documents", "security_features"],
+        "profileSignalsInclude": ["passport_authority", "security_printer"],
+        "profilePolicy": { "security_printer": true }
+      }
+    },
+    {
+      "id": "optical-security-counterfeit-race",
+      "article": {
+        "title": "Optical security race against counterfeit banknotes",
+        "contentSnippet": "Document-security specialists develop optical security for counterfeit deterrence.",
+        "topic": "General",
+        "source": "Security Printing",
+        "feedName": "Security Printing News"
+      },
+      "expected": {
+        "domainsInclude": ["banknotes", "security_printing"],
+        "classificationsInclude": ["banknotes", "security_features"],
+        "profileSignalsInclude": ["central_bank", "security_printer"],
+        "profilePolicy": { "security_printer": true }
+      }
+    },
+    {
+      "id": "thanksgiving-airport-queues",
+      "article": {
+        "title": "Thanksgiving airport queues expected to lengthen",
+        "contentSnippet": "Travellers are advised to arrive early for holiday flights.",
+        "topic": "General",
+        "source": "Travel News",
+        "feedName": "Travel News"
+      },
+      "expected": {
+        "classificationsExclude": ["border_control"],
+        "profileSignalsExclude": ["border_control"],
+        "profilePolicy": { "border_control": false }
+      }
+    },
+    {
+      "id": "tsa-airport-mdl-screening",
+      "article": {
+        "title": "TSA expands airport mDL screening",
+        "contentSnippet": "Passengers can present a mobile driver license at airport security screening.",
+        "topic": "General",
+        "source": "TSA",
+        "feedName": "TSA News"
+      },
+      "expected": {
+        "classificationsExclude": ["border_control"],
+        "profileSignalsExclude": ["border_control"],
+        "profilePolicy": { "border_control": false }
+      }
+    },
+    {
+      "id": "passport-renewal-consumer-service",
+      "article": {
+        "title": "How to renew your passport online",
+        "contentSnippet": "Consumers can check passport renewal processing times.",
+        "topic": "General",
+        "source": "Travel Advice",
+        "feedName": "Travel Advice"
+      },
+      "expected": {
+        "classificationsExclude": ["security_features"],
+        "profileSignalsExclude": ["security_printer"],
+        "profilePolicy": { "security_printer": false }
+      }
+    },
+    {
+      "id": "ovd-emergency-mirror",
+      "article": {
+        "title": "OvD emergency mirror installed at station",
+        "contentSnippet": "Emergency services tested a new roadside mirror.",
+        "topic": "General",
+        "source": "Local News",
+        "feedName": "OVD"
+      },
+      "expected": {
+        "classificationsExclude": ["security_features"],
+        "profileSignalsExclude": ["security_printer"],
+        "profilePolicy": { "security_printer": false }
+      }
+    },
+    {
+      "id": "dovid-personal-name",
+      "article": {
+        "title": "Dovid Cohen appointed to local council",
+        "contentSnippet": "Dovid will lead the community services committee.",
+        "topic": "General",
+        "source": "Local News",
+        "feedName": "Local News"
+      },
+      "expected": {
+        "classificationsExclude": ["security_features"],
+        "profileSignalsExclude": ["security_printer"],
+        "profilePolicy": { "security_printer": false }
+      }
+    },
+    {
+      "id": "de-la-rue-award",
+      "article": {
+        "title": "De La Rue wins employer award",
+        "contentSnippet": "The company received recognition for its workplace programme.",
+        "topic": "General",
+        "source": "De La Rue",
+        "feedName": "De La Rue News"
+      },
+      "expected": {
+        "classificationsExclude": ["security_features"],
+        "profileSignalsExclude": ["security_printer"],
+        "profilePolicy": { "security_printer": false }
+      }
+    },
+    {
+      "id": "banknote-destruction-equipment",
+      "article": {
+        "title": "Banknote destruction equipment auction announced",
+        "contentSnippet": "Surplus currency destruction equipment will be sold to bidders.",
+        "topic": "General",
+        "source": "Auction News",
+        "feedName": "Auction News"
+      },
+      "expected": {
+        "classificationsExclude": ["security_features"],
+        "profileSignalsExclude": ["security_printer"],
+        "profilePolicy": { "security_printer": false }
+      }
+    },
+    {
+      "id": "security-printing-without-local-corroboration",
+      "article": {
+        "title": "Security printing association announces annual dinner",
+        "contentSnippet": "Members will meet to discuss the programme and elect officers.",
+        "topic": "General",
+        "source": "Industry Events",
+        "feedName": "Industry Events"
+      },
+      "expected": {
+        "classificationsExclude": ["security_features"],
+        "profileSignalsExclude": ["security_printer"],
+        "profilePolicy": { "security_printer": false }
+      }
     }
   ]
 }
