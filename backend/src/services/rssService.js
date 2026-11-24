@@ -59,6 +59,47 @@ const parser = new Parser({
 
 const inFlightFeedSyncs = new Map();
 let allFeedsSyncPromise = null;
+export function createProfileCacheRefreshTrigger({ rebuildAll, onError = console.error }) {
+  let activeRefresh = null;
+  let requestedGeneration = 0;
+  let rebuiltGeneration = 0;
+
+  async function rebuild() {
+    try {
+      await rebuildAll();
+    } catch (error) {
+      onError(error);
+    }
+  }
+
+  function request() {
+    requestedGeneration += 1;
+    if (activeRefresh) return activeRefresh;
+
+    activeRefresh = (async () => {
+      try {
+        while (rebuiltGeneration < requestedGeneration) {
+          const targetGeneration = requestedGeneration;
+          await rebuild();
+          rebuiltGeneration = targetGeneration;
+        }
+      } finally {
+        activeRefresh = null;
+      }
+    })();
+
+    return activeRefresh;
+  }
+
+  return { request };
+}
+
+const profileCacheRefreshTrigger = createProfileCacheRefreshTrigger({
+  rebuildAll: () => profileCacheService.rebuildAll(),
+  onError: (error) => {
+    console.error("[profile-cache] post-feed-sync rebuild failed:", error?.stack || error);
+  },
+});
 const thumbnailEnrichmentQueue = [];
 const queuedThumbnailEnrichmentIds = new Set();
 const activeThumbnailEnrichmentIds = new Set();
@@ -5915,9 +5956,7 @@ export async function syncFeed(feed, options = {}) {
   const promise = runFeedSync(feed)
     .then((result) => {
       if (!options.deferProfileCacheRebuild && !options.deferCentralBankCacheRebuild) {
-        void profileCacheService.rebuildAll().catch((error) => {
-          console.error("[profile-cache] post-feed-sync rebuild failed:", error?.stack || error);
-        });
+        void profileCacheRefreshTrigger.request();
       }
       return result;
     })
