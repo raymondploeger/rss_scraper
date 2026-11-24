@@ -143,4 +143,40 @@ for (const filters of [{ feedId: "feed" }, { sourceGroup: "Vendors" }, { search:
 assert.equal(getPersistentProfileCacheSelection({ profileId: "custom", filters: {} }).eligible, false, "custom combinations are never cached");
 assert.equal(getPersistentProfileCacheSelection({ profileId: "passport_authority", exactProfile: false, filters: {} }).eligible, false, "a built-in template with custom refinements is not cached");
 
-process.stdout.write(`${JSON.stringify({ status: "passed", checks: 72 })}\n`);
+// Regression: the Industry Research profile persisted by older clients retained
+// the display spelling "All" for the all-tracked-sources scope. It is the exact
+// built-in set (including the legacy document_counterfeiting interest alias),
+// not a custom or combined profile, and must remain cache-first.
+const storedResearcherProfile = {
+  interests: [
+    "banknotes",
+    "passports",
+    "id_cards",
+    "document_counterfeiting",
+    "icao",
+    "digital_identity",
+    "identity_verification",
+  ],
+  activeTemplateId: "researcher",
+  activeTemplateIds: ["researcher"],
+};
+assert.deepEqual(
+  getPersistentProfileCacheSelection({
+    profileId: storedResearcherProfile.activeTemplateId,
+    exactProfile: true,
+    filters: { sourceGroup: "All", trackedSourcesAll: true },
+  }),
+  { profileId: "researcher", eligible: true },
+  "the exact stored Industry Research profile with all tracked sources stays cache-first"
+);
+assert.equal(
+  getPersistentProfileCacheSelection({
+    profileId: "researcher",
+    exactProfile: false,
+    filters: { sourceGroup: "All", trackedSourcesAll: true },
+  }).eligible,
+  false,
+  "a refined or multi-template Industry Research state remains ineligible for the cache"
+);
+
+process.stdout.write(`${JSON.stringify({ status: "passed", checks: 74 })}\n`);

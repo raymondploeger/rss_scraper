@@ -25,8 +25,12 @@ export function advanceProfileCachePage(current, { requestKey, response = {} } =
 
 export function getPersistentProfileCacheSelection({ profileId, exactProfile = true, filters = {} } = {}) {
   const exactBuiltIn = BUILT_IN_PROFILE_CACHE_IDS.includes(profileId);
+  // Older persisted source selections used the display spelling "All". It has
+  // the same unscoped meaning as the canonical storage value "all".
+  const sourceGroup = String(filters.sourceGroup || "").trim();
+  const hasNonAllSourceGroup = Boolean(sourceGroup && sourceGroup.toLowerCase() !== "all");
   const hasFilter = Boolean(
-    filters.feedId || filters.sourceGroup && filters.sourceGroup !== "all" || filters.topic || filters.tag ||
+    filters.feedId || hasNonAllSourceGroup || filters.topic || filters.tag ||
     filters.signalCategory || filters.search || filters.date || filters.favoritesOnly || filters.trackedSourcesAll !== true
   );
   return { profileId, eligible: exactBuiltIn && exactProfile && !hasFilter };

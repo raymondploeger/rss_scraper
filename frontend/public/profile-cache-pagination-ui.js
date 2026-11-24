@@ -15,3 +15,7 @@ export function createProfileCachePaginationControl({ response = {}, fetchNextPa
     fetchNextPage: () => canFetchNextPage ? fetchNextPage(nextCursor) : Promise.resolve(null),
   };
 }
+
+export function shouldPreserveProfileCachePagination({ profileCache = false } = {}) {
+  return Boolean(profileCache);
+}

@@ -16,7 +16,7 @@ import { getBackendCandidateRetentionStrategy } from "./backend-candidate-retent
 import { appendProgressiveCandidatePage, getCanonicalCandidateKey, getSearchRetrievalStrategy } from "./search-retrieval-pagination.js";
 import { shouldStartBackendQuery } from "./backend-query-loading-state.js";
 import { getPersistentProfileCacheSelection, getProfileCachePageUrl, shouldFallbackToLiveProfileArticles, shouldUseProfileCacheResponse } from "./profile-cache-client.js";
-import { createProfileCachePaginationControl } from "./profile-cache-pagination-ui.js";
+import { createProfileCachePaginationControl, shouldPreserveProfileCachePagination } from "./profile-cache-pagination-ui.js";
 import {
   PROFILE_DEFAULT_LOOKBACK_DAYS,
   getProfileHistoryLookbackDays,
@@ -28030,7 +28030,8 @@ function loadSourceSelectionPreferences() {
   }
 
   const feedId = String(stored.feedId || "").trim();
-  const sourceGroup = String(stored.sourceGroup || "all").trim() || "all";
+  const storedSourceGroup = String(stored.sourceGroup || "all").trim() || "all";
+  const sourceGroup = storedSourceGroup.toLowerCase() === "all" ? "all" : storedSourceGroup;
   state.filters.feedId = feedId;
   state.filters.sourceOnly = Boolean(feedId && stored.sourceOnly !== false);
   state.filters.sourceGroup = sourceGroup;
@@ -62088,6 +62089,7 @@ function renderArticles() {
       Number(articlePagination?.totalCount || 0) > 0;
     const baseArticlePagination = hasStalePaginationMismatch ? getPaginatedItems([]) : articlePagination;
     const explicitSourceGroupActive =
+      !shouldPreserveProfileCachePagination({ profileCache: state.remoteQuery.profileCache }) &&
       (String(state.filters.sourceGroup || "all").trim() !== "all" || state.filters.trackedSourcesAll) &&
       !state.filters.feedId;
     const sourceGroupVisibleCount = renderedArticleSource.length;
