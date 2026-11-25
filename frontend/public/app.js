@@ -17,6 +17,7 @@ import { appendProgressiveCandidatePage, getCanonicalCandidateKey, getSearchRetr
 import { shouldStartBackendQuery } from "./backend-query-loading-state.js";
 import { getPersistentProfileCacheSelection, getProfileCachePageUrl, shouldFallbackToLiveProfileArticles, shouldUseProfileCacheResponse } from "./profile-cache-client.js";
 import { createProfileCachePaginationControl, shouldPreserveProfileCachePagination } from "./profile-cache-pagination-ui.js";
+import { filterProfileCachePageForLocalFeedback } from "./profile-cache-local-feedback.js";
 import {
   PROFILE_DEFAULT_LOOKBACK_DAYS,
   getAvailableArticleHistoryScopes,
@@ -61422,19 +61423,23 @@ function resolveBackendPendingStage({ cachedQuery, queryKey, backendRequests } =
 function normalizeBackendProviderResultStage({ cachedQuery, queryKey, backendRequests, diagnostics } = {}) {
   if (cachedQuery?.profileCache) {
     const cards = Array.isArray(cachedQuery.articles) ? cachedQuery.articles : [];
+    const locallyVisibleCards = filterProfileCachePageForLocalFeedback(cards, {
+      isHiddenExactArticle: isHiddenNoiseArticle,
+      isBlockedByFeedbackRule: isArticleBlockedByNoiseFeedbackRule,
+    });
     return {
       stage: createBackendProviderStage(
         "profile_cache_page",
         "normalized",
-        `${cards.length} server-authoritative compact card(s)`,
-        `${cards.length} rendered without local reclassification or grouping`,
-        ["profile cache pages are already eligible and ordered"]
+        `${cards.length} server-authoritative compact card(s), ${locallyVisibleCards.length} locally visible`,
+        `${locallyVisibleCards.length} rendered without local reclassification or grouping`,
+        ["profile cache pages retain server eligibility and ordering after local feedback exclusions"]
       ),
       result: {
-        articles: cards,
-        candidatePool: cards,
-        filteredRawArticles: cards,
-        groupedArticlesCount: cards.length,
+        articles: locallyVisibleCards,
+        candidatePool: locallyVisibleCards,
+        filteredRawArticles: locallyVisibleCards,
+        groupedArticlesCount: locallyVisibleCards.length,
         branch: "profile-cache-page",
         cacheKey: queryKey,
         cacheHit: true,
