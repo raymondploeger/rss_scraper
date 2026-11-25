@@ -17,6 +17,7 @@ import { broadcast } from "../services/realtimeService.js";
 import { isRuntimeReady } from "../services/runtimeState.js";
 import axios from "axios";
 import * as cheerio from "cheerio";
+import { isRetiredGenericAggregateRssUrl } from "../../../frontend/public/feed-retirement-policy.js";
 
 const parser = new Parser({ timeout: env.requestTimeoutMs });
 
@@ -240,6 +241,9 @@ export async function createFeed(request, response) {
     }
 
     const resolvedFeedUrl = await resolveSourceUrl(rssUrl, normalizedSourceType);
+    if (isRetiredGenericAggregateRssUrl(resolvedFeedUrl)) {
+      return response.status(400).json({ error: "This retired generic aggregate feed cannot be added." });
+    }
     const duplicate = await findFeedByRssUrl(resolvedFeedUrl);
     if (duplicate) {
       return response.status(409).json({ error: "This source is already in the dashboard." });
@@ -314,6 +318,11 @@ export async function batchImportGoogleAlertsFeeds(request, response) {
 
       if (!isGoogleAlertsRssUrl(resolvedFeedUrl)) {
         invalid.push({ lineNumber, name, rssUrl, topic, reason: "Resolved URL is not a Google Alerts RSS feed." });
+        continue;
+      }
+
+      if (isRetiredGenericAggregateRssUrl(resolvedFeedUrl)) {
+        invalid.push({ lineNumber, name, rssUrl: resolvedFeedUrl, topic, reason: "This retired generic aggregate feed cannot be imported." });
         continue;
       }
 
@@ -420,6 +429,9 @@ export async function updateFeed(request, response) {
       const duplicate = await findFeedByRssUrl(resolvedFeedUrl);
       if (duplicate && duplicate.id !== feedId) {
         return response.status(409).json({ error: "This source is already in the dashboard." });
+      }
+      if (isRetiredGenericAggregateRssUrl(resolvedFeedUrl)) {
+        return response.status(400).json({ error: "This retired generic aggregate feed cannot be used." });
       }
       nextValues.rssUrl = resolvedFeedUrl;
     }

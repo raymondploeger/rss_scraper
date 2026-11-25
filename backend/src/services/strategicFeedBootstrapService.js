@@ -5,6 +5,10 @@ import {
   updateFeed as updateFeedRecord,
 } from "../database/feedRepository.js";
 import { deleteArticlesByFeedId } from "../database/articleRepository.js";
+import {
+  isRetiredGenericAggregateRssUrl,
+  RETIRED_GENERIC_AGGREGATE_RSS_URLS,
+} from "../../../frontend/public/feed-retirement-policy.js";
 
 function buildGoogleNewsRssUrl(query) {
   const encodedQuery = encodeURIComponent(String(query || "").trim());
@@ -804,6 +808,39 @@ const RETIRED_STRATEGIC_FEEDS = [
   },
 ];
 
+export async function retireExactGenericAggregateFeeds({
+  findFeedByRssUrl: findByRssUrl = findFeedByRssUrl,
+  updateFeedRecord: updateRecord = updateFeedRecord,
+} = {}) {
+  let retired = 0;
+  let failed = 0;
+
+  for (const rssUrl of RETIRED_GENERIC_AGGREGATE_RSS_URLS) {
+    try {
+      const existing = await findByRssUrl(rssUrl);
+      if (!existing || existing.isActive === false) {
+        continue;
+      }
+
+      await updateRecord(existing.id, {
+        isActive: false,
+        lastStatus: "idle",
+        lastError: null,
+      });
+      retired += 1;
+      console.log(`[strategic-feeds] retired exact generic aggregate feed rssUrl=${rssUrl}`);
+    } catch (error) {
+      failed += 1;
+      console.error(
+        `[strategic-feeds] Failed to retire exact generic aggregate feed (${rssUrl}):`,
+        error?.stack || error
+      );
+    }
+  }
+
+  return { retired, failed };
+}
+
 export async function ensureStrategicFeeds() {
   let created = 0;
   let updated = 0;
@@ -811,6 +848,10 @@ export async function ensureStrategicFeeds() {
   let failed = 0;
   let retired = 0;
   const feedsNeedingInitialSync = [];
+
+  const exactGenericRetirement = await retireExactGenericAggregateFeeds();
+  retired += exactGenericRetirement.retired;
+  failed += exactGenericRetirement.failed;
 
   for (const definition of RETIRED_STRATEGIC_FEEDS) {
     try {
@@ -845,6 +886,11 @@ export async function ensureStrategicFeeds() {
 
   for (const definition of PHASE_ONE_STRATEGIC_FEEDS) {
     try {
+      if (isRetiredGenericAggregateRssUrl(definition.rssUrl)) {
+        skipped += 1;
+        console.log(`[strategic-feeds] skipped retired generic aggregate feed rssUrl=${definition.rssUrl}`);
+        continue;
+      }
       const existingByUrl = await findFeedByRssUrl(definition.rssUrl);
       const existing = existingByUrl || await findFeedByName(definition.name);
       if (!existing) {

@@ -1,6 +1,7 @@
 import { getDatabase } from "../config/db.js";
 import { env } from "../config/env.js";
 import { mapArticleRecord, toIsoString } from "./helpers.js";
+import { RETIRED_GENERIC_AGGREGATE_RSS_URLS } from "../../../frontend/public/feed-retirement-policy.js";
 
 const wishlistMatchesInclude = {
   wishlistMatches: {
@@ -52,6 +53,16 @@ export function buildArticleWhere(filters = {}) {
           { title: { endsWith: "DMV official site", mode: "insensitive" } },
           { feed: { rssUrl: { startsWith: "https://rssdmv-production.up.railway.app/feeds/" } } },
         ],
+      },
+    });
+  }
+
+  if (filters.excludeRetiredGenericAggregateFeeds) {
+    andConditions.push({
+      NOT: {
+        feed: {
+          rssUrl: { in: RETIRED_GENERIC_AGGREGATE_RSS_URLS },
+        },
       },
     });
   }

@@ -1,3 +1,5 @@
+import { isRetiredGenericAggregateFeed } from "../../../frontend/public/feed-retirement-policy.js";
+
 // These URL targets are created by social-share widgets, not by publishers as
 // article permalinks. Reject them globally so a parser mistake cannot make a
 // login or share page look like content from an otherwise good source.
@@ -3106,6 +3108,15 @@ function findGlobalNonArticleLinkMatches(article) {
 }
 
 export function getSourceRelevanceAssessment(feed, article) {
+  if (isRetiredGenericAggregateFeed(feed)) {
+    return {
+      accepted: false,
+      rule: null,
+      includedTerms: [],
+      excludedTerms: [],
+      reason: "retired-feed-identity",
+    };
+  }
   const rule = getSourceRelevanceRule(feed);
   const globalNonArticleLinkMatches = findGlobalNonArticleLinkMatches(article);
   if (globalNonArticleLinkMatches.length) {

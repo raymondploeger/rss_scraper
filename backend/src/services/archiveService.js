@@ -87,6 +87,7 @@ export function createArchiveService({ repository, now = () => new Date() }) {
         since: cutoff,
         excludeDuplicates: true,
         excludeArchiveLinkOnlyPlaceholders: true,
+        excludeRetiredGenericAggregateFeeds: true,
         archiveSearch: search,
       };
       const [items, total] = await Promise.all([

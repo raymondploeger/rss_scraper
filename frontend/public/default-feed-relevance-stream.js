@@ -2,6 +2,7 @@ import {
   assessDefaultFeedRelevance,
   shouldApplyDefaultFeedRelevanceGate,
 } from "./default-feed-relevance-policy.js?v=20261118-noise-feedback-ux-014";
+import { isRetiredGenericAggregateFeed } from "./feed-retirement-policy.js";
 
 /**
  * The default-stream policy belongs at the boundary between candidate filtering
@@ -15,11 +16,16 @@ export function filterDefaultFeedRelevanceBeforeGrouping(articles, {
   assess = assessDefaultFeedRelevance,
 } = {}) {
   const candidates = Array.isArray(articles) ? articles : [];
-  if (!shouldApplyDefaultFeedRelevanceGate({ hasProfile, hasExplicitFeedOrSource })) {
+  if (hasProfile) {
     return candidates;
   }
 
-  return candidates.flatMap((article) => {
+  const admittedCandidates = candidates.filter((article) => !isRetiredGenericAggregateFeed(resolveFeed(article)));
+  if (!shouldApplyDefaultFeedRelevanceGate({ hasProfile, hasExplicitFeedOrSource })) {
+    return admittedCandidates;
+  }
+
+  return admittedCandidates.flatMap((article) => {
     const groupedSources = Array.isArray(article?.sources) && article.sources.length
       ? article.sources
       : null;
@@ -31,9 +37,10 @@ export function filterDefaultFeedRelevanceBeforeGrouping(articles, {
     // A cached/backend candidate can already carry a reconciled event group.
     // Filter its members too: grouping may otherwise promote a rejected member
     // as the displayed primary after this boundary has run.
-    const relevantSources = groupedSources.filter((sourceArticle) =>
-      assess(sourceArticle, resolveFeed(sourceArticle)).accepted
-    );
+    const relevantSources = groupedSources.filter((sourceArticle) => {
+      const sourceFeed = resolveFeed(sourceArticle);
+      return !isRetiredGenericAggregateFeed(sourceFeed) && assess(sourceArticle, sourceFeed).accepted;
+    });
     if (!relevantSources.length) {
       return [];
     }
