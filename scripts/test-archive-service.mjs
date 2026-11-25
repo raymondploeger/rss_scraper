@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createArchiveService } from "../backend/src/services/archiveService.js";
+import { buildArticleWhere } from "../backend/src/database/articleRepository.js";
 
 const records = [
   { id: "c", pubDate: "2026-11-24T10:00:00.000Z", title: "Third", source: "Gamma", link: "https://example.test/c", feedName: "Feed C", feedId: "feed-c", topic: "Security", isDuplicate: false },
@@ -17,6 +18,30 @@ const service = createArchiveService({
     countArchiveArticles: async () => records.length,
   },
 });
+
+let archiveFilters;
+const placeholderSafeService = createArchiveService({
+  now: () => new Date("2026-11-25T12:00:00.000Z"),
+  repository: {
+    listArchivePage: async ({ filters, limit }) => {
+      archiveFilters = filters;
+      return records.slice(0, limit);
+    },
+    countArchiveArticles: async (filters) => {
+      archiveFilters = filters;
+      return records.length;
+    },
+  },
+});
+await placeholderSafeService.read({ scope: "30", limit: "2" });
+assert.equal(archiveFilters.excludeArchiveLinkOnlyPlaceholders, true, "archive excludes only link-only DMV placeholder records, not DMV news generally");
+assert.ok(
+  buildArticleWhere({ excludeArchiveLinkOnlyPlaceholders: true }).AND?.some((condition) =>
+    condition.NOT?.AND?.some((entry) => entry.title?.endsWith === "DMV official site") &&
+    condition.NOT?.AND?.some((entry) => entry.feed?.rssUrl?.startsWith === "https://rssdmv-production.up.railway.app/feeds/")
+  ),
+  "repository excludes only the known DMV link-only official-site placeholders"
+);
 
 const first = await service.read({ scope: "30", limit: "2" });
 assert.equal(first.total, 3, "archive reports a true complete total");

@@ -65,7 +65,11 @@ export function createArchiveService({ repository, now = () => new Date() }) {
       const limit = parseLimit(query.limit);
       const cursor = decodeCursor(query.cursor, scope);
       const cutoff = new Date(now().getTime() - scope * 24 * 60 * 60 * 1000);
-      const filters = { since: cutoff, excludeDuplicates: true };
+      const filters = {
+        since: cutoff,
+        excludeDuplicates: true,
+        excludeArchiveLinkOnlyPlaceholders: true,
+      };
       const [items, total] = await Promise.all([
         repository.listArchivePage({ filters, cursor, limit: limit + 1 }),
         repository.countArchiveArticles(filters),

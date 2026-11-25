@@ -45,6 +45,17 @@ export function buildArticleWhere(filters = {}) {
     where.isDuplicate = false;
   }
 
+  if (filters.excludeArchiveLinkOnlyPlaceholders) {
+    andConditions.push({
+      NOT: {
+        AND: [
+          { title: { endsWith: "DMV official site", mode: "insensitive" } },
+          { feed: { rssUrl: { startsWith: "https://rssdmv-production.up.railway.app/feeds/" } } },
+        ],
+      },
+    });
+  }
+
   if (filters.onlyDuplicates) {
     where.isDuplicate = true;
   }
