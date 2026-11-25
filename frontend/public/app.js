@@ -19,6 +19,7 @@ import { getPersistentProfileCacheSelection, getProfileCachePageUrl, shouldFallb
 import { createProfileCachePaginationControl, shouldPreserveProfileCachePagination } from "./profile-cache-pagination-ui.js";
 import { filterProfileCachePageForLocalFeedback } from "./profile-cache-local-feedback.js";
 import { getArchiveModeState, getNextArchivePageState, normalizeArchiveScope, shouldApplyArchiveResponse } from "./archive-mode.js";
+import { normalizeArchiveCard } from "./archive-card.js";
 import {
   PROFILE_DEFAULT_LOOKBACK_DAYS,
   getAvailableArticleHistoryScopes,
@@ -26854,6 +26855,7 @@ function getPreferredArticleImageSrc(article) {
 }
 
 function getArticleImageSrc(article) {
+  if (article?.isArchiveCard && !article.thumbnail) return PLACEHOLDER_IMAGE;
   return getPreferredArticleImageSrc(article) || getArticleFallbackImageSrc(article);
 }
 
@@ -57724,7 +57726,12 @@ function renderArticleCard(article) {
     noiseButton.setAttribute("aria-label", `Mark as noise: ${article.title || "article"}`);
   }
   setArticleShareButtonState(shareActions, article);
-  renderArticleDecisionReceipt(whyArticle, article);
+  if (article?.isArchiveCard) {
+    whyArticle.hidden = true;
+    whyArticle.removeAttribute("open");
+  } else {
+    renderArticleDecisionReceipt(whyArticle, article);
+  }
 
   if (card && isGroupedSourcesExpanded && groupedSources.length) {
     card.classList.add("article-card--sources-expanded");
@@ -57743,7 +57750,7 @@ function renderArticleCard(article) {
     image.src = PLACEHOLDER_IMAGE;
   };
 
-  topic.textContent = getArticleCardTopic(article);
+  topic.textContent = article?.isArchiveCard ? article.topic : getArticleCardTopic(article);
   source.textContent = article.source || "Unknown source";
   date.textContent = formatDate(article.pubDate);
   title.textContent = article.title || "Untitled article";
@@ -57988,7 +57995,7 @@ async function renderArchiveMode() {
   try {
     const response = await apiRequest(`/api/archive?${params.toString()}`, { signal: abortController.signal });
     if (!shouldApplyArchiveResponse({ requestId, activeRequestId: runtime.archiveActiveRequestId, requested: state.filters.archiveMode, hasProfile: hasPersonalDashboardSelections(), favoritesOnly: state.filters.favoritesOnly, requestScope: mode.scope, requestCursor: mode.cursor, scope: state.filters.archiveScope, cursor: state.filters.archiveCursor })) return false;
-    const items = (Array.isArray(response?.items) ? response.items : []).map(normalizeLoadedArticle);
+    const items = (Array.isArray(response?.items) ? response.items : []).map(normalizeArchiveCard);
     const visibleItems = items.filter(isArchiveArticleLocallyVisible);
     elements.articlesGrid.classList.remove("is-grouped-feed-view");
     elements.articlesGrid.replaceChildren(...visibleItems.map((article) => renderArticleCard(article)));
