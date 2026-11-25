@@ -18,6 +18,7 @@ export function normalizeArchiveCard(article = {}) {
     sourceName: source,
     feedId,
     topic: String(article?.topic || "").trim() || "General",
+    thumbnail: String(article?.thumbnail || "").trim(),
     isArchiveCard: true,
   };
 }

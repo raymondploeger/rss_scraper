@@ -53,6 +53,7 @@ function toCompactArchiveCard(article) {
     sourceName: String(article.feedName || article.source || "Unknown source"),
     feedId: String(article.feedId || ""),
     topic: String(article.topic || ""),
+    thumbnail: String(article.thumbnail || ""),
     link: String(article.canonicalLink || article.link || ""),
     pubDate: new Date(article.pubDate).toISOString(),
   };

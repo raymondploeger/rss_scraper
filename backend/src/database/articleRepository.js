@@ -464,7 +464,7 @@ export async function listArchivePage({ filters = {}, cursor = null, limit = 30 
     where,
     orderBy: [{ pubDate: "desc" }, { id: "desc" }],
     take: Math.min(50, Math.max(1, Number(limit) || 30)),
-    select: { id: true, title: true, source: true, feedName: true, feedId: true, topic: true, link: true, canonicalLink: true, pubDate: true },
+    select: { id: true, title: true, source: true, feedName: true, feedId: true, topic: true, thumbnail: true, link: true, canonicalLink: true, pubDate: true },
   });
 }
 

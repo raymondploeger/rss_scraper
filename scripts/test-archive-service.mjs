@@ -46,7 +46,7 @@ assert.ok(
 const first = await service.read({ scope: "30", limit: "2" });
 assert.equal(first.total, 3, "archive reports a true complete total");
 assert.deepEqual(first.items.map(({ id }) => id), ["c", "b"], "archive is stable by pubDate then id descending");
-assert.deepEqual(Object.keys(first.items[0]).sort(), ["feedId", "id", "link", "pubDate", "source", "sourceName", "title", "topic"], "archive returns only the compact fields needed by the normal card renderer");
+assert.deepEqual(Object.keys(first.items[0]).sort(), ["feedId", "id", "link", "pubDate", "source", "sourceName", "thumbnail", "title", "topic"], "archive returns only the compact fields needed by the normal card renderer");
 assert.deepEqual({ feedId: first.items[0].feedId, topic: first.items[0].topic }, { feedId: "feed-c", topic: "Security" }, "archive preserves the normal card's feed and topic labels");
 assert.ok(first.nextCursor, "first compact page has an opaque cursor");
 

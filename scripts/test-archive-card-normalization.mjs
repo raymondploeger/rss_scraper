@@ -28,6 +28,7 @@ assert.deepEqual(card, {
   sourceName: "Example Publisher",
   feedId: "feed-17",
   topic: "Identity",
+  thumbnail: "https://example.test/image.jpg",
   isArchiveCard: true,
 }, "archive cards retain only the stable card/action identity and display fields");
 
