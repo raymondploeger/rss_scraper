@@ -18,7 +18,7 @@ import { shouldStartBackendQuery } from "./backend-query-loading-state.js";
 import { getPersistentProfileCacheSelection, getProfileCachePageUrl, shouldFallbackToLiveProfileArticles, shouldUseProfileCacheResponse } from "./profile-cache-client.js";
 import { createProfileCachePaginationControl, shouldPreserveProfileCachePagination } from "./profile-cache-pagination-ui.js";
 import { filterProfileCachePageForLocalFeedback } from "./profile-cache-local-feedback.js";
-import { getArchiveModeState, getNextArchivePageState, normalizeArchiveScope, shouldApplyArchiveResponse } from "./archive-mode.js";
+import { getArchiveModeState, getNextArchivePageState, normalizeArchiveScope, normalizeArchiveSearch, shouldApplyArchiveResponse } from "./archive-mode.js";
 import { normalizeArchiveCard } from "./archive-card.js";
 import {
   PROFILE_DEFAULT_LOOKBACK_DAYS,
@@ -48658,7 +48658,10 @@ function clearArticleViewFiltersForFavoritesMode() {
 }
 
 function clearArticleViewFiltersForArchiveMode() {
+  const archiveSearch = state.filters.search;
   clearArticleViewFiltersForFavoritesMode();
+  state.filters.search = archiveSearch;
+  if (elements.searchFilter) elements.searchFilter.value = archiveSearch;
   state.filters.sourceGroup = "all";
   state.filters.trackedSourcesAll = true;
   if (elements.feedPanelSearch) elements.feedPanelSearch.value = "";
@@ -57260,7 +57263,7 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
 
   const interests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const hasProfile = interests.length > 0;
-  const archiveMode = getArchiveModeState({ requested: state.filters.archiveMode, hasProfile, favoritesOnly: state.filters.favoritesOnly, scope: state.filters.archiveScope, cursor: state.filters.archiveCursor });
+  const archiveMode = getArchiveModeState({ requested: state.filters.archiveMode, hasProfile, favoritesOnly: state.filters.favoritesOnly, scope: state.filters.archiveScope, cursor: state.filters.archiveCursor, search: state.filters.search });
   if (hasProfile && state.filters.archiveMode) {
     state.filters.archiveMode = false;
     state.filters.archiveCursor = null;
@@ -57295,9 +57298,12 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
   if (archiveMode.active) {
     eyebrow = "Archive";
     title = `${archiveMode.scope}-day archive`;
+    const archiveDescription = archiveMode.search
+      ? `complete ${archiveMode.scope}-day archive matching “${archiveMode.search}”`
+      : `complete ${archiveMode.scope}-day archive`;
     summary = hasCount
-      ? `${countLabel} in the complete ${archiveMode.scope}-day archive. Search is not available in Archive Phase 1.`
-      : `Loading the complete ${archiveMode.scope}-day archive. Search is not available in Archive Phase 1...`;
+      ? `${countLabel} in the ${archiveDescription}.`
+      : `Loading the ${archiveDescription}...`;
   }
 
   if (state.filters.favoritesOnly) {
@@ -57982,7 +57988,7 @@ function isArchiveArticleLocallyVisible(article) {
 }
 
 async function renderArchiveMode() {
-  const mode = getArchiveModeState({ requested: state.filters.archiveMode, hasProfile: hasPersonalDashboardSelections(), favoritesOnly: state.filters.favoritesOnly, scope: state.filters.archiveScope, cursor: state.filters.archiveCursor });
+  const mode = getArchiveModeState({ requested: state.filters.archiveMode, hasProfile: hasPersonalDashboardSelections(), favoritesOnly: state.filters.favoritesOnly, scope: state.filters.archiveScope, cursor: state.filters.archiveCursor, search: state.filters.search });
   if (!mode.active) return false;
   cancelPendingArchiveRequest();
   const requestId = ++runtime.archiveRequestId;
@@ -57992,9 +57998,10 @@ async function renderArchiveMode() {
   renderSkeletons();
   const params = new URLSearchParams({ scope: String(mode.scope), limit: "30" });
   if (mode.cursor) params.set("cursor", mode.cursor);
+  if (mode.search) params.set("q", mode.search);
   try {
     const response = await apiRequest(`/api/archive?${params.toString()}`, { signal: abortController.signal });
-    if (!shouldApplyArchiveResponse({ requestId, activeRequestId: runtime.archiveActiveRequestId, requested: state.filters.archiveMode, hasProfile: hasPersonalDashboardSelections(), favoritesOnly: state.filters.favoritesOnly, requestScope: mode.scope, requestCursor: mode.cursor, scope: state.filters.archiveScope, cursor: state.filters.archiveCursor })) return false;
+    if (!shouldApplyArchiveResponse({ requestId, activeRequestId: runtime.archiveActiveRequestId, requested: state.filters.archiveMode, hasProfile: hasPersonalDashboardSelections(), favoritesOnly: state.filters.favoritesOnly, requestScope: mode.scope, requestCursor: mode.cursor, requestSearch: mode.search, scope: state.filters.archiveScope, cursor: state.filters.archiveCursor, search: state.filters.search })) return false;
     const items = (Array.isArray(response?.items) ? response.items : []).map(normalizeArchiveCard);
     const visibleItems = items.filter(isArchiveArticleLocallyVisible);
     elements.articlesGrid.classList.remove("is-grouped-feed-view");
@@ -58006,7 +58013,7 @@ async function renderArchiveMode() {
       pagination.innerHTML = `<div class="pagination-summary"><span class="pagination-range">Showing ${visibleItems.length} of ${Number(response?.total) || 0}</span><span class="pagination-status">Archive page</span></div><div class="pagination-actions"><button class="ghost-button pagination-button" type="button">Next</button></div>`;
       const next = pagination.querySelector("button"); next.disabled = !response?.nextCursor;
       next.onclick = () => {
-        if (!shouldApplyArchiveResponse({ requestId, activeRequestId: runtime.archiveActiveRequestId, requested: state.filters.archiveMode, hasProfile: hasPersonalDashboardSelections(), favoritesOnly: state.filters.favoritesOnly, requestScope: mode.scope, requestCursor: mode.cursor, scope: state.filters.archiveScope, cursor: state.filters.archiveCursor })) return;
+        if (!shouldApplyArchiveResponse({ requestId, activeRequestId: runtime.archiveActiveRequestId, requested: state.filters.archiveMode, hasProfile: hasPersonalDashboardSelections(), favoritesOnly: state.filters.favoritesOnly, requestScope: mode.scope, requestCursor: mode.cursor, requestSearch: mode.search, scope: state.filters.archiveScope, cursor: state.filters.archiveCursor, search: state.filters.search })) return;
         state.filters.archiveCursor = getNextArchivePageState(mode, response.nextCursor).cursor;
         scheduleRenderArticles("archive-next-page", { mode: "frame" });
       };
@@ -62055,7 +62062,7 @@ function renderArticlesFallback(error) {
 
 function renderArticles() {
   runtime.renderedFavoriteArticleLookup.clear();
-  const archiveMode = getArchiveModeState({ requested: state.filters.archiveMode, hasProfile: hasPersonalDashboardSelections(), favoritesOnly: state.filters.favoritesOnly, scope: state.filters.archiveScope, cursor: state.filters.archiveCursor });
+  const archiveMode = getArchiveModeState({ requested: state.filters.archiveMode, hasProfile: hasPersonalDashboardSelections(), favoritesOnly: state.filters.favoritesOnly, scope: state.filters.archiveScope, cursor: state.filters.archiveCursor, search: state.filters.search });
   if (state.filters.favoritesOnly) {
     state.filters.archiveMode = false;
     state.filters.archiveCursor = null;
@@ -63328,6 +63335,9 @@ function bindEvents() {
 
   const debouncedSearchRender = debounce((value) => {
     clearExactArticleFilter();
+    if (state.filters.archiveMode && normalizeArchiveSearch(state.filters.search) !== normalizeArchiveSearch(value)) {
+      state.filters.archiveCursor = null;
+    }
     state.filters.search = value;
     scheduleRenderArticles("search-filter", { mode: "frame" });
   }, 250);

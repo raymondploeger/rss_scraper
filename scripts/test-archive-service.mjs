@@ -43,6 +43,17 @@ assert.ok(
   "repository excludes only the known DMV link-only official-site placeholders"
 );
 
+await placeholderSafeService.read({ scope: "30", q: "  Bank   Gamma  " });
+assert.equal(archiveFilters.archiveSearch, "Bank Gamma", "archive search normalizes whitespace before passing its bounded query to the repository");
+assert.deepEqual(
+  buildArticleWhere({ archiveSearch: "bank gamma" }).AND?.filter((condition) => condition.OR),
+  [
+    { OR: [{ title: { contains: "bank", mode: "insensitive" } }, { source: { contains: "bank", mode: "insensitive" } }, { feedName: { contains: "bank", mode: "insensitive" } }] },
+    { OR: [{ title: { contains: "gamma", mode: "insensitive" } }, { source: { contains: "gamma", mode: "insensitive" } }, { feedName: { contains: "gamma", mode: "insensitive" } }] },
+  ],
+  "archive search is a safe AND-token match limited to title and source fields"
+);
+
 const first = await service.read({ scope: "30", limit: "2" });
 assert.equal(first.total, 3, "archive reports a true complete total");
 assert.deepEqual(first.items.map(({ id }) => id), ["c", "b"], "archive is stable by pubDate then id descending");
@@ -65,6 +76,17 @@ await assert.rejects(
   () => service.read({ scope: "90", cursor: first.nextCursor }),
   /does not match the requested archive scope/,
   "cursor is scoped to its request parameters"
+);
+const searched = await service.read({ scope: "30", limit: "2", q: "Third" });
+await assert.rejects(
+  () => service.read({ scope: "30", q: "Second", cursor: searched.nextCursor }),
+  /does not match the requested archive scope or search query/,
+  "a cursor cannot be reused for a different archive search"
+);
+await assert.rejects(
+  () => service.read({ scope: "30", q: "x".repeat(201) }),
+  /search query must be 200 characters or fewer/,
+  "archive search query size is bounded"
 );
 await assert.rejects(() => service.read({ scope: "7" }), /scope must be one of 30, 90, or 180/);
 

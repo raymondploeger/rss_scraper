@@ -93,6 +93,17 @@ export function buildArticleWhere(filters = {}) {
     });
   }
 
+  const archiveSearchTokens = String(filters.archiveSearch || "").trim().split(/\s+/).filter(Boolean);
+  for (const token of archiveSearchTokens) {
+    andConditions.push({
+      OR: [
+        { title: { contains: token, mode: "insensitive" } },
+        { source: { contains: token, mode: "insensitive" } },
+        { feedName: { contains: token, mode: "insensitive" } },
+      ],
+    });
+  }
+
   if (filters.tag) {
     where.keywords = {
       has: String(filters.tag).trim(),
