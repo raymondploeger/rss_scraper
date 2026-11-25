@@ -57253,11 +57253,13 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
   const profileLookbackDays = getProfileHistoryLookbackDays(historyScope);
   const profileTimeframeLabel = `the last ${profileLookbackDays} days`;
 
-  let eyebrow = "Live Stream";
-  let title = "Latest articles";
+  let eyebrow = "Recent overview";
+  let title = "Recent overview";
   let summary = hasCount
-    ? count ? `${countLabel} available` : "No articles match the current selection"
-    : "Loading articles...";
+    ? count
+      ? `${countLabel} in a fast, filtered overview of the selected ${profileLookbackDays} days — not the full archive`
+      : `No articles match this fast, filtered overview of the selected ${profileLookbackDays} days — not the full archive`
+    : `Loading a fast, filtered overview of the selected ${profileLookbackDays} days — not the full archive...`;
 
   if (state.filters.favoritesOnly) {
     eyebrow = "Saved intelligence";
@@ -57278,7 +57280,9 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
   } else if (hasSource) {
     eyebrow = "Tracked Source Feed";
     title = sourceLabel;
-    summary = hasCount ? `${countLabel} recently loaded from selected sources` : "Loading articles from selected sources...";
+    summary = hasCount
+      ? `${countLabel} in a fast, filtered overview of the selected ${profileLookbackDays} days from selected sources — not the full archive`
+      : `Loading a fast, filtered overview of the selected ${profileLookbackDays} days from selected sources — not the full archive...`;
   }
 
   elements.intelligenceFeedEyebrow.textContent = eyebrow;
