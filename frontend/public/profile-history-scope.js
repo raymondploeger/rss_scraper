@@ -1,4 +1,6 @@
 export const PROFILE_DEFAULT_LOOKBACK_DAYS = 90;
+const GENERIC_ARTICLE_HISTORY_SCOPES = Object.freeze(["7", "30"]);
+const PROFILE_ARTICLE_HISTORY_SCOPES = Object.freeze(["7", "30", "recent", "extended"]);
 
 export function normalizeProfileHistoryScope(value) {
   const normalized = String(value || "").trim().toLowerCase();
@@ -6,6 +8,15 @@ export function normalizeProfileHistoryScope(value) {
   return normalized === "extended" || normalized === "older" || normalized === "all" || normalized === "180"
     ? "extended"
     : "recent";
+}
+
+export function getAvailableArticleHistoryScopes({ hasActiveProfile = false } = {}) {
+  return hasActiveProfile ? PROFILE_ARTICLE_HISTORY_SCOPES : GENERIC_ARTICLE_HISTORY_SCOPES;
+}
+
+export function normalizeArticleHistoryScopeForUi(value, { hasActiveProfile = false } = {}) {
+  const normalized = normalizeProfileHistoryScope(value);
+  return hasActiveProfile || GENERIC_ARTICLE_HISTORY_SCOPES.includes(normalized) ? normalized : "30";
 }
 
 export function getProfileHistoryLookbackDays(scope) {
