@@ -463,6 +463,12 @@
                 </select>
                 <button id="profile-history-toggle" class="profile-history-toggle" type="button"></button>
               </div>
+              <div id="archive-control" class="profile-history-control" hidden>
+                <span class="profile-history-label">Archive</span>
+                <label class="sr-only" for="archive-scope-select">Archive period</label>
+                <select id="archive-scope-select" class="profile-history-select"><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="180">Last 180 days</option></select>
+                <button id="archive-mode-toggle" class="profile-history-toggle" type="button">Browse archive</button>
+              </div>
               <div id="intelligence-feed-context" class="intelligence-feed-context" aria-label="Active feed context"></div>
               <p id="connection-status" class="status-line">Connecting to live updates...</p>
             </div>

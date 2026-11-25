@@ -9,6 +9,8 @@ import {
   buildBoundedCanonicalCandidateSnapshot,
   listCanonicalDedupedArticles,
   listArticles as listArticleRecords,
+  listArchivePage,
+  countArchiveArticles,
   listDistinctArticleTopics
 } from "../database/articleRepository.js";
 import { env } from "../config/env.js";
@@ -22,12 +24,14 @@ import {
   serveCompleteCandidateSnapshotRequest,
 } from "../services/completeCandidateSnapshotService.js";
 import { profileCacheService } from "../services/profileCacheService.js";
+import { ArchiveRequestError, createArchiveService } from "../services/archiveService.js";
 
 const completeCandidateSnapshotStore = createCompleteCandidateSnapshotStore({
   ttlMs: env.completeCandidateSnapshotTtlMs,
   maxSnapshots: env.completeCandidateSnapshotMaxSnapshots,
   maxItems: env.completeCandidateSnapshotMaxItems,
 });
+const archiveService = createArchiveService({ repository: { listArchivePage, countArchiveArticles } });
 
 let articleQueryRequestCounter = 0;
 
@@ -41,6 +45,18 @@ export async function getProfileCache(request, response) {
     cursor: request.query?.cursor,
     limit: request.query?.limit,
   }));
+}
+
+export async function listArchive(request, response) {
+  try {
+    response.json(await archiveService.read(request.query));
+  } catch (error) {
+    if (error instanceof ArchiveRequestError) {
+      response.status(error.status).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
 }
 
 const SIGNAL_QUERY_KEYWORDS = {

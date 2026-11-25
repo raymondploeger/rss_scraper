@@ -435,6 +435,32 @@ export async function countArticles(filters = {}) {
   });
 }
 
+export async function listArchivePage({ filters = {}, cursor = null, limit = 30 } = {}) {
+  const prisma = getDatabase();
+  const where = buildArticleWhere(filters);
+  if (cursor) {
+    where.AND = [
+      ...(Array.isArray(where.AND) ? where.AND : []),
+      {
+        OR: [
+          { pubDate: { lt: new Date(cursor.pubDate) } },
+          { pubDate: new Date(cursor.pubDate), id: { lt: String(cursor.id) } },
+        ],
+      },
+    ];
+  }
+  return prisma.article.findMany({
+    where,
+    orderBy: [{ pubDate: "desc" }, { id: "desc" }],
+    take: Math.min(50, Math.max(1, Number(limit) || 30)),
+    select: { id: true, title: true, source: true, feedName: true, feedId: true, topic: true, link: true, canonicalLink: true, pubDate: true },
+  });
+}
+
+export async function countArchiveArticles(filters = {}) {
+  return countArticles(filters);
+}
+
 export async function listDistinctArticleTopics() {
   const prisma = getDatabase();
   const rows = await prisma.article.findMany({

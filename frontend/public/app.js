@@ -18,6 +18,7 @@ import { shouldStartBackendQuery } from "./backend-query-loading-state.js";
 import { getPersistentProfileCacheSelection, getProfileCachePageUrl, shouldFallbackToLiveProfileArticles, shouldUseProfileCacheResponse } from "./profile-cache-client.js";
 import { createProfileCachePaginationControl, shouldPreserveProfileCachePagination } from "./profile-cache-pagination-ui.js";
 import { filterProfileCachePageForLocalFeedback } from "./profile-cache-local-feedback.js";
+import { getArchiveModeState, getNextArchivePageState, normalizeArchiveScope, shouldApplyArchiveResponse } from "./archive-mode.js";
 import {
   PROFILE_DEFAULT_LOOKBACK_DAYS,
   getAvailableArticleHistoryScopes,
@@ -7619,6 +7620,9 @@ const state = {
     trackedSourcesAll: true,
     date: "",
     periodScope: "30",
+    archiveMode: false,
+    archiveScope: 30,
+    archiveCursor: null,
     favoritesOnly: false,
     readState: "all",
     articleIds: [],
@@ -7684,6 +7688,9 @@ const runtime = {
   backendArticleQueryLoadingKey: "",
   backendArticleQueryFailedKey: "",
   backendArticleQueryFailedMessage: "",
+  archiveRequestId: 0,
+  archiveActiveRequestId: 0,
+  archiveAbortController: null,
   filterPipelineRenderId: 0,
   filterDecisionTraceMap: new Map(),
   personalDashboardScoreMap: new Map(),
@@ -7743,6 +7750,9 @@ const elements = {
   profileHistorySelect: document.getElementById("profile-history-select"),
   articleReadFilter: document.getElementById("article-read-filter"),
   profileHistoryToggle: document.getElementById("profile-history-toggle"),
+  archiveControl: document.getElementById("archive-control"),
+  archiveScopeSelect: document.getElementById("archive-scope-select"),
+  archiveModeToggle: document.getElementById("archive-mode-toggle"),
   welcomeDialog: document.getElementById("welcome-dialog"),
   welcomeDismissButton: document.getElementById("welcome-dismiss-button"),
   welcomeWizardProgress: document.getElementById("welcome-wizard-progress"),
@@ -27618,6 +27628,10 @@ function handleArticleReadButton(button) {
 }
 
 function setFavoritesOnlyFilter(enabled) {
+  if (enabled) {
+    state.filters.archiveMode = false;
+    state.filters.archiveCursor = null;
+  }
   state.filters.favoritesOnly = Boolean(enabled);
   renderSummary();
   renderFavoritesPanel();
@@ -48641,6 +48655,15 @@ function clearArticleViewFiltersForFavoritesMode() {
   renderDmvModeIndicator();
 }
 
+function clearArticleViewFiltersForArchiveMode() {
+  clearArticleViewFiltersForFavoritesMode();
+  state.filters.sourceGroup = "all";
+  state.filters.trackedSourcesAll = true;
+  if (elements.feedPanelSearch) elements.feedPanelSearch.value = "";
+  if (elements.feedVisibilityFilter) elements.feedVisibilityFilter.value = "all";
+  syncFilterUx();
+}
+
 function applyFavoritesArticleFilter() {
   if (!getFavoriteArticlesCount()) {
     renderSummary();
@@ -48649,6 +48672,8 @@ function applyFavoritesArticleFilter() {
   const nextEnabled = !state.filters.favoritesOnly;
   if (nextEnabled) {
     clearArticleViewFiltersForFavoritesMode();
+    state.filters.archiveMode = false;
+    state.filters.archiveCursor = null;
   } else {
     clearExactArticleFilter();
   }
@@ -57233,6 +57258,11 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
 
   const interests = normalizePersonalDashboardInterests(state.personalDashboard.interests);
   const hasProfile = interests.length > 0;
+  const archiveMode = getArchiveModeState({ requested: state.filters.archiveMode, hasProfile, favoritesOnly: state.filters.favoritesOnly, scope: state.filters.archiveScope, cursor: state.filters.archiveCursor });
+  if (hasProfile && state.filters.archiveMode) {
+    state.filters.archiveMode = false;
+    state.filters.archiveCursor = null;
+  }
   const profileDisplay = getPersonalDashboardProfileDisplay(interests);
   const selectedFeed = state.filters.feedId ? resolveFeedByIdentity(state.filters.feedId) : null;
   const sourceGroup = String(state.filters.sourceGroup || "all").trim() || "all";
@@ -57260,6 +57290,13 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
       ? `${countLabel} in a fast, filtered overview of the selected ${profileLookbackDays} days — not the full archive`
       : `No articles match this fast, filtered overview of the selected ${profileLookbackDays} days — not the full archive`
     : `Loading a fast, filtered overview of the selected ${profileLookbackDays} days — not the full archive...`;
+  if (archiveMode.active) {
+    eyebrow = "Archive";
+    title = `${archiveMode.scope}-day archive`;
+    summary = hasCount
+      ? `${countLabel} in the complete ${archiveMode.scope}-day archive. Search is not available in Archive Phase 1.`
+      : `Loading the complete ${archiveMode.scope}-day archive. Search is not available in Archive Phase 1...`;
+  }
 
   if (state.filters.favoritesOnly) {
     eyebrow = "Saved intelligence";
@@ -57306,6 +57343,11 @@ function updateIntelligenceFeedHeader(articleCount = null, forceLoading = false)
       ? `Show last ${PROFILE_DEFAULT_LOOKBACK_DAYS} days`
       : "Load older articles";
     elements.profileHistoryToggle.dataset.profileHistoryScope = historyScope === "extended" ? "recent" : "extended";
+  }
+  if (elements.archiveControl) {
+    elements.archiveControl.hidden = hasProfile || state.filters.favoritesOnly;
+    if (elements.archiveScopeSelect) elements.archiveScopeSelect.value = String(archiveMode.scope);
+    if (elements.archiveModeToggle) elements.archiveModeToggle.textContent = archiveMode.active ? "Return to recent" : "Browse archive";
   }
 
   const fragment = document.createDocumentFragment();
@@ -57917,6 +57959,58 @@ function renderBackendArticleQueryFailure(message) {
   emptyState.className = "empty-state";
   emptyState.textContent = message;
   elements.articlesGrid.appendChild(emptyState);
+}
+
+function cancelPendingArchiveRequest() {
+  runtime.archiveActiveRequestId = ++runtime.archiveRequestId;
+  runtime.archiveAbortController?.abort();
+  runtime.archiveAbortController = null;
+}
+
+function isArchiveArticleLocallyVisible(article) {
+  if (isHiddenNoiseArticle(article) || isArticleBlockedByNoiseFeedbackRule(article)) return false;
+  if (state.filters.readState === "read") return isArticleRead(article);
+  if (state.filters.readState === "unread") return !isArticleRead(article);
+  return true;
+}
+
+async function renderArchiveMode() {
+  const mode = getArchiveModeState({ requested: state.filters.archiveMode, hasProfile: hasPersonalDashboardSelections(), favoritesOnly: state.filters.favoritesOnly, scope: state.filters.archiveScope, cursor: state.filters.archiveCursor });
+  if (!mode.active) return false;
+  cancelPendingArchiveRequest();
+  const requestId = ++runtime.archiveRequestId;
+  runtime.archiveActiveRequestId = requestId;
+  const abortController = new AbortController();
+  runtime.archiveAbortController = abortController;
+  renderSkeletons();
+  const params = new URLSearchParams({ scope: String(mode.scope), limit: "30" });
+  if (mode.cursor) params.set("cursor", mode.cursor);
+  try {
+    const response = await apiRequest(`/api/archive?${params.toString()}`, { signal: abortController.signal });
+    if (!shouldApplyArchiveResponse({ requestId, activeRequestId: runtime.archiveActiveRequestId, requested: state.filters.archiveMode, hasProfile: hasPersonalDashboardSelections(), favoritesOnly: state.filters.favoritesOnly, requestScope: mode.scope, requestCursor: mode.cursor, scope: state.filters.archiveScope, cursor: state.filters.archiveCursor })) return false;
+    const items = (Array.isArray(response?.items) ? response.items : []).map(normalizeLoadedArticle);
+    const visibleItems = items.filter(isArchiveArticleLocallyVisible);
+    elements.articlesGrid.classList.remove("is-grouped-feed-view");
+    elements.articlesGrid.replaceChildren(...visibleItems.map((article) => renderArticleCard(article)));
+    setArticleResultCount(response?.total || 0);
+    const pagination = ensurePaginationControlsElement();
+    if (pagination) {
+      pagination.hidden = false;
+      pagination.innerHTML = `<div class="pagination-summary"><span class="pagination-range">Showing ${visibleItems.length} of ${Number(response?.total) || 0}</span><span class="pagination-status">Archive page</span></div><div class="pagination-actions"><button class="ghost-button pagination-button" type="button">Next</button></div>`;
+      const next = pagination.querySelector("button"); next.disabled = !response?.nextCursor;
+      next.onclick = () => {
+        if (!shouldApplyArchiveResponse({ requestId, activeRequestId: runtime.archiveActiveRequestId, requested: state.filters.archiveMode, hasProfile: hasPersonalDashboardSelections(), favoritesOnly: state.filters.favoritesOnly, requestScope: mode.scope, requestCursor: mode.cursor, scope: state.filters.archiveScope, cursor: state.filters.archiveCursor })) return;
+        state.filters.archiveCursor = getNextArchivePageState(mode, response.nextCursor).cursor;
+        scheduleRenderArticles("archive-next-page", { mode: "frame" });
+      };
+    }
+    return true;
+  } catch (error) {
+    if (requestId !== runtime.archiveActiveRequestId) return false;
+    throw error;
+  } finally {
+    if (requestId === runtime.archiveActiveRequestId) runtime.archiveAbortController = null;
+  }
 }
 
 function shouldUseBackendArticleQuery() {
@@ -61954,10 +62048,19 @@ function renderArticlesFallback(error) {
 
 function renderArticles() {
   runtime.renderedFavoriteArticleLookup.clear();
+  const archiveMode = getArchiveModeState({ requested: state.filters.archiveMode, hasProfile: hasPersonalDashboardSelections(), favoritesOnly: state.filters.favoritesOnly, scope: state.filters.archiveScope, cursor: state.filters.archiveCursor });
   if (state.filters.favoritesOnly) {
+    state.filters.archiveMode = false;
+    state.filters.archiveCursor = null;
+    cancelPendingArchiveRequest();
     renderFavoritesOnlyArticles();
     return;
   }
+  if (archiveMode.active) {
+    void renderArchiveMode().catch((error) => renderBackendArticleQueryFailure(error?.message || "Failed to load archive."));
+    return;
+  }
+  cancelPendingArchiveRequest();
   const shouldDebugFeedRender = DEBUG_FEED_FILTER;
   const shouldDebugPersonalDashboard = DEBUG_PERSONAL_DASHBOARD && hasPersonalDashboardSelections();
   const feedRenderStartedAt = shouldDebugFeedRender ? performance.now() : 0;
@@ -63914,6 +64017,22 @@ function bindEvents() {
       } else {
         setArticlePeriodScope(elements.profileHistorySelect.value);
       }
+    });
+  }
+  if (elements.archiveScopeSelect) {
+    elements.archiveScopeSelect.addEventListener("change", () => {
+      state.filters.archiveScope = normalizeArchiveScope(elements.archiveScopeSelect.value); state.filters.archiveCursor = null;
+      if (state.filters.archiveMode) scheduleRenderArticles("archive-scope", { mode: "frame" });
+    });
+  }
+  if (elements.archiveModeToggle) {
+    elements.archiveModeToggle.addEventListener("click", () => {
+      if (hasPersonalDashboardSelections()) return;
+      state.filters.archiveMode = !state.filters.archiveMode;
+      state.filters.archiveCursor = null;
+      if (state.filters.archiveMode) clearArticleViewFiltersForArchiveMode();
+      updateIntelligenceFeedHeader(null, state.filters.archiveMode);
+      scheduleRenderArticles("archive-mode-toggle", { mode: "frame" });
     });
   }
   if (elements.articleReadFilter) {
