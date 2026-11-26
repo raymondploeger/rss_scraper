@@ -8,6 +8,7 @@ import {
 import { parseCleanupDiscoveryFeedQualityArgs } from "../backend/scripts/cleanup-discovery-feed-quality.js";
 
 const googleAlertUrl = "https://www.google.com/alerts/feeds/example";
+const securityFeaturesGoogleAlertUrl = "https://www.google.com/alerts/feeds/08517052598424393837/1632750707624179991";
 
 function article({ id, feedName, title, contentSnippet = "", summary = "", wishlist = false, feedback = false }) {
   return {
@@ -39,6 +40,8 @@ const snapshot = [
 
 const scopedArgs = parseCleanupDiscoveryFeedQualityArgs(["--feed", "oVd"]);
 assert.deepEqual(scopedArgs, { apply: false, selectedFeeds: ["OVD"] });
+const securityFeaturesScopedArgs = parseCleanupDiscoveryFeedQualityArgs(["--feed", "SeCuRiTy-FeAtUrEs"]);
+assert.deepEqual(securityFeaturesScopedArgs, { apply: false, selectedFeeds: ["Security Features"] });
 assert.deepEqual(
   parseCleanupDiscoveryFeedQualityArgs([]),
   { apply: false, selectedFeeds: ["OVD", "Security Features", "banknotes", "passports"] },
@@ -58,18 +61,35 @@ assert.deepEqual(
   },
   "the scoped snapshot predicate can target only the exact retired OVD Google Alert feed",
 );
+assert.deepEqual(
+  discoveryFeedQualityTargetWhere(securityFeaturesScopedArgs.selectedFeeds),
+  {
+    OR: [{
+      name: "Security Features",
+      rssUrl: securityFeaturesGoogleAlertUrl,
+    }],
+  },
+  "the Security Features scoped snapshot predicate targets only its exact Google Alert feed",
+);
 assert.throws(
   () => parseCleanupDiscoveryFeedQualityArgs(["--feed"]),
-  /Allowed feed selector: ovd/i,
+  /Allowed feed selector: ovd, security-features/i,
 );
 assert.throws(
   () => parseCleanupDiscoveryFeedQualityArgs(["--feed", "other"]),
-  /Allowed feed selector: ovd/i,
+  /Allowed feed selector: ovd, security-features/i,
 );
 assert.throws(
   () => parseCleanupDiscoveryFeedQualityArgs(["--feed", "ovd,banknotes"]),
-  /Allowed feed selector: ovd/i,
+  /Allowed feed selector: ovd, security-features/i,
 );
+for (const invalidSelector of ["security features", "security_features", "security-features,ovd"]) {
+  assert.throws(
+    () => parseCleanupDiscoveryFeedQualityArgs(["--feed", invalidSelector]),
+    /Allowed feed selector: ovd, security-features/i,
+    `${invalidSelector} fails closed`,
+  );
+}
 assert.throws(
   () => parseCleanupDiscoveryFeedQualityArgs(["--feed", "ovd", "--feed", "OVD"]),
   /may only be provided once/i,
@@ -87,6 +107,22 @@ assert.deepEqual(scopedPlan.eligible.map((entry) => entry.id), ["001"]);
 const scopedOutput = buildDiscoveryFeedQualityCleanupOutput({ plan: scopedPlan, mode: "dry-run" });
 assert.deepEqual(scopedOutput.selectedFeeds, ["OVD"]);
 assert.deepEqual(Object.keys(scopedOutput.snapshot.perFeed), ["OVD"]);
+
+const securityFeaturesScopedPlan = buildDiscoveryFeedQualityCleanupPlan([
+  {
+    ...article({ id: "012", feedName: "Security Features", title: "Generic phone security features announced" }),
+    feed: { id: "security-features-exact", name: "Security Features", rssUrl: securityFeaturesGoogleAlertUrl },
+  },
+  {
+    ...article({ id: "013", feedName: "Security Features", title: "Generic phone security features announced" }),
+    feed: { id: "security-features-other-alert", name: "Security Features", rssUrl: "https://www.google.com/alerts/feeds/other" },
+  },
+  {
+    ...article({ id: "014", feedName: "Security Features archive", title: "Generic phone security features announced" }),
+    feed: { id: "security-features-similar", name: "Security Features archive", rssUrl: securityFeaturesGoogleAlertUrl },
+  },
+], { selectedFeeds: securityFeaturesScopedArgs.selectedFeeds });
+assert.deepEqual(securityFeaturesScopedPlan.snapshotIds, ["012"], "a second Security Features Google Alert feed and similarly named feed stay outside the scoped plan");
 
 assert.equal(plan.snapshotCount, 10);
 assert.equal(plan.rejectedCount, 7);

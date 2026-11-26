@@ -11,6 +11,7 @@ export const DISCOVERY_FEED_QUALITY_BATCH_SIZE = 100;
 export const DISCOVERY_FEED_QUALITY_PREVIEW_LIMIT = 20;
 export const DISCOVERY_FEED_QUALITY_EXACT_TARGET_URLS = Object.freeze({
   OVD: "https://www.google.com/alerts/feeds/08517052598424393837/16541274970187058676",
+  "Security Features": "https://www.google.com/alerts/feeds/08517052598424393837/1632750707624179991",
 });
 
 export function selectedDiscoveryFeedQualityTargets(selectedFeeds) {
@@ -31,10 +32,23 @@ export function discoveryFeedQualityTargetWhere(selectedFeeds) {
   return {
     OR: targets.map((name) => ({
       name,
-      rssUrl: DISCOVERY_FEED_QUALITY_EXACT_TARGET_URLS[name]
+      rssUrl: exactTargetUrlForSelection(targets, name)
         || { startsWith: "https://www.google.com/alerts/feeds/" },
     })),
   };
+}
+
+function exactTargetUrlForSelection(targets, name) {
+  // The all-target maintenance run retains its historic Google Alert prefix
+  // scope for Security Features. Its named selector is intentionally stricter.
+  if (name === "Security Features" && targets.length !== 1) return undefined;
+  return DISCOVERY_FEED_QUALITY_EXACT_TARGET_URLS[name];
+}
+
+function exactPlanTargetUrlForSelection(targets, name) {
+  return name === "Security Features" && targets.length === 1
+    ? DISCOVERY_FEED_QUALITY_EXACT_TARGET_URLS[name]
+    : undefined;
 }
 
 function feedNameOf(article) {
@@ -58,7 +72,12 @@ function discoveryQualityText(article) {
 export function buildDiscoveryFeedQualityCleanupPlan(snapshot = [], { selectedFeeds } = {}) {
   const targets = selectedDiscoveryFeedQualityTargets(selectedFeeds);
   const selectedTargetNames = new Set(targets);
-  const selectedSnapshot = snapshot.filter((article) => selectedTargetNames.has(feedNameOf(article)));
+  const selectedSnapshot = snapshot.filter((article) => {
+    const feedName = feedNameOf(article);
+    if (!selectedTargetNames.has(feedName)) return false;
+    const exactUrl = exactPlanTargetUrlForSelection(targets, feedName);
+    return !exactUrl || article?.feed?.rssUrl === exactUrl || article?.feedRssUrl === exactUrl;
+  });
   const snapshotByFeed = Object.fromEntries(targets.map((name) => [name, 0]));
   const rejectedByFeed = Object.fromEntries(targets.map((name) => [name, 0]));
   const eligible = [];

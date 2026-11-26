@@ -9,7 +9,12 @@ import {
 } from "../src/services/discoveryFeedQualityCleanupService.js";
 import { profileCacheService } from "../src/services/profileCacheService.js";
 
-const FEED_SELECTOR_ERROR = "Invalid --feed value. Allowed feed selector: ovd.";
+const ALLOWED_FEED_SELECTORS = "ovd, security-features";
+const FEED_SELECTOR_ERROR = `Invalid --feed value. Allowed feed selector: ${ALLOWED_FEED_SELECTORS}.`;
+const FEED_SELECTORS = Object.freeze({
+  ovd: "OVD",
+  "security-features": "Security Features",
+});
 
 export function parseCleanupDiscoveryFeedQualityArgs(argv) {
   let apply = false;
@@ -22,16 +27,19 @@ export function parseCleanupDiscoveryFeedQualityArgs(argv) {
       continue;
     }
     if (argument === "--feed") {
-      if (selectedFeeds) throw new Error("--feed may only be provided once; allowed feed selector: ovd.");
+      if (selectedFeeds) throw new Error(`--feed may only be provided once; allowed feed selector: ${ALLOWED_FEED_SELECTORS}.`);
       const value = argv[index + 1];
-      if (!value || value.startsWith("--") || value.toLowerCase() !== "ovd") {
+      const feedName = typeof value === "string" && !value.startsWith("--")
+        ? FEED_SELECTORS[value.toLowerCase()]
+        : undefined;
+      if (!feedName) {
         throw new Error(FEED_SELECTOR_ERROR);
       }
-      selectedFeeds = ["OVD"];
+      selectedFeeds = [feedName];
       index += 1;
       continue;
     }
-    throw new Error(`Unknown argument: ${argument}. Allowed arguments: --apply, --feed ovd.`);
+    throw new Error(`Unknown argument: ${argument}. Allowed feed selector: ${ALLOWED_FEED_SELECTORS}.`);
   }
 
   return { apply, selectedFeeds: selectedFeeds || [...DISCOVERY_FEED_QUALITY_TARGETS] };
