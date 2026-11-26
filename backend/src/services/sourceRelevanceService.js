@@ -3014,6 +3014,40 @@ export const SOURCE_RELEVANCE_RULES = [
       "quarter",
     ],
   },
+  {
+    // The CBN news crawler discovers navigation and company-profile pages from
+    // this static news page. Match both feed fields so those rejections cannot
+    // apply to another CBN-branded feed or a different cbnco.com source.
+    name: "Canadian Bank Note News",
+    sourceIdentities: [
+      {
+        name: "Canadian Bank Note News",
+        rssUrl: "https://www.cbnco.com/news/",
+      },
+    ],
+    rejectExactPaths: [
+      "/",
+      "/home",
+      "/news",
+      "/meet-the-team",
+      "/cbn-dlr-identity-group",
+    ],
+    rejectLinkPatterns: ["#media-center"],
+    include: [
+      "credential",
+      "credentials",
+      "document security",
+      "identity card",
+      "identity cards",
+      "identity document",
+      "identity documents",
+      "passport",
+      "passports",
+      "secure document",
+      "secure documents",
+      "security printing",
+    ],
+  },
 ];
 
 export function getSourceRelevanceRule(feed) {
@@ -3025,9 +3059,16 @@ export function getSourceRelevanceRule(feed) {
     .join(" ")
     .toLowerCase();
 
-  return SOURCE_RELEVANCE_RULES.find((rule) =>
-    rule.sourceKeys.some((sourceKey) => fingerprint.includes(sourceKey))
-  ) || null;
+  return SOURCE_RELEVANCE_RULES.find((rule) => {
+    if (rule.sourceIdentities?.length) {
+      return rule.sourceIdentities.some(
+        (identity) =>
+          feed?.name === identity.name && feed?.rssUrl === identity.rssUrl
+      );
+    }
+
+    return rule.sourceKeys.some((sourceKey) => fingerprint.includes(sourceKey));
+  }) || null;
 }
 
 function buildSourceTermPattern(term) {
@@ -3058,10 +3099,11 @@ function getArticlePath(article) {
 
   try {
     const parsed = new URL(rawUrl, "https://example.invalid");
-    const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
-    return pathname.toLowerCase();
+    const pathname = decodeURIComponent(parsed.pathname).replace(/\/+/g, "/");
+    return (pathname.replace(/\/+$/, "") || "/").toLowerCase();
   } catch {
-    return rawUrl.split("?")[0].replace(/\/+$/, "").toLowerCase();
+    const pathname = rawUrl.split("?")[0].replace(/\/+/g, "/");
+    return (pathname.replace(/\/+$/, "") || "/").toLowerCase();
   }
 }
 
@@ -3070,7 +3112,7 @@ function findRejectedPageMatches(rule, article) {
   const title = String(article?.title || "").trim().toLowerCase();
   const link = String(article?.link || "").trim().toLowerCase();
   const rejectedExactPaths = (rule.rejectExactPaths || []).filter((path) =>
-    articlePath === String(path || "").replace(/\/+$/, "").toLowerCase()
+    articlePath === (String(path || "").replace(/\/+$/, "") || "/").toLowerCase()
   );
   const rejectedPathPatterns = (rule.rejectPagePatterns || []).filter((pattern) =>
     articlePath.includes(String(pattern || "").toLowerCase())
