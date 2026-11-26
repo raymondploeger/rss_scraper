@@ -3,7 +3,9 @@ import {
   buildDiscoveryFeedQualityCleanupPlan,
   buildDiscoveryFeedQualityCleanupOutput,
   applyDiscoveryFeedQualityCleanupPlan,
+  discoveryFeedQualityTargetWhere,
 } from "../backend/src/services/discoveryFeedQualityCleanupService.js";
+import { parseCleanupDiscoveryFeedQualityArgs } from "../backend/scripts/cleanup-discovery-feed-quality.js";
 
 const googleAlertUrl = "https://www.google.com/alerts/feeds/example";
 
@@ -35,7 +37,56 @@ const snapshot = [
   article({ id: "010", feedName: "passports", title: "Passport casually mentioned", feedback: true }),
 ];
 
+const scopedArgs = parseCleanupDiscoveryFeedQualityArgs(["--feed", "oVd"]);
+assert.deepEqual(scopedArgs, { apply: false, selectedFeeds: ["OVD"] });
+assert.deepEqual(
+  parseCleanupDiscoveryFeedQualityArgs([]),
+  { apply: false, selectedFeeds: ["OVD", "Security Features", "banknotes", "passports"] },
+  "default invocation preserves the all-four-target dry-run scope",
+);
+assert.deepEqual(
+  parseCleanupDiscoveryFeedQualityArgs(["--apply", "--feed", "ovd"]),
+  { apply: true, selectedFeeds: ["OVD"] },
+);
+assert.deepEqual(
+  discoveryFeedQualityTargetWhere(scopedArgs.selectedFeeds),
+  {
+    OR: [{
+      name: "OVD",
+      rssUrl: "https://www.google.com/alerts/feeds/08517052598424393837/16541274970187058676",
+    }],
+  },
+  "the scoped snapshot predicate can target only the exact retired OVD Google Alert feed",
+);
+assert.throws(
+  () => parseCleanupDiscoveryFeedQualityArgs(["--feed"]),
+  /Allowed feed selector: ovd/i,
+);
+assert.throws(
+  () => parseCleanupDiscoveryFeedQualityArgs(["--feed", "other"]),
+  /Allowed feed selector: ovd/i,
+);
+assert.throws(
+  () => parseCleanupDiscoveryFeedQualityArgs(["--feed", "ovd,banknotes"]),
+  /Allowed feed selector: ovd/i,
+);
+assert.throws(
+  () => parseCleanupDiscoveryFeedQualityArgs(["--feed", "ovd", "--feed", "OVD"]),
+  /may only be provided once/i,
+);
+
 const plan = buildDiscoveryFeedQualityCleanupPlan(snapshot);
+
+const scopedPlan = buildDiscoveryFeedQualityCleanupPlan([
+  ...snapshot,
+  article({ id: "011", feedName: "OVD archive", title: "112 melding in an archive" }),
+], { selectedFeeds: scopedArgs.selectedFeeds });
+assert.deepEqual(scopedPlan.selectedFeeds, ["OVD"]);
+assert.deepEqual(scopedPlan.snapshotIds, ["001", "007", "009"]);
+assert.deepEqual(scopedPlan.eligible.map((entry) => entry.id), ["001"]);
+const scopedOutput = buildDiscoveryFeedQualityCleanupOutput({ plan: scopedPlan, mode: "dry-run" });
+assert.deepEqual(scopedOutput.selectedFeeds, ["OVD"]);
+assert.deepEqual(Object.keys(scopedOutput.snapshot.perFeed), ["OVD"]);
 
 assert.equal(plan.snapshotCount, 10);
 assert.equal(plan.rejectedCount, 7);
@@ -48,6 +99,7 @@ assert.equal(plan.rejectedByFeed.banknotes, 2);
 assert.equal(plan.rejectedByFeed.passports, 2);
 
 const output = buildDiscoveryFeedQualityCleanupOutput({ plan, mode: "dry-run" });
+assert.deepEqual(output.selectedFeeds, ["OVD", "Security Features", "banknotes", "passports"]);
 assert.equal(output.preview.length, 5);
 assert.equal(Object.hasOwn(output, "eligibleIds"), false);
 assert.equal(output.unchangedOutsideSnapshot, 0);

@@ -9,12 +9,30 @@ export const DISCOVERY_FEED_QUALITY_TARGETS = Object.freeze([
 
 export const DISCOVERY_FEED_QUALITY_BATCH_SIZE = 100;
 export const DISCOVERY_FEED_QUALITY_PREVIEW_LIMIT = 20;
+export const DISCOVERY_FEED_QUALITY_EXACT_TARGET_URLS = Object.freeze({
+  OVD: "https://www.google.com/alerts/feeds/08517052598424393837/16541274970187058676",
+});
 
-export function discoveryFeedQualityTargetWhere() {
+export function selectedDiscoveryFeedQualityTargets(selectedFeeds) {
+  if (selectedFeeds === undefined) return [...DISCOVERY_FEED_QUALITY_TARGETS];
+  if (!Array.isArray(selectedFeeds) || selectedFeeds.length === 0) {
+    throw new Error("At least one discovery-feed-quality target must be selected");
+  }
+  const selected = new Set(selectedFeeds);
+  const targets = DISCOVERY_FEED_QUALITY_TARGETS.filter((name) => selected.has(name));
+  if (targets.length !== selected.size) {
+    throw new Error("Unknown discovery-feed-quality target selection");
+  }
+  return targets;
+}
+
+export function discoveryFeedQualityTargetWhere(selectedFeeds) {
+  const targets = selectedDiscoveryFeedQualityTargets(selectedFeeds);
   return {
-    OR: DISCOVERY_FEED_QUALITY_TARGETS.map((name) => ({
+    OR: targets.map((name) => ({
       name,
-      rssUrl: { startsWith: "https://www.google.com/alerts/feeds/" },
+      rssUrl: DISCOVERY_FEED_QUALITY_EXACT_TARGET_URLS[name]
+        || { startsWith: "https://www.google.com/alerts/feeds/" },
     })),
   };
 }
@@ -37,14 +55,17 @@ function discoveryQualityText(article) {
   };
 }
 
-export function buildDiscoveryFeedQualityCleanupPlan(snapshot = []) {
-  const snapshotByFeed = Object.fromEntries(DISCOVERY_FEED_QUALITY_TARGETS.map((name) => [name, 0]));
-  const rejectedByFeed = Object.fromEntries(DISCOVERY_FEED_QUALITY_TARGETS.map((name) => [name, 0]));
+export function buildDiscoveryFeedQualityCleanupPlan(snapshot = [], { selectedFeeds } = {}) {
+  const targets = selectedDiscoveryFeedQualityTargets(selectedFeeds);
+  const selectedTargetNames = new Set(targets);
+  const selectedSnapshot = snapshot.filter((article) => selectedTargetNames.has(feedNameOf(article)));
+  const snapshotByFeed = Object.fromEntries(targets.map((name) => [name, 0]));
+  const rejectedByFeed = Object.fromEntries(targets.map((name) => [name, 0]));
   const eligible = [];
   let rejectedCount = 0;
   let skippedRelationsCount = 0;
 
-  for (const article of snapshot) {
+  for (const article of selectedSnapshot) {
     const feed = article.feed || { name: article.feedName, rssUrl: article.feedRssUrl };
     const feedName = feedNameOf(article);
     snapshotByFeed[feedName] = (snapshotByFeed[feedName] || 0) + 1;
@@ -66,8 +87,9 @@ export function buildDiscoveryFeedQualityCleanupPlan(snapshot = []) {
   }
 
   return {
-    snapshotCount: snapshot.length,
-    snapshotIds: snapshot.map((article) => String(article.id)),
+    selectedFeeds: targets,
+    snapshotCount: selectedSnapshot.length,
+    snapshotIds: selectedSnapshot.map((article) => String(article.id)),
     snapshotByFeed,
     rejectedCount,
     rejectedByFeed,
@@ -80,6 +102,7 @@ export function buildDiscoveryFeedQualityCleanupPlan(snapshot = []) {
 export function buildDiscoveryFeedQualityCleanupOutput({ plan, mode, applied = 0 }) {
   return {
     mode,
+    selectedFeeds: plan.selectedFeeds,
     warning: mode === "applied"
       ? "Permanent deletion completed; Article has no soft-delete/archive field."
       : "Dry run only; pass --apply for permanent deletion. Article has no soft-delete/archive field.",
