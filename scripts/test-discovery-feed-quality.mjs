@@ -49,6 +49,46 @@ assert.equal(
   true,
   "historical Security Features decisions must use local text rather than stored classifications"
 );
+assert.equal(
+  assess("Security Features", "Cybersecurity provider launches phishing-resistant authentication for digital identity verification", "The platform verifies a user's identity with passkeys and multi-factor authentication.").accepted,
+  true,
+  "identity-authentication cybersecurity with concrete verification evidence must pass"
+);
+assert.equal(
+  assess("Security Features", "State unveils redesigned driver licences", "The new driver licences add laser engraving and tactile features to deter counterfeiting.").accepted,
+  true,
+  "driver-licence lifecycle and security evidence must co-occur"
+);
+assert.equal(
+  assess("Security Features", "ESET Mobile Security adds a new feature", "Cybersecurity protection for Android devices.").accepted,
+  false,
+  "generic mobile cybersecurity must not pass"
+);
+assert.equal(
+  assess("Security Features", "Counterfeit goods seized at market", "Officials are investigating the case.").accepted,
+  false,
+  "generic counterfeit context must not pass"
+);
+assert.equal(
+  assess("Security Features", "Police seize counterfeit passports at border").accepted,
+  false,
+  "a counterfeit-document seizure without lifecycle and concrete security evidence must not pass"
+);
+assert.equal(
+  assess("Security Features", "Counterfeit banknotes seized at market").accepted,
+  false,
+  "a counterfeit-banknote seizure without feature, design, issuance, or production context must not pass"
+);
+assert.equal(
+  assess("Security Features", "Banknotes and the future of cash").accepted,
+  false,
+  "banknote commentary must not pass as a concrete security feature event"
+);
+assert.equal(
+  assess("Security Features", "University celebrates graduates", "Photos show students holding degree certificates.").accepted,
+  false,
+  "degree certificates and photos alone must not pass"
+);
 
 for (const title of [
   "Dollar near 19-month high as markets react, banknotes pictured",
@@ -68,4 +108,4 @@ assert.equal(assess("passports", "Illegal Alien Charged with False Use of a Pass
 assert.equal(assess("passports", "AI Passport project to be reviewed").accepted, true);
 assert.equal(assess("passports", "Maritime logistics passport booking platform expands").accepted, false);
 
-process.stdout.write(`${JSON.stringify({ status: "passed", checks: 21 })}\n`);
+process.stdout.write(`${JSON.stringify({ status: "passed", checks: 29 })}\n`);

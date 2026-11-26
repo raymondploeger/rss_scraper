@@ -18,8 +18,26 @@ function hasBanknoteEventContext(text, title) {
   const hasConcreteEvent = has(text, /\b(?:central bank|reserve bank|\becb\b|\bbsp\b|issued?|issuance|circulat(?:e|es|ed|ing|ion)|unveils?|introduces?|launches?|rollout|new bank\s?note|design|redesign|security (?:feature|features|ink|thread)|hologram|counterfeit|anti-counterfeit|security printing|printed?|printing|production|future|series|denomination|polymer|substrate|commemorative)\b/);
   return hasBanknote && hasConcreteEvent && (hasTitleBanknoteEvidence || hasTitleIssuer);
 }
+function hasSecurityFeaturesBanknoteContext(text, title) {
+  const hasBanknote = has(text, /\bbank\s?notes?\b|\bcurrency notes?\b|\bcedi notes?\b/);
+  const hasTitleBanknoteEvidence = has(title, /\bbank\s?notes?\b|\bcurrency notes?\b|\bcedi notes?\b/);
+  const hasTitleIssuer = has(title, /\b(?:bank of|central bank of|reserve bank of)\s+[a-z][a-z\s-]{2,50}\b/);
+  const hasSecurityEvidence = has(text, /\b(?:issued?|issuance|circulat(?:e|es|ed|ing|ion)|unveils?|introduces?|launches?|rollout|new bank\s?note|design|redesign|security (?:feature|features|ink|thread)|hologram|anti-counterfeit|security printing|printed?|printing|production|series|denomination|polymer|substrate|commemorative)\b/);
+  return hasBanknote && hasSecurityEvidence && (hasTitleBanknoteEvidence || hasTitleIssuer);
+}
 function hasDocumentSecurityContext(text) {
   return has(text, /\b(?:passport|travel document|identity document|bank\s?note|currency note|cedi note|document security|anti-counterfeit|holographic?|optical variable device|security printing)\b/);
+}
+function hasIdentityAuthenticationSecurityContext(text) {
+  const hasIdentityVerification = has(text, /\b(?:identity verification|verify(?:ing)? (?:a )?(?:user'?s? )?identity|digital identity|identity proofing)\b/);
+  const hasAuthenticationEvidence = has(text, /\b(?:authentication|passkeys?|multi-factor authentication|\bmfa\b|\bfido2\b|\bwebauthn\b|biometric authentication)\b/);
+  return hasIdentityVerification && hasAuthenticationEvidence;
+}
+function hasSecureDocumentLifecycleContext(text) {
+  const hasDocumentType = has(text, /\b(?:passports?|travel documents?|identity documents?|national identity cards?|id cards?|driver'?s? licen[cs]es?|residence permits?|official documents?)\b/);
+  const hasLifecycleEvidence = has(text, /\b(?:issu(?:e|ed|es|ing|ance)|renew(?:al|ed|s|ing)?|redesign(?:ed|s|ing)?|unveils?|introduces?|launches?|rollout|replaces?|newly issued)\b/);
+  const hasConcreteSecurityEvidence = has(text, /\b(?:anti-counterfeit|counterfeit deterrence|holographic?|laser engraving|tactile (?:feature|features)|security (?:feature|features|thread|ink)|biometric(?:s)?|tamper[- ](?:resistant|evident)|forgery)\b/);
+  return hasDocumentType && hasLifecycleEvidence && hasConcreteSecurityEvidence;
 }
 
 /** Pure browser/Node policy; historical classifier labels are intentionally ignored. */
@@ -33,7 +51,8 @@ export function assessDiscoveryFeedQuality(feed, article) {
     return hasOvd && hasDocumentSecurityContext(text) ? { accepted: true, reason: "ovd_document_security_context" } : { accepted: false, reason: "ovd_missing_document_security_context" };
   }
   if (name === "security features") {
-    return hasBanknoteEventContext(text, title) || hasDocumentSecurityContext(text) ? { accepted: true, reason: "security_features_document_security_context" } : { accepted: false, reason: "security_features_missing_document_security_context" };
+    const accepted = hasSecurityFeaturesBanknoteContext(text, title) || hasIdentityAuthenticationSecurityContext(text) || hasSecureDocumentLifecycleContext(text);
+    return accepted ? { accepted: true, reason: "security_features_concrete_context" } : { accepted: false, reason: "security_features_missing_concrete_context" };
   }
   if (name === "banknotes") {
     return hasBanknoteEventContext(text, title) ? { accepted: true, reason: "banknotes_concrete_context" } : { accepted: false, reason: "banknotes_missing_concrete_context" };
